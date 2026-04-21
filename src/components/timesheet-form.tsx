@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { StaffingRecord, TimesheetRecord } from "@/lib/airtable";
 import { formatRange, fridayOfWeek, mondayOf, thisMondayIso } from "@/lib/dates";
+import { WeekPicker } from "@/components/week-picker";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
@@ -157,18 +158,15 @@ export function TimesheetForm({ mode, existing }: Props) {
   return (
     <form onSubmit={onSubmit} className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="block">
-          <span className="text-sm font-medium text-slate-700">Week starting (Monday)</span>
-          <input
-            type="date"
-            value={weekStart}
-            onChange={(e) => setWeekStart(e.target.value)}
-            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2"
-          />
+        <div className="block">
+          <label htmlFor="week-picker" className="text-sm font-medium text-slate-700">
+            Week starting (Monday)
+          </label>
+          <WeekPicker id="week-picker" value={weekStart} onChange={setWeekStart} />
           <span className="block text-xs text-slate-500 mt-1">
             Week: {formatRange(weekMonday, weekFriday)}
           </span>
-        </label>
+        </div>
         <label className="block">
           <span className="text-sm font-medium text-slate-700">Project Staffing</span>
           <select
