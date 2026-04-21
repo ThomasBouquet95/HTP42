@@ -173,12 +173,15 @@ async function getProjectNameMap(): Promise<Map<string, string>> {
 }
 
 export async function getStaffingsForMember(
-  memberRecordId: string,
+  memberCode: string,
   activeOnly = false,
 ): Promise<StaffingRecord[]> {
+  // filterByFormula on a linked-record field sees the primary field value of
+  // the linked record (the member code), not the Airtable record ID — so we
+  // search the visible Member Code string here.
   const records = await base(TABLES.projectStaffing)
     .select({
-      filterByFormula: `FIND("${escape(memberRecordId)}", ARRAYJOIN(ARRAYCOMPACT({${FIELDS.projectStaffing.memberCode}})))`,
+      filterByFormula: `FIND("${escape(memberCode)}", ARRAYJOIN(ARRAYCOMPACT({${FIELDS.projectStaffing.memberCode}})))`,
     })
     .all();
   const projectNames = await getProjectNameMap();

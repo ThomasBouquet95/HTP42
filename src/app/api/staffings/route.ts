@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const weekParam = url.searchParams.get("week"); // YYYY-MM-DD, any day in the week
 
-  const staffings = await getStaffingsForMember(session.sub, true);
+  const staffings = await getStaffingsForMember(session.memberCode, true);
 
   if (!weekParam) return NextResponse.json({ staffings });
 

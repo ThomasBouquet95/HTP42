@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   }
   const endDate = fridayOfWeek(input.startDate);
 
-  const staffings = await getStaffingsForMember(session.sub, true);
+  const staffings = await getStaffingsForMember(session.memberCode, true);
   const staffing = staffings.find((s) => s.id === input.staffingRecordId);
   if (!staffing) {
     return NextResponse.json({ error: "Selected Project Staffing is not available." }, { status: 400 });
