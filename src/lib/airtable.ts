@@ -1,7 +1,15 @@
 import Airtable, { type FieldSet, type Record as AirtableRecord } from "airtable";
 import { env } from "./env";
 
-const base = new Airtable({ apiKey: env.airtablePat }).base(env.airtableBaseId);
+type AirtableBase = ReturnType<Airtable["base"]>;
+
+let _base: AirtableBase | null = null;
+function base(tableName: string) {
+  if (!_base) {
+    _base = new Airtable({ apiKey: env.airtablePat }).base(env.airtableBaseId);
+  }
+  return _base(tableName);
+}
 
 export const TABLES = {
   networkMembers: "Network Members",
