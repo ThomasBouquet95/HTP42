@@ -27,9 +27,14 @@ export async function middleware(req: NextRequest) {
   // also revalidate the role against Airtable via requireAdminSession().
   const secret = process.env.AUTH_SECRET;
   if (!secret) {
-    // Fail closed if the secret is missing in the runtime.
+    // Fail closed if the secret is missing in the runtime. Redirect APIs to
+    // 403 and pages to /login rather than /dashboard to avoid a redirect loop
+    // if the secret is ever dropped in production.
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     const url = req.nextUrl.clone();
-    url.pathname = "/dashboard";
+    url.pathname = "/login";
     url.search = "";
     return NextResponse.redirect(url);
   }
