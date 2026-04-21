@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getTimesheetsForMember, type TimesheetRecord, type TimesheetStatus } from "@/lib/airtable";
-import { formatRange } from "@/lib/dates";
+import { formatRange, parseIsoDate, toIsoDate } from "@/lib/dates";
 import { PrintTrigger } from "./print-trigger";
 
 export const dynamic = "force-dynamic";
@@ -172,13 +172,19 @@ export default async function SummaryPrintPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {DAY_KEYS.map((k) => (
-                      <tr key={k}>
-                        <td>{DAY_LABELS[k]}</td>
-                        <td className="num">{t[k].hours ? t[k].hours.toFixed(2) : "—"}</td>
-                        <td>{t[k].task || <span className="muted">—</span>}</td>
-                      </tr>
-                    ))}
+                    {DAY_KEYS.map((k) => {
+                      const iso = dayIsoFor(t.startDate, k);
+                      return (
+                        <tr key={k}>
+                          <td>
+                            <div>{DAY_LABELS[k]}</div>
+                            {iso ? <div className="muted" style={{ fontSize: 10 }}>{formatPrintDate(iso)}</div> : null}
+                          </td>
+                          <td className="num">{t[k].hours ? t[k].hours.toFixed(2) : "—"}</td>
+                          <td>{t[k].task || <span className="muted">—</span>}</td>
+                        </tr>
+                      );
+                    })}
                     <tr className="total-row">
                       <td>Total</td>
                       <td className="num">{t.totalHours.toFixed(2)}</td>
@@ -227,6 +233,24 @@ function groupBy(
     map.set(key, cur);
   }
   return [...map.values()].sort((a, b) => b.hours - a.hours);
+}
+
+function dayIsoFor(startIso: string | null, key: (typeof DAY_KEYS)[number]): string | null {
+  if (!startIso) return null;
+  const base = parseIsoDate(startIso);
+  const idx = DAY_KEYS.indexOf(key);
+  const d = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate() + idx));
+  return toIsoDate(d);
+}
+
+function formatPrintDate(iso: string): string {
+  return parseIsoDate(iso).toLocaleDateString("en-US", {
+    weekday: undefined,
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function describeFilters(sp: {

@@ -1,0 +1,70 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { requireAdminSession } from "@/lib/auth";
+import {
+  getProjectById,
+  updateProject,
+  PROJECT_STATUSES,
+  PROJECT_TYPES,
+  CURRENCIES,
+  SOW_SIGNED_OPTIONS,
+  type Currency,
+  type ProjectStatus,
+  type ProjectType,
+  type SowSigned,
+} from "@/lib/airtable";
+
+const nullableNumber = z.union([z.number(), z.null()]).optional();
+const nullableDate = z.union([z.string().trim().min(1), z.null()]).optional();
+
+const schema = z.object({
+  projectCode: z.string().trim().min(1).max(80),
+  projectName: z.string().trim().min(1).max(300),
+  clientRecordIds: z.array(z.string()).max(5).default([]),
+  type: z.union([z.enum(PROJECT_TYPES as [string, ...string[]]), z.literal("")]).default(""),
+  objective: z.string().max(5000).default(""),
+  startDate: nullableDate,
+  endDate: nullableDate,
+  currency: z.union([z.enum(CURRENCIES as [string, ...string[]]), z.literal("")]).default(""),
+  totalAmount: nullableNumber,
+  fxToEur: nullableNumber,
+  status: z.union([z.enum(PROJECT_STATUSES as [string, ...string[]]), z.literal("")]).default(""),
+  sowSigned: z.union([z.enum(SOW_SIGNED_OPTIONS as [string, ...string[]]), z.literal("")]).default(""),
+  sowValidityDate: nullableDate,
+});
+
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const session = await requireAdminSession();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const { id } = await params;
+  const existing = await getProjectById(id);
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const body = await request.json().catch(() => null);
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
+      { status: 400 },
+    );
+  }
+
+  const d = parsed.data;
+  await updateProject(id, {
+    projectCode: d.projectCode,
+    projectName: d.projectName,
+    clientRecordIds: d.clientRecordIds,
+    type: d.type as ProjectType | "",
+    objective: d.objective,
+    startDate: d.startDate ?? null,
+    endDate: d.endDate ?? null,
+    currency: d.currency as Currency | "",
+    totalAmount: d.totalAmount ?? null,
+    fxToEur: d.fxToEur ?? null,
+    status: d.status as ProjectStatus | "",
+    sowSigned: d.sowSigned as SowSigned | "",
+    sowValidityDate: d.sowValidityDate ?? null,
+  });
+  return NextResponse.json({ ok: true });
+}

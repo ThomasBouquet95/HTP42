@@ -14,7 +14,12 @@ export type SessionPayload = {
   memberCode: string;
   email: string;
   fullName: string;
+  role: string; // "Admin" gates admin UI; empty/other = regular member
 };
+
+export function isAdmin(session: SessionPayload | null | undefined): boolean {
+  return !!session && session.role === "Admin";
+}
 
 export type MagicPayload = {
   kind: "magic";
@@ -55,6 +60,7 @@ export async function startSession(member: MemberRecord): Promise<void> {
       memberCode: member.memberCode,
       email: member.email,
       fullName: member.fullName,
+      role: member.role || "",
     } satisfies SessionPayload,
     SESSION_TTL_SECONDS,
   );
@@ -79,7 +85,21 @@ export async function getSession(): Promise<SessionPayload | null> {
   if (!token) return null;
   const payload = await verify<SessionPayload>(token);
   if (!payload?.memberCode || !payload.sub) return null;
-  return payload;
+  // Older sessions (pre-role) won't have role set. Treat as empty string.
+  return { ...payload, role: payload.role ?? "" };
+}
+
+// Server-side admin re-verification: trust the JWT claim AND also re-check the
+// live Airtable role so a demoted member loses access even before their
+// cookie expires. Callers get null if the session isn't admin or has lapsed.
+export async function requireAdminSession(): Promise<SessionPayload | null> {
+  const session = await getSession();
+  if (!session) return null;
+  if (session.role !== "Admin") return null;
+  const member = await findActiveMemberByEmail(session.email);
+  if (!member) return null;
+  if (member.role !== "Admin") return null;
+  return { ...session, role: member.role };
 }
 
 export async function requireSession(): Promise<SessionPayload> {

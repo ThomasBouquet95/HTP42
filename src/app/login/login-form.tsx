@@ -46,7 +46,7 @@ export default function LoginForm() {
   return (
     <main className="min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-md bg-white rounded-xl shadow-sm border border-slate-200 p-8">
-        <h1 className="text-2xl font-semibold">HTP42 Timesheets</h1>
+        <h1 className="text-2xl font-semibold">HTP42 Portal</h1>
         <p className="mt-1 text-sm text-slate-600">Sign in with your network-member email.</p>
 
         {sent ? (

@@ -16,6 +16,8 @@ export const TABLES = {
   projectStaffing: "Project Staffing",
   timesheets: "Timesheets",
   projects: "Projects",
+  clients: "Clients",
+  payments: "Payments",
 } as const;
 
 export const FIELDS = {
@@ -24,10 +26,39 @@ export const FIELDS = {
     fullName: "Full Name",
     email: "Email",
     status: "Status",
+    role: "Role",
+    introduction: "Introduction",
+    country: "Country",
+    phone: "Phone",
+    legalEntity: "Legal Entity",
+    title: "Title",
+    memberStatus: "Member Status",
+    dailyRate: "Daily Rate",
+    currency: "Currency",
   },
   projects: {
     projectCode: "Project Code",
     projectName: "Project Name",
+    clientCode: "Client Code",
+    type: "Type",
+    objective: "Objective",
+    startDate: "Start Date",
+    endDate: "End Date",
+    currency: "Currency",
+    totalAmount: "Total Amount",
+    fxToEur: "FX to EUR",
+    totalAmountEur: "Total Amount EUR",
+    status: "Status",
+    sowSigned: "SOW Signed",
+    sowValidityDate: "SOW Validity Date",
+  },
+  clients: {
+    clientCode: "Client Code",
+    clientName: "Client Name",
+    industry: "Industry",
+    country: "Country",
+    keyContact: "Key Contact",
+    notes: "Notes",
   },
   projectStaffing: {
     staffingCode: "Staffing Code",
@@ -56,11 +87,75 @@ export const FIELDS = {
     fridayTask: "Friday (task)",
     status: "Status",
   },
+  payments: {
+    paymentCode: "Payment Code",
+    direction: "Direction",
+    type: "Type",
+    project: "Project",
+    member: "Member",
+    client: "Client",
+    invoiceDate: "Invoice Date",
+    invoiceReference: "Invoice Reference",
+    invoiceCurrency: "Invoice Currency",
+    invoiceValue: "Invoice Value",
+    fxRateToEur: "FX Rate to EUR",
+    invoiceValueEur: "Invoice Value EUR",
+    paymentTerms: "Payment Terms",
+    paymentStatus: "Payment Status",
+    paymentDate: "Payment Date",
+    beneficiary: "Beneficiary",
+    comment: "Comment",
+  },
 } as const;
 
 export type MemberStatus = "Active" | "Partially Active" | "Inactive";
+export const MEMBER_STATUSES: MemberStatus[] = ["Active", "Partially Active", "Inactive"];
+
+export type MemberRole =
+  | "Core Team"
+  | "Extended Core Team"
+  | "Network Member"
+  | "Support Member"
+  | "Admin";
+export const MEMBER_ROLES: MemberRole[] = [
+  "Core Team",
+  "Extended Core Team",
+  "Network Member",
+  "Support Member",
+  "Admin",
+];
+
 export type StaffingStatus = "In Progress" | "Not Started" | "Completed" | "Opportunity";
 export type TimesheetStatus = "Draft" | "Submitted" | "Deleted";
+
+export type ProjectStatus =
+  | "Completed"
+  | "In Progress"
+  | "Not Started"
+  | "On Hold"
+  | "Planned";
+export const PROJECT_STATUSES: ProjectStatus[] = [
+  "Planned",
+  "Not Started",
+  "In Progress",
+  "On Hold",
+  "Completed",
+];
+export type ProjectType = "Fixed Price" | "Time & Material";
+export const PROJECT_TYPES: ProjectType[] = ["Fixed Price", "Time & Material"];
+export type Currency = "EUR" | "USD" | "CHF";
+export const CURRENCIES: Currency[] = ["EUR", "USD", "CHF"];
+export type SowSigned = "Yes" | "In Progress" | "No";
+export const SOW_SIGNED_OPTIONS: SowSigned[] = ["Yes", "In Progress", "No"];
+
+export type PaymentDirection = "Inflow" | "Outflow";
+export type PaymentStatus =
+  | "Paid"
+  | "To be paid"
+  | "Payment executed"
+  | "Overdue"
+  | "Unpaid"
+  | "Pending";
 
 export type MemberRecord = {
   id: string;
@@ -68,6 +163,66 @@ export type MemberRecord = {
   fullName: string;
   email: string;
   status: MemberStatus;
+  role: MemberRole | "";
+  introduction: string;
+  country: string;
+  phone: string;
+  legalEntity: string;
+  title: string;
+};
+
+export type MemberAdminRecord = MemberRecord & {
+  dailyRate: number | null;
+  currency: Currency | "";
+};
+
+export type ClientRecord = {
+  id: string;
+  clientCode: string;
+  clientName: string;
+  industry: string;
+  country: string;
+  keyContact: string;
+  notes: string;
+};
+
+export type ProjectRecord = {
+  id: string;
+  projectCode: string;
+  projectName: string;
+  clientRecordIds: string[];
+  clientCodes: string[];
+  type: ProjectType | "";
+  objective: string;
+  startDate: string | null;
+  endDate: string | null;
+  currency: Currency | "";
+  totalAmount: number | null;
+  fxToEur: number | null;
+  totalAmountEur: number | null;
+  status: ProjectStatus | "";
+  sowSigned: SowSigned | "";
+  sowValidityDate: string | null;
+};
+
+export type PaymentRecord = {
+  id: string;
+  paymentCode: string;
+  direction: PaymentDirection | "";
+  type: string;
+  projectCodes: string[];
+  clientCodes: string[];
+  memberCodes: string[];
+  invoiceDate: string | null;
+  invoiceReference: string;
+  invoiceCurrency: Currency | "";
+  invoiceValue: number | null;
+  invoiceValueEur: number | null;
+  paymentTerms: string;
+  paymentStatus: PaymentStatus | "";
+  paymentDate: string | null;
+  beneficiary: string;
+  comment: string;
 };
 
 export type StaffingRecord = {
@@ -111,13 +266,61 @@ function firstLinkedId(r: AirtableRecord<FieldSet>, field: string): string {
   return "";
 }
 
+function linkedIds(r: AirtableRecord<FieldSet>, field: string): string[] {
+  const v = r.get(field);
+  if (!Array.isArray(v)) return [];
+  return v.filter((x): x is string => typeof x === "string");
+}
+
+function linkedDisplay(r: AirtableRecord<FieldSet>, field: string): string[] {
+  // Some fields return arrays of objects with {id,name} or plain strings depending
+  // on how Airtable resolves the linked primary values. We normalise to strings.
+  const v = r.get(field);
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((x) => {
+      if (typeof x === "string") return x;
+      if (x && typeof x === "object" && "name" in x && typeof (x as { name: unknown }).name === "string") {
+        return (x as { name: string }).name;
+      }
+      return "";
+    })
+    .filter(Boolean);
+}
+
 function num(r: AirtableRecord<FieldSet>, field: string): number {
   const v = r.get(field);
   return typeof v === "number" ? v : 0;
 }
 
+function numOrNull(r: AirtableRecord<FieldSet>, field: string): number | null {
+  const v = r.get(field);
+  return typeof v === "number" ? v : null;
+}
+
+function dateOrNull(r: AirtableRecord<FieldSet>, field: string): string | null {
+  const v = r.get(field);
+  return typeof v === "string" ? v : null;
+}
+
 function escape(formulaValue: string): string {
   return formulaValue.replace(/"/g, '\\"');
+}
+
+function memberFromRecord(r: AirtableRecord<FieldSet>): MemberRecord {
+  return {
+    id: r.id,
+    memberCode: str(r, FIELDS.networkMembers.memberCode),
+    fullName: str(r, FIELDS.networkMembers.fullName),
+    email: str(r, FIELDS.networkMembers.email),
+    status: str(r, FIELDS.networkMembers.status) as MemberStatus,
+    role: str(r, FIELDS.networkMembers.role) as MemberRole | "",
+    introduction: str(r, FIELDS.networkMembers.introduction),
+    country: str(r, FIELDS.networkMembers.country),
+    phone: str(r, FIELDS.networkMembers.phone),
+    legalEntity: str(r, FIELDS.networkMembers.legalEntity),
+    title: str(r, FIELDS.networkMembers.title),
+  };
 }
 
 export async function findActiveMemberByEmail(email: string): Promise<MemberRecord | null> {
@@ -132,29 +335,330 @@ export async function findActiveMemberByEmail(email: string): Promise<MemberReco
   const r = records[0];
   const status = str(r, FIELDS.networkMembers.status) as MemberStatus;
   if (status !== "Active" && status !== "Partially Active") return null;
-  return {
-    id: r.id,
-    memberCode: str(r, FIELDS.networkMembers.memberCode),
-    fullName: str(r, FIELDS.networkMembers.fullName),
-    email: str(r, FIELDS.networkMembers.email),
-    status,
-  };
+  return memberFromRecord(r);
 }
 
 export async function getMemberById(recordId: string): Promise<MemberRecord | null> {
   try {
     const r = await base(TABLES.networkMembers).find(recordId);
-    const status = str(r, FIELDS.networkMembers.status) as MemberStatus;
-    return {
-      id: r.id,
-      memberCode: str(r, FIELDS.networkMembers.memberCode),
-      fullName: str(r, FIELDS.networkMembers.fullName),
-      email: str(r, FIELDS.networkMembers.email),
-      status,
-    };
+    return memberFromRecord(r);
   } catch {
     return null;
   }
+}
+
+export type MemberProfileUpdate = {
+  fullName?: string;
+  introduction?: string;
+  country?: string;
+  phone?: string;
+  legalEntity?: string;
+};
+
+export async function updateMemberProfile(
+  recordId: string,
+  input: MemberProfileUpdate,
+): Promise<MemberRecord | null> {
+  const fields: Record<string, unknown> = {};
+  if (input.fullName !== undefined) fields[FIELDS.networkMembers.fullName] = input.fullName;
+  if (input.introduction !== undefined) fields[FIELDS.networkMembers.introduction] = input.introduction;
+  if (input.country !== undefined) fields[FIELDS.networkMembers.country] = input.country;
+  if (input.phone !== undefined) fields[FIELDS.networkMembers.phone] = input.phone;
+  if (input.legalEntity !== undefined) fields[FIELDS.networkMembers.legalEntity] = input.legalEntity;
+  if (Object.keys(fields).length === 0) return getMemberById(recordId);
+  const [updated] = await base(TABLES.networkMembers).update([
+    { id: recordId, fields: fields as FieldSet },
+  ]);
+  return memberFromRecord(updated);
+}
+
+// ---------------------------------------------------------------------------
+// Admin: Network Members
+// ---------------------------------------------------------------------------
+
+function memberAdminFromRecord(r: AirtableRecord<FieldSet>): MemberAdminRecord {
+  return {
+    ...memberFromRecord(r),
+    dailyRate: numOrNull(r, FIELDS.networkMembers.dailyRate),
+    currency: str(r, FIELDS.networkMembers.currency) as Currency | "",
+  };
+}
+
+export async function listAllMembers(): Promise<MemberAdminRecord[]> {
+  const records = await base(TABLES.networkMembers)
+    .select({
+      sort: [{ field: FIELDS.networkMembers.memberCode, direction: "asc" }],
+    })
+    .all();
+  return records.map(memberAdminFromRecord);
+}
+
+export type MemberAdminUpdate = MemberProfileUpdate & {
+  email?: string;
+  role?: MemberRole;
+  status?: MemberStatus;
+  title?: string;
+  dailyRate?: number | null;
+  currency?: Currency | "";
+};
+
+export async function adminUpdateMember(
+  recordId: string,
+  input: MemberAdminUpdate,
+): Promise<MemberAdminRecord | null> {
+  const fields: Record<string, unknown> = {};
+  if (input.fullName !== undefined) fields[FIELDS.networkMembers.fullName] = input.fullName;
+  if (input.email !== undefined) fields[FIELDS.networkMembers.email] = input.email;
+  if (input.introduction !== undefined) fields[FIELDS.networkMembers.introduction] = input.introduction;
+  if (input.country !== undefined) fields[FIELDS.networkMembers.country] = input.country;
+  if (input.phone !== undefined) fields[FIELDS.networkMembers.phone] = input.phone;
+  if (input.legalEntity !== undefined) fields[FIELDS.networkMembers.legalEntity] = input.legalEntity;
+  if (input.title !== undefined) fields[FIELDS.networkMembers.title] = input.title;
+  if (input.role !== undefined) fields[FIELDS.networkMembers.role] = input.role;
+  if (input.status !== undefined) fields[FIELDS.networkMembers.status] = input.status;
+  if (input.dailyRate !== undefined) fields[FIELDS.networkMembers.dailyRate] = input.dailyRate;
+  if (input.currency !== undefined) {
+    fields[FIELDS.networkMembers.currency] = input.currency === "" ? null : input.currency;
+  }
+  if (Object.keys(fields).length === 0) {
+    const r = await base(TABLES.networkMembers).find(recordId);
+    return memberAdminFromRecord(r);
+  }
+  const [updated] = await base(TABLES.networkMembers).update([
+    { id: recordId, fields: fields as FieldSet },
+  ]);
+  return memberAdminFromRecord(updated);
+}
+
+// ---------------------------------------------------------------------------
+// Admin: Clients
+// ---------------------------------------------------------------------------
+
+function clientFromRecord(r: AirtableRecord<FieldSet>): ClientRecord {
+  return {
+    id: r.id,
+    clientCode: str(r, FIELDS.clients.clientCode),
+    clientName: str(r, FIELDS.clients.clientName),
+    industry: str(r, FIELDS.clients.industry),
+    country: str(r, FIELDS.clients.country),
+    keyContact: str(r, FIELDS.clients.keyContact),
+    notes: str(r, FIELDS.clients.notes),
+  };
+}
+
+export async function listClients(): Promise<ClientRecord[]> {
+  const records = await base(TABLES.clients)
+    .select({ sort: [{ field: FIELDS.clients.clientCode, direction: "asc" }] })
+    .all();
+  return records.map(clientFromRecord);
+}
+
+export async function getClientById(recordId: string): Promise<ClientRecord | null> {
+  try {
+    const r = await base(TABLES.clients).find(recordId);
+    return clientFromRecord(r);
+  } catch {
+    return null;
+  }
+}
+
+export type ClientInput = {
+  clientCode: string;
+  clientName: string;
+  industry: string;
+  country: string;
+  keyContact: string;
+  notes: string;
+};
+
+function clientFields(input: ClientInput): Record<string, unknown> {
+  return {
+    [FIELDS.clients.clientCode]: input.clientCode,
+    [FIELDS.clients.clientName]: input.clientName,
+    [FIELDS.clients.industry]: input.industry,
+    [FIELDS.clients.country]: input.country,
+    [FIELDS.clients.keyContact]: input.keyContact,
+    [FIELDS.clients.notes]: input.notes,
+  };
+}
+
+export async function createClient(input: ClientInput): Promise<string> {
+  const [created] = await base(TABLES.clients).create([
+    { fields: clientFields(input) as FieldSet },
+  ]);
+  return created.id;
+}
+
+export async function updateClient(recordId: string, input: ClientInput): Promise<void> {
+  await base(TABLES.clients).update([
+    { id: recordId, fields: clientFields(input) as FieldSet },
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// Admin: Projects
+// ---------------------------------------------------------------------------
+
+function projectFromRecord(r: AirtableRecord<FieldSet>): ProjectRecord {
+  return {
+    id: r.id,
+    projectCode: str(r, FIELDS.projects.projectCode),
+    projectName: str(r, FIELDS.projects.projectName),
+    clientRecordIds: linkedIds(r, FIELDS.projects.clientCode),
+    clientCodes: linkedDisplay(r, FIELDS.projects.clientCode),
+    type: str(r, FIELDS.projects.type) as ProjectType | "",
+    objective: str(r, FIELDS.projects.objective),
+    startDate: dateOrNull(r, FIELDS.projects.startDate),
+    endDate: dateOrNull(r, FIELDS.projects.endDate),
+    currency: str(r, FIELDS.projects.currency) as Currency | "",
+    totalAmount: numOrNull(r, FIELDS.projects.totalAmount),
+    fxToEur: numOrNull(r, FIELDS.projects.fxToEur),
+    totalAmountEur: numOrNull(r, FIELDS.projects.totalAmountEur),
+    status: str(r, FIELDS.projects.status) as ProjectStatus | "",
+    sowSigned: str(r, FIELDS.projects.sowSigned) as SowSigned | "",
+    sowValidityDate: dateOrNull(r, FIELDS.projects.sowValidityDate),
+  };
+}
+
+export async function listProjects(): Promise<ProjectRecord[]> {
+  const records = await base(TABLES.projects)
+    .select({ sort: [{ field: FIELDS.projects.projectCode, direction: "asc" }] })
+    .all();
+  return records.map(projectFromRecord);
+}
+
+export async function getProjectById(recordId: string): Promise<ProjectRecord | null> {
+  try {
+    const r = await base(TABLES.projects).find(recordId);
+    return projectFromRecord(r);
+  } catch {
+    return null;
+  }
+}
+
+export type ProjectInput = {
+  projectCode: string;
+  projectName: string;
+  clientRecordIds: string[];
+  type: ProjectType | "";
+  objective: string;
+  startDate: string | null;
+  endDate: string | null;
+  currency: Currency | "";
+  totalAmount: number | null;
+  fxToEur: number | null;
+  status: ProjectStatus | "";
+  sowSigned: SowSigned | "";
+  sowValidityDate: string | null;
+};
+
+function projectFields(input: ProjectInput): Record<string, unknown> {
+  return {
+    [FIELDS.projects.projectCode]: input.projectCode,
+    [FIELDS.projects.projectName]: input.projectName,
+    [FIELDS.projects.clientCode]: input.clientRecordIds,
+    [FIELDS.projects.type]: input.type === "" ? null : input.type,
+    [FIELDS.projects.objective]: input.objective,
+    [FIELDS.projects.startDate]: input.startDate,
+    [FIELDS.projects.endDate]: input.endDate,
+    [FIELDS.projects.currency]: input.currency === "" ? null : input.currency,
+    [FIELDS.projects.totalAmount]: input.totalAmount,
+    [FIELDS.projects.fxToEur]: input.fxToEur,
+    [FIELDS.projects.status]: input.status === "" ? null : input.status,
+    [FIELDS.projects.sowSigned]: input.sowSigned === "" ? null : input.sowSigned,
+    [FIELDS.projects.sowValidityDate]: input.sowValidityDate,
+  };
+}
+
+export async function createProject(input: ProjectInput): Promise<string> {
+  const [created] = await base(TABLES.projects).create([
+    { fields: projectFields(input) as FieldSet },
+  ]);
+  return created.id;
+}
+
+export async function updateProject(recordId: string, input: ProjectInput): Promise<void> {
+  await base(TABLES.projects).update([
+    { id: recordId, fields: projectFields(input) as FieldSet },
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// Admin: Timesheets (all members)
+// ---------------------------------------------------------------------------
+
+export type AdminTimesheetRecord = TimesheetRecord & {
+  memberCode: string;
+  memberName: string;
+};
+
+export async function listAllTimesheets(): Promise<AdminTimesheetRecord[]> {
+  // Staffings across all members: we fetch them all and index by record id.
+  const [tsRecords, stRecords, projectNames, memberById] = await Promise.all([
+    base(TABLES.timesheets)
+      .select({
+        sort: [{ field: FIELDS.timesheets.startDate, direction: "desc" }],
+      })
+      .all(),
+    base(TABLES.projectStaffing).select().all(),
+    getProjectNameMap(),
+    listAllMembers().then((list) => new Map(list.map((m) => [m.id, m]))),
+  ]);
+  const staffingIdx = new Map<string, StaffingRecord>();
+  for (const r of stRecords) {
+    const projectCode = str(r, FIELDS.projectStaffing.projectCode);
+    staffingIdx.set(r.id, {
+      id: r.id,
+      staffingCode: str(r, FIELDS.projectStaffing.staffingCode),
+      projectCode,
+      projectName: projectNames.get(projectCode) ?? "",
+      startDate: dateOrNull(r, FIELDS.projectStaffing.startDate),
+      endDate: dateOrNull(r, FIELDS.projectStaffing.endDate),
+      status: (str(r, FIELDS.projectStaffing.status) as StaffingStatus) || null,
+    });
+  }
+  return tsRecords.map((r) => {
+    const ts = toTimesheet(r, staffingIdx);
+    const member = memberById.get(ts.memberRecordId);
+    return {
+      ...ts,
+      memberCode: member?.memberCode ?? ts.memberRecordId,
+      memberName: member?.fullName ?? "",
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Admin: Payments
+// ---------------------------------------------------------------------------
+
+function paymentFromRecord(r: AirtableRecord<FieldSet>): PaymentRecord {
+  return {
+    id: r.id,
+    paymentCode: str(r, FIELDS.payments.paymentCode),
+    direction: str(r, FIELDS.payments.direction) as PaymentDirection | "",
+    type: str(r, FIELDS.payments.type),
+    projectCodes: linkedDisplay(r, FIELDS.payments.project),
+    clientCodes: linkedDisplay(r, FIELDS.payments.client),
+    memberCodes: linkedDisplay(r, FIELDS.payments.member),
+    invoiceDate: dateOrNull(r, FIELDS.payments.invoiceDate),
+    invoiceReference: str(r, FIELDS.payments.invoiceReference),
+    invoiceCurrency: str(r, FIELDS.payments.invoiceCurrency) as Currency | "",
+    invoiceValue: numOrNull(r, FIELDS.payments.invoiceValue),
+    invoiceValueEur: numOrNull(r, FIELDS.payments.invoiceValueEur),
+    paymentTerms: str(r, FIELDS.payments.paymentTerms),
+    paymentStatus: str(r, FIELDS.payments.paymentStatus) as PaymentStatus | "",
+    paymentDate: dateOrNull(r, FIELDS.payments.paymentDate),
+    beneficiary: str(r, FIELDS.payments.beneficiary),
+    comment: str(r, FIELDS.payments.comment),
+  };
+}
+
+export async function listPayments(): Promise<PaymentRecord[]> {
+  const records = await base(TABLES.payments)
+    .select({ sort: [{ field: FIELDS.payments.invoiceDate, direction: "desc" }] })
+    .all();
+  return records.map(paymentFromRecord);
 }
 
 async function getProjectNameMap(): Promise<Map<string, string>> {
