@@ -210,6 +210,9 @@ export type PaymentRecord = {
   paymentCode: string;
   direction: PaymentDirection | "";
   type: string;
+  projectRecordIds: string[];
+  clientRecordIds: string[];
+  memberRecordIds: string[];
   projectCodes: string[];
   clientCodes: string[];
   memberCodes: string[];
@@ -217,6 +220,7 @@ export type PaymentRecord = {
   invoiceReference: string;
   invoiceCurrency: Currency | "";
   invoiceValue: number | null;
+  fxRateToEur: number | null;
   invoiceValueEur: number | null;
   paymentTerms: string;
   paymentStatus: PaymentStatus | "";
@@ -402,6 +406,69 @@ export type MemberAdminUpdate = MemberProfileUpdate & {
   currency?: Currency | "";
 };
 
+export type MemberCreateInput = MemberAdminUpdate & {
+  memberCode: string;
+  fullName: string;
+  email: string;
+  status: MemberStatus;
+};
+
+export async function adminCreateMember(input: MemberCreateInput): Promise<MemberAdminRecord> {
+  const fields: Record<string, unknown> = {
+    [FIELDS.networkMembers.memberCode]: input.memberCode,
+    [FIELDS.networkMembers.fullName]: input.fullName,
+    [FIELDS.networkMembers.email]: input.email,
+    [FIELDS.networkMembers.status]: input.status,
+  };
+  if (input.introduction !== undefined) fields[FIELDS.networkMembers.introduction] = input.introduction;
+  if (input.country !== undefined) fields[FIELDS.networkMembers.country] = input.country;
+  if (input.phone !== undefined) fields[FIELDS.networkMembers.phone] = input.phone;
+  if (input.legalEntity !== undefined) fields[FIELDS.networkMembers.legalEntity] = input.legalEntity;
+  if (input.title !== undefined) fields[FIELDS.networkMembers.title] = input.title;
+  if (input.role !== undefined) fields[FIELDS.networkMembers.role] = input.role;
+  if (input.dailyRate !== undefined) fields[FIELDS.networkMembers.dailyRate] = input.dailyRate;
+  if (input.currency !== undefined && input.currency !== "") {
+    fields[FIELDS.networkMembers.currency] = input.currency;
+  }
+  const [created] = await base(TABLES.networkMembers).create([
+    { fields: fields as FieldSet },
+  ]);
+  return memberAdminFromRecord(created);
+}
+
+export async function adminDeleteMember(recordId: string): Promise<void> {
+  await base(TABLES.networkMembers).destroy([recordId]);
+}
+
+export async function findMemberByEmail(
+  email: string,
+  excludeRecordId?: string,
+): Promise<MemberAdminRecord | null> {
+  const normalized = email.trim().toLowerCase();
+  const records = await base(TABLES.networkMembers)
+    .select({
+      filterByFormula: `LOWER({${FIELDS.networkMembers.email}}) = "${escape(normalized)}"`,
+      maxRecords: 5,
+    })
+    .firstPage();
+  const match = records.find((r) => r.id !== excludeRecordId);
+  return match ? memberAdminFromRecord(match) : null;
+}
+
+export async function findMemberByCode(
+  memberCode: string,
+  excludeRecordId?: string,
+): Promise<MemberAdminRecord | null> {
+  const records = await base(TABLES.networkMembers)
+    .select({
+      filterByFormula: `{${FIELDS.networkMembers.memberCode}} = "${escape(memberCode)}"`,
+      maxRecords: 5,
+    })
+    .firstPage();
+  const match = records.find((r) => r.id !== excludeRecordId);
+  return match ? memberAdminFromRecord(match) : null;
+}
+
 export async function adminUpdateMember(
   recordId: string,
   input: MemberAdminUpdate,
@@ -495,6 +562,24 @@ export async function updateClient(recordId: string, input: ClientInput): Promis
   ]);
 }
 
+export async function deleteClient(recordId: string): Promise<void> {
+  await base(TABLES.clients).destroy([recordId]);
+}
+
+export async function findClientByCode(
+  code: string,
+  excludeRecordId?: string,
+): Promise<ClientRecord | null> {
+  const records = await base(TABLES.clients)
+    .select({
+      filterByFormula: `{${FIELDS.clients.clientCode}} = "${escape(code)}"`,
+      maxRecords: 5,
+    })
+    .firstPage();
+  const match = records.find((r) => r.id !== excludeRecordId);
+  return match ? clientFromRecord(match) : null;
+}
+
 // ---------------------------------------------------------------------------
 // Admin: Projects
 // ---------------------------------------------------------------------------
@@ -583,6 +668,33 @@ export async function updateProject(recordId: string, input: ProjectInput): Prom
   ]);
 }
 
+export async function deleteProject(recordId: string): Promise<void> {
+  await base(TABLES.projects).destroy([recordId]);
+}
+
+// Compute the next project code for a given client and year, e.g. AGX-2026-01.
+// Scans existing project codes that match the {CLIENT}-{YEAR}-NN prefix and
+// picks the smallest unused two-digit suffix.
+export async function nextProjectCode(clientCode: string, year: number): Promise<string> {
+  const prefix = `${clientCode}-${year}-`;
+  const records = await base(TABLES.projects)
+    .select({
+      fields: [FIELDS.projects.projectCode],
+      filterByFormula: `LEFT({${FIELDS.projects.projectCode}}, ${prefix.length}) = "${escape(prefix)}"`,
+    })
+    .all();
+  const used = new Set<number>();
+  for (const r of records) {
+    const code = str(r, FIELDS.projects.projectCode);
+    const tail = code.slice(prefix.length);
+    const n = parseInt(tail, 10);
+    if (Number.isFinite(n) && n > 0) used.add(n);
+  }
+  let n = 1;
+  while (used.has(n)) n += 1;
+  return `${prefix}${String(n).padStart(2, "0")}`;
+}
+
 // ---------------------------------------------------------------------------
 // Admin: Timesheets (all members)
 // ---------------------------------------------------------------------------
@@ -638,6 +750,9 @@ function paymentFromRecord(r: AirtableRecord<FieldSet>): PaymentRecord {
     paymentCode: str(r, FIELDS.payments.paymentCode),
     direction: str(r, FIELDS.payments.direction) as PaymentDirection | "",
     type: str(r, FIELDS.payments.type),
+    projectRecordIds: linkedIds(r, FIELDS.payments.project),
+    clientRecordIds: linkedIds(r, FIELDS.payments.client),
+    memberRecordIds: linkedIds(r, FIELDS.payments.member),
     projectCodes: linkedDisplay(r, FIELDS.payments.project),
     clientCodes: linkedDisplay(r, FIELDS.payments.client),
     memberCodes: linkedDisplay(r, FIELDS.payments.member),
@@ -645,6 +760,7 @@ function paymentFromRecord(r: AirtableRecord<FieldSet>): PaymentRecord {
     invoiceReference: str(r, FIELDS.payments.invoiceReference),
     invoiceCurrency: str(r, FIELDS.payments.invoiceCurrency) as Currency | "",
     invoiceValue: numOrNull(r, FIELDS.payments.invoiceValue),
+    fxRateToEur: numOrNull(r, FIELDS.payments.fxRateToEur),
     invoiceValueEur: numOrNull(r, FIELDS.payments.invoiceValueEur),
     paymentTerms: str(r, FIELDS.payments.paymentTerms),
     paymentStatus: str(r, FIELDS.payments.paymentStatus) as PaymentStatus | "",
@@ -659,6 +775,72 @@ export async function listPayments(): Promise<PaymentRecord[]> {
     .select({ sort: [{ field: FIELDS.payments.invoiceDate, direction: "desc" }] })
     .all();
   return records.map(paymentFromRecord);
+}
+
+export async function getPaymentById(recordId: string): Promise<PaymentRecord | null> {
+  try {
+    const r = await base(TABLES.payments).find(recordId);
+    return paymentFromRecord(r);
+  } catch {
+    return null;
+  }
+}
+
+export type PaymentInput = {
+  direction: PaymentDirection | "";
+  type: string;
+  projectRecordIds: string[];
+  clientRecordIds: string[];
+  memberRecordIds: string[];
+  invoiceDate: string | null;
+  invoiceReference: string;
+  invoiceCurrency: Currency | "";
+  invoiceValue: number | null;
+  fxRateToEur: number | null;
+  invoiceValueEur: number | null;
+  paymentTerms: string;
+  paymentStatus: PaymentStatus | "";
+  paymentDate: string | null;
+  beneficiary: string;
+  comment: string;
+};
+
+function paymentFields(input: PaymentInput): Record<string, unknown> {
+  return {
+    [FIELDS.payments.direction]: input.direction === "" ? null : input.direction,
+    [FIELDS.payments.type]: input.type,
+    [FIELDS.payments.project]: input.projectRecordIds,
+    [FIELDS.payments.client]: input.clientRecordIds,
+    [FIELDS.payments.member]: input.memberRecordIds,
+    [FIELDS.payments.invoiceDate]: input.invoiceDate,
+    [FIELDS.payments.invoiceReference]: input.invoiceReference,
+    [FIELDS.payments.invoiceCurrency]: input.invoiceCurrency === "" ? null : input.invoiceCurrency,
+    [FIELDS.payments.invoiceValue]: input.invoiceValue,
+    [FIELDS.payments.fxRateToEur]: input.fxRateToEur,
+    [FIELDS.payments.invoiceValueEur]: input.invoiceValueEur,
+    [FIELDS.payments.paymentTerms]: input.paymentTerms,
+    [FIELDS.payments.paymentStatus]: input.paymentStatus === "" ? null : input.paymentStatus,
+    [FIELDS.payments.paymentDate]: input.paymentDate,
+    [FIELDS.payments.beneficiary]: input.beneficiary,
+    [FIELDS.payments.comment]: input.comment,
+  };
+}
+
+export async function createPayment(input: PaymentInput): Promise<string> {
+  const [created] = await base(TABLES.payments).create([
+    { fields: paymentFields(input) as FieldSet },
+  ]);
+  return created.id;
+}
+
+export async function updatePayment(recordId: string, input: PaymentInput): Promise<void> {
+  await base(TABLES.payments).update([
+    { id: recordId, fields: paymentFields(input) as FieldSet },
+  ]);
+}
+
+export async function deletePayment(recordId: string): Promise<void> {
+  await base(TABLES.payments).destroy([recordId]);
 }
 
 async function getProjectNameMap(): Promise<Map<string, string>> {

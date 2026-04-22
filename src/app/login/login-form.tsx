@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 
 const errorMessages: Record<string, string> = {
@@ -46,8 +47,12 @@ export default function LoginForm() {
   return (
     <main className="min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-md bg-white rounded-xl shadow-sm border border-slate-200 p-8">
-        <h1 className="text-2xl font-semibold">HTP42 Portal</h1>
-        <p className="mt-1 text-sm text-slate-600">Sign in with your network-member email.</p>
+        <div className="flex flex-col items-center text-center">
+          <Image src="/logo-full.svg" alt="HealthTech Partners 42" width={220} height={96} priority />
+        </div>
+        <p className="mt-6 text-center text-sm text-slate-600">
+          Sign in with your network-member email.
+        </p>
 
         {sent ? (
           <div className="mt-6 rounded-lg bg-brand-50 text-brand-700 p-4 text-sm">

@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import { env } from "./env";
 import { findActiveMemberByEmail, type MemberRecord } from "./airtable";
+import { isAdmin, type SessionPayload } from "./session";
 
 const SESSION_COOKIE = "htp42_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
@@ -9,17 +10,8 @@ const MAGIC_TTL_SECONDS = 60 * 15; // 15 minutes
 
 const secret = () => new TextEncoder().encode(env.authSecret);
 
-export type SessionPayload = {
-  sub: string; // Network Members record ID
-  memberCode: string;
-  email: string;
-  fullName: string;
-  role: string; // "Admin" gates admin UI; empty/other = regular member
-};
-
-export function isAdmin(session: SessionPayload | null | undefined): boolean {
-  return !!session && session.role === "Admin";
-}
+export { isAdmin };
+export type { SessionPayload };
 
 export type MagicPayload = {
   kind: "magic";

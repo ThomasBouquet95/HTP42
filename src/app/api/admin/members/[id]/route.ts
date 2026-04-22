@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
 import {
+  adminDeleteMember,
   adminUpdateMember,
+  findMemberByEmail,
   MEMBER_ROLES,
   MEMBER_STATUSES,
   CURRENCIES,
@@ -42,6 +44,17 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   }
 
   const d = parsed.data;
+
+  if (d.email !== undefined) {
+    const clash = await findMemberByEmail(d.email, id);
+    if (clash) {
+      return NextResponse.json(
+        { error: `Email ${d.email} is already in use.` },
+        { status: 409 },
+      );
+    }
+  }
+
   const updated = await adminUpdateMember(id, {
     fullName: d.fullName,
     email: d.email,
@@ -57,4 +70,19 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   });
   if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ member: updated });
+}
+
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const session = await requireAdminSession();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const { id } = await params;
+  if (id === session.sub) {
+    return NextResponse.json(
+      { error: "You cannot delete your own member record." },
+      { status: 400 },
+    );
+  }
+  await adminDeleteMember(id);
+  return NextResponse.json({ ok: true });
 }

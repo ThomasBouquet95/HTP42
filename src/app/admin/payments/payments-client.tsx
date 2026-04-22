@@ -1,7 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { PaymentRecord } from "@/lib/airtable";
+import { useRouter } from "next/navigation";
+import { Modal, ConfirmDialog } from "@/components/modal";
+import type { Currency, PaymentRecord } from "@/lib/airtable";
+
+type LinkOpt = { id: string; code: string; name: string };
+
+type Props = {
+  payments: PaymentRecord[];
+  projects: LinkOpt[];
+  clients: LinkOpt[];
+  members: LinkOpt[];
+  currencies: readonly Currency[];
+};
 
 type Filters = {
   direction: "All" | "Inflow" | "Outflow";
@@ -19,31 +31,98 @@ const DEFAULT_FILTERS: Filters = {
   to: "",
 };
 
-type Props = {
-  payments: PaymentRecord[];
+const PAYMENT_STATUSES = [
+  "Paid",
+  "To be paid",
+  "Payment executed",
+  "Overdue",
+  "Unpaid",
+  "Pending",
+] as const;
+
+type FormState = {
+  direction: "" | "Inflow" | "Outflow";
+  type: string;
+  projectId: string;
+  clientId: string;
+  memberId: string;
+  invoiceDate: string;
+  invoiceReference: string;
+  invoiceCurrency: string;
+  invoiceValue: string;
+  fxRateToEur: string;
+  paymentTerms: string;
+  paymentStatus: string;
+  paymentDate: string;
+  beneficiary: string;
+  comment: string;
 };
+
+const EMPTY_FORM: FormState = {
+  direction: "",
+  type: "",
+  projectId: "",
+  clientId: "",
+  memberId: "",
+  invoiceDate: "",
+  invoiceReference: "",
+  invoiceCurrency: "",
+  invoiceValue: "",
+  fxRateToEur: "",
+  paymentTerms: "",
+  paymentStatus: "",
+  paymentDate: "",
+  beneficiary: "",
+  comment: "",
+};
+
+function fromRecord(p: PaymentRecord): FormState {
+  return {
+    direction: p.direction || "",
+    type: p.type,
+    projectId: p.projectRecordIds[0] ?? "",
+    clientId: p.clientRecordIds[0] ?? "",
+    memberId: p.memberRecordIds[0] ?? "",
+    invoiceDate: p.invoiceDate ?? "",
+    invoiceReference: p.invoiceReference,
+    invoiceCurrency: p.invoiceCurrency,
+    invoiceValue: p.invoiceValue == null ? "" : String(p.invoiceValue),
+    fxRateToEur: p.fxRateToEur == null ? "" : String(p.fxRateToEur),
+    paymentTerms: p.paymentTerms,
+    paymentStatus: p.paymentStatus,
+    paymentDate: p.paymentDate ?? "",
+    beneficiary: p.beneficiary,
+    comment: p.comment,
+  };
+}
 
 function formatMoney(value: number | null, currency: string): string {
   if (value == null) return "—";
-  return `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}${
-    currency ? " " + currency : ""
-  }`;
+  return `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}${currency ? " " + currency : ""}`;
 }
 
-export function PaymentsClient({ payments }: Props) {
+export function PaymentsClient({ payments, projects, clients, members, currencies }: Props) {
+  const router = useRouter();
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [editing, setEditing] = useState<PaymentRecord | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<PaymentRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const statusOptions = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(PAYMENT_STATUSES);
     for (const p of payments) if (p.paymentStatus) set.add(p.paymentStatus);
     return [...set].sort();
   }, [payments]);
 
   const currencyOptions = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(currencies as readonly string[]);
     for (const p of payments) if (p.invoiceCurrency) set.add(p.invoiceCurrency);
     return [...set].sort();
-  }, [payments]);
+  }, [payments, currencies]);
 
   const filtered = useMemo(() => {
     return payments.filter((p) => {
@@ -59,36 +138,134 @@ export function PaymentsClient({ payments }: Props) {
   const totals = useMemo(() => {
     let inflowEur = 0;
     let outflowEur = 0;
-    const inflowByCcy = new Map<string, number>();
-    const outflowByCcy = new Map<string, number>();
     for (const p of filtered) {
-      const amount = p.invoiceValue ?? 0;
       const eur = p.invoiceValueEur ?? 0;
-      if (p.direction === "Inflow") {
-        inflowEur += eur;
-        inflowByCcy.set(
-          p.invoiceCurrency || "—",
-          (inflowByCcy.get(p.invoiceCurrency || "—") ?? 0) + amount,
-        );
-      } else if (p.direction === "Outflow") {
-        outflowEur += eur;
-        outflowByCcy.set(
-          p.invoiceCurrency || "—",
-          (outflowByCcy.get(p.invoiceCurrency || "—") ?? 0) + amount,
-        );
-      }
+      if (p.direction === "Inflow") inflowEur += eur;
+      else if (p.direction === "Outflow") outflowEur += eur;
     }
-    return {
-      inflowEur,
-      outflowEur,
-      netEur: inflowEur - outflowEur,
-      inflowByCcy: [...inflowByCcy.entries()].sort((a, b) => a[0].localeCompare(b[0])),
-      outflowByCcy: [...outflowByCcy.entries()].sort((a, b) => a[0].localeCompare(b[0])),
-    };
+    return { inflowEur, outflowEur, netEur: inflowEur - outflowEur };
+  }, [filtered]);
+
+  const monthly = useMemo(() => {
+    const map = new Map<string, { inflow: number; outflow: number }>();
+    for (const p of filtered) {
+      if (!p.invoiceDate) continue;
+      const key = p.invoiceDate.slice(0, 7);
+      const cur = map.get(key) ?? { inflow: 0, outflow: 0 };
+      const eur = p.invoiceValueEur ?? 0;
+      if (p.direction === "Inflow") cur.inflow += eur;
+      else if (p.direction === "Outflow") cur.outflow += eur;
+      map.set(key, cur);
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [filtered]);
+
+  const statusBreakdown = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of filtered) {
+      const key = p.paymentStatus || "—";
+      map.set(key, (map.get(key) ?? 0) + (p.invoiceValueEur ?? 0));
+    }
+    return [...map.entries()].sort((a, b) => b[1] - a[1]);
   }, [filtered]);
 
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function openCreate() {
+    setEditing(null);
+    setCreating(true);
+    setForm(EMPTY_FORM);
+    setError(null);
+  }
+
+  function openEdit(p: PaymentRecord) {
+    setEditing(p);
+    setCreating(false);
+    setForm(fromRecord(p));
+    setError(null);
+  }
+
+  function closeModal() {
+    if (saving) return;
+    setEditing(null);
+    setCreating(false);
+    setError(null);
+  }
+
+  function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  // Derive Invoice Value EUR from value × FX so the dashboard's EUR totals line up.
+  const derivedValueEur = useMemo(() => {
+    const v = form.invoiceValue === "" ? null : Number(form.invoiceValue);
+    const fx = form.fxRateToEur === "" ? null : Number(form.fxRateToEur);
+    if (v == null || fx == null || !Number.isFinite(v) || !Number.isFinite(fx)) return null;
+    return v * fx;
+  }, [form.invoiceValue, form.fxRateToEur]);
+
+  async function submit() {
+    setSaving(true);
+    setError(null);
+    try {
+      const body = {
+        direction: form.direction,
+        type: form.type,
+        projectRecordIds: form.projectId ? [form.projectId] : [],
+        clientRecordIds: form.clientId ? [form.clientId] : [],
+        memberRecordIds: form.memberId ? [form.memberId] : [],
+        invoiceDate: form.invoiceDate || null,
+        invoiceReference: form.invoiceReference,
+        invoiceCurrency: form.invoiceCurrency,
+        invoiceValue: form.invoiceValue === "" ? null : Number(form.invoiceValue),
+        fxRateToEur: form.fxRateToEur === "" ? null : Number(form.fxRateToEur),
+        invoiceValueEur: derivedValueEur,
+        paymentTerms: form.paymentTerms,
+        paymentStatus: form.paymentStatus,
+        paymentDate: form.paymentDate || null,
+        beneficiary: form.beneficiary,
+        comment: form.comment,
+      };
+      const url = creating ? "/api/admin/payments" : `/api/admin/payments/${editing!.id}`;
+      const method = creating ? "POST" : "PUT";
+      const res = await fetch(url, {
+        method,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? "Save failed.");
+      }
+      closeModal();
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/admin/payments/${deleteTarget.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? "Delete failed.");
+      }
+      const wasEditing = editing?.id === deleteTarget.id;
+      setDeleteTarget(null);
+      if (wasEditing) closeModal();
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed.");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   function exportCsv() {
@@ -103,6 +280,7 @@ export function PaymentsClient({ payments }: Props) {
       "Invoice Reference",
       "Currency",
       "Invoice Value",
+      "FX to EUR",
       "Invoice Value EUR",
       "Payment Terms",
       "Payment Status",
@@ -123,6 +301,7 @@ export function PaymentsClient({ payments }: Props) {
         p.invoiceReference,
         p.invoiceCurrency,
         p.invoiceValue == null ? "" : String(p.invoiceValue),
+        p.fxRateToEur == null ? "" : String(p.fxRateToEur),
         p.invoiceValueEur == null ? "" : p.invoiceValueEur.toFixed(2),
         p.paymentTerms,
         p.paymentStatus,
@@ -143,6 +322,8 @@ export function PaymentsClient({ payments }: Props) {
     URL.revokeObjectURL(url);
   }
 
+  const modalOpen = creating || !!editing;
+
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg border border-slate-200 p-4">
@@ -151,30 +332,27 @@ export function PaymentsClient({ payments }: Props) {
             label="Direction"
             value={filters.direction}
             onChange={(v) => update("direction", v as Filters["direction"])}
-            options={[
-              { value: "All", label: "All" },
-              { value: "Inflow", label: "Inflow" },
-              { value: "Outflow", label: "Outflow" },
-            ]}
-          />
-          <Select
-            label="Status"
-            value={filters.status}
-            onChange={(v) => update("status", v)}
-            options={[
-              { value: "All", label: "All statuses" },
-              ...statusOptions.map((s) => ({ value: s, label: s })),
-            ]}
-          />
-          <Select
-            label="Currency"
-            value={filters.currency}
-            onChange={(v) => update("currency", v)}
-            options={[
-              { value: "All", label: "All currencies" },
-              ...currencyOptions.map((c) => ({ value: c, label: c })),
-            ]}
-          />
+          >
+            <option value="All">All</option>
+            <option value="Inflow">Inflow</option>
+            <option value="Outflow">Outflow</option>
+          </Select>
+          <Select label="Status" value={filters.status} onChange={(v) => update("status", v)}>
+            <option value="All">All statuses</option>
+            {statusOptions.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </Select>
+          <Select label="Currency" value={filters.currency} onChange={(v) => update("currency", v)}>
+            <option value="All">All currencies</option>
+            {currencyOptions.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </Select>
           <DateInput label="From" value={filters.from} onChange={(v) => update("from", v)} />
           <DateInput label="To" value={filters.to} onChange={(v) => update("to", v)} />
         </div>
@@ -194,9 +372,16 @@ export function PaymentsClient({ payments }: Props) {
               type="button"
               onClick={exportCsv}
               disabled={filtered.length === 0}
-              className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
             >
               Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={openCreate}
+              className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700"
+            >
+              + New payment
             </button>
           </div>
         </div>
@@ -221,21 +406,23 @@ export function PaymentsClient({ payments }: Props) {
         />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <BreakdownCard
-          title="Inflow by currency"
-          rows={totals.inflowByCcy.map(([ccy, amount]) => ({
-            label: ccy,
-            right: amount.toLocaleString("en-US", { maximumFractionDigits: 2 }),
-          }))}
-        />
-        <BreakdownCard
-          title="Outflow by currency"
-          rows={totals.outflowByCcy.map(([ccy, amount]) => ({
-            label: ccy,
-            right: amount.toLocaleString("en-US", { maximumFractionDigits: 2 }),
-          }))}
-        />
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2 rounded-lg border border-slate-200 bg-white">
+          <div className="border-b border-slate-100 px-4 py-2 text-sm font-semibold text-slate-800">
+            Monthly inflow vs outflow (EUR)
+          </div>
+          <div className="p-4">
+            <MonthlyBarChart rows={monthly} />
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white">
+          <div className="border-b border-slate-100 px-4 py-2 text-sm font-semibold text-slate-800">
+            By payment status (EUR)
+          </div>
+          <div className="p-4">
+            <StatusBreakdown rows={statusBreakdown} />
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
@@ -252,12 +439,13 @@ export function PaymentsClient({ payments }: Props) {
               <th className="text-right px-4 py-2 font-medium">EUR</th>
               <th className="text-left px-4 py-2 font-medium">Status</th>
               <th className="text-left px-4 py-2 font-medium">Paid on</th>
+              <th />
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center text-slate-500 py-10">
+                <td colSpan={11} className="text-center text-slate-500 py-10">
                   No payments match these filters.
                 </td>
               </tr>
@@ -268,15 +456,11 @@ export function PaymentsClient({ payments }: Props) {
                     ? p.clientCodes.join(", ") || "—"
                     : p.memberCodes.join(", ") || p.beneficiary || "—";
                 return (
-                  <tr key={p.id} className="border-t border-slate-100 align-top">
+                  <tr key={p.id} className="border-t border-slate-100 align-top hover:bg-slate-50">
                     <td className="px-4 py-2 font-mono text-xs">{p.paymentCode}</td>
-                    <td className="px-4 py-2">
-                      <DirectionPill direction={p.direction} />
-                    </td>
+                    <td className="px-4 py-2"><DirectionPill direction={p.direction} /></td>
                     <td className="px-4 py-2">{p.type || "—"}</td>
-                    <td className="px-4 py-2 font-mono text-xs">
-                      {p.projectCodes.join(", ") || "—"}
-                    </td>
+                    <td className="px-4 py-2 font-mono text-xs">{p.projectCodes.join(", ") || "—"}</td>
                     <td className="px-4 py-2">{counterparty}</td>
                     <td className="px-4 py-2 whitespace-nowrap">{p.invoiceDate ?? "—"}</td>
                     <td className="px-4 py-2 text-right tabular-nums">
@@ -289,6 +473,15 @@ export function PaymentsClient({ payments }: Props) {
                     </td>
                     <td className="px-4 py-2">{p.paymentStatus || "—"}</td>
                     <td className="px-4 py-2 whitespace-nowrap">{p.paymentDate ?? "—"}</td>
+                    <td className="px-4 py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(p)}
+                        className="text-brand-600 hover:text-brand-700 font-medium"
+                      >
+                        Edit
+                      </button>
+                    </td>
                   </tr>
                 );
               })
@@ -296,9 +489,300 @@ export function PaymentsClient({ payments }: Props) {
           </tbody>
         </table>
       </div>
+
+      <Modal
+        open={modalOpen}
+        onClose={closeModal}
+        title={creating ? "New payment" : `Edit ${editing?.paymentCode || "payment"}`}
+        size="xl"
+        footer={
+          <>
+            {!creating && editing ? (
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(editing)}
+                disabled={saving}
+                className="mr-auto rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+              >
+                Delete
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={closeModal}
+              disabled={saving}
+              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={submit}
+              disabled={saving}
+              className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-60"
+            >
+              {saving ? "Saving…" : creating ? "Create payment" : "Save changes"}
+            </button>
+          </>
+        }
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormSelect
+            label="Direction"
+            value={form.direction}
+            onChange={(v) => updateField("direction", v as FormState["direction"])}
+          >
+            <option value="">—</option>
+            <option value="Inflow">Inflow</option>
+            <option value="Outflow">Outflow</option>
+          </FormSelect>
+          <FormField label="Type" value={form.type} onChange={(v) => updateField("type", v)} />
+          <FormSelect
+            label="Project"
+            value={form.projectId}
+            onChange={(v) => updateField("projectId", v)}
+          >
+            <option value="">—</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.code} — {p.name}
+              </option>
+            ))}
+          </FormSelect>
+          <FormSelect
+            label="Client"
+            value={form.clientId}
+            onChange={(v) => updateField("clientId", v)}
+          >
+            <option value="">—</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.code} — {c.name}
+              </option>
+            ))}
+          </FormSelect>
+          <FormSelect
+            label="Member"
+            value={form.memberId}
+            onChange={(v) => updateField("memberId", v)}
+          >
+            <option value="">—</option>
+            {members.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.code} — {m.name}
+              </option>
+            ))}
+          </FormSelect>
+          <FormField
+            label="Invoice date"
+            value={form.invoiceDate}
+            onChange={(v) => updateField("invoiceDate", v)}
+            type="date"
+          />
+          <FormField
+            label="Invoice reference"
+            value={form.invoiceReference}
+            onChange={(v) => updateField("invoiceReference", v)}
+          />
+          <FormSelect
+            label="Invoice currency"
+            value={form.invoiceCurrency}
+            onChange={(v) => updateField("invoiceCurrency", v)}
+          >
+            <option value="">—</option>
+            {currencies.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </FormSelect>
+          <FormField
+            label="Invoice value"
+            value={form.invoiceValue}
+            onChange={(v) => updateField("invoiceValue", v)}
+            type="number"
+          />
+          <FormField
+            label="FX to EUR"
+            value={form.fxRateToEur}
+            onChange={(v) => updateField("fxRateToEur", v)}
+            type="number"
+          />
+          <FormField
+            label="Invoice value EUR"
+            value={derivedValueEur == null ? "" : derivedValueEur.toFixed(2)}
+            onChange={() => {}}
+            readOnly
+          />
+          <FormField
+            label="Payment terms"
+            value={form.paymentTerms}
+            onChange={(v) => updateField("paymentTerms", v)}
+          />
+          <FormSelect
+            label="Payment status"
+            value={form.paymentStatus}
+            onChange={(v) => updateField("paymentStatus", v)}
+          >
+            <option value="">—</option>
+            {PAYMENT_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </FormSelect>
+          <FormField
+            label="Payment date"
+            value={form.paymentDate}
+            onChange={(v) => updateField("paymentDate", v)}
+            type="date"
+          />
+          <FormField
+            label="Beneficiary"
+            value={form.beneficiary}
+            onChange={(v) => updateField("beneficiary", v)}
+          />
+        </div>
+        <label className="block mt-4">
+          <span className="text-sm font-medium text-slate-700">Comment</span>
+          <textarea
+            value={form.comment}
+            onChange={(e) => updateField("comment", e.target.value)}
+            rows={3}
+            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2"
+          />
+        </label>
+        {error ? (
+          <div className="mt-4 rounded-md bg-red-50 text-red-700 p-3 text-sm">{error}</div>
+        ) : null}
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete payment?"
+        message={
+          <>
+            This will permanently remove payment{" "}
+            <span className="font-mono">{deleteTarget?.paymentCode}</span>. This cannot be undone.
+          </>
+        }
+        confirmLabel="Delete"
+        confirmTone="danger"
+        busy={deleting}
+        onCancel={() => (deleting ? undefined : setDeleteTarget(null))}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Charts
+// ---------------------------------------------------------------------------
+
+function MonthlyBarChart({ rows }: { rows: [string, { inflow: number; outflow: number }][] }) {
+  if (rows.length === 0) {
+    return <div className="text-center text-sm text-slate-500 py-8">No data for this period.</div>;
+  }
+  const max = rows.reduce(
+    (m, [, v]) => Math.max(m, v.inflow, v.outflow),
+    0,
+  );
+  const barW = 18;
+  const groupW = barW * 2 + 6;
+  const gap = 14;
+  const chartH = 180;
+  const chartW = rows.length * (groupW + gap) + gap;
+
+  return (
+    <div className="overflow-x-auto">
+      <svg width={Math.max(chartW, 200)} height={chartH + 40} role="img" aria-label="Monthly inflow vs outflow">
+        {/* baseline */}
+        <line x1={0} x2={chartW} y1={chartH} y2={chartH} stroke="#e2e8f0" />
+        {rows.map(([month, v], i) => {
+          const x = gap + i * (groupW + gap);
+          const inH = max === 0 ? 0 : (v.inflow / max) * (chartH - 20);
+          const outH = max === 0 ? 0 : (v.outflow / max) * (chartH - 20);
+          return (
+            <g key={month}>
+              <rect
+                x={x}
+                y={chartH - inH}
+                width={barW}
+                height={inH}
+                fill="#1E91F9"
+                rx={2}
+              >
+                <title>{`${month} · Inflow: €${v.inflow.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
+              </rect>
+              <rect
+                x={x + barW + 6}
+                y={chartH - outH}
+                width={barW}
+                height={outH}
+                fill="#f87171"
+                rx={2}
+              >
+                <title>{`${month} · Outflow: €${v.outflow.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
+              </rect>
+              <text
+                x={x + groupW / 2}
+                y={chartH + 16}
+                textAnchor="middle"
+                fontSize="10"
+                fill="#64748b"
+              >
+                {month}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      <div className="mt-2 flex gap-4 text-xs text-slate-600">
+        <LegendDot color="#1E91F9" label="Inflow" />
+        <LegendDot color="#f87171" label="Outflow" />
+      </div>
+    </div>
+  );
+}
+
+function StatusBreakdown({ rows }: { rows: [string, number][] }) {
+  if (rows.length === 0) {
+    return <div className="text-center text-sm text-slate-500 py-8">No data.</div>;
+  }
+  const max = rows.reduce((m, [, v]) => Math.max(m, v), 0);
+  return (
+    <ul className="space-y-2">
+      {rows.map(([label, v]) => (
+        <li key={label}>
+          <div className="flex items-center justify-between text-xs text-slate-600">
+            <span className="font-medium text-slate-800">{label}</span>
+            <span className="tabular-nums">{v.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+          </div>
+          <div className="mt-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+            <div
+              className="h-full bg-brand-600"
+              style={{ width: max === 0 ? "0%" : `${Math.max(4, (v / max) * 100)}%` }}
+            />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+      {label}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Primitives
+// ---------------------------------------------------------------------------
 
 function DirectionPill({ direction }: { direction: string }) {
   if (!direction) return <span className="text-slate-400">—</span>;
@@ -317,12 +801,12 @@ function Select({
   label,
   value,
   onChange,
-  options,
+  children,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: { value: string; label: string }[];
+  children: React.ReactNode;
 }) {
   return (
     <label className="block text-sm">
@@ -332,11 +816,7 @@ function Select({
         onChange={(e) => onChange(e.target.value)}
         className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5"
       >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
+        {children}
       </select>
     </label>
   );
@@ -375,15 +855,9 @@ function StatCard({
   tone?: "positive" | "negative";
   accent?: boolean;
 }) {
-  const bg = accent
-    ? "bg-brand-50 border-brand-200"
-    : "bg-white border-slate-200";
+  const bg = accent ? "bg-brand-50 border-brand-200" : "bg-white border-slate-200";
   const valueColor =
-    tone === "positive"
-      ? "text-green-700"
-      : tone === "negative"
-      ? "text-red-700"
-      : "text-slate-900";
+    tone === "positive" ? "text-green-700" : tone === "negative" ? "text-red-700" : "text-slate-900";
   return (
     <div className={`rounded-lg border p-4 ${bg}`}>
       <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
@@ -392,31 +866,58 @@ function StatCard({
   );
 }
 
-function BreakdownCard({
-  title,
-  rows,
+function FormField({
+  label,
+  value,
+  onChange,
+  type = "text",
+  readOnly,
 }: {
-  title: string;
-  rows: { label: string; right: string }[];
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  readOnly?: boolean;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white">
-      <div className="border-b border-slate-100 px-4 py-2 text-sm font-semibold text-slate-800">
-        {title}
-      </div>
-      {rows.length === 0 ? (
-        <div className="px-4 py-6 text-center text-sm text-slate-500">No data.</div>
-      ) : (
-        <ul className="divide-y divide-slate-100">
-          {rows.map((r, i) => (
-            <li key={i} className="flex items-center justify-between px-4 py-2 text-sm">
-              <div className="font-medium text-slate-800">{r.label}</div>
-              <div className="font-semibold tabular-nums text-slate-900">{r.right}</div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <label className="block">
+      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        readOnly={readOnly}
+        step={type === "number" ? "any" : undefined}
+        className={`mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 ${
+          readOnly ? "bg-slate-50 text-slate-500" : ""
+        }`}
+      />
+    </label>
+  );
+}
+
+function FormSelect({
+  label,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2"
+      >
+        {children}
+      </select>
+    </label>
   );
 }
 

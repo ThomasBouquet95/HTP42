@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
-import { createClient } from "@/lib/airtable";
+import { createClient, findClientByCode } from "@/lib/airtable";
+
+const CODE = /^[A-Z]{3}$/;
 
 const schema = z.object({
-  clientCode: z.string().trim().min(1).max(60),
+  clientCode: z
+    .string()
+    .trim()
+    .regex(CODE, "Client code must be exactly 3 uppercase letters."),
   clientName: z.string().trim().min(1).max(200),
   industry: z.string().trim().max(120).optional().default(""),
   country: z.string().trim().max(120).optional().default(""),
@@ -22,6 +27,14 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
       { status: 400 },
+    );
+  }
+
+  const clash = await findClientByCode(parsed.data.clientCode);
+  if (clash) {
+    return NextResponse.json(
+      { error: `Client code ${parsed.data.clientCode} is already in use.` },
+      { status: 409 },
     );
   }
 

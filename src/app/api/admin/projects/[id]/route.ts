@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
 import {
+  deleteProject,
   getProjectById,
   updateProject,
   PROJECT_STATUSES,
@@ -66,5 +67,13 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     sowSigned: d.sowSigned as SowSigned | "",
     sowValidityDate: d.sowValidityDate ?? null,
   });
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const session = await requireAdminSession();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const { id } = await params;
+  await deleteProject(id);
   return NextResponse.json({ ok: true });
 }
