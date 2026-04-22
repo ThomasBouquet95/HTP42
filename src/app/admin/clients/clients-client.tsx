@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
+import { Button, FormField, FormTextarea } from "@/components/form-controls";
 import type { ClientRecord } from "@/lib/airtable";
 
 type Props = { clients: ClientRecord[] };
@@ -36,6 +37,13 @@ function fromRecord(c: ClientRecord): FormState {
   };
 }
 
+type CodeStatus =
+  | { state: "idle" }
+  | { state: "checking" }
+  | { state: "ok" }
+  | { state: "taken"; message: string }
+  | { state: "invalid"; message: string };
+
 export function ClientsAdminClient({ clients }: Props) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -44,9 +52,7 @@ export function ClientsAdminClient({ clients }: Props) {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [codeStatus, setCodeStatus] = useState<
-    { state: "idle" | "checking" | "ok" | "taken" | "invalid"; message?: string }
-  >({ state: "idle" });
+  const [codeStatus, setCodeStatus] = useState<CodeStatus>({ state: "idle" });
   const codeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ClientRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -82,14 +88,12 @@ export function ClientsAdminClient({ clients }: Props) {
     setEditing(null);
     setCreating(false);
     setError(null);
-    setCodeStatus({ state: "idle" });
   }
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  // Client code: enforce uppercase, validate and check availability as the user types.
   function onCodeChange(raw: string) {
     const value = raw.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3);
     updateField("clientCode", value);
@@ -115,11 +119,13 @@ export function ClientsAdminClient({ clients }: Props) {
           setCodeStatus({ state: "invalid", message: data.error ?? "Invalid." });
           return;
         }
-        setCodeStatus(data.available ? { state: "ok" } : { state: "taken", message: `${value} already used.` });
+        setCodeStatus(
+          data.available ? { state: "ok" } : { state: "taken", message: `${value} already used.` },
+        );
       } catch {
         setCodeStatus({ state: "idle" });
       }
-    }, 350);
+    }, 300);
   }
 
   useEffect(() => {
@@ -134,8 +140,8 @@ export function ClientsAdminClient({ clients }: Props) {
       setError("Client code must be exactly 3 uppercase letters.");
       return;
     }
-    if (codeStatus.state === "taken") {
-      setError(codeStatus.message ?? "Client code is already in use.");
+    if (codeStatus.state === "taken" || codeStatus.state === "invalid") {
+      setError(codeStatus.message);
       return;
     }
     setSaving(true);
@@ -182,10 +188,15 @@ export function ClientsAdminClient({ clients }: Props) {
   }
 
   const modalOpen = creating || !!editing;
+  const submitDisabled =
+    saving ||
+    codeStatus.state === "checking" ||
+    codeStatus.state === "taken" ||
+    codeStatus.state === "invalid";
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
         <input
           type="search"
           value={search}
@@ -193,24 +204,18 @@ export function ClientsAdminClient({ clients }: Props) {
           placeholder="Search by code, name, industry, country…"
           className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
         />
-        <button
-          type="button"
-          onClick={openCreate}
-          className="inline-flex items-center rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 text-sm font-medium"
-        >
-          + New client
-        </button>
+        <Button tone="primary" onClick={openCreate}>+ New client</Button>
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-600">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-4 py-2 font-medium">Code</th>
-              <th className="text-left px-4 py-2 font-medium">Name</th>
-              <th className="text-left px-4 py-2 font-medium">Industry</th>
-              <th className="text-left px-4 py-2 font-medium">Country</th>
-              <th className="text-left px-4 py-2 font-medium">Key contact</th>
+              <th className="text-left px-3 py-2 font-medium">Code</th>
+              <th className="text-left px-3 py-2 font-medium">Name</th>
+              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Industry</th>
+              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Country</th>
+              <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Key contact</th>
               <th />
             </tr>
           </thead>
@@ -223,20 +228,21 @@ export function ClientsAdminClient({ clients }: Props) {
               </tr>
             ) : (
               filtered.map((c) => (
-                <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-2 font-mono">{c.clientCode}</td>
-                  <td className="px-4 py-2">{c.clientName}</td>
-                  <td className="px-4 py-2">{c.industry || "—"}</td>
-                  <td className="px-4 py-2">{c.country || "—"}</td>
-                  <td className="px-4 py-2">{c.keyContact || "—"}</td>
-                  <td className="px-4 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(c)}
-                      className="text-brand-600 hover:text-brand-700 font-medium"
-                    >
-                      Edit
-                    </button>
+                <tr
+                  key={c.id}
+                  onClick={() => openEdit(c)}
+                  className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
+                >
+                  <td className="px-3 py-2 font-mono text-xs">{c.clientCode}</td>
+                  <td className="px-3 py-2">
+                    <div>{c.clientName}</div>
+                    <div className="text-xs text-slate-500 md:hidden">{c.industry || ""}</div>
+                  </td>
+                  <td className="px-3 py-2 hidden md:table-cell">{c.industry || "—"}</td>
+                  <td className="px-3 py-2 hidden md:table-cell">{c.country || "—"}</td>
+                  <td className="px-3 py-2 hidden lg:table-cell">{c.keyContact || "—"}</td>
+                  <td className="px-3 py-2 text-right">
+                    <span className="text-brand-600 text-xs font-medium">Edit</span>
                   </td>
                 </tr>
               ))
@@ -248,79 +254,67 @@ export function ClientsAdminClient({ clients }: Props) {
       <Modal
         open={modalOpen}
         onClose={closeModal}
+        busy={saving}
         title={creating ? "New client" : `Edit ${editing?.clientName || "client"}`}
+        size="lg"
         footer={
           <>
             {!creating && editing ? (
-              <button
-                type="button"
-                onClick={() => setDeleteTarget(editing)}
+              <Button
+                tone="danger"
+                size="sm"
                 disabled={saving}
-                className="mr-auto rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+                onClick={() => setDeleteTarget(editing)}
+                className="mr-auto"
               >
                 Delete
-              </button>
+              </Button>
             ) : null}
-            <button
-              type="button"
-              onClick={closeModal}
-              disabled={saving}
-              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
-            >
+            <Button tone="secondary" size="sm" onClick={closeModal} disabled={saving}>
               Cancel
-            </button>
-            <button
-              type="button"
-              onClick={submit}
-              disabled={saving || codeStatus.state === "checking" || codeStatus.state === "taken" || codeStatus.state === "invalid"}
-              className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-60"
-            >
+            </Button>
+            <Button tone="primary" size="sm" onClick={submit} disabled={submitDisabled}>
               {saving ? "Saving…" : creating ? "Create client" : "Save changes"}
-            </button>
+            </Button>
           </>
         }
       >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">
-              Client code <span className="text-slate-400 text-xs">(3 uppercase letters)</span>
-            </span>
-            <input
-              type="text"
-              value={form.clientCode}
-              onChange={(e) => onCodeChange(e.target.value)}
-              maxLength={3}
-              className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 font-mono uppercase tracking-widest"
-              placeholder="AGX"
-              autoCapitalize="characters"
-            />
-            <CodeStatusHint status={codeStatus} />
-          </label>
-          <Field
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField
+            label="Client code"
+            value={form.clientCode}
+            onChange={onCodeChange}
+            required
+            maxLength={3}
+            placeholder="AGX"
+            inputClassName="font-mono uppercase tracking-widest"
+            hint={<CodeHint status={codeStatus} />}
+          />
+          <FormField
             label="Client name"
             value={form.clientName}
             onChange={(v) => updateField("clientName", v)}
             required
           />
-          <Field label="Industry" value={form.industry} onChange={(v) => updateField("industry", v)} />
-          <Field label="Country" value={form.country} onChange={(v) => updateField("country", v)} />
-          <Field
+          <FormField label="Industry" value={form.industry} onChange={(v) => updateField("industry", v)} />
+          <FormField label="Country" value={form.country} onChange={(v) => updateField("country", v)} />
+          <FormField
             label="Key contact"
             value={form.keyContact}
             onChange={(v) => updateField("keyContact", v)}
+            className="sm:col-span-2"
           />
         </div>
-        <label className="block mt-4">
-          <span className="text-sm font-medium text-slate-700">Notes</span>
-          <textarea
+        <div className="mt-3">
+          <FormTextarea
+            label="Notes"
             value={form.notes}
-            onChange={(e) => updateField("notes", e.target.value)}
-            rows={4}
-            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2"
+            onChange={(v) => updateField("notes", v)}
+            rows={3}
           />
-        </label>
+        </div>
         {error ? (
-          <div className="mt-4 rounded-md bg-red-50 text-red-700 p-3 text-sm">{error}</div>
+          <div className="mt-3 rounded-md bg-red-50 text-red-700 p-2.5 text-xs">{error}</div>
         ) : null}
       </Modal>
 
@@ -331,7 +325,7 @@ export function ClientsAdminClient({ clients }: Props) {
           <>
             This will permanently remove{" "}
             <span className="font-semibold">{deleteTarget?.clientName}</span>{" "}
-            (<span className="font-mono">{deleteTarget?.clientCode}</span>). Any projects linked
+            (<span className="font-mono">{deleteTarget?.clientCode}</span>). Projects linked
             to this client will lose the link. This cannot be undone.
           </>
         }
@@ -345,48 +339,9 @@ export function ClientsAdminClient({ clients }: Props) {
   );
 }
 
-function CodeStatusHint({
-  status,
-}: {
-  status: { state: "idle" | "checking" | "ok" | "taken" | "invalid"; message?: string };
-}) {
-  if (status.state === "idle") return null;
-  const cls =
-    status.state === "ok"
-      ? "text-green-600"
-      : status.state === "checking"
-      ? "text-slate-500"
-      : "text-red-600";
-  const label =
-    status.state === "checking"
-      ? "Checking availability…"
-      : status.state === "ok"
-      ? "Available."
-      : status.message ?? "Unavailable.";
-  return <div className={`mt-1 text-xs ${cls}`}>{label}</div>;
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  required,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  required?: boolean;
-}) {
-  return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        required={required}
-        className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2"
-      />
-    </label>
-  );
+function CodeHint({ status }: { status: CodeStatus }) {
+  if (status.state === "idle") return <span className="text-slate-400">3 uppercase letters.</span>;
+  if (status.state === "checking") return <span className="text-slate-500">Checking…</span>;
+  if (status.state === "ok") return <span className="text-green-600">Available.</span>;
+  return <span className="text-red-600">{status.message}</span>;
 }

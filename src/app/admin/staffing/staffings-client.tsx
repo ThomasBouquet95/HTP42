@@ -1,0 +1,491 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Modal, ConfirmDialog } from "@/components/modal";
+import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import type {
+  Currency,
+  SowStatus,
+  StaffingAdminRecord,
+  StaffingStatus,
+} from "@/lib/airtable";
+
+type ProjectOpt = { code: string; name: string };
+type MemberOpt = { id: string; code: string; name: string };
+
+type Props = {
+  staffings: StaffingAdminRecord[];
+  projects: ProjectOpt[];
+  members: MemberOpt[];
+  currencies: readonly Currency[];
+  staffingStatuses: readonly StaffingStatus[];
+  sowStatuses: readonly SowStatus[];
+};
+
+type FormState = {
+  projectCode: string;
+  memberId: string;
+  roleInProject: string;
+  ratePerDay: string;
+  currency: string;
+  daysAllocated: string;
+  fxToEur: string;
+  sowReference: string;
+  sowStatus: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+  notes: string;
+};
+
+const EMPTY: FormState = {
+  projectCode: "",
+  memberId: "",
+  roleInProject: "",
+  ratePerDay: "",
+  currency: "",
+  daysAllocated: "",
+  fxToEur: "",
+  sowReference: "",
+  sowStatus: "",
+  startDate: "",
+  endDate: "",
+  status: "",
+  notes: "",
+};
+
+function fromRecord(s: StaffingAdminRecord): FormState {
+  return {
+    projectCode: s.projectCode,
+    memberId: s.memberRecordIds[0] ?? "",
+    roleInProject: s.roleInProject,
+    ratePerDay: s.ratePerDay == null ? "" : String(s.ratePerDay),
+    currency: s.currency,
+    daysAllocated: s.daysAllocated == null ? "" : String(s.daysAllocated),
+    fxToEur: s.fxToEur == null ? "" : String(s.fxToEur),
+    sowReference: s.sowReference,
+    sowStatus: s.sowStatus,
+    startDate: s.startDate ?? "",
+    endDate: s.endDate ?? "",
+    status: s.status,
+    notes: s.notes,
+  };
+}
+
+export function StaffingsAdminClient({
+  staffings,
+  projects,
+  members,
+  currencies,
+  staffingStatuses,
+  sowStatuses,
+}: Props) {
+  const router = useRouter();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"All" | StaffingStatus>("All");
+  const [editing, setEditing] = useState<StaffingAdminRecord | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState<FormState>(EMPTY);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<StaffingAdminRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return staffings.filter((s) => {
+      if (statusFilter !== "All" && s.status !== statusFilter) return false;
+      if (!q) return true;
+      return [s.staffingCode, s.projectCode, s.projectName, s.roleInProject, ...s.memberCodes]
+        .some((v) => v && v.toLowerCase().includes(q));
+    });
+  }, [staffings, search, statusFilter]);
+
+  function openCreate() {
+    setEditing(null);
+    setCreating(true);
+    setForm(EMPTY);
+    setError(null);
+  }
+
+  function openEdit(s: StaffingAdminRecord) {
+    setEditing(s);
+    setCreating(false);
+    setForm(fromRecord(s));
+    setError(null);
+  }
+
+  function closeModal() {
+    if (saving) return;
+    setEditing(null);
+    setCreating(false);
+    setError(null);
+  }
+
+  function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  const derivedTotal = useMemo(() => {
+    const rate = form.ratePerDay === "" ? null : Number(form.ratePerDay);
+    const days = form.daysAllocated === "" ? null : Number(form.daysAllocated);
+    if (rate == null || days == null || !Number.isFinite(rate) || !Number.isFinite(days)) return null;
+    return rate * days;
+  }, [form.ratePerDay, form.daysAllocated]);
+
+  const derivedTotalEur = useMemo(() => {
+    const fx = form.fxToEur === "" ? null : Number(form.fxToEur);
+    if (derivedTotal == null || fx == null || !Number.isFinite(fx)) return null;
+    return derivedTotal * fx;
+  }, [derivedTotal, form.fxToEur]);
+
+  async function submit() {
+    setError(null);
+    if (!form.projectCode) {
+      setError("Project is required.");
+      return;
+    }
+    if (!form.memberId) {
+      setError("Member is required.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const body = {
+        projectCode: form.projectCode,
+        memberRecordIds: [form.memberId],
+        roleInProject: form.roleInProject,
+        ratePerDay: form.ratePerDay === "" ? null : Number(form.ratePerDay),
+        currency: form.currency,
+        daysAllocated: form.daysAllocated === "" ? null : Number(form.daysAllocated),
+        fxToEur: form.fxToEur === "" ? null : Number(form.fxToEur),
+        sowReference: form.sowReference,
+        sowStatus: form.sowStatus,
+        startDate: form.startDate || null,
+        endDate: form.endDate || null,
+        status: form.status,
+        notes: form.notes,
+      };
+      const url = creating ? "/api/admin/staffings" : `/api/admin/staffings/${editing!.id}`;
+      const method = creating ? "POST" : "PUT";
+      const res = await fetch(url, {
+        method,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? "Save failed.");
+      }
+      closeModal();
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/admin/staffings/${deleteTarget.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? "Delete failed.");
+      }
+      const wasEditing = editing?.id === deleteTarget.id;
+      setDeleteTarget(null);
+      if (wasEditing) closeModal();
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const modalOpen = creating || !!editing;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by staffing, project, member, role…"
+          className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+        />
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as "All" | StaffingStatus)}
+          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+        >
+          <option value="All">All statuses</option>
+          {staffingStatuses.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        <Button tone="primary" onClick={openCreate}>+ New staffing</Button>
+      </div>
+
+      <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="text-left px-3 py-2 font-medium">Staffing</th>
+              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Project</th>
+              <th className="text-left px-3 py-2 font-medium">Member</th>
+              <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Role</th>
+              <th className="text-right px-3 py-2 font-medium hidden md:table-cell">Rate</th>
+              <th className="text-right px-3 py-2 font-medium hidden lg:table-cell">Days</th>
+              <th className="text-right px-3 py-2 font-medium hidden lg:table-cell">Total</th>
+              <th className="text-left px-3 py-2 font-medium">Status</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="text-center text-slate-500 py-10">
+                  No staffings match these filters.
+                </td>
+              </tr>
+            ) : (
+              filtered.map((s) => (
+                <tr
+                  key={s.id}
+                  onClick={() => openEdit(s)}
+                  className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer align-top"
+                >
+                  <td className="px-3 py-2 font-mono text-xs">{s.staffingCode || "—"}</td>
+                  <td className="px-3 py-2 hidden md:table-cell">
+                    <div className="font-mono text-xs text-slate-500">{s.projectCode}</div>
+                    <div>{s.projectName || "—"}</div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="font-mono text-xs text-slate-500">
+                      {s.memberCodes.join(", ") || "—"}
+                    </div>
+                    <div className="text-xs text-slate-500 md:hidden">{s.projectCode}</div>
+                  </td>
+                  <td className="px-3 py-2 hidden lg:table-cell">{s.roleInProject || "—"}</td>
+                  <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell">
+                    {s.ratePerDay == null
+                      ? "—"
+                      : `${s.ratePerDay.toLocaleString("en-US")} ${s.currency || ""}`.trim()}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums hidden lg:table-cell">
+                    {s.daysAllocated ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums hidden lg:table-cell">
+                    {s.totalAmount == null
+                      ? "—"
+                      : `${s.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${s.currency || ""}`.trim()}
+                  </td>
+                  <td className="px-3 py-2"><StaffingPill status={s.status} /></td>
+                  <td className="px-3 py-2 text-right">
+                    <span className="text-brand-600 text-xs font-medium">Edit</span>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <Modal
+        open={modalOpen}
+        onClose={closeModal}
+        busy={saving}
+        title={creating ? "New staffing" : `Edit ${editing?.staffingCode || "staffing"}`}
+        size="xl"
+        footer={
+          <>
+            {!creating && editing ? (
+              <Button
+                tone="danger"
+                size="sm"
+                disabled={saving}
+                onClick={() => setDeleteTarget(editing)}
+                className="mr-auto"
+              >
+                Delete
+              </Button>
+            ) : null}
+            <Button tone="secondary" size="sm" onClick={closeModal} disabled={saving}>
+              Cancel
+            </Button>
+            <Button tone="primary" size="sm" onClick={submit} disabled={saving}>
+              {saving ? "Saving…" : creating ? "Create staffing" : "Save changes"}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-xs text-slate-500 mb-3">
+          Staffing code is auto-generated by Airtable from Project + Member.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormSelect
+            label="Project"
+            value={form.projectCode}
+            onChange={(v) => updateField("projectCode", v)}
+            required
+          >
+            <option value="">— Select project —</option>
+            {projects.map((p) => (
+              <option key={p.code} value={p.code}>
+                {p.code} — {p.name}
+              </option>
+            ))}
+          </FormSelect>
+          <FormSelect
+            label="Member"
+            value={form.memberId}
+            onChange={(v) => updateField("memberId", v)}
+            required
+          >
+            <option value="">— Select member —</option>
+            {members.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.code} — {m.name}
+              </option>
+            ))}
+          </FormSelect>
+          <FormField
+            label="Role in project"
+            value={form.roleInProject}
+            onChange={(v) => updateField("roleInProject", v)}
+          />
+          <FormSelect label="Status" value={form.status} onChange={(v) => updateField("status", v)}>
+            <option value="">—</option>
+            {staffingStatuses.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </FormSelect>
+          <FormField
+            label="Rate per day"
+            value={form.ratePerDay}
+            onChange={(v) => updateField("ratePerDay", v)}
+            type="number"
+          />
+          <FormSelect
+            label="Currency"
+            value={form.currency}
+            onChange={(v) => updateField("currency", v)}
+          >
+            <option value="">—</option>
+            {currencies.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </FormSelect>
+          <FormField
+            label="Days allocated"
+            value={form.daysAllocated}
+            onChange={(v) => updateField("daysAllocated", v)}
+            type="number"
+          />
+          <FormField
+            label="FX to EUR"
+            value={form.fxToEur}
+            onChange={(v) => updateField("fxToEur", v)}
+            type="number"
+          />
+          <FormField
+            label="Start date"
+            value={form.startDate}
+            onChange={(v) => updateField("startDate", v)}
+            type="date"
+          />
+          <FormField
+            label="End date"
+            value={form.endDate}
+            onChange={(v) => updateField("endDate", v)}
+            type="date"
+          />
+          <FormField
+            label="SOW reference"
+            value={form.sowReference}
+            onChange={(v) => updateField("sowReference", v)}
+          />
+          <FormSelect
+            label="SOW status"
+            value={form.sowStatus}
+            onChange={(v) => updateField("sowStatus", v)}
+          >
+            <option value="">—</option>
+            {sowStatuses.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </FormSelect>
+        </div>
+        {(derivedTotal != null || derivedTotalEur != null) ? (
+          <div className="mt-3 rounded-md bg-slate-50 border border-slate-200 p-2.5 text-xs text-slate-700">
+            {derivedTotal != null ? (
+              <div>
+                Total: <span className="font-semibold tabular-nums">
+                  {derivedTotal.toLocaleString("en-US", { maximumFractionDigits: 2 })} {form.currency || ""}
+                </span>
+              </div>
+            ) : null}
+            {derivedTotalEur != null ? (
+              <div>
+                Total EUR: <span className="font-semibold tabular-nums">
+                  {derivedTotalEur.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        <div className="mt-3">
+          <FormTextarea
+            label="Notes"
+            value={form.notes}
+            onChange={(v) => updateField("notes", v)}
+            rows={3}
+          />
+        </div>
+        {error ? (
+          <div className="mt-3 rounded-md bg-red-50 text-red-700 p-2.5 text-xs">{error}</div>
+        ) : null}
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete staffing?"
+        message={
+          <>
+            This will permanently remove staffing{" "}
+            <span className="font-mono">{deleteTarget?.staffingCode || "—"}</span>. Existing
+            timesheets for this staffing may be orphaned. This cannot be undone.
+          </>
+        }
+        confirmLabel="Delete"
+        confirmTone="danger"
+        busy={deleting}
+        onCancel={() => (deleting ? undefined : setDeleteTarget(null))}
+        onConfirm={confirmDelete}
+      />
+    </div>
+  );
+}
+
+function StaffingPill({ status }: { status: string }) {
+  if (!status) return <span className="text-slate-400">—</span>;
+  const cls =
+    status === "In Progress"
+      ? "bg-blue-50 text-blue-700 border-blue-200"
+      : status === "Completed"
+      ? "bg-green-50 text-green-700 border-green-200"
+      : status === "Not Started"
+      ? "bg-slate-100 text-slate-600 border-slate-200"
+      : "bg-amber-50 text-amber-700 border-amber-200";
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${cls}`}>
+      {status}
+    </span>
+  );
+}

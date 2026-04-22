@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
+import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import type { Currency, PaymentRecord } from "@/lib/airtable";
 
 type LinkOpt = { id: string; code: string; name: string };
@@ -39,6 +40,8 @@ const PAYMENT_STATUSES = [
   "Unpaid",
   "Pending",
 ] as const;
+
+const PAYMENT_TYPES = ["Client Invoice", "Subcontractor", "Expense", "Other"] as const;
 
 type FormState = {
   direction: "" | "Inflow" | "Outflow";
@@ -198,7 +201,6 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  // Derive Invoice Value EUR from value × FX so the dashboard's EUR totals line up.
   const derivedValueEur = useMemo(() => {
     const v = form.invoiceValue === "" ? null : Number(form.invoiceValue);
     const fx = form.fxRateToEur === "" ? null : Number(form.fxRateToEur);
@@ -325,10 +327,10 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
   const modalOpen = creating || !!editing;
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <Select
+    <div className="space-y-5">
+      <div className="bg-white rounded-lg border border-slate-200 p-3 sm:p-4">
+        <div className="grid gap-2 sm:gap-3 grid-cols-2 lg:grid-cols-5">
+          <FilterSelect
             label="Direction"
             value={filters.direction}
             onChange={(v) => update("direction", v as Filters["direction"])}
@@ -336,58 +338,41 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             <option value="All">All</option>
             <option value="Inflow">Inflow</option>
             <option value="Outflow">Outflow</option>
-          </Select>
-          <Select label="Status" value={filters.status} onChange={(v) => update("status", v)}>
+          </FilterSelect>
+          <FilterSelect label="Status" value={filters.status} onChange={(v) => update("status", v)}>
             <option value="All">All statuses</option>
             {statusOptions.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
+              <option key={s} value={s}>{s}</option>
             ))}
-          </Select>
-          <Select label="Currency" value={filters.currency} onChange={(v) => update("currency", v)}>
+          </FilterSelect>
+          <FilterSelect label="Currency" value={filters.currency} onChange={(v) => update("currency", v)}>
             <option value="All">All currencies</option>
             {currencyOptions.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
+              <option key={c} value={c}>{c}</option>
             ))}
-          </Select>
-          <DateInput label="From" value={filters.from} onChange={(v) => update("from", v)} />
-          <DateInput label="To" value={filters.to} onChange={(v) => update("to", v)} />
+          </FilterSelect>
+          <FilterDate label="From" value={filters.from} onChange={(v) => update("from", v)} />
+          <FilterDate label="To" value={filters.to} onChange={(v) => update("to", v)} />
         </div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
-          <div className="text-sm text-slate-600">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+          <div className="text-xs text-slate-600">
             {filtered.length} payment{filtered.length === 1 ? "" : "s"}
           </div>
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setFilters(DEFAULT_FILTERS)}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
-            >
+            <Button size="sm" onClick={() => setFilters(DEFAULT_FILTERS)}>
               Reset
-            </button>
-            <button
-              type="button"
-              onClick={exportCsv}
-              disabled={filtered.length === 0}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
-            >
+            </Button>
+            <Button size="sm" onClick={exportCsv} disabled={filtered.length === 0}>
               Export CSV
-            </button>
-            <button
-              type="button"
-              onClick={openCreate}
-              className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700"
-            >
+            </Button>
+            <Button tone="primary" size="sm" onClick={openCreate}>
               + New payment
-            </button>
+            </Button>
           </div>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-3">
         <StatCard
           label="Inflow (EUR)"
           value={totals.inflowEur.toLocaleString("en-US", { maximumFractionDigits: 2 })}
@@ -406,9 +391,9 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-3 lg:grid-cols-3">
         <div className="lg:col-span-2 rounded-lg border border-slate-200 bg-white">
-          <div className="border-b border-slate-100 px-4 py-2 text-sm font-semibold text-slate-800">
+          <div className="border-b border-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Monthly inflow vs outflow (EUR)
           </div>
           <div className="p-4">
@@ -416,7 +401,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
           </div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white">
-          <div className="border-b border-slate-100 px-4 py-2 text-sm font-semibold text-slate-800">
+          <div className="border-b border-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
             By payment status (EUR)
           </div>
           <div className="p-4">
@@ -427,25 +412,24 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-600">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-4 py-2 font-medium">Code</th>
-              <th className="text-left px-4 py-2 font-medium">Direction</th>
-              <th className="text-left px-4 py-2 font-medium">Type</th>
-              <th className="text-left px-4 py-2 font-medium">Project</th>
-              <th className="text-left px-4 py-2 font-medium">Counterparty</th>
-              <th className="text-left px-4 py-2 font-medium">Invoice date</th>
-              <th className="text-right px-4 py-2 font-medium">Amount</th>
-              <th className="text-right px-4 py-2 font-medium">EUR</th>
-              <th className="text-left px-4 py-2 font-medium">Status</th>
-              <th className="text-left px-4 py-2 font-medium">Paid on</th>
+              <th className="text-left px-3 py-2 font-medium">Code</th>
+              <th className="text-left px-3 py-2 font-medium">Direction</th>
+              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Type</th>
+              <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Project</th>
+              <th className="text-left px-3 py-2 font-medium">Counterparty</th>
+              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Invoice date</th>
+              <th className="text-right px-3 py-2 font-medium">Amount</th>
+              <th className="text-right px-3 py-2 font-medium hidden md:table-cell">EUR</th>
+              <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Status</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text-center text-slate-500 py-10">
+                <td colSpan={10} className="text-center text-slate-500 py-10">
                   No payments match these filters.
                 </td>
               </tr>
@@ -456,31 +440,30 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                     ? p.clientCodes.join(", ") || "—"
                     : p.memberCodes.join(", ") || p.beneficiary || "—";
                 return (
-                  <tr key={p.id} className="border-t border-slate-100 align-top hover:bg-slate-50">
-                    <td className="px-4 py-2 font-mono text-xs">{p.paymentCode}</td>
-                    <td className="px-4 py-2"><DirectionPill direction={p.direction} /></td>
-                    <td className="px-4 py-2">{p.type || "—"}</td>
-                    <td className="px-4 py-2 font-mono text-xs">{p.projectCodes.join(", ") || "—"}</td>
-                    <td className="px-4 py-2">{counterparty}</td>
-                    <td className="px-4 py-2 whitespace-nowrap">{p.invoiceDate ?? "—"}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">
+                  <tr
+                    key={p.id}
+                    onClick={() => openEdit(p)}
+                    className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer align-top"
+                  >
+                    <td className="px-3 py-2 font-mono text-xs">{p.paymentCode}</td>
+                    <td className="px-3 py-2"><DirectionPill direction={p.direction} /></td>
+                    <td className="px-3 py-2 hidden md:table-cell">{p.type || "—"}</td>
+                    <td className="px-3 py-2 font-mono text-xs hidden lg:table-cell">
+                      {p.projectCodes.join(", ") || "—"}
+                    </td>
+                    <td className="px-3 py-2">{counterparty}</td>
+                    <td className="px-3 py-2 whitespace-nowrap hidden md:table-cell">{p.invoiceDate ?? "—"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
                       {formatMoney(p.invoiceValue, p.invoiceCurrency)}
                     </td>
-                    <td className="px-4 py-2 text-right tabular-nums">
+                    <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell">
                       {p.invoiceValueEur == null
                         ? "—"
                         : p.invoiceValueEur.toLocaleString("en-US", { maximumFractionDigits: 2 })}
                     </td>
-                    <td className="px-4 py-2">{p.paymentStatus || "—"}</td>
-                    <td className="px-4 py-2 whitespace-nowrap">{p.paymentDate ?? "—"}</td>
-                    <td className="px-4 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => openEdit(p)}
-                        className="text-brand-600 hover:text-brand-700 font-medium"
-                      >
-                        Edit
-                      </button>
+                    <td className="px-3 py-2 hidden lg:table-cell">{p.paymentStatus || "—"}</td>
+                    <td className="px-3 py-2 text-right">
+                      <span className="text-brand-600 text-xs font-medium">Edit</span>
                     </td>
                   </tr>
                 );
@@ -493,50 +476,51 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
       <Modal
         open={modalOpen}
         onClose={closeModal}
+        busy={saving}
         title={creating ? "New payment" : `Edit ${editing?.paymentCode || "payment"}`}
         size="xl"
         footer={
           <>
             {!creating && editing ? (
-              <button
-                type="button"
-                onClick={() => setDeleteTarget(editing)}
+              <Button
+                tone="danger"
+                size="sm"
                 disabled={saving}
-                className="mr-auto rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+                onClick={() => setDeleteTarget(editing)}
+                className="mr-auto"
               >
                 Delete
-              </button>
+              </Button>
             ) : null}
-            <button
-              type="button"
-              onClick={closeModal}
-              disabled={saving}
-              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
-            >
+            <Button tone="secondary" size="sm" onClick={closeModal} disabled={saving}>
               Cancel
-            </button>
-            <button
-              type="button"
-              onClick={submit}
-              disabled={saving}
-              className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-60"
-            >
+            </Button>
+            <Button tone="primary" size="sm" onClick={submit} disabled={saving}>
               {saving ? "Saving…" : creating ? "Create payment" : "Save changes"}
-            </button>
+            </Button>
           </>
         }
       >
-        <div className="grid gap-4 sm:grid-cols-2">
+        <p className="text-xs text-slate-500 mb-3">
+          Payment code is auto-generated by Airtable.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
           <FormSelect
             label="Direction"
             value={form.direction}
             onChange={(v) => updateField("direction", v as FormState["direction"])}
+            required
           >
             <option value="">—</option>
             <option value="Inflow">Inflow</option>
             <option value="Outflow">Outflow</option>
           </FormSelect>
-          <FormField label="Type" value={form.type} onChange={(v) => updateField("type", v)} />
+          <FormSelect label="Type" value={form.type} onChange={(v) => updateField("type", v)}>
+            <option value="">—</option>
+            {PAYMENT_TYPES.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </FormSelect>
           <FormSelect
             label="Project"
             value={form.projectId}
@@ -550,26 +534,16 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             ))}
           </FormSelect>
           <FormSelect
-            label="Client"
-            value={form.clientId}
-            onChange={(v) => updateField("clientId", v)}
+            label={form.direction === "Outflow" ? "Member (beneficiary)" : "Client"}
+            value={form.direction === "Outflow" ? form.memberId : form.clientId}
+            onChange={(v) =>
+              form.direction === "Outflow" ? updateField("memberId", v) : updateField("clientId", v)
+            }
           >
             <option value="">—</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.code} — {c.name}
-              </option>
-            ))}
-          </FormSelect>
-          <FormSelect
-            label="Member"
-            value={form.memberId}
-            onChange={(v) => updateField("memberId", v)}
-          >
-            <option value="">—</option>
-            {members.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.code} — {m.name}
+            {(form.direction === "Outflow" ? members : clients).map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.code} — {o.name}
               </option>
             ))}
           </FormSelect>
@@ -584,6 +558,12 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             value={form.invoiceReference}
             onChange={(v) => updateField("invoiceReference", v)}
           />
+          <FormField
+            label="Invoice value"
+            value={form.invoiceValue}
+            onChange={(v) => updateField("invoiceValue", v)}
+            type="number"
+          />
           <FormSelect
             label="Invoice currency"
             value={form.invoiceCurrency}
@@ -591,17 +571,9 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
           >
             <option value="">—</option>
             {currencies.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
+              <option key={c} value={c}>{c}</option>
             ))}
           </FormSelect>
-          <FormField
-            label="Invoice value"
-            value={form.invoiceValue}
-            onChange={(v) => updateField("invoiceValue", v)}
-            type="number"
-          />
           <FormField
             label="FX to EUR"
             value={form.fxRateToEur}
@@ -609,15 +581,10 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             type="number"
           />
           <FormField
-            label="Invoice value EUR"
+            label="Invoice value EUR (auto)"
             value={derivedValueEur == null ? "" : derivedValueEur.toFixed(2)}
             onChange={() => {}}
             readOnly
-          />
-          <FormField
-            label="Payment terms"
-            value={form.paymentTerms}
-            onChange={(v) => updateField("paymentTerms", v)}
           />
           <FormSelect
             label="Payment status"
@@ -626,9 +593,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
           >
             <option value="">—</option>
             {PAYMENT_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
+              <option key={s} value={s}>{s}</option>
             ))}
           </FormSelect>
           <FormField
@@ -638,22 +603,26 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             type="date"
           />
           <FormField
+            label="Payment terms"
+            value={form.paymentTerms}
+            onChange={(v) => updateField("paymentTerms", v)}
+          />
+          <FormField
             label="Beneficiary"
             value={form.beneficiary}
             onChange={(v) => updateField("beneficiary", v)}
           />
         </div>
-        <label className="block mt-4">
-          <span className="text-sm font-medium text-slate-700">Comment</span>
-          <textarea
+        <div className="mt-3">
+          <FormTextarea
+            label="Comment"
             value={form.comment}
-            onChange={(e) => updateField("comment", e.target.value)}
+            onChange={(v) => updateField("comment", v)}
             rows={3}
-            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2"
           />
-        </label>
+        </div>
         {error ? (
-          <div className="mt-4 rounded-md bg-red-50 text-red-700 p-3 text-sm">{error}</div>
+          <div className="mt-3 rounded-md bg-red-50 text-red-700 p-2.5 text-xs">{error}</div>
         ) : null}
       </Modal>
 
@@ -676,47 +645,32 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
   );
 }
 
-// ---------------------------------------------------------------------------
-// Charts
-// ---------------------------------------------------------------------------
-
 function MonthlyBarChart({ rows }: { rows: [string, { inflow: number; outflow: number }][] }) {
   if (rows.length === 0) {
-    return <div className="text-center text-sm text-slate-500 py-8">No data for this period.</div>;
+    return <div className="text-center text-xs text-slate-500 py-8">No data for this period.</div>;
   }
-  const max = rows.reduce(
-    (m, [, v]) => Math.max(m, v.inflow, v.outflow),
-    0,
-  );
-  const barW = 18;
-  const groupW = barW * 2 + 6;
+  const max = rows.reduce((m, [, v]) => Math.max(m, v.inflow, v.outflow), 0);
+  const barW = 16;
+  const groupW = barW * 2 + 4;
   const gap = 14;
-  const chartH = 180;
+  const chartH = 160;
   const chartW = rows.length * (groupW + gap) + gap;
 
   return (
     <div className="overflow-x-auto">
-      <svg width={Math.max(chartW, 200)} height={chartH + 40} role="img" aria-label="Monthly inflow vs outflow">
-        {/* baseline */}
+      <svg width={Math.max(chartW, 200)} height={chartH + 36} role="img" aria-label="Monthly inflow vs outflow">
         <line x1={0} x2={chartW} y1={chartH} y2={chartH} stroke="#e2e8f0" />
         {rows.map(([month, v], i) => {
           const x = gap + i * (groupW + gap);
-          const inH = max === 0 ? 0 : (v.inflow / max) * (chartH - 20);
-          const outH = max === 0 ? 0 : (v.outflow / max) * (chartH - 20);
+          const inH = max === 0 ? 0 : (v.inflow / max) * (chartH - 16);
+          const outH = max === 0 ? 0 : (v.outflow / max) * (chartH - 16);
           return (
             <g key={month}>
-              <rect
-                x={x}
-                y={chartH - inH}
-                width={barW}
-                height={inH}
-                fill="#1E91F9"
-                rx={2}
-              >
+              <rect x={x} y={chartH - inH} width={barW} height={inH} fill="#1E91F9" rx={2}>
                 <title>{`${month} · Inflow: €${v.inflow.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
               </rect>
               <rect
-                x={x + barW + 6}
+                x={x + barW + 4}
                 y={chartH - outH}
                 width={barW}
                 height={outH}
@@ -727,12 +681,12 @@ function MonthlyBarChart({ rows }: { rows: [string, { inflow: number; outflow: n
               </rect>
               <text
                 x={x + groupW / 2}
-                y={chartH + 16}
+                y={chartH + 14}
                 textAnchor="middle"
                 fontSize="10"
                 fill="#64748b"
               >
-                {month}
+                {month.slice(2)}
               </text>
             </g>
           );
@@ -748,7 +702,7 @@ function MonthlyBarChart({ rows }: { rows: [string, { inflow: number; outflow: n
 
 function StatusBreakdown({ rows }: { rows: [string, number][] }) {
   if (rows.length === 0) {
-    return <div className="text-center text-sm text-slate-500 py-8">No data.</div>;
+    return <div className="text-center text-xs text-slate-500 py-8">No data.</div>;
   }
   const max = rows.reduce((m, [, v]) => Math.max(m, v), 0);
   return (
@@ -780,10 +734,6 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Primitives
-// ---------------------------------------------------------------------------
-
 function DirectionPill({ direction }: { direction: string }) {
   if (!direction) return <span className="text-slate-400">—</span>;
   const cls =
@@ -797,7 +747,7 @@ function DirectionPill({ direction }: { direction: string }) {
   );
 }
 
-function Select({
+function FilterSelect({
   label,
   value,
   onChange,
@@ -809,12 +759,12 @@ function Select({
   children: React.ReactNode;
 }) {
   return (
-    <label className="block text-sm">
-      <span className="block text-slate-600 mb-1">{label}</span>
+    <label className="block text-xs">
+      <span className="block text-slate-500 mb-1">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5"
+        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
       >
         {children}
       </select>
@@ -822,7 +772,7 @@ function Select({
   );
 }
 
-function DateInput({
+function FilterDate({
   label,
   value,
   onChange,
@@ -832,13 +782,13 @@ function DateInput({
   onChange: (v: string) => void;
 }) {
   return (
-    <label className="block text-sm">
-      <span className="block text-slate-600 mb-1">{label}</span>
+    <label className="block text-xs">
+      <span className="block text-slate-500 mb-1">{label}</span>
       <input
         type="date"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5"
+        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
       />
     </label>
   );
@@ -859,65 +809,12 @@ function StatCard({
   const valueColor =
     tone === "positive" ? "text-green-700" : tone === "negative" ? "text-red-700" : "text-slate-900";
   return (
-    <div className={`rounded-lg border p-4 ${bg}`}>
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`mt-1 text-2xl font-semibold tabular-nums ${valueColor}`}>{value}</div>
+    <div className={`rounded-lg border p-3 sm:p-4 ${bg}`}>
+      <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
+      <div className={`mt-1 text-xl sm:text-2xl font-semibold tabular-nums ${valueColor}`}>
+        {value}
+      </div>
     </div>
-  );
-}
-
-function FormField({
-  label,
-  value,
-  onChange,
-  type = "text",
-  readOnly,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  type?: string;
-  readOnly?: boolean;
-}) {
-  return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        readOnly={readOnly}
-        step={type === "number" ? "any" : undefined}
-        className={`mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 ${
-          readOnly ? "bg-slate-50 text-slate-500" : ""
-        }`}
-      />
-    </label>
-  );
-}
-
-function FormSelect({
-  label,
-  value,
-  onChange,
-  children,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2"
-      >
-        {children}
-      </select>
-    </label>
   );
 }
 

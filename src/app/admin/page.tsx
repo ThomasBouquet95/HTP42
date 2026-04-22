@@ -22,6 +22,11 @@ const CARDS = [
     description: "Create and edit projects, SOW status and totals.",
   },
   {
+    href: "/admin/staffing",
+    title: "Project Staffing",
+    description: "Create and edit consultant engagements, rates, days and SOW.",
+  },
+  {
     href: "/admin/timesheets",
     title: "All timesheets",
     description: "Cross-member timesheet view with filters, CSV and PDF export.",

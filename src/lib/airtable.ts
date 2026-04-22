@@ -64,9 +64,17 @@ export const FIELDS = {
     staffingCode: "Staffing Code",
     projectCode: "Project Code",
     memberCode: "Member Code",
+    roleInProject: "Role in Project",
+    ratePerDay: "Rate per Day",
+    currency: "Currency",
+    daysAllocated: "Days Allocated",
+    fxToEur: "FX to EUR",
+    sowReference: "SOW Reference",
+    sowStatus: "SOW Status",
     startDate: "Start Date",
     endDate: "End Date",
     status: "Status",
+    notes: "Notes",
   },
   timesheets: {
     timesheetCode: "Timesheet Code",
@@ -126,6 +134,15 @@ export const MEMBER_ROLES: MemberRole[] = [
 ];
 
 export type StaffingStatus = "In Progress" | "Not Started" | "Completed" | "Opportunity";
+export const STAFFING_STATUSES: StaffingStatus[] = [
+  "Opportunity",
+  "Not Started",
+  "In Progress",
+  "Completed",
+];
+export type SowStatus = "Signed" | "In Progress" | "Draft" | "Not Started";
+export const SOW_STATUSES: SowStatus[] = ["Not Started", "Draft", "In Progress", "Signed"];
+
 export type TimesheetStatus = "Draft" | "Submitted" | "Deleted";
 
 export type ProjectStatus =
@@ -237,6 +254,28 @@ export type StaffingRecord = {
   startDate: string | null;
   endDate: string | null;
   status: StaffingStatus | null;
+};
+
+export type StaffingAdminRecord = {
+  id: string;
+  staffingCode: string;
+  projectCode: string;
+  projectName: string;
+  memberRecordIds: string[];
+  memberCodes: string[];
+  roleInProject: string;
+  ratePerDay: number | null;
+  currency: Currency | "";
+  daysAllocated: number | null;
+  fxToEur: number | null;
+  totalAmount: number | null;
+  totalAmountEur: number | null;
+  sowReference: string;
+  sowStatus: SowStatus | "";
+  startDate: string | null;
+  endDate: string | null;
+  status: StaffingStatus | "";
+  notes: string;
 };
 
 export type TimesheetRecord = {
@@ -398,6 +437,7 @@ export async function listAllMembers(): Promise<MemberAdminRecord[]> {
 }
 
 export type MemberAdminUpdate = MemberProfileUpdate & {
+  memberCode?: string;
   email?: string;
   role?: MemberRole;
   status?: MemberStatus;
@@ -474,6 +514,7 @@ export async function adminUpdateMember(
   input: MemberAdminUpdate,
 ): Promise<MemberAdminRecord | null> {
   const fields: Record<string, unknown> = {};
+  if (input.memberCode !== undefined) fields[FIELDS.networkMembers.memberCode] = input.memberCode;
   if (input.fullName !== undefined) fields[FIELDS.networkMembers.fullName] = input.fullName;
   if (input.email !== undefined) fields[FIELDS.networkMembers.email] = input.email;
   if (input.introduction !== undefined) fields[FIELDS.networkMembers.introduction] = input.introduction;
@@ -1049,4 +1090,138 @@ export async function updateTimesheetStatus(
   const fields: Record<string, unknown> = { [FIELDS.timesheets.status]: status };
   if (submissionDate !== undefined) fields[FIELDS.timesheets.submissionDate] = submissionDate;
   await base(TABLES.timesheets).update([{ id: recordId, fields: fields as FieldSet }]);
+}
+
+// ---------------------------------------------------------------------------
+// Admin: Project Staffings (full CRUD)
+// ---------------------------------------------------------------------------
+
+function staffingAdminFromRecord(
+  r: AirtableRecord<FieldSet>,
+  projectNames: Map<string, string>,
+): StaffingAdminRecord {
+  const projectCode = str(r, FIELDS.projectStaffing.projectCode);
+  const rate = numOrNull(r, FIELDS.projectStaffing.ratePerDay);
+  const days = numOrNull(r, FIELDS.projectStaffing.daysAllocated);
+  const fx = numOrNull(r, FIELDS.projectStaffing.fxToEur);
+  const totalAmount = rate != null && days != null ? rate * days : null;
+  const totalAmountEur = totalAmount != null && fx != null ? totalAmount * fx : null;
+  return {
+    id: r.id,
+    staffingCode: str(r, FIELDS.projectStaffing.staffingCode),
+    projectCode,
+    projectName: projectNames.get(projectCode) ?? "",
+    memberRecordIds: linkedIds(r, FIELDS.projectStaffing.memberCode),
+    memberCodes: linkedDisplay(r, FIELDS.projectStaffing.memberCode),
+    roleInProject: str(r, FIELDS.projectStaffing.roleInProject),
+    ratePerDay: rate,
+    currency: str(r, FIELDS.projectStaffing.currency) as Currency | "",
+    daysAllocated: days,
+    fxToEur: fx,
+    totalAmount,
+    totalAmountEur,
+    sowReference: str(r, FIELDS.projectStaffing.sowReference),
+    sowStatus: str(r, FIELDS.projectStaffing.sowStatus) as SowStatus | "",
+    startDate: dateOrNull(r, FIELDS.projectStaffing.startDate),
+    endDate: dateOrNull(r, FIELDS.projectStaffing.endDate),
+    status: (str(r, FIELDS.projectStaffing.status) as StaffingStatus) || "",
+    notes: str(r, FIELDS.projectStaffing.notes),
+  };
+}
+
+export async function listAllStaffings(): Promise<StaffingAdminRecord[]> {
+  const [records, projectNames] = await Promise.all([
+    base(TABLES.projectStaffing).select().all(),
+    getProjectNameMap(),
+  ]);
+  return records
+    .map((r) => staffingAdminFromRecord(r, projectNames))
+    .sort((a, b) => a.staffingCode.localeCompare(b.staffingCode));
+}
+
+export async function getStaffingById(recordId: string): Promise<StaffingAdminRecord | null> {
+  try {
+    const [r, projectNames] = await Promise.all([
+      base(TABLES.projectStaffing).find(recordId),
+      getProjectNameMap(),
+    ]);
+    return staffingAdminFromRecord(r, projectNames);
+  } catch {
+    return null;
+  }
+}
+
+export type StaffingInput = {
+  projectCode: string;
+  memberRecordIds: string[];
+  roleInProject: string;
+  ratePerDay: number | null;
+  currency: Currency | "";
+  daysAllocated: number | null;
+  fxToEur: number | null;
+  sowReference: string;
+  sowStatus: SowStatus | "";
+  startDate: string | null;
+  endDate: string | null;
+  status: StaffingStatus | "";
+  notes: string;
+};
+
+function staffingFields(input: StaffingInput): Record<string, unknown> {
+  return {
+    [FIELDS.projectStaffing.projectCode]: input.projectCode,
+    [FIELDS.projectStaffing.memberCode]: input.memberRecordIds,
+    [FIELDS.projectStaffing.roleInProject]: input.roleInProject,
+    [FIELDS.projectStaffing.ratePerDay]: input.ratePerDay,
+    [FIELDS.projectStaffing.currency]: input.currency === "" ? null : input.currency,
+    [FIELDS.projectStaffing.daysAllocated]: input.daysAllocated,
+    [FIELDS.projectStaffing.fxToEur]: input.fxToEur,
+    [FIELDS.projectStaffing.sowReference]: input.sowReference,
+    [FIELDS.projectStaffing.sowStatus]: input.sowStatus === "" ? null : input.sowStatus,
+    [FIELDS.projectStaffing.startDate]: input.startDate,
+    [FIELDS.projectStaffing.endDate]: input.endDate,
+    [FIELDS.projectStaffing.status]: input.status === "" ? null : input.status,
+    [FIELDS.projectStaffing.notes]: input.notes,
+  };
+}
+
+export async function createStaffing(input: StaffingInput): Promise<string> {
+  const [created] = await base(TABLES.projectStaffing).create([
+    { fields: staffingFields(input) as FieldSet },
+  ]);
+  return created.id;
+}
+
+export async function updateStaffing(recordId: string, input: StaffingInput): Promise<void> {
+  await base(TABLES.projectStaffing).update([
+    { id: recordId, fields: staffingFields(input) as FieldSet },
+  ]);
+}
+
+export async function deleteStaffing(recordId: string): Promise<void> {
+  await base(TABLES.projectStaffing).destroy([recordId]);
+}
+
+// ---------------------------------------------------------------------------
+// Code suggestion helpers
+// ---------------------------------------------------------------------------
+
+// Propose a member code from the name: 3 letters of last name + 2 letters of
+// first name + suffix digit to resolve collisions, e.g. "Thomas Bouquet" -> "BOUTH1".
+export async function suggestMemberCode(fullName: string): Promise<string> {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "";
+  const first = parts[0];
+  const last = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+  const lastPart = last.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase();
+  const firstPart = first.replace(/[^A-Za-z]/g, "").slice(0, 2).toUpperCase();
+  const base = `${lastPart}${firstPart}`;
+  if (base.length === 0) return "";
+  const existing = await listAllMembers();
+  const used = new Set(existing.map((m) => m.memberCode));
+  for (let n = 1; n < 100; n += 1) {
+    const candidate = `${base}${n}`;
+    if (!used.has(candidate)) return candidate;
+  }
+  return base;
 }

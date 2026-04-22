@@ -4,6 +4,7 @@ import { requireAdminSession } from "@/lib/auth";
 import {
   adminDeleteMember,
   adminUpdateMember,
+  findMemberByCode,
   findMemberByEmail,
   MEMBER_ROLES,
   MEMBER_STATUSES,
@@ -16,6 +17,7 @@ import {
 const nullableNumber = z.union([z.number(), z.null()]).optional();
 
 const schema = z.object({
+  memberCode: z.string().trim().min(1).max(40).optional(),
   fullName: z.string().trim().min(1).max(200).optional(),
   email: z.string().trim().email().max(200).optional(),
   introduction: z.string().max(5000).optional(),
@@ -55,7 +57,18 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     }
   }
 
+  if (d.memberCode !== undefined) {
+    const clash = await findMemberByCode(d.memberCode, id);
+    if (clash) {
+      return NextResponse.json(
+        { error: `Member code ${d.memberCode} is already in use.` },
+        { status: 409 },
+      );
+    }
+  }
+
   const updated = await adminUpdateMember(id, {
+    memberCode: d.memberCode,
     fullName: d.fullName,
     email: d.email,
     introduction: d.introduction,

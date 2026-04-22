@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
+import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import type {
   ClientRecord,
   Currency,
@@ -146,6 +147,7 @@ export function ProjectsAdminClient({
       return;
     }
     setCodeLoading(true);
+    setError(null);
     try {
       const year = yearFromStart(form.startDate || `${currentYear}-01-01`);
       const params = new URLSearchParams({
@@ -163,6 +165,29 @@ export function ProjectsAdminClient({
       setError(e instanceof Error ? e.message : "Could not suggest code.");
     } finally {
       setCodeLoading(false);
+    }
+  }
+
+  // When creating and the user has selected a client + start date but not
+  // manually typed a code yet, auto-suggest.
+  async function onClientChange(id: string) {
+    updateField("clientId", id);
+    if (creating && id && !form.projectCode) {
+      const client = clientById.get(id);
+      if (client && /^[A-Z]{3}$/.test(client.clientCode)) {
+        try {
+          const year = yearFromStart(form.startDate || `${currentYear}-01-01`);
+          const res = await fetch(
+            `/api/admin/projects/next-code?clientCode=${client.clientCode}&year=${year}`,
+          );
+          if (res.ok) {
+            const data = (await res.json()) as { code?: string };
+            if (data.code) updateField("projectCode", data.code);
+          }
+        } catch {
+          // ignore
+        }
+      }
     }
   }
 
@@ -229,7 +254,7 @@ export function ProjectsAdminClient({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
         <input
           type="search"
           value={search}
@@ -237,27 +262,21 @@ export function ProjectsAdminClient({
           placeholder="Search by code, name, client, status…"
           className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
         />
-        <button
-          type="button"
-          onClick={openCreate}
-          className="inline-flex items-center rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 text-sm font-medium"
-        >
-          + New project
-        </button>
+        <Button tone="primary" onClick={openCreate}>+ New project</Button>
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-600">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-4 py-2 font-medium">Code</th>
-              <th className="text-left px-4 py-2 font-medium">Name</th>
-              <th className="text-left px-4 py-2 font-medium">Client</th>
-              <th className="text-left px-4 py-2 font-medium">Type</th>
-              <th className="text-left px-4 py-2 font-medium">Status</th>
-              <th className="text-left px-4 py-2 font-medium">Start</th>
-              <th className="text-left px-4 py-2 font-medium">End</th>
-              <th className="text-right px-4 py-2 font-medium">Total</th>
+              <th className="text-left px-3 py-2 font-medium">Code</th>
+              <th className="text-left px-3 py-2 font-medium">Name</th>
+              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Client</th>
+              <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Type</th>
+              <th className="text-left px-3 py-2 font-medium">Status</th>
+              <th className="text-left px-3 py-2 font-medium hidden xl:table-cell">Start</th>
+              <th className="text-left px-3 py-2 font-medium hidden xl:table-cell">End</th>
+              <th className="text-right px-3 py-2 font-medium hidden md:table-cell">Total</th>
               <th />
             </tr>
           </thead>
@@ -275,27 +294,32 @@ export function ProjectsAdminClient({
                   .filter(Boolean)
                   .join(", ");
                 return (
-                  <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50">
-                    <td className="px-4 py-2 font-mono">{p.projectCode}</td>
-                    <td className="px-4 py-2">{p.projectName}</td>
-                    <td className="px-4 py-2 font-mono">{clientNames || p.clientCodes.join(", ") || "—"}</td>
-                    <td className="px-4 py-2">{p.type || "—"}</td>
-                    <td className="px-4 py-2">{p.status || "—"}</td>
-                    <td className="px-4 py-2">{p.startDate ?? "—"}</td>
-                    <td className="px-4 py-2">{p.endDate ?? "—"}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">
+                  <tr
+                    key={p.id}
+                    onClick={() => openEdit(p)}
+                    className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
+                  >
+                    <td className="px-3 py-2 font-mono text-xs">{p.projectCode}</td>
+                    <td className="px-3 py-2">
+                      <div>{p.projectName}</div>
+                      <div className="text-xs text-slate-500 md:hidden">
+                        {clientNames || p.clientCodes.join(", ") || "—"}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 font-mono hidden md:table-cell">
+                      {clientNames || p.clientCodes.join(", ") || "—"}
+                    </td>
+                    <td className="px-3 py-2 hidden lg:table-cell">{p.type || "—"}</td>
+                    <td className="px-3 py-2">{p.status || "—"}</td>
+                    <td className="px-3 py-2 hidden xl:table-cell">{p.startDate ?? "—"}</td>
+                    <td className="px-3 py-2 hidden xl:table-cell">{p.endDate ?? "—"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell">
                       {p.totalAmount == null
                         ? "—"
                         : `${p.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${p.currency || ""}`.trim()}
                     </td>
-                    <td className="px-4 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => openEdit(p)}
-                        className="text-brand-600 hover:text-brand-700 font-medium"
-                      >
-                        Edit
-                      </button>
+                    <td className="px-3 py-2 text-right">
+                      <span className="text-brand-600 text-xs font-medium">Edit</span>
                     </td>
                   </tr>
                 );
@@ -308,143 +332,141 @@ export function ProjectsAdminClient({
       <Modal
         open={modalOpen}
         onClose={closeModal}
+        busy={saving}
         title={creating ? "New project" : `Edit ${editing?.projectName || "project"}`}
         size="xl"
         footer={
           <>
             {!creating && editing ? (
-              <button
-                type="button"
-                onClick={() => setDeleteTarget(editing)}
+              <Button
+                tone="danger"
+                size="sm"
                 disabled={saving}
-                className="mr-auto rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+                onClick={() => setDeleteTarget(editing)}
+                className="mr-auto"
               >
                 Delete
-              </button>
+              </Button>
             ) : null}
-            <button
-              type="button"
-              onClick={closeModal}
-              disabled={saving}
-              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
-            >
+            <Button tone="secondary" size="sm" onClick={closeModal} disabled={saving}>
               Cancel
-            </button>
-            <button
-              type="button"
-              onClick={submit}
-              disabled={saving}
-              className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-60"
-            >
+            </Button>
+            <Button tone="primary" size="sm" onClick={submit} disabled={saving}>
               {saving ? "Saving…" : creating ? "Create project" : "Save changes"}
-            </button>
+            </Button>
           </>
         }
       >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">
-                Project code <span className="text-slate-400 text-xs">(e.g. AGX-2026-01)</span>
-              </span>
-              <div className="mt-1 flex gap-2">
-                <input
-                  type="text"
-                  value={form.projectCode}
-                  onChange={(e) => updateField("projectCode", e.target.value)}
-                  required
-                  className="block w-full rounded-md border border-slate-300 px-3 py-2 font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={suggestCode}
-                  disabled={codeLoading || !form.clientId}
-                  title={!form.clientId ? "Pick a client first" : "Suggest next available code"}
-                  className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
-                >
-                  {codeLoading ? "…" : "Auto"}
-                </button>
-              </div>
-            </label>
-          </div>
-          <Field
-            label="Project name"
-            value={form.projectName}
-            onChange={(v) => updateField("projectName", v)}
-            required
-          />
-          <Select label="Client" value={form.clientId} onChange={(v) => updateField("clientId", v)}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormSelect
+            label="Client"
+            value={form.clientId}
+            onChange={onClientChange}
+          >
             <option value="">— None —</option>
             {clients.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.clientCode} — {c.clientName}
               </option>
             ))}
-          </Select>
-          <Select label="Type" value={form.type} onChange={(v) => updateField("type", v)}>
+          </FormSelect>
+          <div>
+            <span className="text-xs font-medium text-slate-600">
+              Project code <span className="text-red-500">*</span>
+            </span>
+            <div className="mt-1 flex gap-2">
+              <input
+                type="text"
+                value={form.projectCode}
+                onChange={(e) => updateField("projectCode", e.target.value)}
+                required
+                className="block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm font-mono focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                placeholder="AGX-2026-01"
+              />
+              <Button
+                tone="secondary"
+                size="sm"
+                disabled={codeLoading || !form.clientId}
+                onClick={suggestCode}
+                title={!form.clientId ? "Pick a client first" : "Suggest next available code"}
+              >
+                {codeLoading ? "…" : "Auto"}
+              </Button>
+            </div>
+            <div className="mt-1 text-xs text-slate-400">Format: CLIENT-YEAR-NN</div>
+          </div>
+          <FormField
+            label="Project name"
+            value={form.projectName}
+            onChange={(v) => updateField("projectName", v)}
+            required
+            className="sm:col-span-2"
+          />
+          <FormSelect label="Type" value={form.type} onChange={(v) => updateField("type", v)}>
             <option value="">—</option>
             {projectTypes.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
+              <option key={t} value={t}>{t}</option>
             ))}
-          </Select>
-          <Select label="Status" value={form.status} onChange={(v) => updateField("status", v)}>
+          </FormSelect>
+          <FormSelect label="Status" value={form.status} onChange={(v) => updateField("status", v)}>
             <option value="">—</option>
             {projectStatuses.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
+              <option key={s} value={s}>{s}</option>
             ))}
-          </Select>
-          <Select label="Currency" value={form.currency} onChange={(v) => updateField("currency", v)}>
-            <option value="">—</option>
-            {currencies.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </Select>
-          <Field
+          </FormSelect>
+          <FormField
+            label="Start date"
+            value={form.startDate}
+            onChange={(v) => updateField("startDate", v)}
+            type="date"
+          />
+          <FormField
+            label="End date"
+            value={form.endDate}
+            onChange={(v) => updateField("endDate", v)}
+            type="date"
+          />
+          <FormField
             label="Total amount"
             value={form.totalAmount}
             onChange={(v) => updateField("totalAmount", v)}
             type="number"
           />
-          <Field
+          <FormSelect label="Currency" value={form.currency} onChange={(v) => updateField("currency", v)}>
+            <option value="">—</option>
+            {currencies.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </FormSelect>
+          <FormField
             label="FX to EUR"
             value={form.fxToEur}
             onChange={(v) => updateField("fxToEur", v)}
             type="number"
           />
-          <Field label="Start date" value={form.startDate} onChange={(v) => updateField("startDate", v)} type="date" />
-          <Field label="End date" value={form.endDate} onChange={(v) => updateField("endDate", v)} type="date" />
-          <Select label="SOW signed" value={form.sowSigned} onChange={(v) => updateField("sowSigned", v)}>
+          <FormSelect label="SOW signed" value={form.sowSigned} onChange={(v) => updateField("sowSigned", v)}>
             <option value="">—</option>
             {sowOptions.map((o) => (
-              <option key={o} value={o}>
-                {o}
-              </option>
+              <option key={o} value={o}>{o}</option>
             ))}
-          </Select>
-          <Field
+          </FormSelect>
+          <FormField
             label="SOW validity date"
             value={form.sowValidityDate}
             onChange={(v) => updateField("sowValidityDate", v)}
             type="date"
           />
         </div>
-        <label className="block mt-4">
-          <span className="text-sm font-medium text-slate-700">Objective</span>
-          <textarea
+        <div className="mt-3">
+          <FormTextarea
+            label="Objective"
             value={form.objective}
-            onChange={(e) => updateField("objective", e.target.value)}
+            onChange={(v) => updateField("objective", v)}
             rows={3}
-            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2"
           />
-        </label>
+        </div>
         {error ? (
-          <div className="mt-4 rounded-md bg-red-50 text-red-700 p-3 text-sm">{error}</div>
+          <div className="mt-3 rounded-md bg-red-50 text-red-700 p-2.5 text-xs">{error}</div>
         ) : null}
       </Modal>
 
@@ -465,58 +487,5 @@ export function ProjectsAdminClient({
         onConfirm={confirmDelete}
       />
     </div>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  required,
-  type = "text",
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  required?: boolean;
-  type?: string;
-}) {
-  return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        required={required}
-        step={type === "number" ? "any" : undefined}
-        className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2"
-      />
-    </label>
-  );
-}
-
-function Select({
-  label,
-  value,
-  onChange,
-  children,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2"
-      >
-        {children}
-      </select>
-    </label>
   );
 }

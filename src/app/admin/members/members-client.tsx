@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
+import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import type {
   Currency,
   MemberAdminRecord,
@@ -64,6 +65,12 @@ function fromRecord(m: MemberAdminRecord): FormState {
   };
 }
 
+type CodeStatus =
+  | { state: "idle" }
+  | { state: "checking" }
+  | { state: "ok" }
+  | { state: "taken"; message: string };
+
 export function MembersAdminClient({ members, roles, statuses, currencies }: Props) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -72,8 +79,18 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
   const [form, setForm] = useState<FormState>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [codeStatus, setCodeStatus] = useState<CodeStatus>({ state: "idle" });
+  const codeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nameTouchedRef = useRef(false);
+  const codeTouchedRef = useRef(false);
   const [deleteTarget, setDeleteTarget] = useState<MemberAdminRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (codeTimerRef.current) clearTimeout(codeTimerRef.current);
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -84,18 +101,58 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
     );
   }, [members, search]);
 
+  function originalCode(): string {
+    return editing?.memberCode ?? "";
+  }
+
+  function checkCodeAvailability(code: string) {
+    setCodeStatus({ state: "idle" });
+    if (codeTimerRef.current) clearTimeout(codeTimerRef.current);
+    if (!code) return;
+    if (code === originalCode()) {
+      setCodeStatus({ state: "ok" });
+      return;
+    }
+    setCodeStatus({ state: "checking" });
+    codeTimerRef.current = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ code });
+        if (editing) params.set("excludeId", editing.id);
+        const res = await fetch(`/api/admin/members/check-code?${params.toString()}`);
+        const data = (await res.json()) as { available?: boolean; valid?: boolean };
+        if (!data.valid) {
+          setCodeStatus({ state: "idle" });
+          return;
+        }
+        setCodeStatus(
+          data.available
+            ? { state: "ok" }
+            : { state: "taken", message: `${code} is already used.` },
+        );
+      } catch {
+        setCodeStatus({ state: "idle" });
+      }
+    }, 300);
+  }
+
   function openCreate() {
     setEditing(null);
     setCreating(true);
     setForm(EMPTY);
     setError(null);
+    setCodeStatus({ state: "idle" });
+    nameTouchedRef.current = false;
+    codeTouchedRef.current = false;
   }
 
   function openEdit(m: MemberAdminRecord) {
-    setCreating(false);
     setEditing(m);
+    setCreating(false);
     setForm(fromRecord(m));
     setError(null);
+    setCodeStatus({ state: "idle" });
+    nameTouchedRef.current = true;
+    codeTouchedRef.current = true;
   }
 
   function closeModal() {
@@ -109,9 +166,44 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  async function onFullNameChange(v: string) {
+    nameTouchedRef.current = true;
+    updateField("fullName", v);
+    // When creating and the user hasn't edited the code manually, suggest one.
+    if (creating && !codeTouchedRef.current && v.trim().length >= 2) {
+      try {
+        const res = await fetch(
+          `/api/admin/members/suggest-code?fullName=${encodeURIComponent(v.trim())}`,
+        );
+        const data = (await res.json()) as { code?: string };
+        if (data.code && !codeTouchedRef.current) {
+          setForm((f) => ({ ...f, memberCode: data.code! }));
+          checkCodeAvailability(data.code);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  function onCodeChange(raw: string) {
+    codeTouchedRef.current = true;
+    const v = raw.trim().toUpperCase().replace(/\s+/g, "");
+    updateField("memberCode", v);
+    checkCodeAvailability(v);
+  }
+
   async function submit() {
-    setSaving(true);
     setError(null);
+    if (!form.memberCode.trim()) {
+      setError("Member code is required.");
+      return;
+    }
+    if (codeStatus.state === "taken") {
+      setError(codeStatus.message);
+      return;
+    }
+    setSaving(true);
     try {
       const body = {
         memberCode: form.memberCode.trim(),
@@ -150,7 +242,6 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
   async function confirmDelete() {
     if (!deleteTarget) return;
     setDeleting(true);
-    setError(null);
     try {
       const res = await fetch(`/api/admin/members/${deleteTarget.id}`, { method: "DELETE" });
       if (!res.ok) {
@@ -172,7 +263,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
         <input
           type="search"
           value={search}
@@ -180,26 +271,22 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
           placeholder="Search by code, name, email, country…"
           className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
         />
-        <button
-          type="button"
-          onClick={openCreate}
-          className="inline-flex items-center rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 text-sm font-medium"
-        >
+        <Button tone="primary" size="md" onClick={openCreate}>
           + New member
-        </button>
+        </Button>
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-600">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-4 py-2 font-medium">Code</th>
-              <th className="text-left px-4 py-2 font-medium">Name</th>
-              <th className="text-left px-4 py-2 font-medium">Email</th>
-              <th className="text-left px-4 py-2 font-medium">Role</th>
-              <th className="text-left px-4 py-2 font-medium">Status</th>
-              <th className="text-left px-4 py-2 font-medium">Country</th>
-              <th className="text-right px-4 py-2 font-medium">Daily rate</th>
+              <th className="text-left px-3 py-2 font-medium">Code</th>
+              <th className="text-left px-3 py-2 font-medium">Name</th>
+              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Email</th>
+              <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Role</th>
+              <th className="text-left px-3 py-2 font-medium">Status</th>
+              <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Country</th>
+              <th className="text-right px-3 py-2 font-medium hidden md:table-cell">Daily rate</th>
               <th />
             </tr>
           </thead>
@@ -212,26 +299,27 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
               </tr>
             ) : (
               filtered.map((m) => (
-                <tr key={m.id} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-2 font-mono">{m.memberCode}</td>
-                  <td className="px-4 py-2">{m.fullName}</td>
-                  <td className="px-4 py-2 text-slate-600">{m.email}</td>
-                  <td className="px-4 py-2">{m.role || "—"}</td>
-                  <td className="px-4 py-2"><StatusPill status={m.status} /></td>
-                  <td className="px-4 py-2">{m.country || "—"}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">
+                <tr
+                  key={m.id}
+                  onClick={() => openEdit(m)}
+                  className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
+                >
+                  <td className="px-3 py-2 font-mono text-xs">{m.memberCode}</td>
+                  <td className="px-3 py-2">
+                    <div>{m.fullName}</div>
+                    <div className="text-xs text-slate-500 md:hidden">{m.email}</div>
+                  </td>
+                  <td className="px-3 py-2 text-slate-600 hidden md:table-cell">{m.email}</td>
+                  <td className="px-3 py-2 hidden lg:table-cell">{m.role || "—"}</td>
+                  <td className="px-3 py-2"><StatusPill status={m.status} /></td>
+                  <td className="px-3 py-2 hidden lg:table-cell">{m.country || "—"}</td>
+                  <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell">
                     {m.dailyRate == null
                       ? "—"
                       : `${m.dailyRate.toLocaleString("en-US")} ${m.currency || ""}`.trim()}
                   </td>
-                  <td className="px-4 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(m)}
-                      className="text-brand-600 hover:text-brand-700 font-medium"
-                    >
-                      Edit
-                    </button>
+                  <td className="px-3 py-2 text-right">
+                    <span className="text-brand-600 text-xs font-medium">Edit</span>
                   </td>
                 </tr>
               ))
@@ -243,113 +331,99 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
       <Modal
         open={modalOpen}
         onClose={closeModal}
+        busy={saving}
         title={creating ? "New member" : `Edit ${editing?.fullName || "member"}`}
         size="xl"
         footer={
           <>
             {!creating && editing ? (
-              <button
-                type="button"
-                onClick={() => setDeleteTarget(editing)}
+              <Button
+                tone="danger"
+                size="sm"
                 disabled={saving}
-                className="mr-auto rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+                onClick={() => setDeleteTarget(editing)}
+                className="mr-auto"
               >
                 Delete
-              </button>
+              </Button>
             ) : null}
-            <button
-              type="button"
-              onClick={closeModal}
-              disabled={saving}
-              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
-            >
+            <Button tone="secondary" size="sm" onClick={closeModal} disabled={saving}>
               Cancel
-            </button>
-            <button
-              type="button"
-              onClick={submit}
-              disabled={saving}
-              className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-60"
-            >
+            </Button>
+            <Button tone="primary" size="sm" onClick={submit} disabled={saving}>
               {saving ? "Saving…" : creating ? "Create member" : "Save changes"}
-            </button>
+            </Button>
           </>
         }
       >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field
-            label="Member code"
-            value={form.memberCode}
-            onChange={(v) => updateField("memberCode", v)}
-            required
-            readOnly={!creating}
-          />
-          <Field
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField
             label="Full name"
             value={form.fullName}
-            onChange={(v) => updateField("fullName", v)}
+            onChange={onFullNameChange}
             required
           />
-          <Field
+          <FormField
             label="Email"
             value={form.email}
             onChange={(v) => updateField("email", v)}
             type="email"
             required
           />
-          <Select label="Status" value={form.status} onChange={(v) => updateField("status", v)}>
+          <FormField
+            label="Member code"
+            value={form.memberCode}
+            onChange={onCodeChange}
+            required
+            inputClassName="font-mono uppercase tracking-wide"
+            hint={<CodeHint status={codeStatus} suggestion={creating} />}
+          />
+          <FormSelect label="Status" value={form.status} onChange={(v) => updateField("status", v)}>
             {statuses.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
+              <option key={s} value={s}>{s}</option>
             ))}
-          </Select>
-          <Select label="Role" value={form.role} onChange={(v) => updateField("role", v)}>
+          </FormSelect>
+          <FormSelect label="Role" value={form.role} onChange={(v) => updateField("role", v)}>
             <option value="">—</option>
             {roles.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
+              <option key={r} value={r}>{r}</option>
             ))}
-          </Select>
-          <Field label="Title" value={form.title} onChange={(v) => updateField("title", v)} />
-          <Field label="Country" value={form.country} onChange={(v) => updateField("country", v)} />
-          <Field label="Phone" value={form.phone} onChange={(v) => updateField("phone", v)} />
-          <Field
+          </FormSelect>
+          <FormField label="Title" value={form.title} onChange={(v) => updateField("title", v)} />
+          <FormField label="Country" value={form.country} onChange={(v) => updateField("country", v)} />
+          <FormField label="Phone" value={form.phone} onChange={(v) => updateField("phone", v)} />
+          <FormField
             label="Legal entity"
             value={form.legalEntity}
             onChange={(v) => updateField("legalEntity", v)}
           />
-          <Field
+          <FormField
             label="Daily rate"
             value={form.dailyRate}
             onChange={(v) => updateField("dailyRate", v)}
             type="number"
           />
-          <Select
+          <FormSelect
             label="Currency"
             value={form.currency}
             onChange={(v) => updateField("currency", v)}
           >
             <option value="">—</option>
             {currencies.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
+              <option key={c} value={c}>{c}</option>
             ))}
-          </Select>
+          </FormSelect>
         </div>
-        <label className="block mt-4">
-          <span className="text-sm font-medium text-slate-700">Introduction</span>
-          <textarea
+        <div className="mt-3">
+          <FormTextarea
+            label="Introduction"
             value={form.introduction}
-            onChange={(e) => updateField("introduction", e.target.value)}
+            onChange={(v) => updateField("introduction", v)}
             rows={3}
-            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2"
           />
-        </label>
+        </div>
         {error ? (
-          <div className="mt-4 rounded-md bg-red-50 text-red-700 p-3 text-sm">{error}</div>
+          <div className="mt-3 rounded-md bg-red-50 text-red-700 p-2.5 text-xs">{error}</div>
         ) : null}
       </Modal>
 
@@ -360,8 +434,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
           <>
             This will permanently remove{" "}
             <span className="font-semibold">{deleteTarget?.fullName}</span>{" "}
-            (<span className="font-mono">{deleteTarget?.memberCode}</span>) from the Network
-            Members table. This cannot be undone.
+            (<span className="font-mono">{deleteTarget?.memberCode}</span>). This cannot be undone.
           </>
         }
         confirmLabel="Delete"
@@ -372,6 +445,17 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
       />
     </div>
   );
+}
+
+function CodeHint({ status, suggestion }: { status: CodeStatus; suggestion: boolean }) {
+  if (status.state === "idle") {
+    return suggestion ? (
+      <span className="text-slate-400">Auto-filled from name — edit if needed.</span>
+    ) : null;
+  }
+  if (status.state === "checking") return <span className="text-slate-500">Checking…</span>;
+  if (status.state === "ok") return <span className="text-green-600">Available.</span>;
+  return <span className="text-red-600">{status.message}</span>;
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -386,63 +470,5 @@ function StatusPill({ status }: { status: string }) {
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}>
       {status}
     </span>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  required,
-  type = "text",
-  readOnly,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  required?: boolean;
-  type?: string;
-  readOnly?: boolean;
-}) {
-  return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        required={required}
-        readOnly={readOnly}
-        step={type === "number" ? "any" : undefined}
-        className={`mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 ${
-          readOnly ? "bg-slate-50 text-slate-500" : ""
-        }`}
-      />
-    </label>
-  );
-}
-
-function Select({
-  label,
-  value,
-  onChange,
-  children,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2"
-      >
-        {children}
-      </select>
-    </label>
   );
 }
