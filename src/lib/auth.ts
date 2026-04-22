@@ -16,6 +16,7 @@ export type { SessionPayload };
 export type MagicPayload = {
   kind: "magic";
   email: string;
+  jti: string;
 };
 
 async function sign(payload: object, ttlSeconds: number): Promise<string> {
@@ -35,14 +36,28 @@ async function verify<T>(token: string): Promise<T | null> {
   }
 }
 
-export async function createMagicToken(email: string): Promise<string> {
-  return sign({ kind: "magic", email: email.trim().toLowerCase() } satisfies MagicPayload, MAGIC_TTL_SECONDS);
+function randomJti(): string {
+  // 128-bit random, URL-safe base64.
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 1) s += String.fromCharCode(bytes[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+export async function createMagicToken(email: string): Promise<{ token: string; jti: string }> {
+  const jti = randomJti();
+  const token = await sign(
+    { kind: "magic", email: email.trim().toLowerCase(), jti } satisfies MagicPayload,
+    MAGIC_TTL_SECONDS,
+  );
+  return { token, jti };
 }
 
 export async function verifyMagicToken(token: string): Promise<MagicPayload | null> {
   const payload = await verify<MagicPayload & { kind?: string }>(token);
-  if (!payload || payload.kind !== "magic" || !payload.email) return null;
-  return { kind: "magic", email: payload.email };
+  if (!payload || payload.kind !== "magic" || !payload.email || !payload.jti) return null;
+  return { kind: "magic", email: payload.email, jti: payload.jti };
 }
 
 export async function startSession(member: MemberRecord): Promise<void> {

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { clearMagicSession, readMagicSession } from "@/lib/airtable";
 import { revalidateMember, startSession, verifyMagicToken } from "@/lib/auth";
 import { env } from "@/lib/env";
 
@@ -13,6 +14,16 @@ export async function GET(request: Request) {
   const member = await revalidateMember(payload.email);
   if (!member) return redirectWithError("not_active");
 
+  // Single-use + latest-link-wins: reject if the stored jti does not match
+  // this token's jti. Any older outstanding link (issued before a newer one)
+  // will be orphaned, and replaying a used link after the session has been
+  // cleared will also fall into this branch.
+  const stored = await readMagicSession(member.id);
+  if (!stored || stored.jti !== payload.jti) {
+    return redirectWithError("invalid_or_expired");
+  }
+
+  await clearMagicSession(member.id);
   await startSession(member);
   return NextResponse.redirect(`${env.appUrl}/dashboard`);
 }

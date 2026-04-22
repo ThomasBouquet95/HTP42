@@ -8,56 +8,50 @@ function isAdminPath(pathname: string): boolean {
   return ADMIN_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+function rejectApiOrRedirectLogin(req: NextRequest, status: 403 | "login" = "login") {
+  if (req.nextUrl.pathname.startsWith("/api/") || status === 403) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const url = req.nextUrl.clone();
+  url.pathname = "/login";
+  url.search = "";
+  return NextResponse.redirect(url);
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next();
   }
   const token = req.cookies.get("htp42_session")?.value;
-  if (!token) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    url.search = "";
-    return NextResponse.redirect(url);
-  }
+  if (!token) return rejectApiOrRedirectLogin(req);
 
-  if (!isAdminPath(pathname)) return NextResponse.next();
-
-  // Cheap JWT-level role check for admin routes. The actual pages/API routes
-  // also revalidate the role against Airtable via requireAdminSession().
   const secret = process.env.AUTH_SECRET;
   if (!secret) {
-    // Fail closed if the secret is missing in the runtime. Redirect APIs to
-    // 403 and pages to /login rather than /dashboard to avoid a redirect loop
-    // if the secret is ever dropped in production.
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-    const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    url.search = "";
-    return NextResponse.redirect(url);
+    // Fail closed on every protected path if the secret is missing at runtime.
+    return rejectApiOrRedirectLogin(req);
   }
+
+  let role = "";
   try {
     const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
-    if ((payload as { role?: string }).role !== "Admin") {
-      if (pathname.startsWith("/api/")) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      }
-      const url = req.nextUrl.clone();
-      url.pathname = "/dashboard";
-      url.search = "";
-      return NextResponse.redirect(url);
-    }
+    role = typeof (payload as { role?: unknown }).role === "string"
+      ? ((payload as { role?: string }).role ?? "")
+      : "";
   } catch {
+    return rejectApiOrRedirectLogin(req);
+  }
+
+  if (isAdminPath(pathname) && role !== "Admin") {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const url = req.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = "/dashboard";
     url.search = "";
     return NextResponse.redirect(url);
   }
+
   return NextResponse.next();
 }
 
