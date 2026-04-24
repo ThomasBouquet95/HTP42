@@ -13,7 +13,7 @@ export default async function MyTimesheetsPage() {
 
   const [timesheets, led] = await Promise.all([
     getTimesheetsForMember(session.memberCode),
-    getLedProjects(session.memberCode),
+    getLedProjects(session.sub),
   ]);
 
   return (

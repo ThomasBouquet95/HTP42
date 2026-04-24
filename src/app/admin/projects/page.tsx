@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AppHeader } from "@/components/app-header";
 import {
+  listAllMembers,
   listClients,
   listProjects,
   PROJECT_STATUSES,
@@ -18,7 +19,11 @@ export default async function AdminProjectsPage() {
   const session = await requireAdminSession();
   if (!session) redirect("/dashboard");
 
-  const [projects, clients] = await Promise.all([listProjects(), listClients()]);
+  const [projects, clients, members] = await Promise.all([
+    listProjects(),
+    listClients(),
+    listAllMembers(),
+  ]);
 
   return (
     <>
@@ -36,6 +41,7 @@ export default async function AdminProjectsPage() {
         <ProjectsAdminClient
           projects={projects}
           clients={clients}
+          members={members.map((m) => ({ id: m.id, code: m.memberCode, name: m.fullName }))}
           projectTypes={PROJECT_TYPES}
           projectStatuses={PROJECT_STATUSES}
           currencies={CURRENCIES}

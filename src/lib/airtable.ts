@@ -40,6 +40,7 @@ export const FIELDS = {
     projectCode: "Project Code",
     projectName: "Project Name",
     clientCode: "Client Code",
+    projectLeaders: "Project Leaders",
     type: "Type",
     objective: "Objective",
     startDate: "Start Date",
@@ -213,6 +214,8 @@ export type ProjectRecord = {
   projectName: string;
   clientRecordIds: string[];
   clientCodes: string[];
+  projectLeaderRecordIds: string[];
+  projectLeaderCodes: string[];
   type: ProjectType | "";
   objective: string;
   startDate: string | null;
@@ -639,6 +642,8 @@ function projectFromRecord(r: AirtableRecord<FieldSet>): ProjectRecord {
     projectName: str(r, FIELDS.projects.projectName),
     clientRecordIds: linkedIds(r, FIELDS.projects.clientCode),
     clientCodes: linkedDisplay(r, FIELDS.projects.clientCode),
+    projectLeaderRecordIds: linkedIds(r, FIELDS.projects.projectLeaders),
+    projectLeaderCodes: linkedDisplay(r, FIELDS.projects.projectLeaders),
     type: str(r, FIELDS.projects.type) as ProjectType | "",
     objective: str(r, FIELDS.projects.objective),
     startDate: dateOrNull(r, FIELDS.projects.startDate),
@@ -673,6 +678,7 @@ export type ProjectInput = {
   projectCode: string;
   projectName: string;
   clientRecordIds: string[];
+  projectLeaderRecordIds: string[];
   type: ProjectType | "";
   objective: string;
   startDate: string | null;
@@ -690,6 +696,7 @@ function projectFields(input: ProjectInput): Record<string, unknown> {
     [FIELDS.projects.projectCode]: input.projectCode,
     [FIELDS.projects.projectName]: input.projectName,
     [FIELDS.projects.clientCode]: input.clientRecordIds,
+    [FIELDS.projects.projectLeaders]: input.projectLeaderRecordIds,
     [FIELDS.projects.type]: input.type === "" ? null : input.type,
     [FIELDS.projects.objective]: input.objective,
     [FIELDS.projects.startDate]: input.startDate,
@@ -1243,6 +1250,7 @@ export async function suggestMemberCode(fullName: string): Promise<string> {
 export type LeaderProjectInfo = {
   projectCode: string;
   projectName: string;
+  projectRecordId: string;
 };
 
 export type TeamTimesheetRecord = TimesheetRecord & {
@@ -1250,80 +1258,205 @@ export type TeamTimesheetRecord = TimesheetRecord & {
   memberName: string;
 };
 
-// Returns the list of projectCodes where `memberCode` is staffed as the
-// Project Leader.
-export async function getLedProjects(memberCode: string): Promise<LeaderProjectInfo[]> {
-  if (!memberCode) return [];
-  const formula = `AND(
-    FIND("${escape(memberCode)}", ARRAYJOIN(ARRAYCOMPACT({${FIELDS.projectStaffing.memberCode}}))),
-    {${FIELDS.projectStaffing.projectRole}} = "Project Leader"
-  )`;
-  const [records, projectNames] = await Promise.all([
-    base(TABLES.projectStaffing).select({ filterByFormula: formula }).all(),
-    getProjectNameMap(),
-  ]);
-  const seen = new Set<string>();
+// Returns the list of projects where `memberRecordId` is listed in the
+// Projects "Project Leaders" field.
+export async function getLedProjects(memberRecordId: string): Promise<LeaderProjectInfo[]> {
+  if (!memberRecordId) return [];
+  const records = await base(TABLES.projects)
+    .select({
+      fields: [
+        FIELDS.projects.projectCode,
+        FIELDS.projects.projectName,
+        FIELDS.projects.projectLeaders,
+      ],
+    })
+    .all();
   const out: LeaderProjectInfo[] = [];
   for (const r of records) {
-    const code = str(r, FIELDS.projectStaffing.projectCode);
-    if (!code || seen.has(code)) continue;
-    seen.add(code);
-    out.push({ projectCode: code, projectName: projectNames.get(code) ?? "" });
+    const leaders = linkedIds(r, FIELDS.projects.projectLeaders);
+    if (!leaders.includes(memberRecordId)) continue;
+    const code = str(r, FIELDS.projects.projectCode);
+    if (!code) continue;
+    out.push({
+      projectCode: code,
+      projectName: str(r, FIELDS.projects.projectName),
+      projectRecordId: r.id,
+    });
   }
   return out.sort((a, b) => a.projectCode.localeCompare(b.projectCode));
 }
 
-// Returns every submitted or draft timesheet tied to a staffing whose project
-// is led by `memberCode`. Results include member code + name for display.
-// Excludes the leader's own timesheets by default unless `includeSelf` is true.
-export async function listTeamTimesheetsForLeader(
-  leaderMemberCode: string,
-  opts: { includeSelf?: boolean } = {},
-): Promise<TeamTimesheetRecord[]> {
-  const led = await getLedProjects(leaderMemberCode);
-  if (led.length === 0) return [];
-  const projectCodes = new Set(led.map((p) => p.projectCode));
+// ---------------------------------------------------------------------------
+// Project summary (per-project view for a Project Leader)
+// ---------------------------------------------------------------------------
 
-  const [tsRecords, stRecords, projectNames, memberById] = await Promise.all([
+export type ProjectTeamMember = {
+  memberRecordId: string;
+  memberCode: string;
+  memberName: string;
+  staffings: Array<{
+    id: string;
+    staffingCode: string;
+    roleInProject: string;
+    projectRole: ProjectRole | "";
+    ratePerDay: number | null;
+    currency: Currency | "";
+    daysAllocated: number | null;
+    fxToEur: number | null;
+    startDate: string | null;
+    endDate: string | null;
+    status: StaffingStatus | "";
+  }>;
+  daysAllocatedTotal: number;
+  hoursActualTotal: number;
+  daysActualTotal: number; // hours / 8
+  // Flat list of timesheets for this member on this project, newest first.
+  timesheets: Array<TimesheetRecord & { staffingCode: string }>;
+};
+
+export type ProjectSummary = {
+  project: ProjectRecord;
+  members: ProjectTeamMember[];
+  // Aggregate totals across the full team on this project.
+  totals: {
+    allocatedDays: number;
+    actualHours: number;
+    actualDays: number;
+    submittedTimesheets: number;
+    draftTimesheets: number;
+  };
+};
+
+const HOURS_PER_DAY = 8;
+
+// Build a complete "Project Summary" payload for a single project, scoped by
+// a leader's access. Caller must verify the leader has access before invoking.
+export async function getProjectSummaryByCode(projectCode: string): Promise<ProjectSummary | null> {
+  const [projectRecords, stRecords, tsRecords, allMembers] = await Promise.all([
+    base(TABLES.projects)
+      .select({
+        filterByFormula: `{${FIELDS.projects.projectCode}} = "${escape(projectCode)}"`,
+        maxRecords: 1,
+      })
+      .firstPage(),
+    base(TABLES.projectStaffing)
+      .select({
+        filterByFormula: `{${FIELDS.projectStaffing.projectCode}} = "${escape(projectCode)}"`,
+      })
+      .all(),
     base(TABLES.timesheets)
       .select({ sort: [{ field: FIELDS.timesheets.startDate, direction: "desc" }] })
       .all(),
-    base(TABLES.projectStaffing).select().all(),
-    getProjectNameMap(),
-    listAllMembers().then((list) => new Map(list.map((m) => [m.id, m]))),
+    listAllMembers(),
   ]);
+  if (projectRecords.length === 0) return null;
+  const project = projectFromRecord(projectRecords[0]);
 
-  // Build an index of staffings that belong to a led project.
-  const staffingIdx = new Map<string, StaffingRecord>();
+  const memberById = new Map(allMembers.map((m) => [m.id, m]));
+
+  // Per-member accumulator of staffings + timesheets on this project.
+  const memberIndex = new Map<string, ProjectTeamMember>();
+
+  // Map staffingRecordId -> staffingCode (for timesheet join + display).
+  const staffingCodeById = new Map<string, string>();
+
   for (const r of stRecords) {
-    const projectCode = str(r, FIELDS.projectStaffing.projectCode);
-    if (!projectCodes.has(projectCode)) continue;
-    staffingIdx.set(r.id, {
+    const staffingId = r.id;
+    const staffingCode = str(r, FIELDS.projectStaffing.staffingCode);
+    staffingCodeById.set(staffingId, staffingCode);
+    const linkedMemberIds = linkedIds(r, FIELDS.projectStaffing.memberCode);
+    const daysAllocated = numOrNull(r, FIELDS.projectStaffing.daysAllocated);
+    const staffingRow = {
+      id: staffingId,
+      staffingCode,
+      roleInProject: str(r, FIELDS.projectStaffing.roleInProject),
+      projectRole: str(r, FIELDS.projectStaffing.projectRole) as ProjectRole | "",
+      ratePerDay: numOrNull(r, FIELDS.projectStaffing.ratePerDay),
+      currency: str(r, FIELDS.projectStaffing.currency) as Currency | "",
+      daysAllocated,
+      fxToEur: numOrNull(r, FIELDS.projectStaffing.fxToEur),
+      startDate: dateOrNull(r, FIELDS.projectStaffing.startDate),
+      endDate: dateOrNull(r, FIELDS.projectStaffing.endDate),
+      status: (str(r, FIELDS.projectStaffing.status) as StaffingStatus) || "",
+    };
+    for (const mid of linkedMemberIds) {
+      const m = memberById.get(mid);
+      if (!memberIndex.has(mid)) {
+        memberIndex.set(mid, {
+          memberRecordId: mid,
+          memberCode: m?.memberCode ?? mid,
+          memberName: m?.fullName ?? "",
+          staffings: [],
+          daysAllocatedTotal: 0,
+          hoursActualTotal: 0,
+          daysActualTotal: 0,
+          timesheets: [],
+        });
+      }
+      const acc = memberIndex.get(mid)!;
+      acc.staffings.push(staffingRow);
+      if (typeof daysAllocated === "number") acc.daysAllocatedTotal += daysAllocated;
+    }
+  }
+
+  // Walk timesheets and attach those whose staffing belongs to this project.
+  // We reuse toTimesheet with a minimal staffing map so the projectCode is set.
+  const staffingMapForToTimesheet = new Map<string, StaffingRecord>();
+  for (const r of stRecords) {
+    staffingMapForToTimesheet.set(r.id, {
       id: r.id,
       staffingCode: str(r, FIELDS.projectStaffing.staffingCode),
       projectCode,
-      projectName: projectNames.get(projectCode) ?? "",
+      projectName: project.projectName,
       startDate: dateOrNull(r, FIELDS.projectStaffing.startDate),
       endDate: dateOrNull(r, FIELDS.projectStaffing.endDate),
       status: (str(r, FIELDS.projectStaffing.status) as StaffingStatus) || null,
     });
   }
 
-  const out: TeamTimesheetRecord[] = [];
+  let submittedTimesheets = 0;
+  let draftTimesheets = 0;
+
   for (const r of tsRecords) {
-    const ts = toTimesheet(r, staffingIdx);
-    if (!ts.staffingRecordId || !staffingIdx.has(ts.staffingRecordId)) continue;
-    if (!opts.includeSelf) {
-      const member = memberById.get(ts.memberRecordId);
-      if (member?.memberCode === leaderMemberCode) continue;
+    const staffingId = firstLinkedId(r, FIELDS.timesheets.projectStaffing);
+    if (!staffingId || !staffingMapForToTimesheet.has(staffingId)) continue;
+    const ts = toTimesheet(r, staffingMapForToTimesheet);
+    const mid = ts.memberRecordId;
+    if (!memberIndex.has(mid)) {
+      const m = memberById.get(mid);
+      memberIndex.set(mid, {
+        memberRecordId: mid,
+        memberCode: m?.memberCode ?? mid,
+        memberName: m?.fullName ?? "",
+        staffings: [],
+        daysAllocatedTotal: 0,
+        hoursActualTotal: 0,
+        daysActualTotal: 0,
+        timesheets: [],
+      });
     }
-    const member = memberById.get(ts.memberRecordId);
-    out.push({
-      ...ts,
-      memberCode: member?.memberCode ?? ts.memberRecordId,
-      memberName: member?.fullName ?? "",
-    });
+    const acc = memberIndex.get(mid)!;
+    acc.timesheets.push({ ...ts, staffingCode: staffingCodeById.get(staffingId) ?? "" });
+    if (ts.status !== "Deleted") {
+      acc.hoursActualTotal += ts.totalHours;
+      acc.daysActualTotal = acc.hoursActualTotal / HOURS_PER_DAY;
+    }
+    if (ts.status === "Submitted") submittedTimesheets += 1;
+    else if (ts.status === "Draft") draftTimesheets += 1;
   }
-  return out;
+
+  const members = [...memberIndex.values()].sort((a, b) =>
+    a.memberName.localeCompare(b.memberName) || a.memberCode.localeCompare(b.memberCode),
+  );
+
+  const totals = {
+    allocatedDays: members.reduce((s, m) => s + m.daysAllocatedTotal, 0),
+    actualHours: members.reduce((s, m) => s + m.hoursActualTotal, 0),
+    actualDays: members.reduce((s, m) => s + m.daysActualTotal, 0),
+    submittedTimesheets,
+    draftTimesheets,
+  };
+
+  return { project, members, totals };
 }
 

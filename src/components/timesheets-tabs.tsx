@@ -10,7 +10,7 @@ type Props = {
 const TABS: Array<{ key: TabKey; href: string; label: string }> = [
   { key: "submit", href: "/timesheets/submit", label: "Submit timesheet" },
   { key: "mine", href: "/timesheets/mine", label: "My timesheets" },
-  { key: "team", href: "/timesheets/team", label: "Team timesheets" },
+  { key: "team", href: "/timesheets/team", label: "Project Summary" },
 ];
 
 export function TimesheetsTabs({ active, showTeamTab }: Props) {

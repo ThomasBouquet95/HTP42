@@ -11,7 +11,7 @@ export default async function SubmitTimesheetPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const led = await getLedProjects(session.memberCode);
+  const led = await getLedProjects(session.sub);
 
   return (
     <>
