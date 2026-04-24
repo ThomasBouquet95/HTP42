@@ -9,11 +9,16 @@ type NavItem = { href: string; label: string; match: (p: string) => boolean };
 
 const NAV: NavItem[] = [
   {
-    href: "/dashboard",
+    href: "/timesheets/mine",
     label: "Timesheets",
-    match: (p) => p === "/dashboard" || p.startsWith("/dashboard/") || p.startsWith("/timesheets"),
+    match: (p) =>
+      p === "/dashboard" ||
+      p.startsWith("/dashboard/") ||
+      p === "/timesheets" ||
+      p.startsWith("/timesheets/") ||
+      p === "/summary" ||
+      p.startsWith("/summary/"),
   },
-  { href: "/summary", label: "Summary", match: (p) => p === "/summary" || p.startsWith("/summary/") },
   { href: "/profile", label: "Profile", match: (p) => p === "/profile" || p.startsWith("/profile/") },
 ];
 
@@ -32,7 +37,7 @@ export function AppHeader({ session }: { session: SessionPayload }) {
     <header className="bg-white border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
         <div className="flex items-center gap-8">
-          <Link href="/dashboard" className="flex items-center gap-2 py-4" aria-label="HealthTech Partners 42">
+          <Link href="/timesheets/mine" className="flex items-center gap-2 py-4" aria-label="HealthTech Partners 42">
             <Image src="/logo-mark.svg" alt="" width={28} height={28} priority />
             <span className="text-base font-semibold text-brand-600 tracking-tight">
               HealthTech Partners 42

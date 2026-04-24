@@ -19,6 +19,11 @@ type Props = {
   timesheets: TimesheetRecord[];
   memberLabel: string;
   memberCode: string;
+  // When true, render an Edit/View link per row pointing at /timesheets/[id].
+  editable?: boolean;
+  // Optional default filter overrides (e.g. set status to "All" on the "My
+  // timesheets" page rather than the default "Submitted").
+  defaultStatus?: "All" | TimesheetStatus;
 };
 
 type Filters = {
@@ -37,8 +42,16 @@ const DEFAULT_FILTERS: Filters = {
   to: "",
 };
 
-export function SummaryClient({ timesheets, memberLabel, memberCode }: Props) {
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+export function SummaryClient({
+  timesheets,
+  memberLabel,
+  memberCode,
+  editable = false,
+  defaultStatus,
+}: Props) {
+  const [filters, setFilters] = useState<Filters>(() =>
+    defaultStatus ? { ...DEFAULT_FILTERS, status: defaultStatus } : DEFAULT_FILTERS,
+  );
 
   const projectOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -273,12 +286,13 @@ export function SummaryClient({ timesheets, memberLabel, memberCode }: Props) {
                 </th>
               ))}
               <th className="text-right px-4 py-2 font-medium">Total</th>
+              {editable ? <th /> : null}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="text-center text-slate-500 py-10">
+                <td colSpan={editable ? 10 : 9} className="text-center text-slate-500 py-10">
                   No timesheets match these filters.
                 </td>
               </tr>
@@ -286,7 +300,7 @@ export function SummaryClient({ timesheets, memberLabel, memberCode }: Props) {
               filtered.map((t) => {
                 const d = dayIsos(t.startDate);
                 return (
-                  <tr key={t.id} className="border-t border-slate-100 align-top">
+                  <tr key={t.id} className="border-t border-slate-100 align-top hover:bg-slate-50">
                     <td className="px-4 py-3 whitespace-nowrap">
                       {formatRange(t.startDate, t.endDate)}
                     </td>
@@ -304,6 +318,16 @@ export function SummaryClient({ timesheets, memberLabel, memberCode }: Props) {
                     <td className="px-4 py-3 text-right tabular-nums font-semibold">
                       {t.totalHours.toFixed(2)}
                     </td>
+                    {editable ? (
+                      <td className="px-4 py-3 text-right">
+                        <a
+                          href={`/timesheets/${t.id}`}
+                          className="text-brand-600 hover:text-brand-700 font-medium text-xs"
+                        >
+                          {t.status === "Draft" ? "Edit" : "View"}
+                        </a>
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })

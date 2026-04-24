@@ -6,6 +6,7 @@ import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import type {
   Currency,
+  ProjectRole,
   SowStatus,
   StaffingAdminRecord,
   StaffingStatus,
@@ -21,12 +22,14 @@ type Props = {
   currencies: readonly Currency[];
   staffingStatuses: readonly StaffingStatus[];
   sowStatuses: readonly SowStatus[];
+  projectRoles: readonly ProjectRole[];
 };
 
 type FormState = {
   projectCode: string;
   memberId: string;
   roleInProject: string;
+  projectRole: string;
   ratePerDay: string;
   currency: string;
   daysAllocated: string;
@@ -43,6 +46,7 @@ const EMPTY: FormState = {
   projectCode: "",
   memberId: "",
   roleInProject: "",
+  projectRole: "Consultant",
   ratePerDay: "",
   currency: "",
   daysAllocated: "",
@@ -60,6 +64,7 @@ function fromRecord(s: StaffingAdminRecord): FormState {
     projectCode: s.projectCode,
     memberId: s.memberRecordIds[0] ?? "",
     roleInProject: s.roleInProject,
+    projectRole: s.projectRole,
     ratePerDay: s.ratePerDay == null ? "" : String(s.ratePerDay),
     currency: s.currency,
     daysAllocated: s.daysAllocated == null ? "" : String(s.daysAllocated),
@@ -80,6 +85,7 @@ export function StaffingsAdminClient({
   currencies,
   staffingStatuses,
   sowStatuses,
+  projectRoles,
 }: Props) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -156,6 +162,7 @@ export function StaffingsAdminClient({
         projectCode: form.projectCode,
         memberRecordIds: [form.memberId],
         roleInProject: form.roleInProject,
+        projectRole: form.projectRole,
         ratePerDay: form.ratePerDay === "" ? null : Number(form.ratePerDay),
         currency: form.currency,
         daysAllocated: form.daysAllocated === "" ? null : Number(form.daysAllocated),
@@ -239,7 +246,8 @@ export function StaffingsAdminClient({
               <th className="text-left px-3 py-2 font-medium">Staffing</th>
               <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Project</th>
               <th className="text-left px-3 py-2 font-medium">Member</th>
-              <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Role</th>
+              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Project role</th>
+              <th className="text-left px-3 py-2 font-medium hidden xl:table-cell">Job title</th>
               <th className="text-right px-3 py-2 font-medium hidden md:table-cell">Rate</th>
               <th className="text-right px-3 py-2 font-medium hidden lg:table-cell">Days</th>
               <th className="text-right px-3 py-2 font-medium hidden lg:table-cell">Total</th>
@@ -250,7 +258,7 @@ export function StaffingsAdminClient({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="text-center text-slate-500 py-10">
+                <td colSpan={10} className="text-center text-slate-500 py-10">
                   No staffings match these filters.
                 </td>
               </tr>
@@ -272,7 +280,12 @@ export function StaffingsAdminClient({
                     </div>
                     <div className="text-xs text-slate-500 md:hidden">{s.projectCode}</div>
                   </td>
-                  <td className="px-3 py-2 hidden lg:table-cell">{s.roleInProject || "—"}</td>
+                  <td className="px-3 py-2 hidden md:table-cell">
+                    <ProjectRolePill role={s.projectRole} />
+                  </td>
+                  <td className="px-3 py-2 hidden xl:table-cell text-slate-600 text-xs">
+                    {s.roleInProject || "—"}
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell">
                     {s.ratePerDay == null
                       ? "—"
@@ -355,10 +368,29 @@ export function StaffingsAdminClient({
               </option>
             ))}
           </FormSelect>
+          <FormSelect
+            label="Project role"
+            value={form.projectRole}
+            onChange={(v) => updateField("projectRole", v)}
+            required
+            hint={
+              form.projectRole === "Project Leader" ? (
+                <span className="text-brand-600">
+                  This person can view team timesheets on this project.
+                </span>
+              ) : null
+            }
+          >
+            <option value="">—</option>
+            {projectRoles.map((r) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </FormSelect>
           <FormField
-            label="Role in project"
+            label="Job title on project"
             value={form.roleInProject}
             onChange={(v) => updateField("roleInProject", v)}
+            placeholder="e.g. Lead Data Scientist"
           />
           <FormSelect label="Status" value={form.status} onChange={(v) => updateField("status", v)}>
             <option value="">—</option>
@@ -486,6 +518,19 @@ function StaffingPill({ status }: { status: string }) {
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${cls}`}>
       {status}
+    </span>
+  );
+}
+
+function ProjectRolePill({ role }: { role: string }) {
+  if (!role) return <span className="text-slate-400">—</span>;
+  const cls =
+    role === "Project Leader"
+      ? "bg-brand-50 text-brand-700 border-brand-200"
+      : "bg-slate-100 text-slate-600 border-slate-200";
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${cls}`}>
+      {role}
     </span>
   );
 }

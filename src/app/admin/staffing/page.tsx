@@ -7,6 +7,7 @@ import {
   listAllMembers,
   listAllStaffings,
   listProjects,
+  PROJECT_ROLES,
   SOW_STATUSES,
   STAFFING_STATUSES,
 } from "@/lib/airtable";
@@ -49,6 +50,7 @@ export default async function AdminStaffingPage() {
           currencies={CURRENCIES}
           staffingStatuses={STAFFING_STATUSES}
           sowStatuses={SOW_STATUSES}
+          projectRoles={PROJECT_ROLES}
         />
       </main>
     </>

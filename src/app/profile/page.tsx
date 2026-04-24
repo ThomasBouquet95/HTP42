@@ -26,8 +26,8 @@ export default async function ProfilePage() {
               an administrator.
             </p>
           </div>
-          <Link href="/dashboard" className="text-sm text-brand-600 hover:text-brand-700">
-            ← Back to dashboard
+          <Link href="/timesheets/mine" className="text-sm text-brand-600 hover:text-brand-700">
+            ← Back to my timesheets
           </Link>
         </div>
         <ProfileForm initial={member} />

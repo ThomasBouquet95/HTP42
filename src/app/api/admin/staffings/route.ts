@@ -4,9 +4,11 @@ import { requireAdminSession } from "@/lib/auth";
 import {
   createStaffing,
   CURRENCIES,
+  PROJECT_ROLES,
   SOW_STATUSES,
   STAFFING_STATUSES,
   type Currency,
+  type ProjectRole,
   type SowStatus,
   type StaffingStatus,
 } from "@/lib/airtable";
@@ -18,6 +20,7 @@ const schema = z.object({
   projectCode: z.string().trim().min(1).max(80),
   memberRecordIds: z.array(z.string()).min(1).max(1),
   roleInProject: z.string().trim().max(200).default(""),
+  projectRole: z.union([z.enum(PROJECT_ROLES as [string, ...string[]]), z.literal("")]).default(""),
   ratePerDay: nullableNumber,
   currency: z.union([z.enum(CURRENCIES as [string, ...string[]]), z.literal("")]).default(""),
   daysAllocated: nullableNumber,
@@ -48,6 +51,7 @@ export async function POST(request: Request) {
     projectCode: d.projectCode,
     memberRecordIds: d.memberRecordIds,
     roleInProject: d.roleInProject,
+    projectRole: d.projectRole as ProjectRole | "",
     ratePerDay: d.ratePerDay ?? null,
     currency: d.currency as Currency | "",
     daysAllocated: d.daysAllocated ?? null,

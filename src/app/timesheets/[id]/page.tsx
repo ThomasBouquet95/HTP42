@@ -26,8 +26,8 @@ export default async function TimesheetDetailPage({
       <AppHeader session={session} />
       <main className="max-w-4xl mx-auto px-6 py-8">
         <div className="mb-6 flex items-center gap-3 text-sm">
-          <Link href="/dashboard" className="text-brand-600 hover:text-brand-700">
-            ← Back to dashboard
+          <Link href="/timesheets/mine" className="text-brand-600 hover:text-brand-700">
+            ← Back to my timesheets
           </Link>
         </div>
         <div className="flex items-start justify-between mb-6">
