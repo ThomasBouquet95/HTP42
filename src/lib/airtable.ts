@@ -35,7 +35,6 @@ export const FIELDS = {
     memberStatus: "Member Status",
     dailyRate: "Daily Rate",
     currency: "Currency",
-    session: "Session",
   },
   projects: {
     projectCode: "Project Code",
@@ -1229,51 +1228,3 @@ export async function suggestMemberCode(fullName: string): Promise<string> {
   return base;
 }
 
-// ---------------------------------------------------------------------------
-// Magic-link session tracking (uses Network Members "Session" field)
-//
-// The Session field holds "<jti>:<lastRequestMs>" while a magic link is
-// outstanding. On /api/auth/request we overwrite it with a fresh jti and the
-// current timestamp; on successful callback we clear it. This makes magic
-// links single-use, invalidates older outstanding links when a new one is
-// issued, and allows us to rate-limit per member without extra state.
-// ---------------------------------------------------------------------------
-
-export type MagicSession = { jti: string; lastRequestMs: number } | null;
-
-export function parseMagicSession(raw: string): MagicSession {
-  if (!raw) return null;
-  const parts = raw.split(":");
-  if (parts.length < 2) return null;
-  const jti = parts[0];
-  const lastRequestMs = Number.parseInt(parts[1], 10);
-  if (!jti || !Number.isFinite(lastRequestMs)) return null;
-  return { jti, lastRequestMs };
-}
-
-export async function readMagicSession(recordId: string): Promise<MagicSession> {
-  try {
-    const r = await base(TABLES.networkMembers).find(recordId);
-    return parseMagicSession(str(r, FIELDS.networkMembers.session));
-  } catch {
-    return null;
-  }
-}
-
-export async function writeMagicSession(
-  recordId: string,
-  session: { jti: string; lastRequestMs: number },
-): Promise<void> {
-  await base(TABLES.networkMembers).update([
-    {
-      id: recordId,
-      fields: { [FIELDS.networkMembers.session]: `${session.jti}:${session.lastRequestMs}` } as FieldSet,
-    },
-  ]);
-}
-
-export async function clearMagicSession(recordId: string): Promise<void> {
-  await base(TABLES.networkMembers).update([
-    { id: recordId, fields: { [FIELDS.networkMembers.session]: "" } as FieldSet },
-  ]);
-}

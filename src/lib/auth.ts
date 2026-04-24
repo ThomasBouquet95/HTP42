@@ -6,18 +6,12 @@ import { isAdmin, type SessionPayload } from "./session";
 
 const SESSION_COOKIE = "htp42_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
-const MAGIC_TTL_SECONDS = 60 * 15; // 15 minutes
+const OAUTH_STATE_TTL_SECONDS = 60 * 10; // 10 minutes
 
 const secret = () => new TextEncoder().encode(env.authSecret);
 
 export { isAdmin };
 export type { SessionPayload };
-
-export type MagicPayload = {
-  kind: "magic";
-  email: string;
-  jti: string;
-};
 
 async function sign(payload: object, ttlSeconds: number): Promise<string> {
   return await new SignJWT(payload as Record<string, unknown>)
@@ -36,29 +30,37 @@ async function verify<T>(token: string): Promise<T | null> {
   }
 }
 
-function randomJti(): string {
-  // 128-bit random, URL-safe base64.
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  let s = "";
-  for (let i = 0; i < bytes.length; i += 1) s += String.fromCharCode(bytes[i]);
-  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+// ---------------------------------------------------------------------------
+// OAuth / OIDC state token (carries CSRF state + PKCE verifier + returnTo)
+// ---------------------------------------------------------------------------
+
+export type OAuthStatePayload = {
+  kind: "oauth";
+  state: string;
+  verifier: string;
+  returnTo?: string;
+};
+
+export async function createOAuthStateToken(
+  payload: Omit<OAuthStatePayload, "kind">,
+): Promise<string> {
+  return sign({ kind: "oauth", ...payload } satisfies OAuthStatePayload, OAUTH_STATE_TTL_SECONDS);
 }
 
-export async function createMagicToken(email: string): Promise<{ token: string; jti: string }> {
-  const jti = randomJti();
-  const token = await sign(
-    { kind: "magic", email: email.trim().toLowerCase(), jti } satisfies MagicPayload,
-    MAGIC_TTL_SECONDS,
-  );
-  return { token, jti };
+export async function verifyOAuthStateToken(token: string): Promise<OAuthStatePayload | null> {
+  const payload = await verify<OAuthStatePayload & { kind?: string }>(token);
+  if (!payload || payload.kind !== "oauth" || !payload.state || !payload.verifier) return null;
+  return {
+    kind: "oauth",
+    state: payload.state,
+    verifier: payload.verifier,
+    returnTo: typeof payload.returnTo === "string" ? payload.returnTo : undefined,
+  };
 }
 
-export async function verifyMagicToken(token: string): Promise<MagicPayload | null> {
-  const payload = await verify<MagicPayload & { kind?: string }>(token);
-  if (!payload || payload.kind !== "magic" || !payload.email || !payload.jti) return null;
-  return { kind: "magic", email: payload.email, jti: payload.jti };
-}
+// ---------------------------------------------------------------------------
+// Session cookie (set after a successful SSO callback)
+// ---------------------------------------------------------------------------
 
 export async function startSession(member: MemberRecord): Promise<void> {
   const token = await sign(

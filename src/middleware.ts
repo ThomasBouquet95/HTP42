@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/request", "/api/auth/callback"];
+const PUBLIC_PATHS = ["/login", "/api/auth/signin", "/api/auth/callback"];
 const ADMIN_PATH_PREFIXES = ["/admin", "/api/admin"];
 
 function isAdminPath(pathname: string): boolean {
