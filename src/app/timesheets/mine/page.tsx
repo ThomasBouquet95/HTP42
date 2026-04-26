@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getLedProjects, getTimesheetsForMember } from "@/lib/airtable";
+import { getTimesheetsForMember } from "@/lib/airtable";
 import { AppHeader } from "@/components/app-header";
 import { TimesheetsTabs } from "@/components/timesheets-tabs";
 import { SummaryClient } from "@/app/summary/summary-client";
@@ -11,16 +11,13 @@ export default async function MyTimesheetsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const [timesheets, led] = await Promise.all([
-    getTimesheetsForMember(session.memberCode),
-    getLedProjects(session.sub),
-  ]);
+  const timesheets = await getTimesheetsForMember(session.memberCode);
 
   return (
     <>
       <AppHeader session={session} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        <TimesheetsTabs active="mine" showTeamTab={led.length > 0} />
+        <TimesheetsTabs active="mine" />
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h1 className="text-xl sm:text-2xl font-semibold">My timesheets</h1>

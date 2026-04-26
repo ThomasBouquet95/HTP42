@@ -2,23 +2,17 @@ import Link from "next/link";
 
 type TabKey = "submit" | "mine" | "team";
 
-type Props = {
-  active: TabKey;
-  showTeamTab: boolean;
-};
-
 const TABS: Array<{ key: TabKey; href: string; label: string }> = [
   { key: "submit", href: "/timesheets/submit", label: "Submit timesheet" },
   { key: "mine", href: "/timesheets/mine", label: "My timesheets" },
   { key: "team", href: "/timesheets/team", label: "Project Summary" },
 ];
 
-export function TimesheetsTabs({ active, showTeamTab }: Props) {
-  const items = showTeamTab ? TABS : TABS.filter((t) => t.key !== "team");
+export function TimesheetsTabs({ active }: { active: TabKey }) {
   return (
     <div className="mb-5 border-b border-slate-200">
       <nav className="flex items-center gap-1 -mb-px overflow-x-auto">
-        {items.map((t) => {
+        {TABS.map((t) => {
           const isActive = t.key === active;
           return (
             <Link
