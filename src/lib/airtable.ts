@@ -1537,6 +1537,8 @@ export type MyProjectStaffing = {
 export type MyProjectRecord = {
   projectCode: string;
   projectName: string;
+  clientCodes: string[];
+  clientNames: string[];
   status: ProjectStatus | "";
   startDate: string | null;
   endDate: string | null;
@@ -1560,13 +1562,14 @@ export async function listMyProjects(
 ): Promise<MyProjectRecord[]> {
   if (!memberCode) return [];
 
-  const [staffingRecords, allProjects, tsRecords] = await Promise.all([
+  const [staffingRecords, allProjects, allClients, tsRecords] = await Promise.all([
     base(TABLES.projectStaffing)
       .select({
         filterByFormula: `FIND("${escape(memberCode)}", ARRAYJOIN(ARRAYCOMPACT({${FIELDS.projectStaffing.memberCode}})))`,
       })
       .all(),
     listProjects(),
+    listClients(),
     base(TABLES.timesheets)
       .select({
         filterByFormula: `FIND("${escape(memberCode)}", ARRAYJOIN({${FIELDS.timesheets.memberCode}}))`,
@@ -1576,6 +1579,7 @@ export async function listMyProjects(
   ]);
 
   const projectByCode = new Map(allProjects.map((p) => [p.projectCode, p]));
+  const clientNameByCode = new Map(allClients.map((c) => [c.clientCode, c.clientName]));
 
   // Map staffingRecordId -> projectCode for timesheet attribution.
   const projectByStaffingId = new Map<string, string>();
@@ -1589,9 +1593,12 @@ export async function listMyProjects(
 
     if (!out.has(code)) {
       const proj = projectByCode.get(code);
+      const clientCodes = proj?.clientCodes ?? [];
       out.set(code, {
         projectCode: code,
         projectName: proj?.projectName ?? "",
+        clientCodes,
+        clientNames: clientCodes.map((c) => clientNameByCode.get(c) ?? c),
         status: proj?.status ?? "",
         startDate: proj?.startDate ?? null,
         endDate: proj?.endDate ?? null,

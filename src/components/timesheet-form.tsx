@@ -21,6 +21,9 @@ type FormState = Record<(typeof DAY_KEYS)[number], DayState>;
 type Props = {
   mode: "create" | "edit";
   existing?: TimesheetRecord;
+  presetProjectCode?: string;
+  onCancel?: () => void;
+  onSaved?: () => void;
 };
 
 function blankDay(): DayState {
@@ -37,7 +40,7 @@ function initialFromExisting(t: TimesheetRecord): FormState {
   };
 }
 
-export function TimesheetForm({ mode, existing }: Props) {
+export function TimesheetForm({ mode, existing, presetProjectCode, onCancel, onSaved }: Props) {
   const router = useRouter();
   const [weekStart, setWeekStart] = useState<string>(
     existing?.startDate ?? thisMondayIso(),
@@ -83,7 +86,12 @@ export function TimesheetForm({ mode, existing }: Props) {
           });
         }
         setStaffings(list);
-        if (!staffingId && list.length > 0) setStaffingId(list[0].id);
+        if (!staffingId && list.length > 0) {
+          const preferred = presetProjectCode
+            ? list.find((s) => s.projectCode === presetProjectCode)
+            : undefined;
+          setStaffingId((preferred ?? list[0]).id);
+        }
       })
       .catch(() => {
         if (!cancelled) setError("Unable to load project staffings.");
@@ -138,7 +146,11 @@ export function TimesheetForm({ mode, existing }: Props) {
         body: JSON.stringify(body),
       });
       if (res.ok) {
-        router.push("/dashboard");
+        if (onSaved) {
+          onSaved();
+        } else {
+          router.push("/timesheets/mine");
+        }
         router.refresh();
       } else {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -236,23 +248,33 @@ export function TimesheetForm({ mode, existing }: Props) {
 
       {error ? <div className="rounded-md bg-red-50 text-red-700 p-3 text-sm">{error}</div> : null}
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={() => save("Draft")}
+          onClick={() => (onCancel ? onCancel() : router.back())}
           disabled={submitting}
-          className="rounded-md border border-slate-300 bg-white hover:bg-slate-50 px-4 py-2 text-sm font-medium disabled:opacity-60"
+          className="rounded-md border border-slate-300 bg-white hover:bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-60"
         >
-          Save as Draft
+          Cancel
         </button>
-        <button
-          type="button"
-          onClick={() => save("Submitted")}
-          disabled={submitting}
-          className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-60"
-        >
-          Submit
-        </button>
+        <div className="flex gap-3 sm:ml-auto">
+          <button
+            type="button"
+            onClick={() => save("Draft")}
+            disabled={submitting}
+            className="rounded-md border border-slate-300 bg-white hover:bg-slate-50 px-4 py-2 text-sm font-medium disabled:opacity-60"
+          >
+            Save as Draft
+          </button>
+          <button
+            type="button"
+            onClick={() => save("Submitted")}
+            disabled={submitting}
+            className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-60"
+          >
+            Submit
+          </button>
+        </div>
       </div>
     </form>
   );

@@ -1,12 +1,11 @@
 import Link from "next/link";
 
-type TabKey = "projects" | "submit" | "mine" | "team";
+type TabKey = "projects" | "mine" | "team";
 
 const TABS: Array<{ key: TabKey; href: string; label: string }> = [
-  { key: "projects", href: "/timesheets/projects", label: "My projects" },
-  { key: "submit", href: "/timesheets/submit", label: "Submit timesheet" },
-  { key: "mine", href: "/timesheets/mine", label: "My timesheets" },
-  { key: "team", href: "/timesheets/team", label: "Project Summary" },
+  { key: "projects", href: "/timesheets/projects", label: "My Projects" },
+  { key: "mine", href: "/timesheets/mine", label: "My Timesheets" },
+  { key: "team", href: "/timesheets/team", label: "Project Staffing Summary" },
 ];
 
 export function TimesheetsTabs({ active }: { active: TabKey }) {

@@ -4,6 +4,7 @@ import { getTimesheetsForMember } from "@/lib/airtable";
 import { AppHeader } from "@/components/app-header";
 import { TimesheetsTabs } from "@/components/timesheets-tabs";
 import { SummaryClient } from "@/app/summary/summary-client";
+import { SubmitTimesheetButton } from "@/components/submit-timesheet-modal";
 
 export const dynamic = "force-dynamic";
 
@@ -18,13 +19,14 @@ export default async function MyTimesheetsPage() {
       <AppHeader session={session} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <TimesheetsTabs active="mine" />
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl sm:text-2xl font-semibold">My timesheets</h1>
+            <h1 className="text-xl sm:text-2xl font-semibold">My Timesheets</h1>
             <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
               Every timesheet you've drafted or submitted. Filter, export, and open to edit drafts.
             </p>
           </div>
+          <SubmitTimesheetButton />
         </div>
         <SummaryClient
           timesheets={timesheets}
