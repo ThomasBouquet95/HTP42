@@ -1519,3 +1519,128 @@ export async function getProjectSummaryByCode(projectCode: string): Promise<Proj
   return { project, members, totals };
 }
 
+// ---------------------------------------------------------------------------
+// "My projects" — every project the signed-in member is working on
+// ---------------------------------------------------------------------------
+
+export type MyProjectStaffing = {
+  id: string;
+  staffingCode: string;
+  roleInProject: string;
+  projectRole: ProjectRole | "";
+  daysAllocated: number | null;
+  startDate: string | null;
+  endDate: string | null;
+  status: StaffingStatus | "";
+};
+
+export type MyProjectRecord = {
+  projectCode: string;
+  projectName: string;
+  status: ProjectStatus | "";
+  startDate: string | null;
+  endDate: string | null;
+  isLeader: boolean;
+  staffings: MyProjectStaffing[];
+  daysAllocatedTotal: number;
+  hoursActualTotal: number;
+  daysActualTotal: number;
+  submittedTimesheets: number;
+  draftTimesheets: number;
+};
+
+// Returns one record per project that the member has at least one staffing on.
+// Aggregates allocated days from the staffings + actual hours/days from the
+// member's timesheets on those staffings. Marks isLeader=true if either the
+// project's "Project Leaders" field includes the member or any of the
+// member's staffings has Project Role = "Project Leader".
+export async function listMyProjects(
+  memberRecordId: string,
+  memberCode: string,
+): Promise<MyProjectRecord[]> {
+  if (!memberCode) return [];
+
+  const [staffingRecords, allProjects, tsRecords] = await Promise.all([
+    base(TABLES.projectStaffing)
+      .select({
+        filterByFormula: `FIND("${escape(memberCode)}", ARRAYJOIN(ARRAYCOMPACT({${FIELDS.projectStaffing.memberCode}})))`,
+      })
+      .all(),
+    listProjects(),
+    base(TABLES.timesheets)
+      .select({
+        filterByFormula: `FIND("${escape(memberCode)}", ARRAYJOIN({${FIELDS.timesheets.memberCode}}))`,
+        sort: [{ field: FIELDS.timesheets.startDate, direction: "desc" }],
+      })
+      .all(),
+  ]);
+
+  const projectByCode = new Map(allProjects.map((p) => [p.projectCode, p]));
+
+  // Map staffingRecordId -> projectCode for timesheet attribution.
+  const projectByStaffingId = new Map<string, string>();
+
+  const out = new Map<string, MyProjectRecord>();
+
+  for (const r of staffingRecords) {
+    const code = str(r, FIELDS.projectStaffing.projectCode);
+    if (!code) continue;
+    projectByStaffingId.set(r.id, code);
+
+    if (!out.has(code)) {
+      const proj = projectByCode.get(code);
+      out.set(code, {
+        projectCode: code,
+        projectName: proj?.projectName ?? "",
+        status: proj?.status ?? "",
+        startDate: proj?.startDate ?? null,
+        endDate: proj?.endDate ?? null,
+        isLeader: proj?.projectLeaderRecordIds.includes(memberRecordId) ?? false,
+        staffings: [],
+        daysAllocatedTotal: 0,
+        hoursActualTotal: 0,
+        daysActualTotal: 0,
+        submittedTimesheets: 0,
+        draftTimesheets: 0,
+      });
+    }
+    const acc = out.get(code)!;
+    const daysAllocated = numOrNull(r, FIELDS.projectStaffing.daysAllocated);
+    const projectRole = str(r, FIELDS.projectStaffing.projectRole) as ProjectRole | "";
+    if (projectRole === "Project Leader") acc.isLeader = true;
+    acc.staffings.push({
+      id: r.id,
+      staffingCode: str(r, FIELDS.projectStaffing.staffingCode),
+      roleInProject: str(r, FIELDS.projectStaffing.roleInProject),
+      projectRole,
+      daysAllocated,
+      startDate: dateOrNull(r, FIELDS.projectStaffing.startDate),
+      endDate: dateOrNull(r, FIELDS.projectStaffing.endDate),
+      status: (str(r, FIELDS.projectStaffing.status) as StaffingStatus) || "",
+    });
+    if (typeof daysAllocated === "number") acc.daysAllocatedTotal += daysAllocated;
+  }
+
+  for (const t of tsRecords) {
+    const staffingId = firstLinkedId(t, FIELDS.timesheets.projectStaffing);
+    const code = projectByStaffingId.get(staffingId);
+    if (!code) continue;
+    const acc = out.get(code);
+    if (!acc) continue;
+    const status = (str(t, FIELDS.timesheets.status) as TimesheetStatus) || "Draft";
+    if (status === "Submitted") acc.submittedTimesheets += 1;
+    else if (status === "Draft") acc.draftTimesheets += 1;
+    if (status === "Deleted") continue;
+    const hours =
+      num(t, FIELDS.timesheets.mondayHours) +
+      num(t, FIELDS.timesheets.tuesdayHours) +
+      num(t, FIELDS.timesheets.wednesdayHours) +
+      num(t, FIELDS.timesheets.thursdayHours) +
+      num(t, FIELDS.timesheets.fridayHours);
+    acc.hoursActualTotal += hours;
+    acc.daysActualTotal = acc.hoursActualTotal / HOURS_PER_DAY;
+  }
+
+  return [...out.values()].sort((a, b) => a.projectCode.localeCompare(b.projectCode));
+}
+

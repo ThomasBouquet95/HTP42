@@ -1,8 +1,9 @@
 import Link from "next/link";
 
-type TabKey = "submit" | "mine" | "team";
+type TabKey = "projects" | "submit" | "mine" | "team";
 
 const TABS: Array<{ key: TabKey; href: string; label: string }> = [
+  { key: "projects", href: "/timesheets/projects", label: "My projects" },
   { key: "submit", href: "/timesheets/submit", label: "Submit timesheet" },
   { key: "mine", href: "/timesheets/mine", label: "My timesheets" },
   { key: "team", href: "/timesheets/team", label: "Project Summary" },

@@ -39,18 +39,37 @@ export function ProjectSummaryView({ summary }: Props) {
               {project.status ? <> · {project.status}</> : null}
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Contract</div>
-            <div className="text-base font-semibold tabular-nums">
-              {project.totalAmount == null
-                ? "—"
-                : `${project.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${project.currency || ""}`.trim()}
-            </div>
-            {project.totalAmountEur != null && project.currency !== "EUR" ? (
-              <div className="text-xs text-slate-500 tabular-nums">
-                {project.totalAmountEur.toLocaleString("en-US", { maximumFractionDigits: 0 })} EUR
+          <div className="flex flex-col items-end gap-3">
+            <div className="text-right">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Contract</div>
+              <div className="text-base font-semibold tabular-nums">
+                {project.totalAmount == null
+                  ? "—"
+                  : `${project.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${project.currency || ""}`.trim()}
               </div>
-            ) : null}
+              {project.totalAmountEur != null && project.currency !== "EUR" ? (
+                <div className="text-xs text-slate-500 tabular-nums">
+                  {project.totalAmountEur.toLocaleString("en-US", { maximumFractionDigits: 0 })} EUR
+                </div>
+              ) : null}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => exportCsv(summary)}
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-50"
+              >
+                Export CSV
+              </button>
+              <a
+                href={`/timesheets/team/print?project=${encodeURIComponent(project.projectCode)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 text-xs font-medium"
+              >
+                Export PDF
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -347,4 +366,102 @@ function StatCard({
       {sub ? <div className="mt-0.5 text-xs text-slate-500">{sub}</div> : null}
     </div>
   );
+}
+
+function exportCsv(summary: ProjectSummary) {
+  const { project, members } = summary;
+  // Sheet 1: per-member roll-up.
+  const rollupHeader = [
+    "Project Code",
+    "Project Name",
+    "Member Code",
+    "Member Name",
+    "Days Allocated",
+    "Hours Logged",
+    "Days Logged",
+    "Submitted Timesheets",
+    "Draft Timesheets",
+  ];
+  const rows: string[][] = [rollupHeader];
+  for (const m of members) {
+    const submitted = m.timesheets.filter((t) => t.status === "Submitted").length;
+    const draft = m.timesheets.filter((t) => t.status === "Draft").length;
+    rows.push([
+      project.projectCode,
+      project.projectName,
+      m.memberCode,
+      m.memberName,
+      m.daysAllocatedTotal.toFixed(2),
+      m.hoursActualTotal.toFixed(2),
+      m.daysActualTotal.toFixed(2),
+      String(submitted),
+      String(draft),
+    ]);
+  }
+
+  // Blank separator + sheet 2: every individual timesheet on the project.
+  rows.push([]);
+  const tsHeader = [
+    "Project Code",
+    "Member Code",
+    "Member Name",
+    "Timesheet Code",
+    "Status",
+    "Staffing Code",
+    "Week Start",
+    "Week End",
+    "Submission Date",
+    "Monday Hours", "Monday Task",
+    "Tuesday Hours", "Tuesday Task",
+    "Wednesday Hours", "Wednesday Task",
+    "Thursday Hours", "Thursday Task",
+    "Friday Hours", "Friday Task",
+    "Total Hours",
+  ];
+  rows.push(tsHeader);
+  for (const m of members) {
+    for (const t of m.timesheets) {
+      rows.push([
+        project.projectCode,
+        m.memberCode,
+        m.memberName,
+        t.timesheetCode,
+        t.status,
+        t.staffingCode,
+        t.startDate ?? "",
+        t.endDate ?? "",
+        t.submissionDate ?? "",
+        t.monday.hours.toString(), t.monday.task,
+        t.tuesday.hours.toString(), t.tuesday.task,
+        t.wednesday.hours.toString(), t.wednesday.task,
+        t.thursday.hours.toString(), t.thursday.task,
+        t.friday.hours.toString(), t.friday.task,
+        t.totalHours.toFixed(2),
+      ]);
+    }
+  }
+
+  const csv = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `htp42-project-${project.projectCode}-${todayStamp()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvCell(value: string): string {
+  if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+function todayStamp(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}${m}${day}`;
 }
