@@ -9,8 +9,8 @@ type NavItem = { href: string; label: string; match: (p: string) => boolean };
 
 const NAV: NavItem[] = [
   {
-    href: "/timesheets/mine",
-    label: "Timesheets",
+    href: "/timesheets/projects",
+    label: "Client Engagements",
     match: (p) =>
       p === "/dashboard" ||
       p.startsWith("/dashboard/") ||

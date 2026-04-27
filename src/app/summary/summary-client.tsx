@@ -19,11 +19,9 @@ type Props = {
   timesheets: TimesheetRecord[];
   memberLabel: string;
   memberCode: string;
-  // When true, render an Edit/View link per row pointing at /timesheets/[id].
   editable?: boolean;
-  // Optional default filter overrides (e.g. set status to "All" on the "My
-  // timesheets" page rather than the default "Submitted").
   defaultStatus?: "All" | TimesheetStatus;
+  hideSummary?: boolean;
 };
 
 type Filters = {
@@ -48,6 +46,7 @@ export function SummaryClient({
   memberCode,
   editable = false,
   defaultStatus,
+  hideSummary = false,
 }: Props) {
   const [filters, setFilters] = useState<Filters>(() =>
     defaultStatus ? { ...DEFAULT_FILTERS, status: defaultStatus } : DEFAULT_FILTERS,
@@ -239,33 +238,37 @@ export function SummaryClient({
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard label="Total hours" value={total.toFixed(2)} accent />
-        <StatCard label="Timesheets" value={String(filtered.length)} />
-        <StatCard
-          label="Avg hours / week"
-          value={filtered.length === 0 ? "0.00" : (total / filtered.length).toFixed(2)}
-        />
-      </div>
+      {!hideSummary ? (
+        <>
+          <div className="grid gap-4 md:grid-cols-3">
+            <StatCard label="Total hours" value={total.toFixed(2)} accent />
+            <StatCard label="Timesheets" value={String(filtered.length)} />
+            <StatCard
+              label="Avg hours / week"
+              value={filtered.length === 0 ? "0.00" : (total / filtered.length).toFixed(2)}
+            />
+          </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <BreakdownCard
-          title="By project"
-          rows={byProject.map((p) => ({
-            label: p.name,
-            right: `${p.hours.toFixed(2)} h`,
-            sub: `${p.weeks} week${p.weeks === 1 ? "" : "s"}`,
-          }))}
-        />
-        <BreakdownCard
-          title="By staffing"
-          rows={byStaffing.map((s) => ({
-            label: `${s.code}`,
-            sub: `${s.project} · ${s.weeks} week${s.weeks === 1 ? "" : "s"}`,
-            right: `${s.hours.toFixed(2)} h`,
-          }))}
-        />
-      </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <BreakdownCard
+              title="By project"
+              rows={byProject.map((p) => ({
+                label: p.name,
+                right: `${p.hours.toFixed(2)} h`,
+                sub: `${p.weeks} week${p.weeks === 1 ? "" : "s"}`,
+              }))}
+            />
+            <BreakdownCard
+              title="By staffing"
+              rows={byStaffing.map((s) => ({
+                label: `${s.code}`,
+                sub: `${s.project} · ${s.weeks} week${s.weeks === 1 ? "" : "s"}`,
+                right: `${s.hours.toFixed(2)} h`,
+              }))}
+            />
+          </div>
+        </>
+      ) : null}
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">

@@ -22,7 +22,7 @@ export default async function MyProjectsPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <TimesheetsTabs active="projects" />
         <div className="mb-4 flex items-start justify-between gap-3">
-          <h1 className="text-xl sm:text-2xl font-semibold">My Projects</h1>
+          <h1 className="text-xl sm:text-2xl font-semibold">Projects</h1>
           <SubmitTimesheetButton />
         </div>
         {projects.length === 0 ? (

@@ -1579,7 +1579,9 @@ export async function listMyProjects(
   ]);
 
   const projectByCode = new Map(allProjects.map((p) => [p.projectCode, p]));
-  const clientNameByCode = new Map(allClients.map((c) => [c.clientCode, c.clientName]));
+  // Index clients by record ID so we can resolve linked fields that return raw IDs.
+  const clientNameById = new Map(allClients.map((c) => [c.id, c.clientName]));
+  const clientCodeById = new Map(allClients.map((c) => [c.id, c.clientCode]));
 
   // Map staffingRecordId -> projectCode for timesheet attribution.
   const projectByStaffingId = new Map<string, string>();
@@ -1593,12 +1595,12 @@ export async function listMyProjects(
 
     if (!out.has(code)) {
       const proj = projectByCode.get(code);
-      const clientCodes = proj?.clientCodes ?? [];
+      const clientRecIds = proj?.clientRecordIds ?? [];
       out.set(code, {
         projectCode: code,
         projectName: proj?.projectName ?? "",
-        clientCodes,
-        clientNames: clientCodes.map((c) => clientNameByCode.get(c) ?? c),
+        clientCodes: clientRecIds.map((id) => clientCodeById.get(id) ?? id),
+        clientNames: clientRecIds.map((id) => clientNameById.get(id) ?? id),
         status: proj?.status ?? "",
         startDate: proj?.startDate ?? null,
         endDate: proj?.endDate ?? null,

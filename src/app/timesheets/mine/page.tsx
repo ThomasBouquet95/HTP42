@@ -21,7 +21,7 @@ export default async function MyTimesheetsPage() {
         <TimesheetsTabs active="mine" />
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl sm:text-2xl font-semibold">My Timesheets</h1>
+            <h1 className="text-xl sm:text-2xl font-semibold">Timesheets</h1>
             <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
               Every timesheet you've drafted or submitted. Filter, export, and open to edit drafts.
             </p>
@@ -33,6 +33,8 @@ export default async function MyTimesheetsPage() {
           memberLabel={session.fullName || session.email}
           memberCode={session.memberCode}
           editable
+          defaultStatus="All"
+          hideSummary
         />
       </main>
     </>
