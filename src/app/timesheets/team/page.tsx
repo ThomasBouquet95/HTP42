@@ -16,7 +16,7 @@ export default async function ProjectSummaryPage({
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const led = await getLedProjects(session.sub);
+  const led = await getLedProjects(session.sub, session.memberCode);
   const { project: selectedCode } = await searchParams;
   const activeCode =
     selectedCode && led.some((p) => p.projectCode === selectedCode)

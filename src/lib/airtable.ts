@@ -939,7 +939,12 @@ export async function getStaffingsForMember(
     };
   });
   if (!activeOnly) return all;
-  return all.filter((s) => s.status === "In Progress" || s.status === "Not Started");
+  // Treat staffings whose status hasn't been set as eligible; only exclude the
+  // explicitly-finished states (Completed) and pure pipeline (Opportunity) so
+  // a freshly-created staffing without a status is still selectable.
+  return all.filter(
+    (s) => s.status === null || s.status === "In Progress" || s.status === "Not Started",
+  );
 }
 
 // The linked Member Code field on staffing uses Network Members record IDs, but
@@ -1258,11 +1263,21 @@ export type TeamTimesheetRecord = TimesheetRecord & {
   memberName: string;
 };
 
-// Returns the list of projects where `memberRecordId` is listed in the
-// Projects "Project Leaders" field.
-export async function getLedProjects(memberRecordId: string): Promise<LeaderProjectInfo[]> {
+// Returns the list of projects where the member is recognised as a Project
+// Leader. Two signals count, combined:
+//   1. The project's "Project Leaders" linked field includes the member's
+//      record ID (the new, project-level source of truth).
+//   2. The member has a staffing on the project whose "Project Role" field is
+//      "Project Leader" (legacy / per-staffing source of truth).
+// The second signal is what older setups configured before the project-level
+// field existed and we honour it so existing data keeps working.
+export async function getLedProjects(
+  memberRecordId: string,
+  memberCode?: string,
+): Promise<LeaderProjectInfo[]> {
   if (!memberRecordId) return [];
-  const records = await base(TABLES.projects)
+
+  const projectsPromise = base(TABLES.projects)
     .select({
       fields: [
         FIELDS.projects.projectCode,
@@ -1271,18 +1286,62 @@ export async function getLedProjects(memberRecordId: string): Promise<LeaderProj
       ],
     })
     .all();
-  const out: LeaderProjectInfo[] = [];
-  for (const r of records) {
-    const leaders = linkedIds(r, FIELDS.projects.projectLeaders);
-    if (!leaders.includes(memberRecordId)) continue;
+
+  // Only query staffings if we know the visible memberCode (linked-field
+  // formulas compare against the primary string, not the record ID).
+  const staffingsPromise =
+    memberCode && memberCode.length > 0
+      ? base(TABLES.projectStaffing)
+          .select({
+            filterByFormula: `AND(
+              FIND("${escape(memberCode)}", ARRAYJOIN(ARRAYCOMPACT({${FIELDS.projectStaffing.memberCode}}))),
+              {${FIELDS.projectStaffing.projectRole}} = "Project Leader"
+            )`,
+            fields: [FIELDS.projectStaffing.projectCode, FIELDS.projectStaffing.memberCode],
+          })
+          .all()
+      : Promise.resolve([] as AirtableRecord<FieldSet>[]);
+
+  const [projectRecords, staffingRecords] = await Promise.all([
+    projectsPromise,
+    staffingsPromise,
+  ]);
+
+  // Build an index of every project we've seen, keyed by projectCode.
+  const byCode = new Map<string, LeaderProjectInfo>();
+
+  for (const r of projectRecords) {
     const code = str(r, FIELDS.projects.projectCode);
     if (!code) continue;
-    out.push({
+    byCode.set(code, {
       projectCode: code,
       projectName: str(r, FIELDS.projects.projectName),
       projectRecordId: r.id,
     });
   }
+
+  const out: LeaderProjectInfo[] = [];
+  const added = new Set<string>();
+
+  for (const r of projectRecords) {
+    const leaders = linkedIds(r, FIELDS.projects.projectLeaders);
+    if (!leaders.includes(memberRecordId)) continue;
+    const code = str(r, FIELDS.projects.projectCode);
+    if (!code || added.has(code)) continue;
+    added.add(code);
+    const info = byCode.get(code);
+    if (info) out.push(info);
+  }
+
+  for (const r of staffingRecords) {
+    const code = str(r, FIELDS.projectStaffing.projectCode);
+    if (!code || added.has(code)) continue;
+    const info = byCode.get(code);
+    if (!info) continue; // staffing references a project we didn't load (deleted?)
+    added.add(code);
+    out.push(info);
+  }
+
   return out.sort((a, b) => a.projectCode.localeCompare(b.projectCode));
 }
 
