@@ -133,6 +133,24 @@ export function StaffingsAdminClient({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  async function updateCurrency(currency: string) {
+    setForm((f) => ({ ...f, currency }));
+    if (!currency) return;
+    if (currency === "EUR") {
+      setForm((f) => ({ ...f, currency, fxToEur: "1.00" }));
+      return;
+    }
+    try {
+      const res = await fetch(`/api/fx-rate?currency=${encodeURIComponent(currency)}`);
+      const data = (await res.json().catch(() => ({}))) as { rate?: number };
+      if (res.ok && typeof data.rate === "number") {
+        setForm((f) => ({ ...f, currency, fxToEur: data.rate!.toFixed(2) }));
+      }
+    } catch {
+      // Silent fallback — user can still type manually.
+    }
+  }
+
   const derivedTotal = useMemo(() => {
     const rate = form.ratePerDay === "" ? null : Number(form.ratePerDay);
     const days = form.daysAllocated === "" ? null : Number(form.daysAllocated);
@@ -407,7 +425,7 @@ export function StaffingsAdminClient({
           <FormSelect
             label="Currency"
             value={form.currency}
-            onChange={(v) => updateField("currency", v)}
+            onChange={(v) => updateCurrency(v)}
           >
             <option value="">—</option>
             {currencies.map((c) => (

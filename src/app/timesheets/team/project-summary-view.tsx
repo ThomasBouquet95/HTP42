@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ProjectSummary, ProjectTeamMember, ProjectStatus } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
-import { formatRange } from "@/lib/dates";
+import { formatRange, formatHumanDate } from "@/lib/dates";
 
 type Props = { summary: ProjectSummary };
 
@@ -30,7 +30,7 @@ export function ProjectSummaryView({ summary }: Props) {
               {project.projectName || "—"}
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span>{project.startDate ?? "—"} → {project.endDate ?? "—"}</span>
+              <span>{formatHumanDate(project.startDate)} → {formatHumanDate(project.endDate)}</span>
               {project.status ? <StatusPill status={project.status} /> : null}
             </div>
           </div>
@@ -161,8 +161,13 @@ function MemberRow({
         className="w-full grid grid-cols-[auto,1fr,auto] items-center gap-3 px-4 py-3 text-left hover:bg-slate-50"
         aria-expanded={expanded}
       >
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-50 text-brand-700 text-xs font-semibold">
-          {initials(member.memberName || member.memberCode)}
+        <div className="flex h-8 w-8 items-center justify-center rounded-full overflow-hidden bg-brand-50 text-brand-700 text-xs font-semibold">
+          {member.photoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={member.photoUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            initials(member.memberName || member.memberCode)
+          )}
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm">
@@ -234,7 +239,7 @@ function MemberRow({
                           {s.daysAllocated == null ? "N/A" : `${s.daysAllocated} d`}
                         </td>
                         <td className="py-1.5 whitespace-nowrap text-slate-600 text-xs">
-                          {s.startDate ?? "—"} → {s.endDate ?? "—"}
+                          {formatHumanDate(s.startDate)} → {formatHumanDate(s.endDate)}
                         </td>
                       </tr>
                     ))}

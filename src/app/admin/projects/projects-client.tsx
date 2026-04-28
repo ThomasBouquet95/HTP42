@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { formatHumanDate } from "@/lib/dates";
 import type {
   ClientRecord,
   Currency,
@@ -136,6 +137,24 @@ export function ProjectsAdminClient({
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  async function updateCurrency(currency: string) {
+    setForm((f) => ({ ...f, currency }));
+    if (!currency) return;
+    if (currency === "EUR") {
+      setForm((f) => ({ ...f, currency, fxToEur: "1.00" }));
+      return;
+    }
+    try {
+      const res = await fetch(`/api/fx-rate?currency=${encodeURIComponent(currency)}`);
+      const data = (await res.json().catch(() => ({}))) as { rate?: number };
+      if (res.ok && typeof data.rate === "number") {
+        setForm((f) => ({ ...f, currency, fxToEur: data.rate!.toFixed(2) }));
+      }
+    } catch {
+      // Silent fallback — user can still type manually.
+    }
   }
 
   function yearFromStart(iso: string): number {
@@ -319,8 +338,8 @@ export function ProjectsAdminClient({
                     </td>
                     <td className="px-3 py-2 hidden lg:table-cell">{p.type || "—"}</td>
                     <td className="px-3 py-2">{p.status || "—"}</td>
-                    <td className="px-3 py-2 hidden xl:table-cell">{p.startDate ?? "—"}</td>
-                    <td className="px-3 py-2 hidden xl:table-cell">{p.endDate ?? "—"}</td>
+                    <td className="px-3 py-2 hidden xl:table-cell">{formatHumanDate(p.startDate)}</td>
+                    <td className="px-3 py-2 hidden xl:table-cell">{formatHumanDate(p.endDate)}</td>
                     <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell">
                       {p.totalAmount == null
                         ? "—"
@@ -447,7 +466,7 @@ export function ProjectsAdminClient({
             onChange={(v) => updateField("totalAmount", v)}
             type="number"
           />
-          <FormSelect label="Currency" value={form.currency} onChange={(v) => updateField("currency", v)}>
+          <FormSelect label="Currency" value={form.currency} onChange={(v) => updateCurrency(v)}>
             <option value="">—</option>
             {currencies.map((c) => (
               <option key={c} value={c}>{c}</option>

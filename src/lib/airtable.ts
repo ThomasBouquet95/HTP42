@@ -1419,6 +1419,7 @@ export type ProjectTeamMember = {
   memberRecordId: string;
   memberCode: string;
   memberName: string;
+  photoUrl: string | null;
   staffings: Array<{
     id: string;
     staffingCode: string;
@@ -1511,6 +1512,7 @@ export async function getProjectSummaryByCode(projectCode: string): Promise<Proj
           memberRecordId: mid,
           memberCode: m?.memberCode ?? mid,
           memberName: m?.fullName ?? "",
+          photoUrl: m?.photo?.url ?? null,
           staffings: [],
           daysAllocatedTotal: 0,
           hoursActualTotal: 0,
@@ -1553,6 +1555,7 @@ export async function getProjectSummaryByCode(projectCode: string): Promise<Proj
         memberRecordId: mid,
         memberCode: m?.memberCode ?? mid,
         memberName: m?.fullName ?? "",
+        photoUrl: m?.photo?.url ?? null,
         staffings: [],
         daysAllocatedTotal: 0,
         hoursActualTotal: 0,
@@ -1609,6 +1612,7 @@ export type MyProjectTeamMember = {
   memberRecordId: string;
   memberCode: string;
   fullName: string;
+  photoUrl: string | null;
   isLeader: boolean;
 };
 
@@ -1740,7 +1744,11 @@ export async function listMyProjects(
       base(TABLES.projectStaffing).select({ filterByFormula: formula }).all(),
       base(TABLES.networkMembers)
         .select({
-          fields: [FIELDS.networkMembers.memberCode, FIELDS.networkMembers.fullName],
+          fields: [
+            FIELDS.networkMembers.memberCode,
+            FIELDS.networkMembers.fullName,
+            FIELDS.networkMembers.photo,
+          ],
         })
         .all(),
     ]);
@@ -1751,6 +1759,7 @@ export async function listMyProjects(
           id: r.id,
           memberCode: str(r, FIELDS.networkMembers.memberCode),
           fullName: str(r, FIELDS.networkMembers.fullName),
+          photoUrl: firstAttachment(r, FIELDS.networkMembers.photo)?.url ?? null,
         },
       ]),
     );
@@ -1770,6 +1779,7 @@ export async function listMyProjects(
             memberRecordId: mid,
             memberCode: m.memberCode,
             fullName: m.fullName,
+            photoUrl: m.photoUrl,
             isLeader: false,
           };
           acc.team.push(existing);
@@ -1793,6 +1803,7 @@ export async function listMyProjects(
             memberRecordId: lid,
             memberCode: m.memberCode,
             fullName: m.fullName,
+            photoUrl: m.photoUrl,
             isLeader: true,
           });
         }

@@ -40,13 +40,18 @@ export function thisMondayIso(): string {
   return mondayOf(todayIso());
 }
 
+export function formatHumanDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = parseIsoDate(iso);
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  const month = d.toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" });
+  const year = d.getUTCFullYear();
+  return `${day} ${month} ${year}`;
+}
+
 export function formatRange(startIso: string | null, endIso: string | null): string {
   if (!startIso || !endIso) return "—";
-  const s = parseIsoDate(startIso);
-  const e = parseIsoDate(endIso);
-  const fmt = (d: Date) =>
-    d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-  return `${fmt(s)} – ${fmt(e)}`;
+  return `${formatHumanDate(startIso)} → ${formatHumanDate(endIso)}`;
 }
 
 export function weekOverlapsRange(

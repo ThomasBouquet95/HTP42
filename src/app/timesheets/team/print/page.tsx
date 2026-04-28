@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getLedProjects, getProjectSummaryByCode, type ProjectSummary, type ProjectTeamMember } from "@/lib/airtable";
-import { formatRange } from "@/lib/dates";
+import { formatRange, formatHumanDate } from "@/lib/dates";
 import { PrintTrigger } from "./print-trigger";
 
 export const dynamic = "force-dynamic";
@@ -74,7 +74,7 @@ export default async function ProjectSummaryPrintPage({
                 ) : null}
               </div>
               <div>
-                <strong>Period:</strong> {project.startDate ?? "—"} → {project.endDate ?? "—"}
+                <strong>Period:</strong> {formatHumanDate(project.startDate)} → {formatHumanDate(project.endDate)}
                 {project.status ? <> · <strong>Status:</strong> {project.status}</> : null}
               </div>
               <div><strong>Generated:</strong> {generatedAt}</div>

@@ -3,6 +3,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { MemberRecord } from "@/lib/airtable";
+import { PhotoCropModal } from "@/components/photo-crop-modal";
 
 type Props = { initial: MemberRecord };
 
@@ -122,10 +123,11 @@ function PhotoUpload({
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [pickedFile, setPickedFile] = useState<File | null>(null);
 
   async function uploadFile(f: File) {
     if (f.size > MAX_BYTES) {
-      onNotice({ kind: "err", message: "Photo must be 1 MB or smaller." });
+      onNotice({ kind: "err", message: "Photo must be 1 MB or smaller after compression." });
       return;
     }
     setBusy(true);
@@ -199,7 +201,7 @@ function PhotoUpload({
               </button>
             ) : null}
           </div>
-          <p className="text-[11px] text-slate-500">JPG, PNG, WebP or GIF · max 1 MB</p>
+          <p className="text-[11px] text-slate-500">Adjust crop & zoom · saved as JPEG ≤ 1 MB</p>
         </div>
         <input
           ref={fileRef}
@@ -208,10 +210,21 @@ function PhotoUpload({
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) uploadFile(f);
+            if (f) setPickedFile(f);
+            // Reset so picking the same file again still triggers onChange.
+            if (fileRef.current) fileRef.current.value = "";
           }}
         />
       </div>
+      <PhotoCropModal
+        open={!!pickedFile}
+        file={pickedFile}
+        onClose={() => setPickedFile(null)}
+        onCropped={(f) => {
+          setPickedFile(null);
+          uploadFile(f);
+        }}
+      />
     </div>
   );
 }
