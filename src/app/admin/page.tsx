@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AppHeader } from "@/components/app-header";
+import { AdminTabs } from "@/components/admin-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -45,13 +46,9 @@ export default async function AdminLandingPage() {
   return (
     <>
       <AppHeader session={session} />
-      <main className="max-w-6xl mx-auto px-6 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold">Admin</h1>
-          <p className="text-sm text-slate-600 mt-1">
-            Administrative views and edits across the HTP42 portal.
-          </p>
-        </div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        <AdminTabs active="home" />
+        <h1 className="text-base sm:text-lg font-semibold mb-4">Admin</h1>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {CARDS.map((c) => (
             <Link

@@ -269,26 +269,26 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by code, name, email, country…"
-          className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="flex-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
         />
-        <Button tone="primary" size="md" onClick={openCreate}>
+        <Button tone="primary" size="sm" onClick={openCreate}>
           + New member
         </Button>
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-3 py-2 font-medium w-10" />
-              <th className="text-left px-3 py-2 font-medium">Code</th>
-              <th className="text-left px-3 py-2 font-medium">Name</th>
-              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Email</th>
-              <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Role</th>
-              <th className="text-left px-3 py-2 font-medium">Status</th>
-              <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Country</th>
-              <th className="text-right px-3 py-2 font-medium hidden md:table-cell">Daily rate</th>
-              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">CV</th>
+              <th className="px-2 py-1.5 font-medium w-9" />
+              <th className="text-left px-2 py-1.5 font-medium">Code</th>
+              <th className="text-left px-2 py-1.5 font-medium">Name</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Email</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Role</th>
+              <th className="text-left px-2 py-1.5 font-medium">Status</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Country</th>
+              <th className="text-right px-2 py-1.5 font-medium hidden md:table-cell">Daily rate</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">CV</th>
               <th />
             </tr>
           </thead>
@@ -306,7 +306,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                   onClick={() => openEdit(m)}
                   className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
                 >
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-1.5">
                     <div className="h-7 w-7 rounded-full overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-semibold text-slate-600">
                       {m.photo ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -316,14 +316,14 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                       )}
                     </div>
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs">{m.memberCode}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-1.5 font-mono text-[11px]">{m.memberCode}</td>
+                  <td className="px-2 py-1.5">
                     <div>{m.fullName}</div>
                     <div className="text-xs text-slate-500 md:hidden">{m.email}</div>
                   </td>
-                  <td className="px-3 py-2 text-slate-600 hidden md:table-cell">{m.email}</td>
-                  <td className="px-3 py-2 hidden lg:table-cell">{m.role || "—"}</td>
-                  <td className="px-3 py-2"><StatusPill status={m.status} /></td>
+                  <td className="px-2 py-1.5 text-slate-600 hidden md:table-cell">{m.email}</td>
+                  <td className="px-2 py-1.5 hidden lg:table-cell">{m.role || "—"}</td>
+                  <td className="px-2 py-1.5"><StatusPill status={m.status} /></td>
                   <td className="px-3 py-2 hidden lg:table-cell">{m.country || "—"}</td>
                   <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell">
                     {m.dailyRate == null
@@ -331,7 +331,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                       : `${m.dailyRate.toLocaleString("en-US")} ${m.currency || ""}`.trim()}
                   </td>
                   <td
-                    className="px-3 py-2 hidden md:table-cell text-xs"
+                    className="px-2 py-1.5 hidden md:table-cell"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {m.cv ? (
@@ -347,8 +347,8 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                       <span className="text-slate-400">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right">
-                    <span className="text-brand-600 text-xs font-medium">Edit</span>
+                  <td className="px-2 py-1.5 text-right">
+                    <span className="text-brand-600 text-[11px] font-medium">Edit</span>
                   </td>
                 </tr>
               ))

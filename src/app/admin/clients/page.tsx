@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AppHeader } from "@/components/app-header";
+import { AdminTabs } from "@/components/admin-tabs";
 import { listClients } from "@/lib/airtable";
 import { ClientsAdminClient } from "./clients-client";
 
@@ -16,15 +16,11 @@ export default async function AdminClientsPage() {
   return (
     <>
       <AppHeader session={session} />
-      <main className="max-w-6xl mx-auto px-6 py-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Clients</h1>
-            <p className="text-sm text-slate-600 mt-1">{clients.length} clients</p>
-          </div>
-          <Link href="/admin" className="text-sm text-brand-600 hover:text-brand-700 self-center">
-            ← Back to admin
-          </Link>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        <AdminTabs active="clients" />
+        <div className="mb-4 flex items-baseline gap-3">
+          <h1 className="text-base sm:text-lg font-semibold">Clients</h1>
+          <span className="text-xs text-slate-500">· {clients.length}</span>
         </div>
         <ClientsAdminClient clients={clients} />
       </main>

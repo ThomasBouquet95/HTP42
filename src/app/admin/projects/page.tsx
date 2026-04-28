@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AppHeader } from "@/components/app-header";
+import { AdminTabs } from "@/components/admin-tabs";
 import {
   listAllMembers,
   listClients,
@@ -28,15 +28,11 @@ export default async function AdminProjectsPage() {
   return (
     <>
       <AppHeader session={session} />
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Projects</h1>
-            <p className="text-sm text-slate-600 mt-1">{projects.length} projects</p>
-          </div>
-          <Link href="/admin" className="text-sm text-brand-600 hover:text-brand-700 self-center">
-            ← Back to admin
-          </Link>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        <AdminTabs active="projects" />
+        <div className="mb-4 flex items-baseline gap-3">
+          <h1 className="text-base sm:text-lg font-semibold">Projects</h1>
+          <span className="text-xs text-slate-500">· {projects.length}</span>
         </div>
         <ProjectsAdminClient
           projects={projects}

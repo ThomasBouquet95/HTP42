@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AppHeader } from "@/components/app-header";
+import { AdminTabs } from "@/components/admin-tabs";
 import { listAllTimesheets } from "@/lib/airtable";
 import { AdminTimesheetsClient } from "./timesheets-client";
 
@@ -16,17 +16,13 @@ export default async function AdminTimesheetsPage() {
   return (
     <>
       <AppHeader session={session} />
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">All timesheets</h1>
-            <p className="text-sm text-slate-600 mt-1">
-              {timesheets.length} timesheet{timesheets.length === 1 ? "" : "s"} across all members
-            </p>
-          </div>
-          <Link href="/admin" className="text-sm text-brand-600 hover:text-brand-700 self-center">
-            ← Back to admin
-          </Link>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        <AdminTabs active="timesheets" />
+        <div className="mb-4 flex items-baseline gap-3">
+          <h1 className="text-base sm:text-lg font-semibold">All timesheets</h1>
+          <span className="text-xs text-slate-500">
+            · {timesheets.length} across all members
+          </span>
         </div>
         <AdminTimesheetsClient timesheets={timesheets} />
       </main>

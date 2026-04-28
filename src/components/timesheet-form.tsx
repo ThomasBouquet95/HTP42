@@ -168,23 +168,23 @@ export function TimesheetForm({ mode, existing, presetProjectCode, onCancel, onS
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2">
+    <form onSubmit={onSubmit} className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
         <div className="block">
-          <label htmlFor="week-picker" className="text-sm font-medium text-slate-700">
+          <label htmlFor="week-picker" className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
             Week starting (Monday)
           </label>
           <WeekPicker id="week-picker" value={weekStart} onChange={setWeekStart} />
-          <span className="block text-xs text-slate-500 mt-1">
+          <span className="block text-[11px] text-slate-500 mt-1">
             Week: {formatRange(weekMonday, weekFriday)}
           </span>
         </div>
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Project Staffing</span>
+          <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">Project Staffing</span>
           <select
             value={staffingId}
             onChange={(e) => setStaffingId(e.target.value)}
-            className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2"
+            className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
             disabled={loadingStaffings}
           >
             {staffings.length === 0 ? (
@@ -203,19 +203,19 @@ export function TimesheetForm({ mode, existing, presetProjectCode, onCancel, onS
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-600">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-4 py-2 font-medium w-28">Day</th>
-              <th className="text-left px-4 py-2 font-medium w-32">Hours</th>
-              <th className="text-left px-4 py-2 font-medium">Task description</th>
+              <th className="text-left px-3 py-1.5 font-medium w-24">Day</th>
+              <th className="text-left px-3 py-1.5 font-medium w-24">Hours</th>
+              <th className="text-left px-3 py-1.5 font-medium">Task description</th>
             </tr>
           </thead>
           <tbody>
             {DAY_KEYS.map((k) => (
               <tr key={k} className="border-t border-slate-100">
-                <td className="px-4 py-2 font-medium">{DAY_LABELS[k]}</td>
-                <td className="px-4 py-2">
+                <td className="px-3 py-1.5 font-medium text-slate-700">{DAY_LABELS[k]}</td>
+                <td className="px-3 py-1.5">
                   <input
                     type="number"
                     min={0}
@@ -223,46 +223,46 @@ export function TimesheetForm({ mode, existing, presetProjectCode, onCancel, onS
                     step={0.25}
                     value={days[k].hours}
                     onChange={(e) => updateDay(k, { hours: e.target.value })}
-                    className="w-24 rounded-md border border-slate-300 px-2 py-1 tabular-nums"
+                    className="w-20 rounded-md border border-slate-300 px-2 py-1 text-xs tabular-nums"
                   />
                 </td>
-                <td className="px-4 py-2">
+                <td className="px-3 py-1.5">
                   <input
                     type="text"
                     value={days[k].task}
                     onChange={(e) => updateDay(k, { task: e.target.value })}
                     placeholder="What did you work on?"
-                    className="w-full rounded-md border border-slate-300 px-2 py-1"
+                    className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
                   />
                 </td>
               </tr>
             ))}
             <tr className="border-t border-slate-200 bg-slate-50">
-              <td className="px-4 py-2 font-semibold">Total</td>
-              <td className="px-4 py-2 font-semibold tabular-nums">{total.toFixed(2)}</td>
+              <td className="px-3 py-1.5 font-semibold text-slate-700">Total</td>
+              <td className="px-3 py-1.5 font-semibold tabular-nums text-slate-900">{total.toFixed(2)}</td>
               <td />
             </tr>
           </tbody>
         </table>
       </div>
 
-      {error ? <div className="rounded-md bg-red-50 text-red-700 p-3 text-sm">{error}</div> : null}
+      {error ? <div className="rounded-md bg-red-50 text-red-700 p-2.5 text-xs">{error}</div> : null}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2.5">
         <button
           type="button"
           onClick={() => (onCancel ? onCancel() : router.back())}
           disabled={submitting}
-          className="rounded-md border border-red-300 bg-white hover:bg-red-50 px-4 py-2 text-sm font-medium text-red-700 disabled:opacity-60"
+          className="rounded-md border border-red-300 bg-white hover:bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 disabled:opacity-60"
         >
           Cancel
         </button>
-        <div className="flex gap-3 sm:ml-auto">
+        <div className="flex gap-2 sm:ml-auto">
           <button
             type="button"
             onClick={() => save("Draft")}
             disabled={submitting}
-            className="rounded-md border border-slate-300 bg-white hover:bg-slate-50 px-4 py-2 text-sm font-medium disabled:opacity-60"
+            className="rounded-md border border-slate-300 bg-white hover:bg-slate-50 px-3 py-1.5 text-xs font-medium disabled:opacity-60"
           >
             Save as Draft
           </button>
@@ -270,7 +270,7 @@ export function TimesheetForm({ mode, existing, presetProjectCode, onCancel, onS
             type="button"
             onClick={() => save("Submitted")}
             disabled={submitting}
-            className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-60"
+            className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 text-xs font-medium disabled:opacity-60"
           >
             Submit
           </button>

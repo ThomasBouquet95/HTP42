@@ -1184,6 +1184,7 @@ export async function updateTimesheetStatus(
 function staffingAdminFromRecord(
   r: AirtableRecord<FieldSet>,
   projectNames: Map<string, string>,
+  memberCodeById?: Map<string, string>,
 ): StaffingAdminRecord {
   const projectCode = str(r, FIELDS.projectStaffing.projectCode);
   const rate = numOrNull(r, FIELDS.projectStaffing.ratePerDay);
@@ -1191,13 +1192,19 @@ function staffingAdminFromRecord(
   const fx = numOrNull(r, FIELDS.projectStaffing.fxToEur);
   const totalAmount = rate != null && days != null ? rate * days : null;
   const totalAmountEur = totalAmount != null && fx != null ? totalAmount * fx : null;
+  const memberRecordIds = linkedIds(r, FIELDS.projectStaffing.memberCode);
+  // The linked field returns raw record IDs in some Airtable configurations.
+  // Resolve to actual member codes via memberCodeById when available.
+  const memberCodes = memberCodeById
+    ? memberRecordIds.map((id) => memberCodeById.get(id) ?? id)
+    : linkedDisplay(r, FIELDS.projectStaffing.memberCode);
   return {
     id: r.id,
     staffingCode: str(r, FIELDS.projectStaffing.staffingCode),
     projectCode,
     projectName: projectNames.get(projectCode) ?? "",
-    memberRecordIds: linkedIds(r, FIELDS.projectStaffing.memberCode),
-    memberCodes: linkedDisplay(r, FIELDS.projectStaffing.memberCode),
+    memberRecordIds,
+    memberCodes,
     roleInProject: str(r, FIELDS.projectStaffing.roleInProject),
     projectRole: str(r, FIELDS.projectStaffing.projectRole) as ProjectRole | "",
     ratePerDay: rate,
@@ -1215,23 +1222,32 @@ function staffingAdminFromRecord(
   };
 }
 
+async function getMemberCodeMap(): Promise<Map<string, string>> {
+  const records = await base(TABLES.networkMembers)
+    .select({ fields: [FIELDS.networkMembers.memberCode] })
+    .all();
+  return new Map(records.map((r) => [r.id, str(r, FIELDS.networkMembers.memberCode)]));
+}
+
 export async function listAllStaffings(): Promise<StaffingAdminRecord[]> {
-  const [records, projectNames] = await Promise.all([
+  const [records, projectNames, memberCodeById] = await Promise.all([
     base(TABLES.projectStaffing).select().all(),
     getProjectNameMap(),
+    getMemberCodeMap(),
   ]);
   return records
-    .map((r) => staffingAdminFromRecord(r, projectNames))
+    .map((r) => staffingAdminFromRecord(r, projectNames, memberCodeById))
     .sort((a, b) => a.staffingCode.localeCompare(b.staffingCode));
 }
 
 export async function getStaffingById(recordId: string): Promise<StaffingAdminRecord | null> {
   try {
-    const [r, projectNames] = await Promise.all([
+    const [r, projectNames, memberCodeById] = await Promise.all([
       base(TABLES.projectStaffing).find(recordId),
       getProjectNameMap(),
+      getMemberCodeMap(),
     ]);
-    return staffingAdminFromRecord(r, projectNames);
+    return staffingAdminFromRecord(r, projectNames, memberCodeById);
   } catch {
     return null;
   }
