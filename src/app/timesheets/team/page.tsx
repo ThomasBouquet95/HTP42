@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getLedProjects, getProjectSummaryByCode } from "@/lib/airtable";
-import { AppHeader } from "@/components/app-header";
 import { TimesheetsTabs } from "@/components/timesheets-tabs";
 import { ProjectSummaryView } from "./project-summary-view";
 import { ProjectSelector } from "./project-selector";
@@ -29,9 +28,7 @@ export default async function ProjectSummaryPage({
   const summary = activeCode ? await getProjectSummaryByCode(activeCode) : null;
 
   return (
-    <>
-      <AppHeader session={session} />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <TimesheetsTabs active="team" />
         <h1 className="text-base sm:text-lg font-semibold mb-4">Project Staffing Summary</h1>
 
@@ -54,8 +51,7 @@ export default async function ProjectSummaryPage({
             )}
           </>
         )}
-      </main>
-    </>
+    </main>
   );
 }
 

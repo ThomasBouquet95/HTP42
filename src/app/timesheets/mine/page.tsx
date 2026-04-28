@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getTimesheetsForMember } from "@/lib/airtable";
-import { AppHeader } from "@/components/app-header";
 import { TimesheetsTabs } from "@/components/timesheets-tabs";
-import { SummaryClient } from "@/app/summary/summary-client";
 import { SubmitTimesheetButton } from "@/components/submit-timesheet-modal";
+import { MineViews } from "./views";
 
 export const dynamic = "force-dynamic";
 
@@ -15,23 +14,17 @@ export default async function MyTimesheetsPage() {
   const timesheets = await getTimesheetsForMember(session.memberCode);
 
   return (
-    <>
-      <AppHeader session={session} />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        <TimesheetsTabs active="mine" />
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <h1 className="text-base sm:text-lg font-semibold">Timesheets</h1>
-          <SubmitTimesheetButton />
-        </div>
-        <SummaryClient
-          timesheets={timesheets}
-          memberLabel={session.fullName || session.email}
-          memberCode={session.memberCode}
-          editable
-          defaultStatus="All"
-          hideSummary
-        />
-      </main>
-    </>
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <TimesheetsTabs active="mine" />
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h1 className="text-base sm:text-lg font-semibold">Timesheets</h1>
+        <SubmitTimesheetButton />
+      </div>
+      <MineViews
+        timesheets={timesheets}
+        memberLabel={session.fullName || session.email}
+        memberCode={session.memberCode}
+      />
+    </main>
   );
 }

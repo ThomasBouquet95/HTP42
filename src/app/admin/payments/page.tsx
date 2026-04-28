@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
-import { AppHeader } from "@/components/app-header";
 import { AdminTabs } from "@/components/admin-tabs";
 import {
   listPayments,
@@ -25,9 +24,7 @@ export default async function AdminPaymentsPage() {
   ]);
 
   return (
-    <>
-      <AppHeader session={session} />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <AdminTabs active="payments" />
         <div className="mb-4 flex items-baseline gap-3">
           <h1 className="text-base sm:text-lg font-semibold">Payments</h1>
@@ -42,7 +39,6 @@ export default async function AdminPaymentsPage() {
           members={members.map((m) => ({ id: m.id, code: m.memberCode, name: m.fullName }))}
           currencies={CURRENCIES}
         />
-      </main>
-    </>
+    </main>
   );
 }

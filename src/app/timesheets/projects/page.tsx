@@ -8,7 +8,6 @@ import {
   type ProjectStatus,
 } from "@/lib/airtable";
 import { formatHumanDate } from "@/lib/dates";
-import { AppHeader } from "@/components/app-header";
 import { TimesheetsTabs } from "@/components/timesheets-tabs";
 import { SubmitTimesheetButton } from "@/components/submit-timesheet-modal";
 
@@ -37,25 +36,22 @@ export default async function MyProjectsPage() {
   });
 
   return (
-    <>
-      <AppHeader session={session} />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        <TimesheetsTabs active="projects" />
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <h1 className="text-base sm:text-lg font-semibold">Projects</h1>
-          <SubmitTimesheetButton />
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <TimesheetsTabs active="projects" />
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <h1 className="text-base sm:text-lg font-semibold">Projects</h1>
+        <SubmitTimesheetButton />
+      </div>
+      {projects.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {projects.map((p) => (
+            <ProjectCard key={p.projectCode} project={p} />
+          ))}
         </div>
-        {projects.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {projects.map((p) => (
-              <ProjectCard key={p.projectCode} project={p} />
-            ))}
-          </div>
-        )}
-      </main>
-    </>
+      )}
+    </main>
   );
 }
 
@@ -155,10 +151,6 @@ function ProjectCard({ project: p }: { project: MyProjectRecord }) {
           <TeamBubbles team={p.team} />
         </div>
       ) : null}
-
-      <div className="mt-3 text-xs text-slate-500">
-        {p.submittedTimesheets} timesheet{p.submittedTimesheets === 1 ? "" : "s"} submitted
-      </div>
 
       <div className="mt-auto pt-3 flex flex-wrap items-center gap-3 text-xs">
         <SubmitTimesheetButton
