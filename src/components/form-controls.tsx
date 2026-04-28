@@ -32,7 +32,7 @@ export function FormField({
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="text-xs font-medium text-slate-600">
+      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
         {label}
         {required ? <span className="text-red-500 ml-0.5">*</span> : null}
       </span>
@@ -45,7 +45,7 @@ export function FormField({
         placeholder={placeholder}
         maxLength={maxLength}
         step={type === "number" ? "any" : undefined}
-        className={`mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 ${
+        className={`mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 ${
           readOnly ? "bg-slate-50 text-slate-500" : ""
         } ${inputClassName ?? ""}`}
       />
@@ -69,14 +69,14 @@ export function FormSelect({
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="text-xs font-medium text-slate-600">
+      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
         {label}
         {required ? <span className="text-red-500 ml-0.5">*</span> : null}
       </span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
       >
         {children}
       </select>
@@ -101,13 +101,13 @@ export function FormTextarea({
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="text-xs font-medium text-slate-600">{label}</span>
+      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">{label}</span>
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={rows}
         placeholder={placeholder}
-        className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+        className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
       />
       {hint ? <div className="mt-1 text-xs">{hint}</div> : null}
     </label>

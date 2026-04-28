@@ -280,6 +280,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
+              <th className="px-3 py-2 font-medium w-10" />
               <th className="text-left px-3 py-2 font-medium">Code</th>
               <th className="text-left px-3 py-2 font-medium">Name</th>
               <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Email</th>
@@ -287,13 +288,14 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
               <th className="text-left px-3 py-2 font-medium">Status</th>
               <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Country</th>
               <th className="text-right px-3 py-2 font-medium hidden md:table-cell">Daily rate</th>
+              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">CV</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-center text-slate-500 py-10">
+                <td colSpan={10} className="text-center text-slate-500 py-10">
                   No members match this search.
                 </td>
               </tr>
@@ -304,6 +306,16 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                   onClick={() => openEdit(m)}
                   className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
                 >
+                  <td className="px-3 py-2">
+                    <div className="h-7 w-7 rounded-full overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-semibold text-slate-600">
+                      {m.photo ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={m.photo.url} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        memberInitials(m.fullName || m.memberCode)
+                      )}
+                    </div>
+                  </td>
                   <td className="px-3 py-2 font-mono text-xs">{m.memberCode}</td>
                   <td className="px-3 py-2">
                     <div>{m.fullName}</div>
@@ -317,6 +329,23 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                     {m.dailyRate == null
                       ? "—"
                       : `${m.dailyRate.toLocaleString("en-US")} ${m.currency || ""}`.trim()}
+                  </td>
+                  <td
+                    className="px-3 py-2 hidden md:table-cell text-xs"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {m.cv ? (
+                      <a
+                        href={m.cv.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-brand-600 hover:text-brand-700 font-medium"
+                      >
+                        Open CV ↗
+                      </a>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <span className="text-brand-600 text-xs font-medium">Edit</span>
@@ -456,6 +485,14 @@ function CodeHint({ status, suggestion }: { status: CodeStatus; suggestion: bool
   if (status.state === "checking") return <span className="text-slate-500">Checking…</span>;
   if (status.state === "ok") return <span className="text-green-600">Available.</span>;
   return <span className="text-red-600">{status.message}</span>;
+}
+
+function memberInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const first = parts[0][0] ?? "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return `${first}${last}`.toUpperCase();
 }
 
 function StatusPill({ status }: { status: string }) {

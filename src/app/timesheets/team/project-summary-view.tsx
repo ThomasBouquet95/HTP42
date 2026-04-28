@@ -17,21 +17,28 @@ export function ProjectSummaryView({ summary }: Props) {
   const progressPct =
     allocatedHours > 0 ? Math.min(100, (totals.actualHours / allocatedHours) * 100) : 0;
 
+  const frame = statusFrame(project.status);
   return (
     <div className="space-y-5">
       {/* Project header */}
-      <div className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5">
+      <div className={`rounded-lg border-l-4 border-y border-r p-4 sm:p-5 ${frame.frame}`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500 font-mono">
-              {project.projectCode}
+            <div className="flex items-center gap-2">
+              <div className="text-xs uppercase tracking-wide text-slate-500 font-mono">
+                {project.projectCode}
+              </div>
+              {project.status ? (
+                <span className={`text-[10px] font-semibold uppercase tracking-wide ${frame.label}`}>
+                  {project.status}
+                </span>
+              ) : null}
             </div>
             <div className="text-lg sm:text-xl font-semibold text-slate-900 mt-0.5">
               {project.projectName || "—"}
             </div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span>{formatHumanDate(project.startDate)} → {formatHumanDate(project.endDate)}</span>
-              {project.status ? <StatusPill status={project.status} /> : null}
+            <div className="mt-1.5 text-xs text-slate-500">
+              {formatHumanDate(project.startDate)} → {formatHumanDate(project.endDate)}
             </div>
           </div>
           <div className="flex gap-2">
@@ -295,22 +302,41 @@ function MemberRow({
   );
 }
 
-function StatusPill({ status }: { status: ProjectStatus | "" }) {
-  if (!status) return null;
-  const styles: Record<ProjectStatus, string> = {
-    "Planned": "bg-slate-100 text-slate-700 border-slate-200",
-    "Not Started": "bg-slate-100 text-slate-700 border-slate-200",
-    "In Progress": "bg-emerald-50 text-emerald-700 border-emerald-200",
-    "On Hold": "bg-amber-50 text-amber-700 border-amber-200",
-    "Completed": "bg-blue-50 text-blue-700 border-blue-200",
+type FrameStyle = { frame: string; label: string };
+const STATUS_FRAMES: Record<ProjectStatus, FrameStyle> = {
+  "In Progress": {
+    frame: "bg-emerald-50/40 border-emerald-200 border-l-emerald-500",
+    label: "text-emerald-700",
+  },
+  "Planned": {
+    frame: "bg-slate-50 border-slate-200 border-l-slate-400",
+    label: "text-slate-600",
+  },
+  "Not Started": {
+    frame: "bg-slate-50 border-slate-200 border-l-slate-400",
+    label: "text-slate-600",
+  },
+  "On Hold": {
+    frame: "bg-amber-50/50 border-amber-200 border-l-amber-500",
+    label: "text-amber-700",
+  },
+  "Completed": {
+    frame: "bg-blue-50/40 border-blue-200 border-l-blue-500",
+    label: "text-blue-700",
+  },
+};
+
+function statusFrame(status: ProjectStatus | ""): FrameStyle {
+  if (!status) {
+    return {
+      frame: "bg-white border-slate-200 border-l-slate-300",
+      label: "text-slate-500",
+    };
+  }
+  return STATUS_FRAMES[status] ?? {
+    frame: "bg-white border-slate-200 border-l-slate-300",
+    label: "text-slate-500",
   };
-  const cls = styles[status as ProjectStatus] ?? "bg-slate-100 text-slate-700 border-slate-200";
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${cls}`}>
-      <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
-      {status}
-    </span>
-  );
 }
 
 function initials(name: string): string {

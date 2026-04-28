@@ -84,7 +84,7 @@ function fromRecord(p: ProjectRecord): FormState {
 export function ProjectsAdminClient({
   projects,
   clients,
-  members,
+  members: _members,
   projectTypes,
   projectStatuses,
   currencies,
@@ -345,8 +345,23 @@ export function ProjectsAdminClient({
                         ? "—"
                         : `${p.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${p.currency || ""}`.trim()}
                     </td>
-                    <td className="px-3 py-2 text-right">
-                      <span className="text-brand-600 text-xs font-medium">Edit</span>
+                    <td
+                      className="px-3 py-2 text-right whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <a
+                        href={`/admin/staffing?project=${encodeURIComponent(p.projectCode)}`}
+                        className="text-brand-600 hover:text-brand-700 text-xs font-medium mr-3"
+                      >
+                        Staffings
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(p)}
+                        className="text-brand-600 hover:text-brand-700 text-xs font-medium"
+                      >
+                        Edit
+                      </button>
                     </td>
                   </tr>
                 );
@@ -429,13 +444,6 @@ export function ProjectsAdminClient({
             required
             className="sm:col-span-2"
           />
-          <div className="sm:col-span-2">
-            <LeadersPicker
-              members={members}
-              value={form.projectLeaderIds}
-              onChange={(v) => updateField("projectLeaderIds", v)}
-            />
-          </div>
           <FormSelect label="Type" value={form.type} onChange={(v) => updateField("type", v)}>
             <option value="">—</option>
             {projectTypes.map((t) => (
@@ -524,87 +532,3 @@ export function ProjectsAdminClient({
   );
 }
 
-function LeadersPicker({
-  members,
-  value,
-  onChange,
-}: {
-  members: MemberOpt[];
-  value: string[];
-  onChange: (ids: string[]) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const selected = useMemo(
-    () => members.filter((m) => value.includes(m.id)),
-    [members, value],
-  );
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [] as MemberOpt[];
-    return members
-      .filter((m) => !value.includes(m.id))
-      .filter((m) =>
-        [m.code, m.name].some((v) => v && v.toLowerCase().includes(q)),
-      )
-      .slice(0, 6);
-  }, [members, value, query]);
-
-  function add(id: string) {
-    if (!value.includes(id)) onChange([...value, id]);
-    setQuery("");
-  }
-  function remove(id: string) {
-    onChange(value.filter((v) => v !== id));
-  }
-
-  return (
-    <div>
-      <div className="text-xs font-medium text-slate-600">Project leaders</div>
-      <div className="mt-1 flex flex-wrap gap-1 min-h-[2.25rem] rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
-        {selected.map((m) => (
-          <span
-            key={m.id}
-            className="inline-flex items-center gap-1 rounded-full bg-brand-50 text-brand-700 border border-brand-200 px-2 py-0.5 text-xs"
-          >
-            <span className="font-mono">{m.code}</span>
-            <span>{m.name}</span>
-            <button
-              type="button"
-              onClick={() => remove(m.id)}
-              aria-label={`Remove ${m.name}`}
-              className="text-brand-600 hover:text-brand-800"
-            >
-              ×
-            </button>
-          </span>
-        ))}
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={selected.length === 0 ? "Search members…" : ""}
-          className="flex-1 min-w-[8rem] outline-none text-sm"
-        />
-      </div>
-      {filtered.length > 0 ? (
-        <ul className="mt-1 rounded-md border border-slate-200 bg-white shadow-sm divide-y divide-slate-100 text-sm max-h-52 overflow-y-auto">
-          {filtered.map((m) => (
-            <li key={m.id}>
-              <button
-                type="button"
-                onClick={() => add(m.id)}
-                className="w-full text-left px-3 py-1.5 hover:bg-slate-50"
-              >
-                <span className="font-mono text-xs text-slate-500 mr-2">{m.code}</span>
-                {m.name}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      <div className="mt-1 text-xs text-slate-400">
-        Leaders see every team member's timesheets on this project in Project Summary.
-      </div>
-    </div>
-  );
-}

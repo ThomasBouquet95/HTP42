@@ -193,28 +193,46 @@ function TeamBubbles({ team }: { team: MyProjectTeamMember[] }) {
         return (
           <span
             key={m.memberRecordId}
-            title={label}
-            aria-label={label}
-            className={`relative h-7 w-7 rounded-full ring-2 ${ringCls} overflow-hidden flex items-center justify-center text-[11px] font-semibold ${
-              m.photoUrl ? "" : m.isLeader ? "bg-brand-600 text-white" : "bg-slate-200 text-slate-700"
-            }`}
+            className="group relative"
           >
-            {m.photoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={m.photoUrl} alt="" className="h-full w-full object-cover" />
-            ) : (
-              initials(m.fullName || m.memberCode)
-            )}
+            <span
+              title={label}
+              aria-label={label}
+              className={`relative h-7 w-7 rounded-full ring-2 ${ringCls} overflow-hidden flex items-center justify-center text-[11px] font-semibold ${
+                m.photoUrl ? "" : m.isLeader ? "bg-brand-600 text-white" : "bg-slate-200 text-slate-700"
+              }`}
+            >
+              {m.photoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={m.photoUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                initials(m.fullName || m.memberCode)
+              )}
+            </span>
+            <span
+              role="tooltip"
+              className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1 z-10 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+            >
+              {label}
+            </span>
           </span>
         );
       })}
       {remainder.length > 0 ? (
-        <span
-          title={remainderLabel}
-          aria-label={remainderLabel}
-          className="relative h-7 w-7 rounded-full ring-2 ring-white bg-slate-100 text-slate-600 flex items-center justify-center text-[11px] font-semibold"
-        >
-          +{remainder.length}
+        <span className="group relative">
+          <span
+            title={remainderLabel}
+            aria-label={remainderLabel}
+            className="relative h-7 w-7 rounded-full ring-2 ring-white bg-slate-100 text-slate-600 flex items-center justify-center text-[11px] font-semibold"
+          >
+            +{remainder.length}
+          </span>
+          <span
+            role="tooltip"
+            className="pointer-events-none absolute right-0 top-full mt-1 z-10 max-w-xs whitespace-pre-wrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+          >
+            {remainderLabel}
+          </span>
         </span>
       ) : null}
     </div>

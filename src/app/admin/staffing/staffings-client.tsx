@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import type {
@@ -88,7 +88,13 @@ export function StaffingsAdminClient({
   projectRoles,
 }: Props) {
   const router = useRouter();
-  const [search, setSearch] = useState("");
+  const searchParams = useSearchParams();
+  const [search, setSearch] = useState(searchParams?.get("project") ?? "");
+  // Keep search synced if the URL changes (e.g. coming from /admin/projects).
+  useEffect(() => {
+    const p = searchParams?.get("project");
+    if (p) setSearch(p);
+  }, [searchParams]);
   const [statusFilter, setStatusFilter] = useState<"All" | StaffingStatus>("All");
   const [editing, setEditing] = useState<StaffingAdminRecord | null>(null);
   const [creating, setCreating] = useState(false);

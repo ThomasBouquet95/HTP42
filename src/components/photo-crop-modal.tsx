@@ -203,9 +203,7 @@ export function PhotoCropModal({ open, file, onClose, onCropped }: Props) {
             />
           </div>
 
-          <p className="text-[11px] text-slate-500">
-            Drag to reposition. Saves as 512×512 JPEG, automatically compressed under 1 MB.
-          </p>
+          <p className="text-[11px] text-slate-500">Below 1 MB</p>
         </div>
         <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-2.5">
           <button

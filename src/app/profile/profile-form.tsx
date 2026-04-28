@@ -201,7 +201,7 @@ function PhotoUpload({
               </button>
             ) : null}
           </div>
-          <p className="text-[11px] text-slate-500">Adjust crop & zoom · saved as JPEG ≤ 1 MB</p>
+          <p className="text-[11px] text-slate-500">Below 1 MB</p>
         </div>
         <input
           ref={fileRef}
@@ -327,7 +327,7 @@ function CvUpload({
               </button>
             ) : null}
           </div>
-          <p className="text-[11px] text-slate-500">PDF or Word · max 1 MB</p>
+          <p className="text-[11px] text-slate-500">Below 1 MB</p>
         </div>
         <input
           ref={fileRef}
