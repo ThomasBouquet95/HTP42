@@ -253,7 +253,7 @@ export function TimesheetForm({ mode, existing, presetProjectCode, onCancel, onS
           type="button"
           onClick={() => (onCancel ? onCancel() : router.back())}
           disabled={submitting}
-          className="rounded-md border border-slate-300 bg-white hover:bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-60"
+          className="rounded-md border border-red-300 bg-white hover:bg-red-50 px-4 py-2 text-sm font-medium text-red-700 disabled:opacity-60"
         >
           Cancel
         </button>

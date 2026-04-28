@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { listMyProjects, type MyProjectRecord, type ProjectStatus } from "@/lib/airtable";
+import {
+  listMyProjects,
+  type MyProjectRecord,
+  type MyProjectTeamMember,
+  type ProjectStatus,
+} from "@/lib/airtable";
 import { AppHeader } from "@/components/app-header";
 import { TimesheetsTabs } from "@/components/timesheets-tabs";
 import { SubmitTimesheetButton } from "@/components/submit-timesheet-modal";
@@ -22,7 +27,7 @@ export default async function MyProjectsPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <TimesheetsTabs active="projects" />
         <div className="mb-4 flex items-start justify-between gap-3">
-          <h1 className="text-xl sm:text-2xl font-semibold">Projects</h1>
+          <h1 className="text-base sm:text-lg font-semibold">Projects</h1>
           <SubmitTimesheetButton />
         </div>
         {projects.length === 0 ? (
@@ -60,7 +65,7 @@ function ProjectCard({ project: p }: { project: MyProjectRecord }) {
           <div className="text-[11px] uppercase tracking-wide text-slate-500 font-mono">
             {p.projectCode}
           </div>
-          <div className="text-sm sm:text-base font-semibold text-slate-900 truncate">
+          <div className="text-sm font-semibold text-slate-900 truncate">
             {p.projectName || "—"}
           </div>
           {clientLabel ? (
@@ -75,9 +80,9 @@ function ProjectCard({ project: p }: { project: MyProjectRecord }) {
       </div>
 
       {jobTitles.length > 0 ? (
-        <div className="mt-2 text-xs text-slate-600">
+        <div className="mt-2 text-xs">
           <span className="text-slate-500">Job title: </span>
-          <span className="font-medium text-slate-800">{jobTitles.join(", ")}</span>
+          <span className="font-medium text-brand-700">{jobTitles.join(", ")}</span>
         </div>
       ) : null}
 
@@ -122,6 +127,13 @@ function ProjectCard({ project: p }: { project: MyProjectRecord }) {
         </div>
       ) : null}
 
+      {p.team.length > 0 ? (
+        <div className="mt-3">
+          <div className="text-[11px] text-slate-500 mb-1">Team</div>
+          <TeamBubbles team={p.team} />
+        </div>
+      ) : null}
+
       <div className="mt-3 text-xs text-slate-500">
         {p.submittedTimesheets} timesheet{p.submittedTimesheets === 1 ? "" : "s"} submitted
       </div>
@@ -131,7 +143,7 @@ function ProjectCard({ project: p }: { project: MyProjectRecord }) {
           presetProjectCode={p.projectCode}
           className="text-brand-600 hover:text-brand-700 font-medium"
         >
-          Submit timesheet →
+          Add timesheet →
         </SubmitTimesheetButton>
         {p.isLeader ? (
           <Link
@@ -144,6 +156,51 @@ function ProjectCard({ project: p }: { project: MyProjectRecord }) {
       </div>
     </div>
   );
+}
+
+function TeamBubbles({ team }: { team: MyProjectTeamMember[] }) {
+  const VISIBLE = 6;
+  const visible = team.slice(0, VISIBLE);
+  const remainder = team.slice(VISIBLE);
+  const remainderLabel = remainder.map((m) => m.fullName || m.memberCode).join(", ");
+  return (
+    <div className="flex items-center -space-x-1.5">
+      {visible.map((m) => {
+        const label = `${m.fullName || m.memberCode}${m.isLeader ? " · Project Leader" : ""}`;
+        return (
+          <span
+            key={m.memberRecordId}
+            title={label}
+            aria-label={label}
+            className={`relative h-7 w-7 rounded-full ring-2 ring-white flex items-center justify-center text-[11px] font-semibold ${
+              m.isLeader
+                ? "bg-brand-600 text-white"
+                : "bg-slate-200 text-slate-700"
+            }`}
+          >
+            {initials(m.fullName || m.memberCode)}
+          </span>
+        );
+      })}
+      {remainder.length > 0 ? (
+        <span
+          title={remainderLabel}
+          aria-label={remainderLabel}
+          className="relative h-7 w-7 rounded-full ring-2 ring-white bg-slate-100 text-slate-600 flex items-center justify-center text-[11px] font-semibold"
+        >
+          +{remainder.length}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const first = parts[0][0] ?? "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return `${first}${last}`.toUpperCase();
 }
 
 function StatusPill({ status }: { status: ProjectStatus | "" }) {
@@ -169,8 +226,8 @@ function StatusPill({ status }: { status: ProjectStatus | "" }) {
 function EmptyState() {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-6 sm:p-8 text-center">
-      <h2 className="text-base font-semibold text-slate-900">No projects yet</h2>
-      <p className="mt-1 text-sm text-slate-600 max-w-md mx-auto">
+      <h2 className="text-sm font-semibold text-slate-900">No projects yet</h2>
+      <p className="mt-1 text-xs text-slate-600 max-w-md mx-auto">
         You don't have any active staffings. Once an administrator staffs you on a project, it
         will appear here with your allocated time and progress.
       </p>

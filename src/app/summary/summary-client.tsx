@@ -77,14 +77,27 @@ export function SummaryClient({
   }, [timesheets, filters.projectCode]);
 
   const filtered = useMemo(() => {
-    return timesheets.filter((t) => {
-      if (filters.status !== "All" && t.status !== filters.status) return false;
-      if (filters.projectCode !== "All" && t.projectCode !== filters.projectCode) return false;
-      if (filters.staffingId !== "All" && t.staffingRecordId !== filters.staffingId) return false;
-      if (filters.from && (t.startDate ?? "") < filters.from) return false;
-      if (filters.to && (t.startDate ?? "") > filters.to) return false;
-      return true;
-    });
+    const STATUS_ORDER: Record<TimesheetStatus, number> = {
+      Submitted: 0,
+      Draft: 1,
+      Deleted: 2,
+    };
+    return timesheets
+      .filter((t) => {
+        if (filters.status !== "All" && t.status !== filters.status) return false;
+        if (filters.projectCode !== "All" && t.projectCode !== filters.projectCode) return false;
+        if (filters.staffingId !== "All" && t.staffingRecordId !== filters.staffingId) return false;
+        if (filters.from && (t.startDate ?? "") < filters.from) return false;
+        if (filters.to && (t.startDate ?? "") > filters.to) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const sa = STATUS_ORDER[a.status] ?? 99;
+        const sb = STATUS_ORDER[b.status] ?? 99;
+        if (sa !== sb) return sa - sb;
+        // Within the same status, newest week first.
+        return (b.startDate ?? "").localeCompare(a.startDate ?? "");
+      });
   }, [timesheets, filters]);
 
   const total = useMemo(

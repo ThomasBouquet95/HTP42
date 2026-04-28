@@ -40,7 +40,7 @@ export function SubmitTimesheetModal({ open, onClose, presetProjectCode, title }
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
           <h2 id="submit-ts-title" className="text-base font-semibold text-slate-900">
-            {title ?? "Submit timesheet"}
+            {title ?? "Add timesheet"}
           </h2>
           <button
             type="button"
@@ -86,7 +86,7 @@ export function SubmitTimesheetButton({
           "inline-flex items-center rounded-md bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 text-sm font-medium"
         }
       >
-        {children ?? "Submit timesheet"}
+        {children ?? "Add timesheet"}
       </button>
       <SubmitTimesheetModal
         open={open}

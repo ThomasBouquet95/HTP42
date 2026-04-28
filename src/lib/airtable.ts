@@ -35,6 +35,8 @@ export const FIELDS = {
     memberStatus: "Member Status",
     dailyRate: "Daily Rate",
     currency: "Currency",
+    photo: "Photo",
+    cv: "CV",
   },
   projects: {
     projectCode: "Project Code",
@@ -179,6 +181,14 @@ export type PaymentStatus =
   | "Unpaid"
   | "Pending";
 
+export type AttachmentRef = {
+  id: string;
+  url: string;
+  filename: string;
+  size: number;
+  type: string;
+};
+
 export type MemberRecord = {
   id: string;
   memberCode: string;
@@ -191,6 +201,8 @@ export type MemberRecord = {
   phone: string;
   legalEntity: string;
   title: string;
+  photo: AttachmentRef | null;
+  cv: AttachmentRef | null;
 };
 
 export type MemberAdminRecord = MemberRecord & {
@@ -354,6 +366,20 @@ function dateOrNull(r: AirtableRecord<FieldSet>, field: string): string | null {
   return typeof v === "string" ? v : null;
 }
 
+function firstAttachment(r: AirtableRecord<FieldSet>, field: string): AttachmentRef | null {
+  const v = r.get(field);
+  if (!Array.isArray(v) || v.length === 0) return null;
+  const a = v[0] as { id?: string; url?: string; filename?: string; size?: number; type?: string };
+  if (!a || typeof a.url !== "string") return null;
+  return {
+    id: typeof a.id === "string" ? a.id : "",
+    url: a.url,
+    filename: typeof a.filename === "string" ? a.filename : "",
+    size: typeof a.size === "number" ? a.size : 0,
+    type: typeof a.type === "string" ? a.type : "",
+  };
+}
+
 function escape(formulaValue: string): string {
   // Escape backslashes first, then double quotes, so values containing `\"`
   // cannot break out of the quoted string in filterByFormula.
@@ -373,6 +399,8 @@ function memberFromRecord(r: AirtableRecord<FieldSet>): MemberRecord {
     phone: str(r, FIELDS.networkMembers.phone),
     legalEntity: str(r, FIELDS.networkMembers.legalEntity),
     title: str(r, FIELDS.networkMembers.title),
+    photo: firstAttachment(r, FIELDS.networkMembers.photo),
+    cv: firstAttachment(r, FIELDS.networkMembers.cv),
   };
 }
 
@@ -423,6 +451,44 @@ export async function updateMemberProfile(
     { id: recordId, fields: fields as FieldSet },
   ]);
   return memberFromRecord(updated);
+}
+
+// Upload an attachment to an attachment field on a member record using
+// Airtable's content endpoint (base64 payload, up to 5 MB per file).
+// We replace any existing attachment in the field to keep things simple.
+export async function uploadMemberAttachment(
+  recordId: string,
+  field: "photo" | "cv",
+  filename: string,
+  contentType: string,
+  base64: string,
+): Promise<MemberRecord | null> {
+  const fieldName = field === "photo" ? FIELDS.networkMembers.photo : FIELDS.networkMembers.cv;
+  const url = `https://content.airtable.com/v0/${env.airtableBaseId}/${recordId}/${encodeURIComponent(fieldName)}/uploadAttachment`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.airtablePat}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ contentType, filename, file: base64 }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Airtable upload failed (${res.status}): ${text}`);
+  }
+  return getMemberById(recordId);
+}
+
+export async function clearMemberAttachment(
+  recordId: string,
+  field: "photo" | "cv",
+): Promise<MemberRecord | null> {
+  const fieldName = field === "photo" ? FIELDS.networkMembers.photo : FIELDS.networkMembers.cv;
+  await base(TABLES.networkMembers).update([
+    { id: recordId, fields: { [fieldName]: [] } as FieldSet },
+  ]);
+  return getMemberById(recordId);
 }
 
 // ---------------------------------------------------------------------------
@@ -1504,9 +1570,14 @@ export async function getProjectSummaryByCode(projectCode: string): Promise<Proj
     else if (ts.status === "Draft") draftTimesheets += 1;
   }
 
-  const members = [...memberIndex.values()].sort((a, b) =>
-    a.memberName.localeCompare(b.memberName) || a.memberCode.localeCompare(b.memberCode),
-  );
+  const members = [...memberIndex.values()].sort((a, b) => {
+    const aLeader = a.staffings.some((s) => s.projectRole === "Project Leader");
+    const bLeader = b.staffings.some((s) => s.projectRole === "Project Leader");
+    if (aLeader !== bLeader) return aLeader ? -1 : 1;
+    return (
+      a.memberName.localeCompare(b.memberName) || a.memberCode.localeCompare(b.memberCode)
+    );
+  });
 
   const totals = {
     allocatedDays: members.reduce((s, m) => s + m.daysAllocatedTotal, 0),
@@ -1534,6 +1605,13 @@ export type MyProjectStaffing = {
   status: StaffingStatus | "";
 };
 
+export type MyProjectTeamMember = {
+  memberRecordId: string;
+  memberCode: string;
+  fullName: string;
+  isLeader: boolean;
+};
+
 export type MyProjectRecord = {
   projectCode: string;
   projectName: string;
@@ -1544,6 +1622,7 @@ export type MyProjectRecord = {
   endDate: string | null;
   isLeader: boolean;
   staffings: MyProjectStaffing[];
+  team: MyProjectTeamMember[];
   daysAllocatedTotal: number;
   hoursActualTotal: number;
   daysActualTotal: number;
@@ -1606,6 +1685,7 @@ export async function listMyProjects(
         endDate: proj?.endDate ?? null,
         isLeader: proj?.projectLeaderRecordIds.includes(memberRecordId) ?? false,
         staffings: [],
+        team: [],
         daysAllocatedTotal: 0,
         hoursActualTotal: 0,
         daysActualTotal: 0,
@@ -1648,6 +1728,81 @@ export async function listMyProjects(
       num(t, FIELDS.timesheets.fridayHours);
     acc.hoursActualTotal += hours;
     acc.daysActualTotal = acc.hoursActualTotal / HOURS_PER_DAY;
+  }
+
+  // Resolve teammates for each project so the UI can render avatar bubbles.
+  const projectCodesList = [...out.keys()];
+  if (projectCodesList.length > 0) {
+    const formula = `OR(${projectCodesList
+      .map((c) => `{${FIELDS.projectStaffing.projectCode}} = "${escape(c)}"`)
+      .join(",")})`;
+    const [allStaffingsForProjects, allMemberRecords] = await Promise.all([
+      base(TABLES.projectStaffing).select({ filterByFormula: formula }).all(),
+      base(TABLES.networkMembers)
+        .select({
+          fields: [FIELDS.networkMembers.memberCode, FIELDS.networkMembers.fullName],
+        })
+        .all(),
+    ]);
+    const memberById = new Map(
+      allMemberRecords.map((r) => [
+        r.id,
+        {
+          id: r.id,
+          memberCode: str(r, FIELDS.networkMembers.memberCode),
+          fullName: str(r, FIELDS.networkMembers.fullName),
+        },
+      ]),
+    );
+
+    for (const s of allStaffingsForProjects) {
+      const code = str(s, FIELDS.projectStaffing.projectCode);
+      const acc = out.get(code);
+      if (!acc) continue;
+      const memberIds = linkedIds(s, FIELDS.projectStaffing.memberCode);
+      const projectRole = str(s, FIELDS.projectStaffing.projectRole) as ProjectRole | "";
+      for (const mid of memberIds) {
+        const m = memberById.get(mid);
+        if (!m) continue;
+        let existing = acc.team.find((t) => t.memberRecordId === mid);
+        if (!existing) {
+          existing = {
+            memberRecordId: mid,
+            memberCode: m.memberCode,
+            fullName: m.fullName,
+            isLeader: false,
+          };
+          acc.team.push(existing);
+        }
+        if (projectRole === "Project Leader") existing.isLeader = true;
+      }
+    }
+
+    // Also flag leaders from the project's "Project Leaders" field.
+    for (const [code, acc] of out) {
+      const proj = projectByCode.get(code);
+      if (!proj) continue;
+      for (const lid of proj.projectLeaderRecordIds) {
+        const m = memberById.get(lid);
+        if (!m) continue;
+        const existing = acc.team.find((t) => t.memberRecordId === lid);
+        if (existing) {
+          existing.isLeader = true;
+        } else {
+          acc.team.push({
+            memberRecordId: lid,
+            memberCode: m.memberCode,
+            fullName: m.fullName,
+            isLeader: true,
+          });
+        }
+      }
+      // Sort: leaders first, then by full name.
+      acc.team.sort((a, b) => {
+        if (a.isLeader !== b.isLeader) return a.isLeader ? -1 : 1;
+        return (a.fullName || a.memberCode).localeCompare(b.fullName || b.memberCode);
+      });
+    }
   }
 
   return [...out.values()].sort((a, b) => a.projectCode.localeCompare(b.projectCode));

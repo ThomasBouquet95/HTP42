@@ -19,13 +19,8 @@ export default async function MyTimesheetsPage() {
       <AppHeader session={session} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <TimesheetsTabs active="mine" />
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-semibold">Timesheets</h1>
-            <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
-              Every timesheet you've drafted or submitted. Filter, export, and open to edit drafts.
-            </p>
-          </div>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h1 className="text-base sm:text-lg font-semibold">Timesheets</h1>
           <SubmitTimesheetButton />
         </div>
         <SummaryClient

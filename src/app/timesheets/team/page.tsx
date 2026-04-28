@@ -33,16 +33,7 @@ export default async function ProjectSummaryPage({
       <AppHeader session={session} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <TimesheetsTabs active="team" />
-        <div className="mb-4">
-          <h1 className="text-xl sm:text-2xl font-semibold">Project Summary</h1>
-          <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
-            {led.length === 0
-              ? "Resource consumption and team view for the projects you lead."
-              : `Resource consumption and team view for the ${
-                  led.length === 1 ? "project" : `${led.length} projects`
-                } you lead.`}
-          </p>
-        </div>
+        <h1 className="text-base sm:text-lg font-semibold mb-4">Project Staffing Summary</h1>
 
         {led.length === 0 ? (
           <NoProjectsLedNotice />
