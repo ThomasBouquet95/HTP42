@@ -1,8 +1,14 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { TimesheetRecord } from "@/lib/airtable";
-import { formatHumanDate, parseIsoDate, toIsoDate } from "@/lib/dates";
+import {
+  addWeeksIso,
+  formatHumanDate,
+  parseIsoDate,
+  thisMondayIso,
+  toIsoDate,
+} from "@/lib/dates";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
@@ -13,55 +19,97 @@ const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
   friday: "Fri",
 };
 
-type Cell = { hours: number; task: string; status: string; timesheetId: string };
+const INITIAL_WEEKS = 8;
+const WEEKS_PER_LOAD = 8;
+const INITIAL_COLUMNS = 5;
+const COLUMNS_PER_LOAD = 5;
 
-export function TimesheetsByWeekView({ timesheets }: { timesheets: TimesheetRecord[] }) {
+type Cell = { hours: number; task: string; status: string };
+
+type StaffingColumn = {
+  id: string;
+  code: string;
+  project: string;
+  lastWeek: string; // ISO Monday of the most recent timesheet on this staffing
+};
+
+type WeekData = {
+  monday: string;
+  cells: Record<(typeof DAY_KEYS)[number], Map<string, Cell>>;
+  perDayTotal: Record<(typeof DAY_KEYS)[number], number>;
+  perStaffingTotal: Map<string, number>;
+  total: number;
+  hasAnyEntry: boolean;
+};
+
+export function TimesheetsByWeekView({
+  timesheets,
+}: {
+  timesheets: TimesheetRecord[];
+}) {
+  const [weekCount, setWeekCount] = useState(INITIAL_WEEKS);
+  const [columnCount, setColumnCount] = useState(INITIAL_COLUMNS);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // Filter out deleted timesheets and any without a startDate.
   const active = useMemo(
-    () => timesheets.filter((t) => t.status !== "Deleted"),
+    () => timesheets.filter((t) => t.status !== "Deleted" && t.startDate),
     [timesheets],
   );
 
-  // Distinct staffings (column set).
-  const columns = useMemo(() => {
-    const map = new Map<string, { id: string; code: string; project: string }>();
+  // Build the staffing column candidates, sorted by most-recent week first.
+  // Ties broken by staffing code.
+  const allColumns = useMemo<StaffingColumn[]>(() => {
+    const map = new Map<string, StaffingColumn>();
     for (const t of active) {
-      if (!map.has(t.staffingRecordId)) {
+      const cur = map.get(t.staffingRecordId);
+      const week = t.startDate ?? "";
+      if (!cur) {
         map.set(t.staffingRecordId, {
           id: t.staffingRecordId,
           code: t.staffingCode,
           project: t.projectName || t.projectCode,
+          lastWeek: week,
         });
+      } else if (week > cur.lastWeek) {
+        cur.lastWeek = week;
       }
     }
-    return [...map.values()].sort((a, b) => a.code.localeCompare(b.code));
+    return [...map.values()].sort((a, b) => {
+      if (a.lastWeek !== b.lastWeek) return b.lastWeek.localeCompare(a.lastWeek);
+      return a.code.localeCompare(b.code);
+    });
   }, [active]);
 
-  // Group rows by week (Monday ISO).
-  const weeks = useMemo(() => {
-    type WeekRow = {
-      monday: string;
-      friday: string;
-      // dayKey -> staffingId -> Cell
-      cells: Record<(typeof DAY_KEYS)[number], Map<string, Cell>>;
-      perDayTotal: Record<(typeof DAY_KEYS)[number], number>;
-      perStaffingTotal: Map<string, number>;
-      total: number;
-    };
-    const byWeek = new Map<string, WeekRow>();
+  const visibleColumns = useMemo(
+    () => allColumns.slice(0, columnCount),
+    [allColumns, columnCount],
+  );
 
+  // Generate the week list: starts at current week, going back in time.
+  const weekMondays = useMemo(() => {
+    const current = thisMondayIso();
+    const out: string[] = [];
+    for (let i = 0; i < weekCount; i += 1) {
+      out.push(addWeeksIso(current, -i));
+    }
+    return out;
+  }, [weekCount]);
+
+  // Build a per-week aggregate from the timesheets.
+  const weeksData = useMemo(() => {
+    const byMonday = new Map<string, WeekData>();
+    for (const monday of weekMondays) {
+      byMonday.set(monday, emptyWeek(monday));
+    }
     for (const t of active) {
       if (!t.startDate) continue;
-      const w = byWeek.get(t.startDate) ?? createWeek(t.startDate, t.endDate);
+      const w = byMonday.get(t.startDate);
+      if (!w) continue; // outside the visible range
       for (const k of DAY_KEYS) {
         const day = t[k];
         if (!day || day.hours === 0) continue;
-        const cell: Cell = {
-          hours: day.hours,
-          task: day.task,
-          status: t.status,
-          timesheetId: t.id,
-        };
-        // If the same staffing already has a cell on this day (rare), merge.
+        const cell: Cell = { hours: day.hours, task: day.task, status: t.status };
         const existing = w.cells[k].get(t.staffingRecordId);
         if (existing) {
           w.cells[k].set(t.staffingRecordId, {
@@ -78,13 +126,22 @@ export function TimesheetsByWeekView({ timesheets }: { timesheets: TimesheetReco
           (w.perStaffingTotal.get(t.staffingRecordId) ?? 0) + day.hours,
         );
         w.total += day.hours;
+        w.hasAnyEntry = true;
       }
-      byWeek.set(t.startDate, w);
     }
-    return [...byWeek.values()].sort((a, b) => b.monday.localeCompare(a.monday));
-  }, [active]);
+    return weekMondays.map((m) => byMonday.get(m)!);
+  }, [active, weekMondays]);
 
-  if (columns.length === 0 || weeks.length === 0) {
+  function toggleWeek(monday: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(monday)) next.delete(monday);
+      else next.add(monday);
+      return next;
+    });
+  }
+
+  if (allColumns.length === 0) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
         No timesheets to show in week view yet.
@@ -92,153 +149,236 @@ export function TimesheetsByWeekView({ timesheets }: { timesheets: TimesheetReco
     );
   }
 
+  const canShowMoreColumns = columnCount < allColumns.length;
+  const totalCols = visibleColumns.length + 2;
+
   return (
-    <div className="space-y-4">
-      <ExportControls weeks={weeks} columns={columns} />
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-[11px] text-slate-500">
+          Showing the last {visibleColumns.length} project staffing
+          {visibleColumns.length === 1 ? "" : "s"} you've worked on
+          {canShowMoreColumns ? `, of ${allColumns.length}` : ""}.
+          Click a week to expand.
+        </div>
+        <div className="flex items-center gap-2">
+          {canShowMoreColumns ? (
+            <button
+              type="button"
+              onClick={() =>
+                setColumnCount((c) => Math.min(c + COLUMNS_PER_LOAD, allColumns.length))
+              }
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
+            >
+              + Show more projects
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={exportCsv(weeksData, visibleColumns)}
+            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
+          >
+            Export CSV
+          </button>
+        </div>
+      </div>
+
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 sticky top-0">
+        <table className="w-full text-xs border-collapse">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-3 py-2 font-medium w-32">Day</th>
-              {columns.map((c) => (
+              <th className="text-left px-3 py-2 font-medium align-bottom whitespace-nowrap w-32">
+                Day
+              </th>
+              {visibleColumns.map((c) => (
                 <th
                   key={c.id}
-                  className="text-right px-3 py-2 font-medium whitespace-nowrap"
-                  title={c.project}
+                  className="px-3 py-2 font-medium align-bottom"
+                  title={`${c.code} — ${c.project}`}
+                  style={{ minWidth: 144, maxWidth: 200 }}
                 >
-                  <div className="font-mono font-normal text-slate-500 normal-case tracking-normal">
-                    {c.code}
-                  </div>
-                  <div className="font-medium text-slate-700 truncate max-w-[12rem]">
-                    {c.project}
+                  <div className="flex flex-col items-end gap-0.5 normal-case tracking-normal">
+                    <span className="font-mono text-[10px] text-slate-500 truncate max-w-full">
+                      {c.code}
+                    </span>
+                    <span
+                      className="block text-[11px] font-semibold text-slate-700 truncate max-w-full"
+                      title={c.project}
+                    >
+                      {c.project}
+                    </span>
                   </div>
                 </th>
               ))}
-              <th className="text-right px-3 py-2 font-medium w-16">Total</th>
+              <th className="text-right px-3 py-2 font-medium align-bottom whitespace-nowrap w-16">
+                Total
+              </th>
             </tr>
           </thead>
           <tbody>
-            {weeks.map((w) => (
-              <WeekRows key={w.monday} week={w} columns={columns} />
-            ))}
+            {weeksData.map((w) => {
+              const isExpanded = expanded.has(w.monday);
+              return (
+                <WeekBlock
+                  key={w.monday}
+                  week={w}
+                  columns={visibleColumns}
+                  expanded={isExpanded}
+                  onToggle={() => toggleWeek(w.monday)}
+                  totalCols={totalCols}
+                />
+              );
+            })}
           </tbody>
         </table>
+      </div>
+
+      <div className="flex justify-center">
+        <button
+          type="button"
+          onClick={() => setWeekCount((w) => w + WEEKS_PER_LOAD)}
+          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-50"
+        >
+          + Show {WEEKS_PER_LOAD} more weeks
+        </button>
       </div>
     </div>
   );
 }
 
-function WeekRows({
+function WeekBlock({
   week,
   columns,
+  expanded,
+  onToggle,
+  totalCols,
 }: {
-  week: {
-    monday: string;
-    friday: string;
-    cells: Record<(typeof DAY_KEYS)[number], Map<string, Cell>>;
-    perDayTotal: Record<(typeof DAY_KEYS)[number], number>;
-    perStaffingTotal: Map<string, number>;
-    total: number;
-  };
-  columns: { id: string; code: string; project: string }[];
+  week: WeekData;
+  columns: StaffingColumn[];
+  expanded: boolean;
+  onToggle: () => void;
+  totalCols: number;
 }) {
-  const colCount = columns.length + 2;
   return (
     <>
-      <tr className="bg-brand-50/40 border-y border-brand-100">
-        <td colSpan={colCount} className="px-3 py-1.5">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-brand-700">
-            Week of {formatHumanDate(week.monday)}
-            <span className="font-normal normal-case tracking-normal text-slate-500">
-              · {week.total.toFixed(2)} h
+      <tr className="bg-brand-50/40 border-y border-brand-100 hover:bg-brand-50/70">
+        <td colSpan={totalCols} className="px-3 py-1.5">
+          <button
+            type="button"
+            onClick={onToggle}
+            className="w-full flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-brand-700"
+            aria-expanded={expanded}
+          >
+            <span aria-hidden className="text-slate-500">
+              {expanded ? "▾" : "▸"}
             </span>
-          </div>
+            <span>Week of {formatHumanDate(week.monday)}</span>
+            <span className="font-normal normal-case tracking-normal text-slate-500">
+              · {week.hasAnyEntry ? `${week.total.toFixed(2)} h` : "no entries"}
+            </span>
+          </button>
         </td>
       </tr>
-      {DAY_KEYS.map((k) => {
-        const dayIso = dayIsoFor(week.monday, k);
-        return (
-          <tr key={k} className="border-t border-slate-100">
-            <td className="px-3 py-1.5">
-              <div className="font-medium text-slate-800">{DAY_LABELS[k]}</div>
-              {dayIso ? (
-                <div className="text-[10px] text-slate-500">
-                  {formatHumanDate(dayIso)}
-                </div>
-              ) : null}
-            </td>
-            {columns.map((c) => {
-              const cell = week.cells[k].get(c.id);
-              return (
-                <td
-                  key={c.id}
-                  className="px-3 py-1.5 text-right tabular-nums whitespace-nowrap"
-                  title={cell?.task || ""}
-                >
-                  {cell ? (
-                    <span
-                      className={
-                        cell.status === "Draft"
-                          ? "text-amber-700"
-                          : "text-slate-900"
-                      }
-                    >
-                      {cell.hours.toFixed(2)}
-                    </span>
-                  ) : (
-                    <span className="text-slate-300">—</span>
-                  )}
+      {expanded
+        ? DAY_KEYS.map((k) => {
+            const dayIso = dayIsoFor(week.monday, k);
+            return (
+              <tr key={k} className="border-t border-slate-100">
+                <td className="px-3 py-1.5">
+                  <div className="font-medium text-slate-800">{DAY_LABELS[k]}</div>
+                  {dayIso ? (
+                    <div className="text-[10px] text-slate-500">
+                      {formatHumanDate(dayIso)}
+                    </div>
+                  ) : null}
                 </td>
-              );
-            })}
-            <td className="px-3 py-1.5 text-right tabular-nums font-medium text-slate-700">
-              {week.perDayTotal[k] > 0 ? week.perDayTotal[k].toFixed(2) : "—"}
-            </td>
-          </tr>
-        );
-      })}
-      <tr className="border-t border-slate-200 bg-slate-50/60">
-        <td className="px-3 py-1.5 font-semibold text-slate-700">Week total</td>
-        {columns.map((c) => {
-          const t = week.perStaffingTotal.get(c.id) ?? 0;
-          return (
-            <td
-              key={c.id}
-              className="px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900"
-            >
-              {t > 0 ? t.toFixed(2) : "—"}
-            </td>
-          );
-        })}
-        <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900">
-          {week.total.toFixed(2)}
-        </td>
-      </tr>
+                {columns.map((c) => {
+                  const cell = week.cells[k].get(c.id);
+                  return (
+                    <td
+                      key={c.id}
+                      className="px-3 py-1.5 text-right tabular-nums whitespace-nowrap"
+                      title={cell?.task || ""}
+                    >
+                      {cell ? (
+                        <span
+                          className={
+                            cell.status === "Draft"
+                              ? "text-amber-700"
+                              : "text-slate-900"
+                          }
+                        >
+                          {cell.hours.toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
+                  );
+                })}
+                <td className="px-3 py-1.5 text-right tabular-nums font-medium text-slate-700">
+                  {week.perDayTotal[k] > 0 ? week.perDayTotal[k].toFixed(2) : "—"}
+                </td>
+              </tr>
+            );
+          })
+        : null}
+      {expanded ? (
+        <tr className="border-t border-slate-200 bg-slate-50/60">
+          <td className="px-3 py-1.5 font-semibold text-slate-700">Week total</td>
+          {columns.map((c) => {
+            const t = week.perStaffingTotal.get(c.id) ?? 0;
+            return (
+              <td
+                key={c.id}
+                className="px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900"
+              >
+                {t > 0 ? t.toFixed(2) : "—"}
+              </td>
+            );
+          })}
+          <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900">
+            {week.total.toFixed(2)}
+          </td>
+        </tr>
+      ) : null}
     </>
   );
 }
 
-function ExportControls({
-  weeks,
-  columns,
-}: {
-  weeks: Array<{
-    monday: string;
-    friday: string;
-    cells: Record<(typeof DAY_KEYS)[number], Map<string, Cell>>;
-    perDayTotal: Record<(typeof DAY_KEYS)[number], number>;
-    perStaffingTotal: Map<string, number>;
-    total: number;
-  }>;
-  columns: { id: string; code: string; project: string }[];
-}) {
-  function exportCsv() {
+function emptyWeek(monday: string): WeekData {
+  return {
+    monday,
+    cells: {
+      monday: new Map(),
+      tuesday: new Map(),
+      wednesday: new Map(),
+      thursday: new Map(),
+      friday: new Map(),
+    },
+    perDayTotal: { monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0 },
+    perStaffingTotal: new Map(),
+    total: 0,
+    hasAnyEntry: false,
+  };
+}
+
+function dayIsoFor(startIso: string | null, key: (typeof DAY_KEYS)[number]): string | null {
+  if (!startIso) return null;
+  const base = parseIsoDate(startIso);
+  const idx = DAY_KEYS.indexOf(key);
+  const d = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate() + idx));
+  return toIsoDate(d);
+}
+
+function exportCsv(weeks: WeekData[], columns: StaffingColumn[]): () => void {
+  return () => {
     const headers = ["Week of", "Day", "Date", ...columns.map((c) => c.code), "Total"];
     const rows: string[][] = [headers];
     for (const w of weeks) {
       for (const k of DAY_KEYS) {
         const dayIso = dayIsoFor(w.monday, k) ?? "";
-        const row: string[] = [
+        rows.push([
           w.monday,
           DAY_LABELS[k],
           dayIso,
@@ -247,8 +387,7 @@ function ExportControls({
             return cell ? cell.hours.toFixed(2) : "";
           }),
           w.perDayTotal[k] > 0 ? w.perDayTotal[k].toFixed(2) : "",
-        ];
-        rows.push(row);
+        ]);
       }
       rows.push([
         w.monday,
@@ -262,7 +401,9 @@ function ExportControls({
       ]);
     }
     const csv = rows
-      .map((r) => r.map((v) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)).join(","))
+      .map((r) =>
+        r.map((v) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)).join(","),
+      )
       .join("\r\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -273,56 +414,12 @@ function ExportControls({
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-  }
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <div className="text-[11px] text-slate-500">
-        Hours per day per project staffing. Drafts shown in amber.
-      </div>
-      <button
-        type="button"
-        onClick={exportCsv}
-        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
-      >
-        Export CSV
-      </button>
-    </div>
-  );
-}
-
-function createWeek(mondayIso: string, fridayIso: string | null): {
-  monday: string;
-  friday: string;
-  cells: Record<(typeof DAY_KEYS)[number], Map<string, Cell>>;
-  perDayTotal: Record<(typeof DAY_KEYS)[number], number>;
-  perStaffingTotal: Map<string, number>;
-  total: number;
-} {
-  return {
-    monday: mondayIso,
-    friday: fridayIso ?? "",
-    cells: {
-      monday: new Map(),
-      tuesday: new Map(),
-      wednesday: new Map(),
-      thursday: new Map(),
-      friday: new Map(),
-    },
-    perDayTotal: { monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0 },
-    perStaffingTotal: new Map(),
-    total: 0,
   };
-}
-
-function dayIsoFor(startIso: string | null, key: (typeof DAY_KEYS)[number]): string | null {
-  if (!startIso) return null;
-  const base = parseIsoDate(startIso);
-  const idx = DAY_KEYS.indexOf(key);
-  const d = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate() + idx));
-  return toIsoDate(d);
 }
 
 function todayStamp(): string {
   const d = new Date();
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
 }

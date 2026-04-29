@@ -32,6 +32,12 @@ export function fridayOfWeek(mondayIso: string): string {
   return toIsoDate(d);
 }
 
+export function addWeeksIso(iso: string, weeks: number): string {
+  const d = parseIsoDate(iso);
+  d.setUTCDate(d.getUTCDate() + weeks * 7);
+  return toIsoDate(d);
+}
+
 export function todayIso(): string {
   return toIsoDate(new Date());
 }
