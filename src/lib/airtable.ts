@@ -34,6 +34,7 @@ export const FIELDS = {
     title: "Title",
     memberStatus: "Member Status",
     dailyRate: "Daily Rate",
+    htp42DailyRate: "HTP42 Daily Rate",
     currency: "Currency",
     photo: "Photo",
     cv: "CV",
@@ -145,8 +146,19 @@ export const STAFFING_STATUSES: StaffingStatus[] = [
   "Completed",
 ];
 
-export type ProjectRole = "Project Leader" | "Consultant";
-export const PROJECT_ROLES: ProjectRole[] = ["Project Leader", "Consultant"];
+export type ProjectRole = "Engagement Lead" | "Project Leader" | "Consultant";
+export const PROJECT_ROLES: ProjectRole[] = ["Engagement Lead", "Project Leader", "Consultant"];
+// Roles that grant access to the team's timesheets (Project Staffing Summary).
+export const LEADER_ROLES: ProjectRole[] = ["Engagement Lead", "Project Leader"];
+
+// Leadership rank — lower is more senior. Used to sort team members in the
+// Project Staffing Summary so Engagement Leads appear first, then Project
+// Leaders, then everyone else.
+export function leadRank(m: { staffings: Array<{ projectRole: ProjectRole | "" }> }): number {
+  if (m.staffings.some((s) => s.projectRole === "Engagement Lead")) return 0;
+  if (m.staffings.some((s) => s.projectRole === "Project Leader")) return 1;
+  return 2;
+}
 export type SowStatus = "Signed" | "In Progress" | "Draft" | "Not Started";
 export const SOW_STATUSES: SowStatus[] = ["Not Started", "Draft", "In Progress", "Signed"];
 
@@ -207,6 +219,7 @@ export type MemberRecord = {
 
 export type MemberAdminRecord = MemberRecord & {
   dailyRate: number | null;
+  htp42DailyRate: number | null;
   currency: Currency | "";
 };
 
@@ -287,6 +300,7 @@ export type StaffingAdminRecord = {
   ratePerDay: number | null;
   currency: Currency | "";
   daysAllocated: number | null;
+  daysUsed: number; // computed from non-deleted timesheets (hours / 8)
   fxToEur: number | null;
   totalAmount: number | null;
   totalAmountEur: number | null;
@@ -499,6 +513,7 @@ function memberAdminFromRecord(r: AirtableRecord<FieldSet>): MemberAdminRecord {
   return {
     ...memberFromRecord(r),
     dailyRate: numOrNull(r, FIELDS.networkMembers.dailyRate),
+    htp42DailyRate: numOrNull(r, FIELDS.networkMembers.htp42DailyRate),
     currency: str(r, FIELDS.networkMembers.currency) as Currency | "",
   };
 }
@@ -519,6 +534,7 @@ export type MemberAdminUpdate = MemberProfileUpdate & {
   status?: MemberStatus;
   title?: string;
   dailyRate?: number | null;
+  htp42DailyRate?: number | null;
   currency?: Currency | "";
 };
 
@@ -543,6 +559,9 @@ export async function adminCreateMember(input: MemberCreateInput): Promise<Membe
   if (input.title !== undefined) fields[FIELDS.networkMembers.title] = input.title;
   if (input.role !== undefined) fields[FIELDS.networkMembers.role] = input.role;
   if (input.dailyRate !== undefined) fields[FIELDS.networkMembers.dailyRate] = input.dailyRate;
+  if (input.htp42DailyRate !== undefined) {
+    fields[FIELDS.networkMembers.htp42DailyRate] = input.htp42DailyRate;
+  }
   if (input.currency !== undefined && input.currency !== "") {
     fields[FIELDS.networkMembers.currency] = input.currency;
   }
@@ -601,6 +620,9 @@ export async function adminUpdateMember(
   if (input.role !== undefined) fields[FIELDS.networkMembers.role] = input.role;
   if (input.status !== undefined) fields[FIELDS.networkMembers.status] = input.status;
   if (input.dailyRate !== undefined) fields[FIELDS.networkMembers.dailyRate] = input.dailyRate;
+  if (input.htp42DailyRate !== undefined) {
+    fields[FIELDS.networkMembers.htp42DailyRate] = input.htp42DailyRate;
+  }
   if (input.currency !== undefined) {
     fields[FIELDS.networkMembers.currency] = input.currency === "" ? null : input.currency;
   }
@@ -1185,6 +1207,7 @@ function staffingAdminFromRecord(
   r: AirtableRecord<FieldSet>,
   projectNames: Map<string, string>,
   memberCodeById?: Map<string, string>,
+  daysUsedByStaffingId?: Map<string, number>,
 ): StaffingAdminRecord {
   const projectCode = str(r, FIELDS.projectStaffing.projectCode);
   const rate = numOrNull(r, FIELDS.projectStaffing.ratePerDay);
@@ -1210,6 +1233,7 @@ function staffingAdminFromRecord(
     ratePerDay: rate,
     currency: str(r, FIELDS.projectStaffing.currency) as Currency | "",
     daysAllocated: days,
+    daysUsed: daysUsedByStaffingId?.get(r.id) ?? 0,
     fxToEur: fx,
     totalAmount,
     totalAmountEur,
@@ -1222,6 +1246,43 @@ function staffingAdminFromRecord(
   };
 }
 
+async function getDaysUsedByStaffingId(): Promise<Map<string, number>> {
+  // Sum total hours per Project Staffing across all non-Deleted timesheets,
+  // then convert to days at HOURS_PER_DAY = 8.
+  const records = await base(TABLES.timesheets)
+    .select({
+      fields: [
+        FIELDS.timesheets.projectStaffing,
+        FIELDS.timesheets.status,
+        FIELDS.timesheets.mondayHours,
+        FIELDS.timesheets.tuesdayHours,
+        FIELDS.timesheets.wednesdayHours,
+        FIELDS.timesheets.thursdayHours,
+        FIELDS.timesheets.fridayHours,
+      ],
+    })
+    .all();
+  const hoursByStaffingId = new Map<string, number>();
+  for (const r of records) {
+    const status = str(r, FIELDS.timesheets.status) as TimesheetStatus;
+    if (status === "Deleted") continue;
+    const staffingId = firstLinkedId(r, FIELDS.timesheets.projectStaffing);
+    if (!staffingId) continue;
+    const hours =
+      num(r, FIELDS.timesheets.mondayHours) +
+      num(r, FIELDS.timesheets.tuesdayHours) +
+      num(r, FIELDS.timesheets.wednesdayHours) +
+      num(r, FIELDS.timesheets.thursdayHours) +
+      num(r, FIELDS.timesheets.fridayHours);
+    hoursByStaffingId.set(staffingId, (hoursByStaffingId.get(staffingId) ?? 0) + hours);
+  }
+  const daysByStaffingId = new Map<string, number>();
+  for (const [id, hours] of hoursByStaffingId) {
+    daysByStaffingId.set(id, hours / HOURS_PER_DAY);
+  }
+  return daysByStaffingId;
+}
+
 async function getMemberCodeMap(): Promise<Map<string, string>> {
   const records = await base(TABLES.networkMembers)
     .select({ fields: [FIELDS.networkMembers.memberCode] })
@@ -1230,24 +1291,26 @@ async function getMemberCodeMap(): Promise<Map<string, string>> {
 }
 
 export async function listAllStaffings(): Promise<StaffingAdminRecord[]> {
-  const [records, projectNames, memberCodeById] = await Promise.all([
+  const [records, projectNames, memberCodeById, daysUsedByStaffingId] = await Promise.all([
     base(TABLES.projectStaffing).select().all(),
     getProjectNameMap(),
     getMemberCodeMap(),
+    getDaysUsedByStaffingId(),
   ]);
   return records
-    .map((r) => staffingAdminFromRecord(r, projectNames, memberCodeById))
+    .map((r) => staffingAdminFromRecord(r, projectNames, memberCodeById, daysUsedByStaffingId))
     .sort((a, b) => a.staffingCode.localeCompare(b.staffingCode));
 }
 
 export async function getStaffingById(recordId: string): Promise<StaffingAdminRecord | null> {
   try {
-    const [r, projectNames, memberCodeById] = await Promise.all([
+    const [r, projectNames, memberCodeById, daysUsedByStaffingId] = await Promise.all([
       base(TABLES.projectStaffing).find(recordId),
       getProjectNameMap(),
       getMemberCodeMap(),
+      getDaysUsedByStaffingId(),
     ]);
-    return staffingAdminFromRecord(r, projectNames, memberCodeById);
+    return staffingAdminFromRecord(r, projectNames, memberCodeById, daysUsedByStaffingId);
   } catch {
     return null;
   }
@@ -1377,7 +1440,10 @@ export async function getLedProjects(
           .select({
             filterByFormula: `AND(
               FIND("${escape(memberCode)}", ARRAYJOIN(ARRAYCOMPACT({${FIELDS.projectStaffing.memberCode}}))),
-              {${FIELDS.projectStaffing.projectRole}} = "Project Leader"
+              OR(
+                {${FIELDS.projectStaffing.projectRole}} = "Project Leader",
+                {${FIELDS.projectStaffing.projectRole}} = "Engagement Lead"
+              )
             )`,
             fields: [FIELDS.projectStaffing.projectCode, FIELDS.projectStaffing.memberCode],
           })
@@ -1590,9 +1656,10 @@ export async function getProjectSummaryByCode(projectCode: string): Promise<Proj
   }
 
   const members = [...memberIndex.values()].sort((a, b) => {
-    const aLeader = a.staffings.some((s) => s.projectRole === "Project Leader");
-    const bLeader = b.staffings.some((s) => s.projectRole === "Project Leader");
-    if (aLeader !== bLeader) return aLeader ? -1 : 1;
+    // Engagement Leads first, then Project Leaders, then everyone else.
+    const aRank = leadRank(a);
+    const bRank = leadRank(b);
+    if (aRank !== bRank) return aRank - bRank;
     return (
       a.memberName.localeCompare(b.memberName) || a.memberCode.localeCompare(b.memberCode)
     );
@@ -1716,7 +1783,9 @@ export async function listMyProjects(
     const acc = out.get(code)!;
     const daysAllocated = numOrNull(r, FIELDS.projectStaffing.daysAllocated);
     const projectRole = str(r, FIELDS.projectStaffing.projectRole) as ProjectRole | "";
-    if (projectRole === "Project Leader") acc.isLeader = true;
+    if (projectRole === "Project Leader" || projectRole === "Engagement Lead") {
+      acc.isLeader = true;
+    }
     acc.staffings.push({
       id: r.id,
       staffingCode: str(r, FIELDS.projectStaffing.staffingCode),
@@ -1800,7 +1869,9 @@ export async function listMyProjects(
           };
           acc.team.push(existing);
         }
-        if (projectRole === "Project Leader") existing.isLeader = true;
+        if (projectRole === "Project Leader" || projectRole === "Engagement Lead") {
+          existing.isLeader = true;
+        }
       }
     }
 

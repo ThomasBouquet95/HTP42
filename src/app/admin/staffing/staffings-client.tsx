@@ -273,7 +273,8 @@ export function StaffingsAdminClient({
               <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Project role</th>
               <th className="text-left px-3 py-2 font-medium hidden xl:table-cell">Job title</th>
               <th className="text-right px-3 py-2 font-medium hidden md:table-cell">Rate</th>
-              <th className="text-right px-3 py-2 font-medium hidden lg:table-cell">Days</th>
+              <th className="text-right px-3 py-2 font-medium hidden lg:table-cell">Days alloc.</th>
+              <th className="text-right px-3 py-2 font-medium hidden lg:table-cell">Days used</th>
               <th className="text-right px-3 py-2 font-medium hidden lg:table-cell">Total</th>
               <th className="text-left px-3 py-2 font-medium">Status</th>
               <th />
@@ -282,7 +283,7 @@ export function StaffingsAdminClient({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center text-slate-500 py-10">
+                <td colSpan={11} className="text-center text-slate-500 py-10">
                   No staffings match these filters.
                 </td>
               </tr>
@@ -317,6 +318,15 @@ export function StaffingsAdminClient({
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums hidden lg:table-cell">
                     {s.daysAllocated ?? "—"}
+                  </td>
+                  <td
+                    className={`px-3 py-2 text-right tabular-nums hidden lg:table-cell ${
+                      s.daysAllocated != null && s.daysUsed > s.daysAllocated
+                        ? "text-amber-700"
+                        : ""
+                    }`}
+                  >
+                    {s.daysUsed > 0 ? s.daysUsed.toFixed(2) : "—"}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums hidden lg:table-cell">
                     {s.totalAmount == null

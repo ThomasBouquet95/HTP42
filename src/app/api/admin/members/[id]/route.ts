@@ -28,6 +28,7 @@ const schema = z.object({
   role: z.enum(MEMBER_ROLES as [string, ...string[]]).optional(),
   status: z.enum(MEMBER_STATUSES as [string, ...string[]]).optional(),
   dailyRate: nullableNumber,
+  htp42DailyRate: nullableNumber,
   currency: z.union([z.enum(CURRENCIES as [string, ...string[]]), z.literal("")]).optional(),
 });
 
@@ -79,6 +80,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     role: d.role as MemberRole | undefined,
     status: d.status as MemberStatus | undefined,
     dailyRate: d.dailyRate,
+    htp42DailyRate: d.htp42DailyRate,
     currency: d.currency as Currency | "" | undefined,
   });
   if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });

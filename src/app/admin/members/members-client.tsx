@@ -29,6 +29,7 @@ type FormState = {
   phone: string;
   legalEntity: string;
   dailyRate: string;
+  htp42DailyRate: string;
   currency: string;
   introduction: string;
 };
@@ -44,6 +45,7 @@ const EMPTY: FormState = {
   phone: "",
   legalEntity: "",
   dailyRate: "",
+  htp42DailyRate: "",
   currency: "",
   introduction: "",
 };
@@ -60,6 +62,7 @@ function fromRecord(m: MemberAdminRecord): FormState {
     phone: m.phone,
     legalEntity: m.legalEntity,
     dailyRate: m.dailyRate == null ? "" : String(m.dailyRate),
+    htp42DailyRate: m.htp42DailyRate == null ? "" : String(m.htp42DailyRate),
     currency: m.currency,
     introduction: m.introduction,
   };
@@ -217,6 +220,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
         legalEntity: form.legalEntity,
         introduction: form.introduction,
         dailyRate: form.dailyRate === "" ? null : Number(form.dailyRate),
+        htp42DailyRate: form.htp42DailyRate === "" ? null : Number(form.htp42DailyRate),
         currency: form.currency,
       };
       const url = creating ? "/api/admin/members" : `/api/admin/members/${editing!.id}`;
@@ -427,9 +431,15 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
             onChange={(v) => updateField("legalEntity", v)}
           />
           <FormField
-            label="Daily rate"
+            label="Daily rate (member invoices HTP42)"
             value={form.dailyRate}
             onChange={(v) => updateField("dailyRate", v)}
+            type="number"
+          />
+          <FormField
+            label="HTP42 daily rate (HTP42 invoices client)"
+            value={form.htp42DailyRate}
+            onChange={(v) => updateField("htp42DailyRate", v)}
             type="number"
           />
           <FormSelect

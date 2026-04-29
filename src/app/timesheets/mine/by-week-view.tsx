@@ -150,7 +150,6 @@ export function TimesheetsByWeekView({
   }
 
   const canShowMoreColumns = columnCount < allColumns.length;
-  const totalCols = visibleColumns.length + 2;
 
   return (
     <div className="space-y-3">
@@ -187,22 +186,22 @@ export function TimesheetsByWeekView({
         <table className="w-full text-xs border-collapse">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-3 py-2 font-medium align-bottom whitespace-nowrap w-32">
+              <th className="text-left px-2 py-2 font-medium align-bottom whitespace-nowrap w-24">
                 Day
               </th>
               {visibleColumns.map((c) => (
                 <th
                   key={c.id}
-                  className="px-3 py-2 font-medium align-bottom"
+                  className="px-2 py-2 font-medium align-bottom"
                   title={`${c.code} — ${c.project}`}
-                  style={{ minWidth: 144, maxWidth: 200 }}
+                  style={{ width: 120, minWidth: 120, maxWidth: 120 }}
                 >
                   <div className="flex flex-col items-end gap-0.5 normal-case tracking-normal">
-                    <span className="font-mono text-[10px] text-slate-500 truncate max-w-full">
+                    <span className="font-mono text-[10px] text-slate-500 truncate w-full text-right">
                       {c.code}
                     </span>
                     <span
-                      className="block text-[11px] font-semibold text-slate-700 truncate max-w-full"
+                      className="block text-[11px] font-semibold text-slate-700 truncate w-full text-right"
                       title={c.project}
                     >
                       {c.project}
@@ -225,7 +224,6 @@ export function TimesheetsByWeekView({
                   columns={visibleColumns}
                   expanded={isExpanded}
                   onToggle={() => toggleWeek(w.monday)}
-                  totalCols={totalCols}
                 />
               );
             })}
@@ -251,32 +249,45 @@ function WeekBlock({
   columns,
   expanded,
   onToggle,
-  totalCols,
 }: {
   week: WeekData;
   columns: StaffingColumn[];
   expanded: boolean;
   onToggle: () => void;
-  totalCols: number;
 }) {
   return (
     <>
-      <tr className="bg-brand-50/40 border-y border-brand-100 hover:bg-brand-50/70">
-        <td colSpan={totalCols} className="px-3 py-1.5">
-          <button
-            type="button"
-            onClick={onToggle}
-            className="w-full flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-brand-700"
-            aria-expanded={expanded}
-          >
+      <tr
+        onClick={onToggle}
+        className="bg-brand-50/40 border-y border-brand-100 hover:bg-brand-50/70 cursor-pointer"
+        aria-expanded={expanded}
+      >
+        <td className="px-2 py-1.5">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-brand-700">
             <span aria-hidden className="text-slate-500">
               {expanded ? "▾" : "▸"}
             </span>
             <span>Week of {formatHumanDate(week.monday)}</span>
-            <span className="font-normal normal-case tracking-normal text-slate-500">
-              · {week.hasAnyEntry ? `${week.total.toFixed(2)} h` : "no entries"}
-            </span>
-          </button>
+            {!week.hasAnyEntry ? (
+              <span className="font-normal normal-case tracking-normal text-slate-500">
+                · no entries
+              </span>
+            ) : null}
+          </div>
+        </td>
+        {columns.map((c) => {
+          const t = week.perStaffingTotal.get(c.id) ?? 0;
+          return (
+            <td
+              key={c.id}
+              className="px-2 py-1.5 text-right tabular-nums font-semibold text-brand-700"
+            >
+              {t > 0 ? t.toFixed(2) : <span className="text-slate-300">—</span>}
+            </td>
+          );
+        })}
+        <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-brand-700">
+          {week.hasAnyEntry ? week.total.toFixed(2) : <span className="text-slate-300">—</span>}
         </td>
       </tr>
       {expanded
@@ -284,7 +295,7 @@ function WeekBlock({
             const dayIso = dayIsoFor(week.monday, k);
             return (
               <tr key={k} className="border-t border-slate-100">
-                <td className="px-3 py-1.5">
+                <td className="px-2 py-1.5">
                   <div className="font-medium text-slate-800">{DAY_LABELS[k]}</div>
                   {dayIso ? (
                     <div className="text-[10px] text-slate-500">
@@ -297,7 +308,7 @@ function WeekBlock({
                   return (
                     <td
                       key={c.id}
-                      className="px-3 py-1.5 text-right tabular-nums whitespace-nowrap"
+                      className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap"
                       title={cell?.task || ""}
                     >
                       {cell ? (
@@ -316,32 +327,13 @@ function WeekBlock({
                     </td>
                   );
                 })}
-                <td className="px-3 py-1.5 text-right tabular-nums font-medium text-slate-700">
+                <td className="px-2 py-1.5 text-right tabular-nums font-medium text-slate-700">
                   {week.perDayTotal[k] > 0 ? week.perDayTotal[k].toFixed(2) : "—"}
                 </td>
               </tr>
             );
           })
         : null}
-      {expanded ? (
-        <tr className="border-t border-slate-200 bg-slate-50/60">
-          <td className="px-3 py-1.5 font-semibold text-slate-700">Week total</td>
-          {columns.map((c) => {
-            const t = week.perStaffingTotal.get(c.id) ?? 0;
-            return (
-              <td
-                key={c.id}
-                className="px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900"
-              >
-                {t > 0 ? t.toFixed(2) : "—"}
-              </td>
-            );
-          })}
-          <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900">
-            {week.total.toFixed(2)}
-          </td>
-        </tr>
-      ) : null}
     </>
   );
 }

@@ -27,6 +27,7 @@ const schema = z.object({
   phone: z.string().max(60).optional(),
   legalEntity: z.string().max(200).optional(),
   dailyRate: nullableNumber,
+  htp42DailyRate: nullableNumber,
   currency: z.union([z.enum(CURRENCIES as [string, ...string[]]), z.literal("")]).optional(),
 });
 
@@ -74,6 +75,7 @@ export async function POST(request: Request) {
     phone: d.phone,
     legalEntity: d.legalEntity,
     dailyRate: d.dailyRate,
+    htp42DailyRate: d.htp42DailyRate,
     currency: d.currency as Currency | "" | undefined,
   });
   return NextResponse.json({ member: created });
