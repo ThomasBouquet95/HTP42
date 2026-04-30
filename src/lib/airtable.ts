@@ -976,6 +976,20 @@ export async function createPayment(input: PaymentInput): Promise<string> {
   return created.id;
 }
 
+export async function updatePaymentStatus(
+  recordId: string,
+  status: PaymentStatus | "",
+): Promise<void> {
+  await base(TABLES.payments).update([
+    {
+      id: recordId,
+      fields: {
+        [FIELDS.payments.paymentStatus]: status === "" ? null : status,
+      } as FieldSet,
+    },
+  ]);
+}
+
 export async function updatePayment(recordId: string, input: PaymentInput): Promise<void> {
   await base(TABLES.payments).update([
     { id: recordId, fields: paymentFields(input) as FieldSet },

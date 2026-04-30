@@ -6,9 +6,43 @@ import {
   deletePayment,
   getPaymentById,
   updatePayment,
+  updatePaymentStatus,
   type Currency,
   type PaymentDirection,
+  type PaymentStatus,
 } from "@/lib/airtable";
+
+const PAYMENT_STATUSES = [
+  "Paid",
+  "To be paid",
+  "Payment executed",
+  "Overdue",
+  "Unpaid",
+  "Pending",
+] as const;
+
+const patchSchema = z.object({
+  paymentStatus: z.union([z.enum(PAYMENT_STATUSES), z.literal("")]),
+});
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const session = await requireAdminSession();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const { id } = await params;
+  const body = await request.json().catch(() => null);
+  const parsed = patchSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
+      { status: 400 },
+    );
+  }
+  await updatePaymentStatus(id, parsed.data.paymentStatus as PaymentStatus | "");
+  return NextResponse.json({ ok: true });
+}
 
 const nullableNumber = z.union([z.number(), z.null()]).optional();
 const nullableDate = z.union([z.string().trim().min(1), z.null()]).optional();

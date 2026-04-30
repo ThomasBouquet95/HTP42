@@ -208,6 +208,23 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
     return v * fx;
   }, [form.invoiceValue, form.fxRateToEur]);
 
+  async function updateStatus(id: string, status: string) {
+    try {
+      const res = await fetch(`/api/admin/payments/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ paymentStatus: status }),
+      });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? "Status update failed.");
+      }
+      router.refresh();
+    } catch {
+      // No-op on transient errors; refresh leaves the previous status visible.
+    }
+  }
+
   async function submit() {
     setSaving(true);
     setError(null);
@@ -439,11 +456,11 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                   p.direction === "Inflow"
                     ? p.clientCodes.join(", ") || "—"
                     : p.memberCodes.join(", ") || p.beneficiary || "—";
+                const tint = paymentRowTint(p.paymentStatus);
                 return (
                   <tr
                     key={p.id}
-                    onClick={() => openEdit(p)}
-                    className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer align-top"
+                    className={`border-t border-slate-100 align-top ${tint.row}`}
                   >
                     <td className="px-2 py-1.5 font-mono text-xs">{p.paymentCode}</td>
                     <td className="px-2 py-1.5"><DirectionPill direction={p.direction} /></td>
@@ -461,9 +478,26 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                         ? "—"
                         : p.invoiceValueEur.toLocaleString("en-US", { maximumFractionDigits: 2 })}
                     </td>
-                    <td className="px-2 py-1.5 hidden lg:table-cell">{p.paymentStatus || "—"}</td>
+                    <td
+                      className="px-2 py-1.5 hidden lg:table-cell"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <StatusSelect
+                        value={p.paymentStatus}
+                        onChange={(next) => updateStatus(p.id, next)}
+                        tone={tint.select}
+                      />
+                    </td>
                     <td className="px-2 py-1.5 text-right">
-                      <span className="text-brand-600 text-xs font-medium">Edit</span>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(p)}
+                        title="Edit"
+                        aria-label="Edit"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                      >
+                        <EditIcon />
+                      </button>
                     </td>
                   </tr>
                 );
@@ -731,6 +765,76 @@ function LegendDot({ color, label }: { color: string; label: string }) {
       <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
       {label}
     </span>
+  );
+}
+
+function paymentRowTint(status: string): { row: string; select: "pending" | "executed" | "neutral" } {
+  // Pending = orange tint; executed/received = light grey; otherwise plain.
+  const PENDING = new Set(["To be paid", "Pending", "Unpaid", "Overdue"]);
+  const EXECUTED = new Set(["Paid", "Payment executed"]);
+  if (PENDING.has(status)) {
+    return { row: "bg-amber-50/50 hover:bg-amber-50", select: "pending" };
+  }
+  if (EXECUTED.has(status)) {
+    return { row: "bg-slate-50 hover:bg-slate-100", select: "executed" };
+  }
+  return { row: "hover:bg-slate-50", select: "neutral" };
+}
+
+function StatusSelect({
+  value,
+  onChange,
+  tone,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  tone: "pending" | "executed" | "neutral";
+}) {
+  const toneCls =
+    tone === "pending"
+      ? "bg-amber-50 border-amber-300 text-amber-800"
+      : tone === "executed"
+      ? "bg-slate-100 border-slate-300 text-slate-700"
+      : "bg-white border-slate-300 text-slate-700";
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={`block w-full rounded-md px-1.5 py-0.5 text-[11px] font-medium ${toneCls} focus:outline-none focus:ring-1 focus:ring-brand-600`}
+    >
+      <option value="">—</option>
+      {[
+        "Paid",
+        "To be paid",
+        "Payment executed",
+        "Overdue",
+        "Unpaid",
+        "Pending",
+      ].map((s) => (
+        <option key={s} value={s}>
+          {s}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 20h4l10-10-4-4L4 16v4z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M14 6l4 4"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 

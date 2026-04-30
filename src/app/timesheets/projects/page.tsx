@@ -140,21 +140,32 @@ function ProjectRow({ project: p }: { project: MyProjectRecord }) {
       </div>
 
       {/* Actions */}
-      <div className="col-span-12 lg:col-span-2 flex flex-wrap items-center justify-end gap-3 text-[11px]">
+      <div className="col-span-12 lg:col-span-2 flex items-center justify-end gap-2">
         <SubmitTimesheetButton
           presetProjectCode={p.projectCode}
-          className="text-brand-600 hover:text-brand-700 font-medium"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100"
         >
-          Add timesheet →
+          <span className="sr-only">Add timesheet</span>
+          <PlusIcon />
         </SubmitTimesheetButton>
         {p.isLeader ? (
           <Link
             href={`/timesheets/team?project=${encodeURIComponent(p.projectCode)}`}
-            className="text-brand-600 hover:text-brand-700 font-medium"
+            title="Project Staffing Summary"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
           >
-            Summary →
+            <span className="sr-only">Project Staffing Summary</span>
+            <SummaryIcon />
           </Link>
-        ) : null}
+        ) : (
+          <span
+            title="Available to Engagement Leads and Project Leaders"
+            aria-disabled="true"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-300 cursor-not-allowed"
+          >
+            <SummaryIcon />
+          </span>
+        )}
       </div>
     </li>
   );
@@ -280,5 +291,32 @@ function EmptyState() {
         will appear here with your allocated time and progress.
       </p>
     </div>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 5v14M5 12h14"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function SummaryIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M3 6h13M3 12h13M3 18h9M19 5l2 3-2 3M21 8h-5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
