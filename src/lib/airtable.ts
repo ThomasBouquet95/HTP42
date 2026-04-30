@@ -636,6 +636,20 @@ export async function adminUpdateMember(
   return memberAdminFromRecord(updated);
 }
 
+export async function adminUpdateMemberStatus(
+  recordId: string,
+  status: MemberStatus,
+): Promise<void> {
+  await base(TABLES.networkMembers).update([
+    {
+      id: recordId,
+      fields: {
+        [FIELDS.networkMembers.status]: status,
+      } as FieldSet,
+    },
+  ]);
+}
+
 // ---------------------------------------------------------------------------
 // Admin: Clients
 // ---------------------------------------------------------------------------
@@ -803,6 +817,20 @@ export async function createProject(input: ProjectInput): Promise<string> {
     { fields: projectFields(input) as FieldSet },
   ]);
   return created.id;
+}
+
+export async function updateProjectStatus(
+  recordId: string,
+  status: ProjectStatus | "",
+): Promise<void> {
+  await base(TABLES.projects).update([
+    {
+      id: recordId,
+      fields: {
+        [FIELDS.projects.status]: status === "" ? null : status,
+      } as FieldSet,
+    },
+  ]);
 }
 
 export async function updateProject(recordId: string, input: ProjectInput): Promise<void> {
@@ -1381,6 +1409,20 @@ export async function updateStaffing(recordId: string, input: StaffingInput): Pr
 
 export async function deleteStaffing(recordId: string): Promise<void> {
   await base(TABLES.projectStaffing).destroy([recordId]);
+}
+
+export async function updateStaffingStatus(
+  recordId: string,
+  status: StaffingStatus | "",
+): Promise<void> {
+  await base(TABLES.projectStaffing).update([
+    {
+      id: recordId,
+      fields: {
+        [FIELDS.projectStaffing.status]: status === "" ? null : status,
+      } as FieldSet,
+    },
+  ]);
 }
 
 // ---------------------------------------------------------------------------

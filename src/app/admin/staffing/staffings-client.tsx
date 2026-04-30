@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { EditIcon, IconButton } from "@/components/admin-icons";
 import type {
   Currency,
   ProjectRole,
@@ -137,6 +138,20 @@ export function StaffingsAdminClient({
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  async function updateStatus(id: string, next: string) {
+    try {
+      const res = await fetch(`/api/admin/staffings/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!res.ok) throw new Error();
+      router.refresh();
+    } catch {
+      // Silent on transient error.
+    }
   }
 
   async function updateCurrency(currency: string) {
@@ -291,8 +306,7 @@ export function StaffingsAdminClient({
               filtered.map((s) => (
                 <tr
                   key={s.id}
-                  onClick={() => openEdit(s)}
-                  className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer align-top"
+                  className="border-t border-slate-100 hover:bg-slate-50 align-top"
                 >
                   <td className="px-2 py-1.5 font-mono text-xs">{s.staffingCode || "—"}</td>
                   <td className="px-2 py-1.5 hidden md:table-cell">
@@ -333,9 +347,17 @@ export function StaffingsAdminClient({
                       ? "—"
                       : `${s.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${s.currency || ""}`.trim()}
                   </td>
-                  <td className="px-2 py-1.5"><StaffingPill status={s.status} /></td>
+                  <td className="px-2 py-1.5">
+                    <StaffingStatusSelect
+                      value={s.status}
+                      statuses={staffingStatuses}
+                      onChange={(next) => updateStatus(s.id, next)}
+                    />
+                  </td>
                   <td className="px-2 py-1.5 text-right">
-                    <span className="text-brand-600 text-xs font-medium">Edit</span>
+                    <IconButton title="Edit" onClick={() => openEdit(s)}>
+                      <EditIcon />
+                    </IconButton>
                   </td>
                 </tr>
               ))
@@ -539,20 +561,39 @@ export function StaffingsAdminClient({
   );
 }
 
-function StaffingPill({ status }: { status: string }) {
-  if (!status) return <span className="text-slate-400">—</span>;
+function StaffingStatusSelect({
+  value,
+  statuses,
+  onChange,
+}: {
+  value: string;
+  statuses: readonly string[];
+  onChange: (next: string) => void;
+}) {
   const cls =
-    status === "In Progress"
-      ? "bg-blue-50 text-blue-700 border-blue-200"
-      : status === "Completed"
-      ? "bg-green-50 text-green-700 border-green-200"
-      : status === "Not Started"
-      ? "bg-slate-100 text-slate-600 border-slate-200"
-      : "bg-amber-50 text-amber-700 border-amber-200";
+    value === "In Progress"
+      ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+      : value === "Completed"
+      ? "bg-blue-50 border-blue-300 text-blue-800"
+      : value === "On Hold"
+      ? "bg-amber-50 border-amber-300 text-amber-800"
+      : value === "Not Started"
+      ? "bg-slate-100 border-slate-300 text-slate-700"
+      : "bg-white border-slate-300 text-slate-700";
   return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${cls}`}>
-      {status}
-    </span>
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      className={`block w-full rounded-md px-1.5 py-0.5 text-[11px] font-medium ${cls} focus:outline-none focus:ring-1 focus:ring-brand-600`}
+    >
+      <option value="">—</option>
+      {statuses.map((s) => (
+        <option key={s} value={s}>
+          {s}
+        </option>
+      ))}
+    </select>
   );
 }
 

@@ -9,11 +9,35 @@ import {
   SOW_STATUSES,
   STAFFING_STATUSES,
   updateStaffing,
+  updateStaffingStatus,
   type Currency,
   type ProjectRole,
   type SowStatus,
   type StaffingStatus,
 } from "@/lib/airtable";
+
+const patchSchema = z.object({
+  status: z.union([z.enum(STAFFING_STATUSES as [string, ...string[]]), z.literal("")]),
+});
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const session = await requireAdminSession();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const { id } = await params;
+  const body = await request.json().catch(() => null);
+  const parsed = patchSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
+      { status: 400 },
+    );
+  }
+  await updateStaffingStatus(id, parsed.data.status as StaffingStatus | "");
+  return NextResponse.json({ ok: true });
+}
 
 const nullableNumber = z.union([z.number(), z.null()]).optional();
 const nullableDate = z.union([z.string().trim().min(1), z.null()]).optional();

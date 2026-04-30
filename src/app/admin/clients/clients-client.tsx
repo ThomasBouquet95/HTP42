@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormTextarea } from "@/components/form-controls";
+import { EditIcon, IconButton } from "@/components/admin-icons";
 import type { ClientRecord } from "@/lib/airtable";
 
 type Props = { clients: ClientRecord[] };
@@ -228,11 +229,7 @@ export function ClientsAdminClient({ clients }: Props) {
               </tr>
             ) : (
               filtered.map((c) => (
-                <tr
-                  key={c.id}
-                  onClick={() => openEdit(c)}
-                  className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
-                >
+                <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="px-2 py-1.5 font-mono text-xs">{c.clientCode}</td>
                   <td className="px-2 py-1.5">
                     <div>{c.clientName}</div>
@@ -242,7 +239,9 @@ export function ClientsAdminClient({ clients }: Props) {
                   <td className="px-2 py-1.5 hidden md:table-cell">{c.country || "—"}</td>
                   <td className="px-2 py-1.5 hidden lg:table-cell">{c.keyContact || "—"}</td>
                   <td className="px-2 py-1.5 text-right">
-                    <span className="text-brand-600 text-xs font-medium">Edit</span>
+                    <IconButton title="Edit" onClick={() => openEdit(c)}>
+                      <EditIcon />
+                    </IconButton>
                   </td>
                 </tr>
               ))

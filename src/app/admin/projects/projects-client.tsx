@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { EditIcon, IconButton, ListIcon } from "@/components/admin-icons";
 import { formatHumanDate } from "@/lib/dates";
 import type {
   ClientRecord,
@@ -154,6 +156,20 @@ export function ProjectsAdminClient({
       }
     } catch {
       // Silent fallback — user can still type manually.
+    }
+  }
+
+  async function updateStatus(id: string, next: string) {
+    try {
+      const res = await fetch(`/api/admin/projects/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!res.ok) throw new Error();
+      router.refresh();
+    } catch {
+      // Silent on transient error.
     }
   }
 
@@ -321,11 +337,7 @@ export function ProjectsAdminClient({
                   .filter(Boolean)
                   .join(", ");
                 return (
-                  <tr
-                    key={p.id}
-                    onClick={() => openEdit(p)}
-                    className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
-                  >
+                  <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="px-2 py-1.5 font-mono text-xs">{p.projectCode}</td>
                     <td className="px-2 py-1.5">
                       <div>{p.projectName}</div>
@@ -337,7 +349,13 @@ export function ProjectsAdminClient({
                       {clientNames || p.clientCodes.join(", ") || "—"}
                     </td>
                     <td className="px-2 py-1.5 hidden lg:table-cell">{p.type || "—"}</td>
-                    <td className="px-2 py-1.5">{p.status || "—"}</td>
+                    <td className="px-2 py-1.5">
+                      <ProjectStatusSelect
+                        value={p.status}
+                        statuses={projectStatuses}
+                        onChange={(next) => updateStatus(p.id, next)}
+                      />
+                    </td>
                     <td className="px-2 py-1.5 hidden xl:table-cell">{formatHumanDate(p.startDate)}</td>
                     <td className="px-2 py-1.5 hidden xl:table-cell">{formatHumanDate(p.endDate)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell">
@@ -345,23 +363,20 @@ export function ProjectsAdminClient({
                         ? "—"
                         : `${p.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${p.currency || ""}`.trim()}
                     </td>
-                    <td
-                      className="px-2 py-1.5 text-right whitespace-nowrap"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <a
-                        href={`/admin/staffing?project=${encodeURIComponent(p.projectCode)}`}
-                        className="text-brand-600 hover:text-brand-700 text-xs font-medium mr-3"
-                      >
-                        Staffings
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => openEdit(p)}
-                        className="text-brand-600 hover:text-brand-700 text-xs font-medium"
-                      >
-                        Edit
-                      </button>
+                    <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                      <div className="inline-flex items-center gap-1.5">
+                        <Link
+                          href={`/admin/staffing?project=${encodeURIComponent(p.projectCode)}`}
+                          title="Manage staffings"
+                          aria-label="Manage staffings"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                        >
+                          <ListIcon />
+                        </Link>
+                        <IconButton title="Edit" onClick={() => openEdit(p)}>
+                          <EditIcon />
+                        </IconButton>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -529,6 +544,42 @@ export function ProjectsAdminClient({
         onConfirm={confirmDelete}
       />
     </div>
+  );
+}
+
+function ProjectStatusSelect({
+  value,
+  statuses,
+  onChange,
+}: {
+  value: string;
+  statuses: readonly string[];
+  onChange: (next: string) => void;
+}) {
+  const cls =
+    value === "In Progress"
+      ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+      : value === "On Hold"
+      ? "bg-amber-50 border-amber-300 text-amber-800"
+      : value === "Completed"
+      ? "bg-blue-50 border-blue-300 text-blue-800"
+      : value === "Planned" || value === "Not Started"
+      ? "bg-slate-100 border-slate-300 text-slate-700"
+      : "bg-white border-slate-300 text-slate-700";
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      className={`block w-full rounded-md px-1.5 py-0.5 text-[11px] font-medium ${cls} focus:outline-none focus:ring-1 focus:ring-brand-600`}
+    >
+      <option value="">—</option>
+      {statuses.map((s) => (
+        <option key={s} value={s}>
+          {s}
+        </option>
+      ))}
+    </select>
   );
 }
 

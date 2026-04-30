@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { EditIcon, IconButton } from "@/components/admin-icons";
 import type {
   Currency,
   MemberAdminRecord,
@@ -158,6 +159,20 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
     codeTouchedRef.current = true;
   }
 
+  async function updateStatus(id: string, next: string) {
+    try {
+      const res = await fetch(`/api/admin/members/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!res.ok) throw new Error();
+      router.refresh();
+    } catch {
+      // Stay quiet on transient errors; refresh will reset to server state.
+    }
+  }
+
   function closeModal() {
     if (saving) return;
     setEditing(null);
@@ -306,11 +321,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
               </tr>
             ) : (
               filtered.map((m) => (
-                <tr
-                  key={m.id}
-                  onClick={() => openEdit(m)}
-                  className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
-                >
+                <tr key={m.id} className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="px-2 py-1.5">
                     <div className="h-7 w-7 rounded-full overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-semibold text-slate-600">
                       {m.photo ? (
@@ -328,7 +339,13 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                   </td>
                   <td className="px-2 py-1.5 text-slate-600 hidden md:table-cell">{m.email}</td>
                   <td className="px-2 py-1.5 hidden lg:table-cell">{m.role || "—"}</td>
-                  <td className="px-2 py-1.5"><StatusPill status={m.status} /></td>
+                  <td className="px-2 py-1.5">
+                    <MemberStatusSelect
+                      value={m.status}
+                      statuses={statuses}
+                      onChange={(next) => updateStatus(m.id, next)}
+                    />
+                  </td>
                   <td className="px-2 py-1.5 hidden lg:table-cell">{m.country || "—"}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell">
                     {m.dailyRate == null
@@ -358,7 +375,9 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                     )}
                   </td>
                   <td className="px-2 py-1.5 text-right">
-                    <span className="text-brand-600 text-[11px] font-medium">Edit</span>
+                    <IconButton title="Edit" onClick={() => openEdit(m)}>
+                      <EditIcon />
+                    </IconButton>
                   </td>
                 </tr>
               ))
@@ -511,17 +530,33 @@ function memberInitials(name: string): string {
   return `${first}${last}`.toUpperCase();
 }
 
-function StatusPill({ status }: { status: string }) {
-  if (!status) return <span className="text-slate-400">—</span>;
+function MemberStatusSelect({
+  value,
+  statuses,
+  onChange,
+}: {
+  value: string;
+  statuses: readonly string[];
+  onChange: (next: string) => void;
+}) {
   const cls =
-    status === "Active"
-      ? "bg-green-50 text-green-700 border-green-200"
-      : status === "Partially Active"
-      ? "bg-yellow-50 text-yellow-700 border-yellow-200"
-      : "bg-slate-100 text-slate-600 border-slate-200";
+    value === "Active"
+      ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+      : value === "Partially Active"
+      ? "bg-amber-50 border-amber-300 text-amber-800"
+      : "bg-slate-100 border-slate-300 text-slate-700";
   return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}>
-      {status}
-    </span>
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      className={`block w-full rounded-md px-1.5 py-0.5 text-[11px] font-medium ${cls} focus:outline-none focus:ring-1 focus:ring-brand-600`}
+    >
+      {statuses.map((s) => (
+        <option key={s} value={s}>
+          {s}
+        </option>
+      ))}
+    </select>
   );
 }
