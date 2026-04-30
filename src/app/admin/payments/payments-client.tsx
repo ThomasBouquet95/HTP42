@@ -411,18 +411,18 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-3 py-2 font-medium">Code</th>
-              <th className="text-left px-3 py-2 font-medium">Direction</th>
-              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Type</th>
-              <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Project</th>
-              <th className="text-left px-3 py-2 font-medium">Counterparty</th>
-              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Invoice date</th>
-              <th className="text-right px-3 py-2 font-medium">Amount</th>
-              <th className="text-right px-3 py-2 font-medium hidden md:table-cell">EUR</th>
-              <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Status</th>
+              <th className="text-left px-2 py-1.5 font-medium">Code</th>
+              <th className="text-left px-2 py-1.5 font-medium">Direction</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Type</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Project</th>
+              <th className="text-left px-2 py-1.5 font-medium">Counterparty</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Invoice date</th>
+              <th className="text-right px-2 py-1.5 font-medium">Amount</th>
+              <th className="text-right px-2 py-1.5 font-medium hidden md:table-cell">EUR</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Status</th>
               <th />
             </tr>
           </thead>
@@ -445,24 +445,24 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                     onClick={() => openEdit(p)}
                     className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer align-top"
                   >
-                    <td className="px-3 py-2 font-mono text-xs">{p.paymentCode}</td>
-                    <td className="px-3 py-2"><DirectionPill direction={p.direction} /></td>
-                    <td className="px-3 py-2 hidden md:table-cell">{p.type || "—"}</td>
-                    <td className="px-3 py-2 font-mono text-xs hidden lg:table-cell">
+                    <td className="px-2 py-1.5 font-mono text-xs">{p.paymentCode}</td>
+                    <td className="px-2 py-1.5"><DirectionPill direction={p.direction} /></td>
+                    <td className="px-2 py-1.5 hidden md:table-cell">{p.type || "—"}</td>
+                    <td className="px-2 py-1.5 font-mono text-xs hidden lg:table-cell">
                       {p.projectCodes.join(", ") || "—"}
                     </td>
-                    <td className="px-3 py-2">{counterparty}</td>
-                    <td className="px-3 py-2 whitespace-nowrap hidden md:table-cell">{p.invoiceDate ?? "—"}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">
+                    <td className="px-2 py-1.5">{counterparty}</td>
+                    <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell">{p.invoiceDate ?? "—"}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">
                       {formatMoney(p.invoiceValue, p.invoiceCurrency)}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell">
+                    <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell">
                       {p.invoiceValueEur == null
                         ? "—"
                         : p.invoiceValueEur.toLocaleString("en-US", { maximumFractionDigits: 2 })}
                     </td>
-                    <td className="px-3 py-2 hidden lg:table-cell">{p.paymentStatus || "—"}</td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-1.5 hidden lg:table-cell">{p.paymentStatus || "—"}</td>
+                    <td className="px-2 py-1.5 text-right">
                       <span className="text-brand-600 text-xs font-medium">Edit</span>
                     </td>
                   </tr>

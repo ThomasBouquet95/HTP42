@@ -291,7 +291,8 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
               <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Role</th>
               <th className="text-left px-2 py-1.5 font-medium">Status</th>
               <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Country</th>
-              <th className="text-right px-2 py-1.5 font-medium hidden md:table-cell">Daily rate</th>
+              <th className="text-right px-2 py-1.5 font-medium hidden md:table-cell">Member rate</th>
+              <th className="text-right px-2 py-1.5 font-medium hidden md:table-cell">HTP42 rate</th>
               <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">CV</th>
               <th />
             </tr>
@@ -299,7 +300,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center text-slate-500 py-10">
+                <td colSpan={11} className="text-center text-slate-500 py-10">
                   No members match this search.
                 </td>
               </tr>
@@ -328,11 +329,16 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                   <td className="px-2 py-1.5 text-slate-600 hidden md:table-cell">{m.email}</td>
                   <td className="px-2 py-1.5 hidden lg:table-cell">{m.role || "—"}</td>
                   <td className="px-2 py-1.5"><StatusPill status={m.status} /></td>
-                  <td className="px-3 py-2 hidden lg:table-cell">{m.country || "—"}</td>
-                  <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell">
+                  <td className="px-2 py-1.5 hidden lg:table-cell">{m.country || "—"}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell">
                     {m.dailyRate == null
                       ? "—"
                       : `${m.dailyRate.toLocaleString("en-US")} ${m.currency || ""}`.trim()}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell">
+                    {m.htp42DailyRate == null
+                      ? "—"
+                      : `${m.htp42DailyRate.toLocaleString("en-US")} ${m.currency || ""}`.trim()}
                   </td>
                   <td
                     className="px-2 py-1.5 hidden md:table-cell"
@@ -431,13 +437,13 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
             onChange={(v) => updateField("legalEntity", v)}
           />
           <FormField
-            label="Daily rate (member invoices HTP42)"
+            label="Member rate (member invoices HTP42)"
             value={form.dailyRate}
             onChange={(v) => updateField("dailyRate", v)}
             type="number"
           />
           <FormField
-            label="HTP42 daily rate (HTP42 invoices client)"
+            label="HTP42 rate (HTP42 invoices client)"
             value={form.htp42DailyRate}
             onChange={(v) => updateField("htp42DailyRate", v)}
             type="number"

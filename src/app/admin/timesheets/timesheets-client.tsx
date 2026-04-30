@@ -230,61 +230,55 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-600">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-4 py-2 font-medium">Week</th>
-              <th className="text-left px-4 py-2 font-medium">Member</th>
-              <th className="text-left px-4 py-2 font-medium">Staffing</th>
-              <th className="text-left px-4 py-2 font-medium">Status</th>
+              <th className="text-left px-2 py-1.5 font-medium whitespace-nowrap">Week</th>
+              <th className="text-left px-2 py-1.5 font-medium">Member</th>
+              <th className="text-left px-2 py-1.5 font-medium">Staffing</th>
+              <th className="text-left px-2 py-1.5 font-medium">Status</th>
               {DAY_KEYS.map((k) => (
-                <th key={k} className="text-right px-2 py-2 font-medium">
+                <th key={k} className="text-right px-2 py-1.5 font-medium normal-case tracking-normal">
                   {k.slice(0, 3).replace(/^./, (c) => c.toUpperCase())}
                 </th>
               ))}
-              <th className="text-right px-4 py-2 font-medium">Total</th>
+              <th className="text-right px-2 py-1.5 font-medium">Total</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center text-slate-500 py-10">
+                <td colSpan={10} className="text-center text-slate-500 py-8 text-xs">
                   No timesheets match these filters.
                 </td>
               </tr>
             ) : (
-              filtered.map((t) => {
-                const d = dayIsos(t.startDate);
-                return (
-                  <tr key={t.id} className="border-t border-slate-100 align-top">
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {formatRange(t.startDate, t.endDate)}
+              filtered.map((t) => (
+                <tr key={t.id} className="border-t border-slate-100 align-top">
+                  <td className="px-2 py-1.5 whitespace-nowrap text-slate-700">
+                    {formatRange(t.startDate, t.endDate)}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <div className="font-mono text-[10px] text-slate-500">{t.memberCode}</div>
+                    <div>{t.memberName || "—"}</div>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <div className="font-mono text-[10px] text-slate-500">{t.staffingCode}</div>
+                    <div className="truncate max-w-[16rem]">{t.projectName || t.projectCode || "—"}</div>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <StatusBadge status={t.status} />
+                  </td>
+                  {DAY_KEYS.map((k) => (
+                    <td key={k} className="px-2 py-1.5 text-right tabular-nums">
+                      {t[k].hours ? t[k].hours.toFixed(2) : <span className="text-slate-300">—</span>}
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="font-mono text-xs text-slate-500">{t.memberCode}</div>
-                      <div>{t.memberName || "—"}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="font-mono text-xs text-slate-500">{t.staffingCode}</div>
-                      <div>{t.projectName || t.projectCode || "—"}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={t.status} />
-                    </td>
-                    {DAY_KEYS.map((k) => (
-                      <td key={k} className="px-2 py-3 text-right tabular-nums">
-                        <div className="text-[10px] text-slate-400 font-normal">
-                          {d[k].slice(5)}
-                        </div>
-                        <div>{t[k].hours ? t[k].hours.toFixed(2) : "—"}</div>
-                      </td>
-                    ))}
-                    <td className="px-4 py-3 text-right tabular-nums font-semibold">
-                      {t.totalHours.toFixed(2)}
-                    </td>
-                  </tr>
-                );
-              })
+                  ))}
+                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">
+                    {t.totalHours.toFixed(2)}
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>

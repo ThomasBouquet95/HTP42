@@ -208,14 +208,14 @@ export function ClientsAdminClient({ clients }: Props) {
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-3 py-2 font-medium">Code</th>
-              <th className="text-left px-3 py-2 font-medium">Name</th>
-              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Industry</th>
-              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Country</th>
-              <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Key contact</th>
+              <th className="text-left px-2 py-1.5 font-medium">Code</th>
+              <th className="text-left px-2 py-1.5 font-medium">Name</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Industry</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Country</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Key contact</th>
               <th />
             </tr>
           </thead>
@@ -233,15 +233,15 @@ export function ClientsAdminClient({ clients }: Props) {
                   onClick={() => openEdit(c)}
                   className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
                 >
-                  <td className="px-3 py-2 font-mono text-xs">{c.clientCode}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-1.5 font-mono text-xs">{c.clientCode}</td>
+                  <td className="px-2 py-1.5">
                     <div>{c.clientName}</div>
                     <div className="text-xs text-slate-500 md:hidden">{c.industry || ""}</div>
                   </td>
-                  <td className="px-3 py-2 hidden md:table-cell">{c.industry || "—"}</td>
-                  <td className="px-3 py-2 hidden md:table-cell">{c.country || "—"}</td>
-                  <td className="px-3 py-2 hidden lg:table-cell">{c.keyContact || "—"}</td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-2 py-1.5 hidden md:table-cell">{c.industry || "—"}</td>
+                  <td className="px-2 py-1.5 hidden md:table-cell">{c.country || "—"}</td>
+                  <td className="px-2 py-1.5 hidden lg:table-cell">{c.keyContact || "—"}</td>
+                  <td className="px-2 py-1.5 text-right">
                     <span className="text-brand-600 text-xs font-medium">Edit</span>
                   </td>
                 </tr>

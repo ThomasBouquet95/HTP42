@@ -293,17 +293,17 @@ export function ProjectsAdminClient({
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-3 py-2 font-medium">Code</th>
-              <th className="text-left px-3 py-2 font-medium">Name</th>
-              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Client</th>
-              <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Type</th>
-              <th className="text-left px-3 py-2 font-medium">Status</th>
-              <th className="text-left px-3 py-2 font-medium hidden xl:table-cell">Start</th>
-              <th className="text-left px-3 py-2 font-medium hidden xl:table-cell">End</th>
-              <th className="text-right px-3 py-2 font-medium hidden md:table-cell">Total</th>
+              <th className="text-left px-2 py-1.5 font-medium">Code</th>
+              <th className="text-left px-2 py-1.5 font-medium">Name</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Client</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Type</th>
+              <th className="text-left px-2 py-1.5 font-medium">Status</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden xl:table-cell">Start</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden xl:table-cell">End</th>
+              <th className="text-right px-2 py-1.5 font-medium hidden md:table-cell">Total</th>
               <th />
             </tr>
           </thead>
@@ -326,27 +326,27 @@ export function ProjectsAdminClient({
                     onClick={() => openEdit(p)}
                     className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
                   >
-                    <td className="px-3 py-2 font-mono text-xs">{p.projectCode}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-2 py-1.5 font-mono text-xs">{p.projectCode}</td>
+                    <td className="px-2 py-1.5">
                       <div>{p.projectName}</div>
                       <div className="text-xs text-slate-500 md:hidden">
                         {clientNames || p.clientCodes.join(", ") || "—"}
                       </div>
                     </td>
-                    <td className="px-3 py-2 font-mono hidden md:table-cell">
+                    <td className="px-2 py-1.5 font-mono hidden md:table-cell">
                       {clientNames || p.clientCodes.join(", ") || "—"}
                     </td>
-                    <td className="px-3 py-2 hidden lg:table-cell">{p.type || "—"}</td>
-                    <td className="px-3 py-2">{p.status || "—"}</td>
-                    <td className="px-3 py-2 hidden xl:table-cell">{formatHumanDate(p.startDate)}</td>
-                    <td className="px-3 py-2 hidden xl:table-cell">{formatHumanDate(p.endDate)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell">
+                    <td className="px-2 py-1.5 hidden lg:table-cell">{p.type || "—"}</td>
+                    <td className="px-2 py-1.5">{p.status || "—"}</td>
+                    <td className="px-2 py-1.5 hidden xl:table-cell">{formatHumanDate(p.startDate)}</td>
+                    <td className="px-2 py-1.5 hidden xl:table-cell">{formatHumanDate(p.endDate)}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell">
                       {p.totalAmount == null
                         ? "—"
                         : `${p.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${p.currency || ""}`.trim()}
                     </td>
                     <td
-                      className="px-3 py-2 text-right whitespace-nowrap"
+                      className="px-2 py-1.5 text-right whitespace-nowrap"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <a

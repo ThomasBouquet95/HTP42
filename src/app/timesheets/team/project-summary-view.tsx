@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ProjectSummary, ProjectTeamMember, ProjectStatus } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
 import { formatRange, formatHumanDate } from "@/lib/dates";
@@ -9,9 +9,15 @@ type Props = { summary: ProjectSummary };
 
 const HOURS_PER_DAY = 8;
 
+type MemberTimesheet = ProjectTeamMember["timesheets"][number];
+
 export function ProjectSummaryView({ summary }: Props) {
   const { project, members, totals } = summary;
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [activeSheet, setActiveSheet] = useState<{
+    timesheet: MemberTimesheet;
+    member: ProjectTeamMember;
+  } | null>(null);
 
   const allocatedHours = totals.allocatedDays * HOURS_PER_DAY;
   const progressPct =
@@ -136,12 +142,18 @@ export function ProjectSummaryView({ summary }: Props) {
                   onToggle={() =>
                     setExpanded(expanded === m.memberRecordId ? null : m.memberRecordId)
                   }
+                  onOpenTimesheet={(t) => setActiveSheet({ timesheet: t, member: m })}
                 />
               </li>
             ))}
           </ul>
         )}
       </div>
+
+      <TimesheetReadModal
+        active={activeSheet}
+        onClose={() => setActiveSheet(null)}
+      />
     </div>
   );
 }
@@ -150,15 +162,20 @@ function MemberRow({
   member,
   expanded,
   onToggle,
+  onOpenTimesheet,
 }: {
   member: ProjectTeamMember;
   expanded: boolean;
   onToggle: () => void;
+  onOpenTimesheet: (t: MemberTimesheet) => void;
 }) {
   const allocHours = member.daysAllocatedTotal * HOURS_PER_DAY;
   const pct = allocHours > 0 ? Math.min(100, (member.hoursActualTotal / allocHours) * 100) : 0;
   const over = member.hoursActualTotal > allocHours && allocHours > 0;
-  const isLeader = member.staffings.some((s) => s.projectRole === "Project Leader");
+  const isLeader =
+    member.staffings.some(
+      (s) => s.projectRole === "Project Leader" || s.projectRole === "Engagement Lead",
+    );
 
   return (
     <div>
@@ -262,25 +279,33 @@ function MemberRow({
                 Timesheets
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-xs uppercase tracking-wide text-slate-500">
+                <table className="w-full text-xs">
+                  <thead className="text-[11px] uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="text-left py-1 pr-3 font-medium">Week</th>
+                      <th className="text-left py-1 pr-3 font-medium">Staffing</th>
                       <th className="text-left py-1 pr-3 font-medium">Status</th>
                       <th className="text-right py-1 font-medium">Hours</th>
                     </tr>
                   </thead>
                   <tbody>
                     {member.timesheets.slice(0, 12).map((t) => (
-                      <tr key={t.id} className="border-t border-slate-100">
+                      <tr
+                        key={t.id}
+                        onClick={() => onOpenTimesheet(t)}
+                        className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
+                      >
                         <td className="py-1.5 pr-3 whitespace-nowrap text-slate-700">
                           {formatRange(t.startDate, t.endDate)}
+                        </td>
+                        <td className="py-1.5 pr-3 font-mono text-[10px] text-slate-500">
+                          {t.staffingCode || "—"}
                         </td>
                         <td className="py-1.5 pr-3">
                           <StatusBadge status={t.status} />
                         </td>
                         <td className="py-1.5 text-right tabular-nums font-medium text-slate-900">
-                          {t.totalHours.toFixed(1)} h
+                          {t.totalHours.toFixed(2)} h
                         </td>
                       </tr>
                     ))}
@@ -292,6 +317,9 @@ function MemberRow({
                   Showing 12 of {member.timesheets.length} timesheets.
                 </div>
               ) : null}
+              <div className="mt-1.5 text-[11px] text-slate-400">
+                Click a row to view the full week.
+              </div>
             </div>
           ) : (
             <div className="text-xs text-slate-500">No timesheets yet for this member.</div>
@@ -439,4 +467,111 @@ function csvCell(value: string): string {
 function todayStamp(): string {
   const d = new Date();
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+}
+
+const DAY_LABELS_FULL: Record<"monday" | "tuesday" | "wednesday" | "thursday" | "friday", string> = {
+  monday: "Monday",
+  tuesday: "Tuesday",
+  wednesday: "Wednesday",
+  thursday: "Thursday",
+  friday: "Friday",
+};
+
+function TimesheetReadModal({
+  active,
+  onClose,
+}: {
+  active: { timesheet: MemberTimesheet; member: ProjectTeamMember } | null;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [active, onClose]);
+
+  if (!active) return null;
+  const { timesheet: t, member } = active;
+  const days = (Object.keys(DAY_LABELS_FULL) as Array<keyof typeof DAY_LABELS_FULL>).map((k) => ({
+    key: k,
+    label: DAY_LABELS_FULL[k],
+    hours: t[k].hours,
+    task: t[k].task,
+  }));
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-3 py-6 sm:items-center sm:py-10"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-2xl rounded-lg bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between border-b border-slate-200 px-4 py-3">
+          <div>
+            <div className="text-[11px] font-mono text-slate-500">{t.timesheetCode}</div>
+            <h2 className="text-sm font-semibold text-slate-900 mt-0.5">
+              {member.memberName || member.memberCode} · {formatRange(t.startDate, t.endDate)}
+            </h2>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+              <span className="font-mono">{t.staffingCode}</span>
+              <StatusBadge status={t.status} />
+              {t.submissionDate ? <span>· Submitted {t.submissionDate}</span> : null}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="text-left px-3 py-1.5 font-medium w-32">Day</th>
+                <th className="text-right px-3 py-1.5 font-medium w-20">Hours</th>
+                <th className="text-left px-3 py-1.5 font-medium">Task description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {days.map((d) => (
+                <tr key={d.key} className="border-t border-slate-100">
+                  <td className="px-3 py-1.5 font-medium text-slate-700">{d.label}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">
+                    {d.hours ? d.hours.toFixed(2) : <span className="text-slate-300">—</span>}
+                  </td>
+                  <td className="px-3 py-1.5 text-slate-700">
+                    {d.task || <span className="text-slate-300">—</span>}
+                  </td>
+                </tr>
+              ))}
+              <tr className="border-t border-slate-200 bg-slate-50">
+                <td className="px-3 py-1.5 font-semibold text-slate-700">Total</td>
+                <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-900">
+                  {t.totalHours.toFixed(2)}
+                </td>
+                <td />
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
 }

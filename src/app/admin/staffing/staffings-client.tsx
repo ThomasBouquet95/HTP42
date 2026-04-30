@@ -264,19 +264,19 @@ export function StaffingsAdminClient({
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-3 py-2 font-medium">Staffing</th>
-              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Project</th>
-              <th className="text-left px-3 py-2 font-medium">Member</th>
-              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Project role</th>
-              <th className="text-left px-3 py-2 font-medium hidden xl:table-cell">Job title</th>
-              <th className="text-right px-3 py-2 font-medium hidden md:table-cell">Rate</th>
-              <th className="text-right px-3 py-2 font-medium hidden lg:table-cell">Days alloc.</th>
-              <th className="text-right px-3 py-2 font-medium hidden lg:table-cell">Days used</th>
-              <th className="text-right px-3 py-2 font-medium hidden lg:table-cell">Total</th>
-              <th className="text-left px-3 py-2 font-medium">Status</th>
+              <th className="text-left px-2 py-1.5 font-medium">Staffing</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Project</th>
+              <th className="text-left px-2 py-1.5 font-medium">Member</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Project role</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden xl:table-cell">Job title</th>
+              <th className="text-right px-2 py-1.5 font-medium hidden md:table-cell">Rate</th>
+              <th className="text-right px-2 py-1.5 font-medium hidden lg:table-cell">Days alloc.</th>
+              <th className="text-right px-2 py-1.5 font-medium hidden lg:table-cell">Days used</th>
+              <th className="text-right px-2 py-1.5 font-medium hidden lg:table-cell">Total</th>
+              <th className="text-left px-2 py-1.5 font-medium">Status</th>
               <th />
             </tr>
           </thead>
@@ -294,29 +294,29 @@ export function StaffingsAdminClient({
                   onClick={() => openEdit(s)}
                   className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer align-top"
                 >
-                  <td className="px-3 py-2 font-mono text-xs">{s.staffingCode || "—"}</td>
-                  <td className="px-3 py-2 hidden md:table-cell">
+                  <td className="px-2 py-1.5 font-mono text-xs">{s.staffingCode || "—"}</td>
+                  <td className="px-2 py-1.5 hidden md:table-cell">
                     <div className="font-mono text-xs text-slate-500">{s.projectCode}</div>
                     <div>{s.projectName || "—"}</div>
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-1.5">
                     <div className="font-mono text-xs text-slate-500">
                       {s.memberCodes.join(", ") || "—"}
                     </div>
                     <div className="text-xs text-slate-500 md:hidden">{s.projectCode}</div>
                   </td>
-                  <td className="px-3 py-2 hidden md:table-cell">
+                  <td className="px-2 py-1.5 hidden md:table-cell">
                     <ProjectRolePill role={s.projectRole} />
                   </td>
-                  <td className="px-3 py-2 hidden xl:table-cell text-slate-600 text-xs">
+                  <td className="px-2 py-1.5 hidden xl:table-cell text-slate-600 text-xs">
                     {s.roleInProject || "—"}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell">
+                  <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell">
                     {s.ratePerDay == null
                       ? "—"
                       : `${s.ratePerDay.toLocaleString("en-US")} ${s.currency || ""}`.trim()}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums hidden lg:table-cell">
+                  <td className="px-2 py-1.5 text-right tabular-nums hidden lg:table-cell">
                     {s.daysAllocated ?? "—"}
                   </td>
                   <td
@@ -328,13 +328,13 @@ export function StaffingsAdminClient({
                   >
                     {s.daysUsed > 0 ? s.daysUsed.toFixed(2) : "—"}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums hidden lg:table-cell">
+                  <td className="px-2 py-1.5 text-right tabular-nums hidden lg:table-cell">
                     {s.totalAmount == null
                       ? "—"
                       : `${s.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${s.currency || ""}`.trim()}
                   </td>
-                  <td className="px-3 py-2"><StaffingPill status={s.status} /></td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-2 py-1.5"><StaffingPill status={s.status} /></td>
+                  <td className="px-2 py-1.5 text-right">
                     <span className="text-brand-600 text-xs font-medium">Edit</span>
                   </td>
                 </tr>

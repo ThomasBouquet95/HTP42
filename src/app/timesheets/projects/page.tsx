@@ -45,17 +45,19 @@ export default async function MyProjectsPage() {
       {projects.length === 0 ? (
         <EmptyState />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {projects.map((p) => (
-            <ProjectCard key={p.projectCode} project={p} />
-          ))}
+        <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+          <ul className="divide-y divide-slate-100">
+            {projects.map((p) => (
+              <ProjectRow key={p.projectCode} project={p} />
+            ))}
+          </ul>
         </div>
       )}
     </main>
   );
 }
 
-function ProjectCard({ project: p }: { project: MyProjectRecord }) {
+function ProjectRow({ project: p }: { project: MyProjectRecord }) {
   const allocHours = p.daysAllocatedTotal * HOURS_PER_DAY;
   const hasAllocation = allocHours > 0;
   const pct = hasAllocation ? Math.min(100, (p.hoursActualTotal / allocHours) * 100) : 0;
@@ -71,88 +73,74 @@ function ProjectCard({ project: p }: { project: MyProjectRecord }) {
       : "";
   const frame = statusFrame(p.status);
   return (
-    <div
-      className={`rounded-lg border-l-4 border-y border-r p-4 flex flex-col ${frame.frame}`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <div className="text-[11px] uppercase tracking-wide text-slate-500 font-mono">
-              {p.projectCode}
-            </div>
-            {p.status ? (
-              <span className={`text-[10px] font-semibold uppercase tracking-wide ${frame.label}`}>
-                {p.status}
-              </span>
-            ) : null}
-          </div>
-          <div className="text-sm font-semibold text-slate-900 truncate mt-0.5">
-            {p.projectName || "—"}
-          </div>
-          {clientLabel ? (
-            <div className="text-xs text-slate-600 mt-0.5 truncate">{clientLabel}</div>
+    <li className={`grid grid-cols-12 items-center gap-3 px-4 py-3 border-l-4 ${frame.border}`}>
+      {/* Title block */}
+      <div className="col-span-12 lg:col-span-4 min-w-0">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="font-mono text-[11px] text-slate-500">{p.projectCode}</span>
+          {p.status ? (
+            <span className={`text-[10px] font-semibold uppercase tracking-wide ${frame.label}`}>
+              {p.status}
+            </span>
+          ) : null}
+          {p.isLeader ? (
+            <span className="text-[10px] font-medium text-brand-700 bg-brand-50 border border-brand-200 rounded-full px-1.5 py-0.5">
+              Project Leader
+            </span>
           ) : null}
         </div>
-        {p.isLeader ? (
-          <span className="shrink-0 inline-flex items-center rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
-            Project Leader
-          </span>
+        <div className="text-xs sm:text-sm font-semibold text-slate-900 truncate mt-0.5">
+          {p.projectName || "—"}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 mt-0.5">
+          {clientLabel ? <span className="truncate max-w-[16rem]">{clientLabel}</span> : null}
+          <span>·</span>
+          <span>{formatHumanDate(p.startDate)} → {formatHumanDate(p.endDate)}</span>
+        </div>
+        {jobTitles.length > 0 ? (
+          <div className="text-[11px] mt-0.5">
+            <span className="text-slate-500">Job title: </span>
+            <span className="font-medium text-brand-700">{jobTitles.join(", ")}</span>
+          </div>
         ) : null}
       </div>
 
-      {jobTitles.length > 0 ? (
-        <div className="mt-2 text-xs">
-          <span className="text-slate-500">Job title: </span>
-          <span className="font-medium text-brand-700">{jobTitles.join(", ")}</span>
+      {/* Allocation + progress */}
+      <div className="col-span-7 lg:col-span-4 min-w-0">
+        <div className="flex items-center gap-3 text-[11px] text-slate-500">
+          <span>
+            <span className="text-slate-500">Alloc.</span>{" "}
+            <span className="font-semibold tabular-nums text-slate-900">
+              {hasAllocation ? `${p.daysAllocatedTotal.toFixed(1)} d` : "N/A"}
+            </span>
+          </span>
+          <span>
+            <span className={over ? "text-amber-700" : "text-slate-500"}>Logged</span>{" "}
+            <span className={`font-semibold tabular-nums ${over ? "text-amber-700" : "text-slate-900"}`}>
+              {p.daysActualTotal.toFixed(1)} d
+            </span>
+          </span>
+          {hasAllocation ? (
+            <span className="tabular-nums text-slate-500">{pct.toFixed(0)}%</span>
+          ) : null}
         </div>
-      ) : null}
-
-      <div className="mt-2 text-xs text-slate-500">
-        {formatHumanDate(p.startDate)} → {formatHumanDate(p.endDate)}
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-md bg-slate-50 border border-slate-100 px-2.5 py-2">
-          <div className="text-slate-500">Allocated</div>
-          <div className="font-semibold tabular-nums text-slate-900">
-            {hasAllocation ? `${p.daysAllocatedTotal.toFixed(1)} d` : "N/A"}
-          </div>
-        </div>
-        <div
-          className={`rounded-md border px-2.5 py-2 ${
-            over ? "bg-amber-50 border-amber-200" : "bg-brand-50 border-brand-200"
-          }`}
-        >
-          <div className={over ? "text-amber-700" : "text-brand-700"}>Logged</div>
-          <div className="font-semibold tabular-nums text-slate-900">
-            {p.daysActualTotal.toFixed(1)} d
-          </div>
-        </div>
-      </div>
-
-      {hasAllocation ? (
-        <div className="mt-3">
-          <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
-            <span>Progress</span>
-            <span className="tabular-nums">{pct.toFixed(0)}%</span>
-          </div>
-          <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+        {hasAllocation ? (
+          <div className="mt-1 h-1 rounded-full bg-slate-100 overflow-hidden">
             <div
               className={`h-full ${over ? "bg-amber-500" : "bg-brand-600"}`}
               style={{ width: `${Math.max(2, pct)}%` }}
             />
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
-      {p.team.length > 0 ? (
-        <div className="mt-3">
-          <div className="text-[11px] text-slate-500 mb-1">Team</div>
-          <TeamBubbles team={p.team} />
-        </div>
-      ) : null}
+      {/* Team bubbles */}
+      <div className="col-span-5 lg:col-span-2 flex justify-start lg:justify-center">
+        {p.team.length > 0 ? <TeamBubbles team={p.team} /> : null}
+      </div>
 
-      <div className="mt-auto pt-3 flex flex-wrap items-center gap-3 text-xs">
+      {/* Actions */}
+      <div className="col-span-12 lg:col-span-2 flex flex-wrap items-center justify-end gap-3 text-[11px]">
         <SubmitTimesheetButton
           presetProjectCode={p.projectCode}
           className="text-brand-600 hover:text-brand-700 font-medium"
@@ -164,11 +152,11 @@ function ProjectCard({ project: p }: { project: MyProjectRecord }) {
             href={`/timesheets/team?project=${encodeURIComponent(p.projectCode)}`}
             className="text-brand-600 hover:text-brand-700 font-medium"
           >
-            Project Staffing Summary →
+            Summary →
           </Link>
         ) : null}
       </div>
-    </div>
+    </li>
   );
 }
 
@@ -239,26 +227,31 @@ function initials(name: string): string {
   return `${first}${last}`.toUpperCase();
 }
 
-type FrameStyle = { frame: string; label: string };
+type FrameStyle = { frame: string; border: string; label: string };
 const STATUS_FRAMES: Record<ProjectStatus, FrameStyle> = {
   "In Progress": {
     frame: "bg-emerald-50/40 border-emerald-200 border-l-emerald-500",
+    border: "border-l-emerald-500",
     label: "text-emerald-700",
   },
   "Planned": {
     frame: "bg-slate-50 border-slate-200 border-l-slate-400",
+    border: "border-l-slate-400",
     label: "text-slate-600",
   },
   "Not Started": {
     frame: "bg-slate-50 border-slate-200 border-l-slate-400",
+    border: "border-l-slate-400",
     label: "text-slate-600",
   },
   "On Hold": {
     frame: "bg-amber-50/50 border-amber-200 border-l-amber-500",
+    border: "border-l-amber-500",
     label: "text-amber-700",
   },
   "Completed": {
     frame: "bg-blue-50/40 border-blue-200 border-l-blue-500",
+    border: "border-l-blue-500",
     label: "text-blue-700",
   },
 };
@@ -267,11 +260,13 @@ function statusFrame(status: ProjectStatus | ""): FrameStyle {
   if (!status) {
     return {
       frame: "bg-white border-slate-200 border-l-slate-300",
+      border: "border-l-slate-300",
       label: "text-slate-500",
     };
   }
   return STATUS_FRAMES[status] ?? {
     frame: "bg-white border-slate-200 border-l-slate-300",
+    border: "border-l-slate-300",
     label: "text-slate-500",
   };
 }

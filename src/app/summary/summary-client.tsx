@@ -174,9 +174,9 @@ export function SummaryClient({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+    <div className="space-y-3">
+      <div className="bg-white rounded-lg border border-slate-200 p-3">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
           <Select
             label="Status"
             value={filters.status}
@@ -218,16 +218,16 @@ export function SummaryClient({
             onChange={(v) => update("to", v)}
           />
         </div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
-          <div className="text-sm text-slate-600">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
+          <div className="text-xs text-slate-600">
             {filtered.length} timesheet{filtered.length === 1 ? "" : "s"} ·{" "}
-            <span className="font-semibold text-slate-900">{total.toFixed(2)} hours</span>
+            <span className="font-semibold text-slate-900">{total.toFixed(2)} h</span>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-1.5">
             <button
               type="button"
               onClick={() => setFilters(DEFAULT_FILTERS)}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
             >
               Reset
             </button>
@@ -235,7 +235,7 @@ export function SummaryClient({
               type="button"
               onClick={exportCsv}
               disabled={filtered.length === 0}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50 disabled:opacity-50"
             >
               Export CSV
             </button>
@@ -243,7 +243,7 @@ export function SummaryClient({
               type="button"
               onClick={exportPdf}
               disabled={filtered.length === 0}
-              className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+              className="rounded-md bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
             >
               Export PDF
             </button>
@@ -284,69 +284,69 @@ export function SummaryClient({
       ) : null}
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-800">Timesheets</h2>
-          <span className="text-xs text-slate-500">
+        <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Timesheets</h2>
+          <span className="text-[11px] text-slate-500">
             For {memberLabel} <span className="font-mono">({memberCode})</span>
           </span>
         </div>
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-600">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-4 py-2 font-medium">Week</th>
-              <th className="text-left px-4 py-2 font-medium">Staffing</th>
-              <th className="text-left px-4 py-2 font-medium">Status</th>
+              <th className="text-left px-2 py-1.5 font-medium whitespace-nowrap">Week</th>
+              <th className="text-left px-2 py-1.5 font-medium">Staffing</th>
+              <th className="text-left px-2 py-1.5 font-medium">Status</th>
               {DAY_KEYS.map((k) => (
-                <th key={k} className="text-right px-2 py-2 font-medium">
+                <th key={k} className="text-right px-2 py-1.5 font-medium normal-case tracking-normal">
                   {DAY_LABELS[k].slice(0, 3)}
                 </th>
               ))}
-              <th className="text-right px-4 py-2 font-medium">Total</th>
+              <th className="text-right px-2 py-1.5 font-medium">Total</th>
               {editable ? <th /> : null}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={editable ? 10 : 9} className="text-center text-slate-500 py-10">
+                <td colSpan={editable ? 10 : 9} className="text-center text-slate-500 py-8 text-xs">
                   No timesheets match these filters.
                 </td>
               </tr>
             ) : (
-              filtered.map((t) => {
-                const d = dayIsos(t.startDate);
-                return (
-                  <tr key={t.id} className="border-t border-slate-100 align-top hover:bg-slate-50">
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {formatRange(t.startDate, t.endDate)}
+              filtered.map((t) => (
+                <tr key={t.id} className="border-t border-slate-100 align-top hover:bg-slate-50">
+                  <td className="px-2 py-1.5 whitespace-nowrap text-slate-700">
+                    {formatRange(t.startDate, t.endDate)}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <div className="font-mono text-[10px] text-slate-500">{t.staffingCode}</div>
+                    <div className="truncate max-w-[16rem]">
+                      {t.projectName || t.projectCode || "—"}
+                    </div>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <StatusBadge status={t.status} />
+                  </td>
+                  {DAY_KEYS.map((k) => (
+                    <td key={k} className="px-2 py-1.5 text-right tabular-nums">
+                      {t[k].hours ? t[k].hours.toFixed(2) : <span className="text-slate-300">—</span>}
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="font-mono text-xs text-slate-500">{t.staffingCode}</div>
-                      <div>{t.projectName || t.projectCode || "—"}</div>
+                  ))}
+                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">
+                    {t.totalHours.toFixed(2)}
+                  </td>
+                  {editable ? (
+                    <td className="px-2 py-1.5 text-right">
+                      <a
+                        href={`/timesheets/${t.id}`}
+                        className="text-brand-600 hover:text-brand-700 font-medium text-[11px]"
+                      >
+                        {t.status === "Draft" ? "Edit" : "View"}
+                      </a>
                     </td>
-                    <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
-                    {DAY_KEYS.map((k) => (
-                      <td key={k} className="px-2 py-3 text-right tabular-nums">
-                        <div className="text-[10px] text-slate-400 font-normal">{d[k].slice(5)}</div>
-                        <div>{t[k].hours ? t[k].hours.toFixed(2) : "—"}</div>
-                      </td>
-                    ))}
-                    <td className="px-4 py-3 text-right tabular-nums font-semibold">
-                      {t.totalHours.toFixed(2)}
-                    </td>
-                    {editable ? (
-                      <td className="px-4 py-3 text-right">
-                        <a
-                          href={`/timesheets/${t.id}`}
-                          className="text-brand-600 hover:text-brand-700 font-medium text-xs"
-                        >
-                          {t.status === "Draft" ? "Edit" : "View"}
-                        </a>
-                      </td>
-                    ) : null}
-                  </tr>
-                );
-              })
+                  ) : null}
+                </tr>
+              ))
             )}
           </tbody>
         </table>
@@ -367,12 +367,14 @@ function Select({
   options: { value: string; label: string }[];
 }) {
   return (
-    <label className="block text-sm">
-      <span className="block text-slate-600 mb-1">{label}</span>
+    <label className="block">
+      <span className="block text-[11px] uppercase tracking-wide font-medium text-slate-500 mb-0.5">
+        {label}
+      </span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5"
+        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs"
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -394,13 +396,15 @@ function DateInput({
   onChange: (v: string) => void;
 }) {
   return (
-    <label className="block text-sm">
-      <span className="block text-slate-600 mb-1">{label}</span>
+    <label className="block">
+      <span className="block text-[11px] uppercase tracking-wide font-medium text-slate-500 mb-0.5">
+        {label}
+      </span>
       <input
         type="date"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5"
+        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs"
       />
     </label>
   );
@@ -408,9 +412,9 @@ function DateInput({
 
 function StatCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className={`rounded-lg border p-4 ${accent ? "bg-brand-50 border-brand-200" : "bg-white border-slate-200"}`}>
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`mt-1 text-2xl font-semibold tabular-nums ${accent ? "text-brand-700" : "text-slate-900"}`}>
+    <div className={`rounded-lg border p-3 ${accent ? "bg-brand-50 border-brand-200" : "bg-white border-slate-200"}`}>
+      <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
+      <div className={`mt-0.5 text-xl font-semibold tabular-nums ${accent ? "text-brand-700" : "text-slate-900"}`}>
         {value}
       </div>
     </div>
