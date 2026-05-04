@@ -186,8 +186,8 @@ export type SowSigned = "Yes" | "In Progress" | "No";
 export const SOW_SIGNED_OPTIONS: SowSigned[] = ["Yes", "In Progress", "No"];
 
 export type PaymentDirection = "Inflow" | "Outflow";
-export type PaymentStatus = "Pending" | "Paid";
-export const PAYMENT_STATUSES: PaymentStatus[] = ["Pending", "Paid"];
+export type PaymentStatus = "Scheduled" | "To be paid" | "Paid";
+export const PAYMENT_STATUSES: PaymentStatus[] = ["Scheduled", "To be paid", "Paid"];
 
 export type AttachmentRef = {
   id: string;

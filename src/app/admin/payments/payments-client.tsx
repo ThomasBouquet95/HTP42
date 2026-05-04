@@ -32,7 +32,7 @@ const DEFAULT_FILTERS: Filters = {
   to: "",
 };
 
-const PAYMENT_STATUSES = ["Pending", "Paid"] as const;
+const PAYMENT_STATUSES = ["Scheduled", "To be paid", "Paid"] as const;
 
 const PAYMENT_TYPES = ["Client Invoice", "Subcontractor", "Expense", "Other"] as const;
 
@@ -67,7 +67,7 @@ const EMPTY_FORM: FormState = {
   invoiceValue: "",
   fxRateToEur: "",
   paymentTerms: "",
-  paymentStatus: "Pending",
+  paymentStatus: "Scheduled",
   paymentDate: "",
   dueDate: "",
   beneficiary: "",
@@ -102,6 +102,17 @@ function formatMoney(value: number | null, currency: string): string {
 
 export function PaymentsClient({ payments, projects, clients, members, currencies }: Props) {
   const router = useRouter();
+  // The Airtable API returns linked-record fields as raw record IDs, so we resolve
+  // them here against the loaded option lists instead of trusting `*Codes` arrays.
+  const projectsById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+  const clientsById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
+  const membersById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
+  const projectLabel = (p: PaymentRecord) =>
+    p.projectRecordIds.map((id) => projectsById.get(id)?.code).filter(Boolean).join(", ");
+  const clientLabel = (p: PaymentRecord) =>
+    p.clientRecordIds.map((id) => clientsById.get(id)?.name || clientsById.get(id)?.code).filter(Boolean).join(", ");
+  const memberLabel = (p: PaymentRecord) =>
+    p.memberRecordIds.map((id) => membersById.get(id)?.name || membersById.get(id)?.code).filter(Boolean).join(", ");
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [editing, setEditing] = useState<PaymentRecord | null>(null);
   const [creating, setCreating] = useState(false);
@@ -310,9 +321,9 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
         p.paymentCode,
         p.direction,
         p.type,
-        p.projectCodes.join("; "),
-        p.clientCodes.join("; "),
-        p.memberCodes.join("; "),
+        projectLabel(p),
+        clientLabel(p),
+        memberLabel(p),
         p.invoiceDate ?? "",
         p.invoiceReference,
         p.invoiceCurrency,
@@ -452,8 +463,8 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
               filtered.map((p) => {
                 const counterparty =
                   p.direction === "Inflow"
-                    ? p.clientCodes.join(", ") || "—"
-                    : p.memberCodes.join(", ") || p.beneficiary || "—";
+                    ? clientLabel(p) || "—"
+                    : memberLabel(p) || p.beneficiary || "—";
                 const tint = paymentRowTint(p.paymentStatus);
                 return (
                   <tr
@@ -464,7 +475,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                     <td className="px-2 py-1.5"><DirectionPill direction={p.direction} /></td>
                     <td className="px-2 py-1.5 hidden md:table-cell">{p.type || "—"}</td>
                     <td className="px-2 py-1.5 font-mono text-xs hidden lg:table-cell">
-                      {p.projectCodes.join(", ") || "—"}
+                      {projectLabel(p) || "—"}
                     </td>
                     <td className="px-2 py-1.5">{counterparty}</td>
                     <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell">{p.invoiceDate ?? "—"}</td>
@@ -820,9 +831,14 @@ function DueDateCell({
   );
 }
 
-function paymentRowTint(status: string): { row: string; select: "pending" | "paid" | "neutral" } {
-  if (status === "Pending") {
-    return { row: "bg-amber-50/50 hover:bg-amber-50", select: "pending" };
+type StatusTone = "scheduled" | "tobepaid" | "paid" | "neutral";
+
+function paymentRowTint(status: string): { row: string; select: StatusTone } {
+  if (status === "Scheduled") {
+    return { row: "bg-sky-50/50 hover:bg-sky-50", select: "scheduled" };
+  }
+  if (status === "To be paid") {
+    return { row: "bg-amber-50/50 hover:bg-amber-50", select: "tobepaid" };
   }
   if (status === "Paid") {
     return { row: "bg-slate-50 hover:bg-slate-100", select: "paid" };
@@ -837,22 +853,25 @@ function StatusSelect({
 }: {
   value: string;
   onChange: (next: string) => void;
-  tone: "pending" | "paid" | "neutral";
+  tone: StatusTone;
 }) {
   const toneCls =
-    tone === "pending"
+    tone === "scheduled"
+      ? "bg-sky-50 border-sky-300 text-sky-800"
+      : tone === "tobepaid"
       ? "bg-amber-50 border-amber-300 text-amber-800"
       : tone === "paid"
       ? "bg-slate-100 border-slate-300 text-slate-700"
       : "bg-white border-slate-300 text-slate-700";
   return (
     <select
-      value={value || "Pending"}
+      value={value || "Scheduled"}
       onChange={(e) => onChange(e.target.value)}
       className={`block w-full rounded-md px-1.5 py-0.5 text-[11px] font-medium ${toneCls} focus:outline-none focus:ring-1 focus:ring-brand-600`}
     >
-      <option value="Pending">Pending</option>
-      <option value="Paid">Paid</option>
+      {PAYMENT_STATUSES.map((s) => (
+        <option key={s} value={s}>{s}</option>
+      ))}
     </select>
   );
 }
