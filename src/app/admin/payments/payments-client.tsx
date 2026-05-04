@@ -180,10 +180,16 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
       if (filters.direction !== "All" && p.direction !== filters.direction) return false;
       if (filters.status !== "All" && p.paymentStatus !== filters.status) return false;
       if (filters.currency !== "All" && p.invoiceCurrency !== filters.currency) return false;
-      if (filters.dueFrom && (p.dueDate ?? "") < filters.dueFrom) return false;
-      if (filters.dueTo && (p.dueDate ?? "") > filters.dueTo) return false;
-      if (filters.paymentFrom && (p.paymentDate ?? "") < filters.paymentFrom) return false;
-      if (filters.paymentTo && (p.paymentDate ?? "") > filters.paymentTo) return false;
+      // Date range filters apply only once the user has picked BOTH ends —
+      // a half-set range previously hid every payment outside the partial bound.
+      if (filters.dueFrom && filters.dueTo) {
+        const d = p.dueDate ?? "";
+        if (!d || d < filters.dueFrom || d > filters.dueTo) return false;
+      }
+      if (filters.paymentFrom && filters.paymentTo) {
+        const d = p.paymentDate ?? "";
+        if (!d || d < filters.paymentFrom || d > filters.paymentTo) return false;
+      }
       if (q) {
         const counterparty =
           p.direction === "Inflow"
@@ -285,6 +291,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
     setFilters((prev) => ({ ...prev, [key]: value }));
   }
 
+  const DEFAULT_SORT = { key: "dueDate" as SortKey, dir: "desc" as SortDir };
   const isFiltered =
     filters.direction !== DEFAULT_FILTERS.direction ||
     filters.status !== DEFAULT_FILTERS.status ||
@@ -293,7 +300,13 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
     filters.dueTo !== "" ||
     filters.paymentFrom !== "" ||
     filters.paymentTo !== "" ||
-    filters.search !== "";
+    filters.search !== "" ||
+    sort.key !== DEFAULT_SORT.key ||
+    sort.dir !== DEFAULT_SORT.dir;
+  function resetAll() {
+    setFilters(DEFAULT_FILTERS);
+    setSort(DEFAULT_SORT);
+  }
 
   function openCreate() {
     setEditing(null);
@@ -522,12 +535,20 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
       </div>
 
       <div className="grid gap-3 lg:grid-cols-3">
-        <div className="lg:col-span-2 rounded-lg border border-slate-200 bg-white">
+        <div className="rounded-lg border border-slate-200 bg-white">
           <div className="border-b border-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Monthly inflow vs outflow (EUR)
           </div>
           <div className="p-4">
             <MonthlyBarChart rows={monthly} />
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white">
+          <div className="border-b border-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Cumulative cash flow (EUR)
+          </div>
+          <div className="p-4">
+            <CumulativeCashFlowChart rows={monthly} />
           </div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white">
@@ -595,7 +616,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             </span>
             <button
               type="button"
-              onClick={() => setFilters(DEFAULT_FILTERS)}
+              onClick={resetAll}
               disabled={!isFiltered}
               className={`inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors ${
                 isFiltered
@@ -635,7 +656,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
         </div>
         <div className="overflow-x-auto">
         <table className="w-full text-xs">
-          <thead className="border-b border-slate-100 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+          <thead className="border-b border-slate-100 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 whitespace-nowrap">
             <tr>
               <th className="px-2 py-1.5 text-left font-medium">
                 <SortHeader label="Direction" sort={sort} colKey="direction" onToggle={toggleSort} />
@@ -1000,6 +1021,101 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
   );
 }
 
+function CumulativeCashFlowChart({
+  rows,
+}: {
+  rows: [string, { inflow: number; outflow: number }][];
+}) {
+  if (rows.length === 0) {
+    return <div className="text-center text-xs text-slate-500 py-8">No data for this period.</div>;
+  }
+  // Build cumulative net (running total of inflow − outflow per month).
+  const points = rows.map(([month, v], i, arr) => {
+    const cumulative = arr.slice(0, i + 1).reduce((sum, [, vv]) => sum + (vv.inflow - vv.outflow), 0);
+    return { month, cumulative };
+  });
+  const lo = Math.min(0, ...points.map((p) => p.cumulative));
+  const hi = Math.max(0, ...points.map((p) => p.cumulative));
+  const range = hi - lo || 1;
+  const padX = 24;
+  const padY = 14;
+  const stepX = 36;
+  const chartH = 160;
+  const chartW = padX * 2 + Math.max(1, points.length - 1) * stepX;
+  const yFor = (v: number) => padY + (1 - (v - lo) / range) * (chartH - padY * 2);
+  const xFor = (i: number) => padX + i * stepX;
+  const zeroY = yFor(0);
+  const path = points
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(i)} ${yFor(p.cumulative)}`)
+    .join(" ");
+  const fmt = (n: number) =>
+    Math.abs(n) >= 1000
+      ? `€${(n / 1000).toFixed(Math.abs(n) >= 10_000 ? 0 : 1)}k`
+      : `€${n.toFixed(0)}`;
+  return (
+    <div className="overflow-x-auto">
+      <svg
+        width={Math.max(chartW, 220)}
+        height={chartH + 22}
+        role="img"
+        aria-label="Cumulative cash flow"
+      >
+        <defs>
+          <linearGradient id="cashflow-fill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#1E91F9" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#1E91F9" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <line x1={0} x2={chartW} y1={zeroY} y2={zeroY} stroke="#e2e8f0" strokeDasharray="3 3" />
+        {points.length > 1 ? (
+          <path
+            d={`${path} L ${xFor(points.length - 1)} ${zeroY} L ${xFor(0)} ${zeroY} Z`}
+            fill="url(#cashflow-fill)"
+          />
+        ) : null}
+        <path d={path} fill="none" stroke="#1E91F9" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
+        {points.map((p, i) => {
+          const above = p.cumulative >= 0;
+          return (
+            <g key={p.month}>
+              <circle
+                cx={xFor(i)}
+                cy={yFor(p.cumulative)}
+                r={3.5}
+                fill="white"
+                stroke={p.cumulative >= 0 ? "#1E91F9" : "#f87171"}
+                strokeWidth="1.8"
+              >
+                <title>{`${p.month} · Cumulative: €${p.cumulative.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
+              </circle>
+              {points.length <= 12 ? (
+                <text
+                  x={xFor(i)}
+                  y={yFor(p.cumulative) + (above ? -8 : 14)}
+                  textAnchor="middle"
+                  fontSize="9"
+                  fill="#475569"
+                >
+                  {fmt(p.cumulative)}
+                </text>
+              ) : null}
+              <text
+                x={xFor(i)}
+                y={chartH + 14}
+                textAnchor="middle"
+                fontSize="10"
+                fill="#64748b"
+              >
+                {p.month.slice(2)}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 function MonthlyBarChart({ rows }: { rows: [string, { inflow: number; outflow: number }][] }) {
   if (rows.length === 0) {
     return <div className="text-center text-xs text-slate-500 py-8">No data for this period.</div>;
@@ -1253,7 +1369,7 @@ function DateRangeHeader({
 }) {
   const [open, setOpen] = useState(false);
   const state = sort.key === colKey ? sort.dir : null;
-  const active = !!from || !!to;
+  const active = !!from && !!to;
   return (
     <span className="relative inline-flex items-center gap-1">
       <button
@@ -1538,9 +1654,16 @@ function HeaderFilterSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`max-w-[8rem] truncate rounded-md border border-transparent bg-transparent px-1 py-0 text-[11px] font-medium uppercase tracking-wide focus:outline-none focus:ring-1 focus:ring-brand-600 ${
+        className={`appearance-none truncate rounded-md border border-transparent bg-transparent px-1 py-0 pr-3 text-[10px] font-medium uppercase tracking-wide whitespace-nowrap focus:outline-none focus:ring-1 focus:ring-brand-600 ${
           active ? "text-brand-700" : "text-slate-500 hover:text-slate-900"
         }`}
+        style={{
+          backgroundImage:
+            "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'><path fill='none' stroke='%2394a3b8' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round' d='M2 3l2 2 2-2'/></svg>\")",
+          backgroundRepeat: "no-repeat",
+          backgroundPosition: "right 2px center",
+          backgroundSize: "8px 8px",
+        }}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value} className="normal-case tracking-normal text-slate-700">
