@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
-import { createPayment, CURRENCIES, type Currency, type PaymentDirection } from "@/lib/airtable";
+import { createPayment, CURRENCIES, PAYMENT_STATUSES, type Currency, type PaymentDirection, type PaymentStatus } from "@/lib/airtable";
 
 const nullableNumber = z.union([z.number(), z.null()]).optional();
 const nullableDate = z.union([z.string().trim().min(1), z.null()]).optional();
@@ -19,7 +19,9 @@ const schema = z.object({
   fxRateToEur: nullableNumber,
   invoiceValueEur: nullableNumber,
   paymentTerms: z.string().trim().max(200).default(""),
-  paymentStatus: z.string().trim().max(120).default(""),
+  paymentStatus: z
+    .union([z.enum(PAYMENT_STATUSES as [string, ...string[]]), z.literal("")])
+    .default(""),
   paymentDate: nullableDate,
   dueDate: nullableDate,
   beneficiary: z.string().trim().max(200).default(""),
@@ -52,7 +54,7 @@ export async function POST(request: Request) {
     fxRateToEur: d.fxRateToEur ?? null,
     invoiceValueEur: d.invoiceValueEur ?? null,
     paymentTerms: d.paymentTerms,
-    paymentStatus: d.paymentStatus as "" | "Paid" | "To be paid" | "Payment executed" | "Overdue" | "Unpaid" | "Pending",
+    paymentStatus: d.paymentStatus as PaymentStatus | "",
     paymentDate: d.paymentDate ?? null,
     dueDate: d.dueDate ?? null,
     beneficiary: d.beneficiary,

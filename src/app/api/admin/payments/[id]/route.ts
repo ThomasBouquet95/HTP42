@@ -5,6 +5,7 @@ import {
   CURRENCIES,
   deletePayment,
   getPaymentById,
+  PAYMENT_STATUSES,
   updatePayment,
   updatePaymentStatus,
   type Currency,
@@ -12,17 +13,9 @@ import {
   type PaymentStatus,
 } from "@/lib/airtable";
 
-const PAYMENT_STATUSES = [
-  "Paid",
-  "To be paid",
-  "Payment executed",
-  "Overdue",
-  "Unpaid",
-  "Pending",
-] as const;
-
 const patchSchema = z.object({
-  paymentStatus: z.union([z.enum(PAYMENT_STATUSES), z.literal("")]),
+  paymentStatus: z
+    .union([z.enum(PAYMENT_STATUSES as [string, ...string[]]), z.literal("")]),
 });
 
 export async function PATCH(
@@ -97,7 +90,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     fxRateToEur: d.fxRateToEur ?? null,
     invoiceValueEur: d.invoiceValueEur ?? null,
     paymentTerms: d.paymentTerms,
-    paymentStatus: d.paymentStatus as "" | "Paid" | "To be paid" | "Payment executed" | "Overdue" | "Unpaid" | "Pending",
+    paymentStatus: d.paymentStatus as PaymentStatus | "",
     paymentDate: d.paymentDate ?? null,
     dueDate: d.dueDate ?? null,
     beneficiary: d.beneficiary,

@@ -32,35 +32,7 @@ const DEFAULT_FILTERS: Filters = {
   to: "",
 };
 
-const PAYMENT_STATUSES = [
-  "Paid",
-  "To be paid",
-  "Payment executed",
-  "Overdue",
-  "Unpaid",
-  "Pending",
-] as const;
-
-// Inflow = money coming TO HTP42; "To be paid" / "Payment executed" don't apply.
-// Outflow = money going FROM HTP42; "To be paid" / "Payment executed" do apply.
-const INFLOW_STATUSES = ["Pending", "Paid", "Overdue", "Unpaid"] as const;
-const OUTFLOW_STATUSES = [
-  "To be paid",
-  "Payment executed",
-  "Paid",
-  "Pending",
-  "Overdue",
-  "Unpaid",
-] as const;
-
-function statusesForDirection(
-  direction: "" | "Inflow" | "Outflow",
-): readonly string[] {
-  if (direction === "Inflow") return INFLOW_STATUSES;
-  if (direction === "Outflow") return OUTFLOW_STATUSES;
-  // Direction unset: show empty so the user picks direction first.
-  return [];
-}
+const PAYMENT_STATUSES = ["Pending", "Paid"] as const;
 
 const PAYMENT_TYPES = ["Client Invoice", "Subcontractor", "Expense", "Other"] as const;
 
@@ -95,7 +67,7 @@ const EMPTY_FORM: FormState = {
   invoiceValue: "",
   fxRateToEur: "",
   paymentTerms: "",
-  paymentStatus: "",
+  paymentStatus: "Pending",
   paymentDate: "",
   dueDate: "",
   beneficiary: "",
@@ -571,16 +543,9 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
           <FormSelect
             label="Direction"
             value={form.direction}
-            onChange={(v) => {
-              const next = v as FormState["direction"];
-              setForm((f) => {
-                // Clear status if it's no longer valid for the new direction.
-                const allowed = statusesForDirection(next) as readonly string[];
-                const keep = allowed.includes(f.paymentStatus);
-                return { ...f, direction: next, paymentStatus: keep ? f.paymentStatus : "" };
-              });
-            }}
+            onChange={(v) => updateField("direction", v as FormState["direction"])}
             required
+            hint="Inflow = money coming in (from clients). Outflow = money going out (to subcontractors / suppliers)."
           >
             <option value="">—</option>
             <option value="Inflow">Inflow</option>
@@ -661,16 +626,8 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             label="Payment status"
             value={form.paymentStatus}
             onChange={(v) => updateField("paymentStatus", v)}
-            hint={
-              !form.direction
-                ? "Pick a direction first to see the right statuses."
-                : form.direction === "Inflow"
-                ? "Inflow: money received from clients."
-                : "Outflow: money paid out to subcontractors / suppliers."
-            }
           >
-            <option value="">—</option>
-            {statusesForDirection(form.direction).map((s) => (
+            {PAYMENT_STATUSES.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </FormSelect>
@@ -826,8 +783,7 @@ function DueDateCell({
   status: string;
 }) {
   if (!dueDate) return <span className="text-slate-300">—</span>;
-  const SETTLED = new Set(["Paid", "Payment executed"]);
-  const isSettled = SETTLED.has(status);
+  const isSettled = status === "Paid";
   // Compare ISO date strings against today (UTC).
   const today = new Date().toISOString().slice(0, 10);
   const dayMs = 24 * 60 * 60 * 1000;
@@ -864,15 +820,12 @@ function DueDateCell({
   );
 }
 
-function paymentRowTint(status: string): { row: string; select: "pending" | "executed" | "neutral" } {
-  // Pending = orange tint; executed/received = light grey; otherwise plain.
-  const PENDING = new Set(["To be paid", "Pending", "Unpaid", "Overdue"]);
-  const EXECUTED = new Set(["Paid", "Payment executed"]);
-  if (PENDING.has(status)) {
+function paymentRowTint(status: string): { row: string; select: "pending" | "paid" | "neutral" } {
+  if (status === "Pending") {
     return { row: "bg-amber-50/50 hover:bg-amber-50", select: "pending" };
   }
-  if (EXECUTED.has(status)) {
-    return { row: "bg-slate-50 hover:bg-slate-100", select: "executed" };
+  if (status === "Paid") {
+    return { row: "bg-slate-50 hover:bg-slate-100", select: "paid" };
   }
   return { row: "hover:bg-slate-50", select: "neutral" };
 }
@@ -884,33 +837,22 @@ function StatusSelect({
 }: {
   value: string;
   onChange: (next: string) => void;
-  tone: "pending" | "executed" | "neutral";
+  tone: "pending" | "paid" | "neutral";
 }) {
   const toneCls =
     tone === "pending"
       ? "bg-amber-50 border-amber-300 text-amber-800"
-      : tone === "executed"
+      : tone === "paid"
       ? "bg-slate-100 border-slate-300 text-slate-700"
       : "bg-white border-slate-300 text-slate-700";
   return (
     <select
-      value={value}
+      value={value || "Pending"}
       onChange={(e) => onChange(e.target.value)}
       className={`block w-full rounded-md px-1.5 py-0.5 text-[11px] font-medium ${toneCls} focus:outline-none focus:ring-1 focus:ring-brand-600`}
     >
-      <option value="">—</option>
-      {[
-        "Paid",
-        "To be paid",
-        "Payment executed",
-        "Overdue",
-        "Unpaid",
-        "Pending",
-      ].map((s) => (
-        <option key={s} value={s}>
-          {s}
-        </option>
-      ))}
+      <option value="Pending">Pending</option>
+      <option value="Paid">Paid</option>
     </select>
   );
 }
