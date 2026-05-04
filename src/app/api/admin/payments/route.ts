@@ -21,6 +21,7 @@ const schema = z.object({
   paymentTerms: z.string().trim().max(200).default(""),
   paymentStatus: z.string().trim().max(120).default(""),
   paymentDate: nullableDate,
+  dueDate: nullableDate,
   beneficiary: z.string().trim().max(200).default(""),
   comment: z.string().max(5000).default(""),
 });
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
     paymentTerms: d.paymentTerms,
     paymentStatus: d.paymentStatus as "" | "Paid" | "To be paid" | "Payment executed" | "Overdue" | "Unpaid" | "Pending",
     paymentDate: d.paymentDate ?? null,
+    dueDate: d.dueDate ?? null,
     beneficiary: d.beneficiary,
     comment: d.comment,
   });

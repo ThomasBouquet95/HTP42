@@ -116,6 +116,7 @@ export const FIELDS = {
     paymentTerms: "Payment Terms",
     paymentStatus: "Payment Status",
     paymentDate: "Payment Date",
+    dueDate: "Due Date",
     beneficiary: "Beneficiary",
     comment: "Comment",
   },
@@ -274,6 +275,7 @@ export type PaymentRecord = {
   paymentTerms: string;
   paymentStatus: PaymentStatus | "";
   paymentDate: string | null;
+  dueDate: string | null;
   beneficiary: string;
   comment: string;
 };
@@ -936,6 +938,7 @@ function paymentFromRecord(r: AirtableRecord<FieldSet>): PaymentRecord {
     paymentTerms: str(r, FIELDS.payments.paymentTerms),
     paymentStatus: str(r, FIELDS.payments.paymentStatus) as PaymentStatus | "",
     paymentDate: dateOrNull(r, FIELDS.payments.paymentDate),
+    dueDate: dateOrNull(r, FIELDS.payments.dueDate),
     beneficiary: str(r, FIELDS.payments.beneficiary),
     comment: str(r, FIELDS.payments.comment),
   };
@@ -972,6 +975,7 @@ export type PaymentInput = {
   paymentTerms: string;
   paymentStatus: PaymentStatus | "";
   paymentDate: string | null;
+  dueDate: string | null;
   beneficiary: string;
   comment: string;
 };
@@ -992,6 +996,7 @@ function paymentFields(input: PaymentInput): Record<string, unknown> {
     [FIELDS.payments.paymentTerms]: input.paymentTerms,
     [FIELDS.payments.paymentStatus]: input.paymentStatus === "" ? null : input.paymentStatus,
     [FIELDS.payments.paymentDate]: input.paymentDate,
+    [FIELDS.payments.dueDate]: input.dueDate,
     [FIELDS.payments.beneficiary]: input.beneficiary,
     [FIELDS.payments.comment]: input.comment,
   };

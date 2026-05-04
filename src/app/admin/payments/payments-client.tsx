@@ -41,6 +41,27 @@ const PAYMENT_STATUSES = [
   "Pending",
 ] as const;
 
+// Inflow = money coming TO HTP42; "To be paid" / "Payment executed" don't apply.
+// Outflow = money going FROM HTP42; "To be paid" / "Payment executed" do apply.
+const INFLOW_STATUSES = ["Pending", "Paid", "Overdue", "Unpaid"] as const;
+const OUTFLOW_STATUSES = [
+  "To be paid",
+  "Payment executed",
+  "Paid",
+  "Pending",
+  "Overdue",
+  "Unpaid",
+] as const;
+
+function statusesForDirection(
+  direction: "" | "Inflow" | "Outflow",
+): readonly string[] {
+  if (direction === "Inflow") return INFLOW_STATUSES;
+  if (direction === "Outflow") return OUTFLOW_STATUSES;
+  // Direction unset: show empty so the user picks direction first.
+  return [];
+}
+
 const PAYMENT_TYPES = ["Client Invoice", "Subcontractor", "Expense", "Other"] as const;
 
 type FormState = {
@@ -57,6 +78,7 @@ type FormState = {
   paymentTerms: string;
   paymentStatus: string;
   paymentDate: string;
+  dueDate: string;
   beneficiary: string;
   comment: string;
 };
@@ -75,6 +97,7 @@ const EMPTY_FORM: FormState = {
   paymentTerms: "",
   paymentStatus: "",
   paymentDate: "",
+  dueDate: "",
   beneficiary: "",
   comment: "",
 };
@@ -94,6 +117,7 @@ function fromRecord(p: PaymentRecord): FormState {
     paymentTerms: p.paymentTerms,
     paymentStatus: p.paymentStatus,
     paymentDate: p.paymentDate ?? "",
+    dueDate: p.dueDate ?? "",
     beneficiary: p.beneficiary,
     comment: p.comment,
   };
@@ -244,6 +268,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
         paymentTerms: form.paymentTerms,
         paymentStatus: form.paymentStatus,
         paymentDate: form.paymentDate || null,
+        dueDate: form.dueDate || null,
         beneficiary: form.beneficiary,
         comment: form.comment,
       };
@@ -437,6 +462,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
               <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Project</th>
               <th className="text-left px-2 py-1.5 font-medium">Counterparty</th>
               <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Invoice date</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Due date</th>
               <th className="text-right px-2 py-1.5 font-medium">Amount</th>
               <th className="text-right px-2 py-1.5 font-medium hidden md:table-cell">EUR</th>
               <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Status</th>
@@ -446,7 +472,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center text-slate-500 py-10">
+                <td colSpan={11} className="text-center text-slate-500 py-10">
                   No payments match these filters.
                 </td>
               </tr>
@@ -470,6 +496,9 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                     </td>
                     <td className="px-2 py-1.5">{counterparty}</td>
                     <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell">{p.invoiceDate ?? "—"}</td>
+                    <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell">
+                      <DueDateCell dueDate={p.dueDate} status={p.paymentStatus} />
+                    </td>
                     <td className="px-2 py-1.5 text-right tabular-nums">
                       {formatMoney(p.invoiceValue, p.invoiceCurrency)}
                     </td>
@@ -542,7 +571,15 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
           <FormSelect
             label="Direction"
             value={form.direction}
-            onChange={(v) => updateField("direction", v as FormState["direction"])}
+            onChange={(v) => {
+              const next = v as FormState["direction"];
+              setForm((f) => {
+                // Clear status if it's no longer valid for the new direction.
+                const allowed = statusesForDirection(next) as readonly string[];
+                const keep = allowed.includes(f.paymentStatus);
+                return { ...f, direction: next, paymentStatus: keep ? f.paymentStatus : "" };
+              });
+            }}
             required
           >
             <option value="">—</option>
@@ -624,12 +661,25 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             label="Payment status"
             value={form.paymentStatus}
             onChange={(v) => updateField("paymentStatus", v)}
+            hint={
+              !form.direction
+                ? "Pick a direction first to see the right statuses."
+                : form.direction === "Inflow"
+                ? "Inflow: money received from clients."
+                : "Outflow: money paid out to subcontractors / suppliers."
+            }
           >
             <option value="">—</option>
-            {PAYMENT_STATUSES.map((s) => (
+            {statusesForDirection(form.direction).map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </FormSelect>
+          <FormField
+            label="Due date"
+            value={form.dueDate}
+            onChange={(v) => updateField("dueDate", v)}
+            type="date"
+          />
           <FormField
             label="Payment date"
             value={form.paymentDate}
@@ -764,6 +814,52 @@ function LegendDot({ color, label }: { color: string; label: string }) {
     <span className="inline-flex items-center gap-1">
       <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
       {label}
+    </span>
+  );
+}
+
+function DueDateCell({
+  dueDate,
+  status,
+}: {
+  dueDate: string | null;
+  status: string;
+}) {
+  if (!dueDate) return <span className="text-slate-300">—</span>;
+  const SETTLED = new Set(["Paid", "Payment executed"]);
+  const isSettled = SETTLED.has(status);
+  // Compare ISO date strings against today (UTC).
+  const today = new Date().toISOString().slice(0, 10);
+  const dayMs = 24 * 60 * 60 * 1000;
+  const diffDays = Math.floor(
+    (new Date(dueDate + "T00:00:00Z").getTime() - new Date(today + "T00:00:00Z").getTime()) /
+      dayMs,
+  );
+  let cls = "text-slate-700";
+  let chip: string | null = null;
+  if (!isSettled) {
+    if (diffDays < 0) {
+      cls = "text-red-700 font-semibold";
+      chip = `${Math.abs(diffDays)}d overdue`;
+    } else if (diffDays <= 7) {
+      cls = "text-amber-700 font-semibold";
+      chip = diffDays === 0 ? "due today" : `in ${diffDays}d`;
+    }
+  }
+  return (
+    <span className={`inline-flex items-center gap-1 ${cls}`}>
+      <span className="tabular-nums">{dueDate}</span>
+      {chip ? (
+        <span
+          className={`text-[10px] font-medium rounded px-1 py-0.5 ${
+            diffDays < 0
+              ? "bg-red-50 text-red-700 border border-red-200"
+              : "bg-amber-50 text-amber-700 border border-amber-200"
+          }`}
+        >
+          {chip}
+        </span>
+      ) : null}
     </span>
   );
 }
