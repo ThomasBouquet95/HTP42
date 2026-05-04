@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
@@ -20,8 +20,10 @@ type Filters = {
   direction: "All" | "Inflow" | "Outflow";
   status: string;
   currency: string;
-  from: string;
-  to: string;
+  dueFrom: string;
+  dueTo: string;
+  paymentFrom: string;
+  paymentTo: string;
   search: string;
 };
 
@@ -29,8 +31,10 @@ const DEFAULT_FILTERS: Filters = {
   direction: "All",
   status: "All",
   currency: "All",
-  from: "",
-  to: "",
+  dueFrom: "",
+  dueTo: "",
+  paymentFrom: "",
+  paymentTo: "",
   search: "",
 };
 
@@ -125,6 +129,17 @@ function formatMoney(value: number | null, currency: string): string {
 
 export function PaymentsClient({ payments, projects, clients, members, currencies }: Props) {
   const router = useRouter();
+  // Local mirror of the server-side payment list so we can apply optimistic
+  // updates (e.g. inline status change) without a full refresh.
+  const [rows, setRows] = useState<PaymentRecord[]>(payments);
+  useEffect(() => setRows(payments), [payments]);
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<{ kind: "error" | "ok"; msg: string } | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
   // The Airtable API returns linked-record fields as raw record IDs, so we resolve
   // them here against the loaded option lists instead of trusting `*Codes` arrays.
   const projectsById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
@@ -151,24 +166,26 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
 
   const statusOptions = useMemo(() => {
     const set = new Set<string>(PAYMENT_STATUSES);
-    for (const p of payments) if (p.paymentStatus) set.add(p.paymentStatus);
+    for (const p of rows) if (p.paymentStatus) set.add(p.paymentStatus);
     return [...set].sort();
-  }, [payments]);
+  }, [rows]);
 
   const currencyOptions = useMemo(() => {
     const set = new Set<string>(currencies as readonly string[]);
-    for (const p of payments) if (p.invoiceCurrency) set.add(p.invoiceCurrency);
+    for (const p of rows) if (p.invoiceCurrency) set.add(p.invoiceCurrency);
     return [...set].sort();
-  }, [payments, currencies]);
+  }, [rows, currencies]);
 
   const filtered = useMemo(() => {
     const q = filters.search.trim().toLowerCase();
-    return payments.filter((p) => {
+    return rows.filter((p) => {
       if (filters.direction !== "All" && p.direction !== filters.direction) return false;
       if (filters.status !== "All" && p.paymentStatus !== filters.status) return false;
       if (filters.currency !== "All" && p.invoiceCurrency !== filters.currency) return false;
-      if (filters.from && (p.invoiceDate ?? "") < filters.from) return false;
-      if (filters.to && (p.invoiceDate ?? "") > filters.to) return false;
+      if (filters.dueFrom && (p.dueDate ?? "") < filters.dueFrom) return false;
+      if (filters.dueTo && (p.dueDate ?? "") > filters.dueTo) return false;
+      if (filters.paymentFrom && (p.paymentDate ?? "") < filters.paymentFrom) return false;
+      if (filters.paymentTo && (p.paymentDate ?? "") > filters.paymentTo) return false;
       if (q) {
         const counterparty =
           p.direction === "Inflow"
@@ -190,7 +207,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
       }
       return true;
     });
-  }, [payments, filters, clientLabel, memberLabel, projectLabel]);
+  }, [rows, filters, clientLabel, memberLabel, projectLabel]);
 
   const sorted = useMemo(() => {
     if (!sort.key) return filtered;
@@ -299,6 +316,28 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  const [fxLoading, setFxLoading] = useState(false);
+  async function pickCurrency(currency: string) {
+    setForm((f) => ({ ...f, invoiceCurrency: currency }));
+    if (!currency) return;
+    if (currency === "EUR") {
+      setForm((f) => ({ ...f, invoiceCurrency: currency, fxRateToEur: "1.00" }));
+      return;
+    }
+    setFxLoading(true);
+    try {
+      const res = await fetch(`/api/fx-rate?currency=${encodeURIComponent(currency)}`);
+      const data = (await res.json().catch(() => ({}))) as { rate?: number };
+      if (res.ok && typeof data.rate === "number") {
+        setForm((f) => ({ ...f, invoiceCurrency: currency, fxRateToEur: data.rate!.toFixed(2) }));
+      }
+    } catch {
+      // user can still type the rate manually
+    } finally {
+      setFxLoading(false);
+    }
+  }
+
   const derivedValueEur = useMemo(() => {
     const v = form.invoiceValue === "" ? null : Number(form.invoiceValue);
     const fx = form.fxRateToEur === "" ? null : Number(form.fxRateToEur);
@@ -307,6 +346,12 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
   }, [form.invoiceValue, form.fxRateToEur]);
 
   async function updateStatus(id: string, status: string) {
+    const previous = rows.find((r) => r.id === id)?.paymentStatus ?? "";
+    if (previous === status) return;
+    setRows((rs) =>
+      rs.map((r) => (r.id === id ? { ...r, paymentStatus: status as PaymentRecord["paymentStatus"] } : r)),
+    );
+    setSavingIds((s) => new Set(s).add(id));
     try {
       const res = await fetch(`/api/admin/payments/${id}`, {
         method: "PATCH",
@@ -315,11 +360,20 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
       });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? "Status update failed.");
+        throw new Error(d.error ?? `Update failed (HTTP ${res.status})`);
       }
-      router.refresh();
-    } catch {
-      // No-op on transient errors; refresh leaves the previous status visible.
+      setToast({ kind: "ok", msg: "Status updated" });
+    } catch (e) {
+      setRows((rs) =>
+        rs.map((r) => (r.id === id ? { ...r, paymentStatus: previous as PaymentRecord["paymentStatus"] } : r)),
+      );
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Status update failed" });
+    } finally {
+      setSavingIds((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
     }
   }
 
@@ -482,9 +536,13 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
         </div>
       </div>
 
-      <div className="bg-white rounded-lg border border-slate-200">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-2 py-1.5">
-          <div role="tablist" aria-label="Filter payments by direction" className="flex items-center gap-1">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-3 py-2">
+          <div
+            role="tablist"
+            aria-label="Filter payments by direction"
+            className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5"
+          >
             {(["All", "Inflow", "Outflow"] as const).map((d) => {
               const active = filters.direction === d;
               const label = d === "All" ? "All" : d === "Inflow" ? "Inflows" : "Outflows";
@@ -495,10 +553,10 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                   role="tab"
                   aria-selected={active}
                   onClick={() => update("direction", d)}
-                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  className={`px-3 py-1 text-xs font-medium rounded-full transition-all ${
                     active
-                      ? "bg-brand-600 text-white"
-                      : "text-slate-600 hover:bg-slate-100"
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
                   {label}
@@ -514,12 +572,12 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                 placeholder="Search…"
                 value={filters.search}
                 onChange={(e) => update("search", e.target.value)}
-                className="w-44 rounded-md border border-slate-300 bg-white pl-7 pr-2 py-1 text-xs text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                className="h-8 w-48 rounded-full border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs text-slate-700 placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20"
               />
               <svg
                 aria-hidden
                 viewBox="0 0 16 16"
-                className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+                className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="1.6"
@@ -528,24 +586,37 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                 <path d="m11 11 3 3" strokeLinecap="round" />
               </svg>
             </div>
-            <DateRangeFilter
-              from={filters.from}
-              to={filters.to}
-              onFrom={(v) => update("from", v)}
-              onTo={(v) => update("to", v)}
-            />
             <span className="hidden sm:inline text-[11px] text-slate-500 px-1">
               {sorted.length} payment{sorted.length === 1 ? "" : "s"}
             </span>
-            <Button size="sm" onClick={() => setFilters(DEFAULT_FILTERS)}>
+            <button
+              type="button"
+              onClick={() => setFilters(DEFAULT_FILTERS)}
+              className="h-8 rounded-full px-3 text-xs font-medium text-slate-600 hover:bg-slate-100"
+            >
               Reset
-            </Button>
-            <Button size="sm" onClick={exportCsv} disabled={sorted.length === 0}>
-              Export CSV
-            </Button>
-            <Button tone="primary" size="sm" onClick={openCreate}>
-              + New payment
-            </Button>
+            </button>
+            <button
+              type="button"
+              onClick={exportCsv}
+              disabled={sorted.length === 0}
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
+            >
+              <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+                <path d="M8 2v8m0 0L5 7m3 3 3-3M3 12v1.5A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5V12" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Export
+            </button>
+            <button
+              type="button"
+              onClick={openCreate}
+              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-brand-600 px-3 text-xs font-medium text-white shadow-sm transition-colors hover:bg-brand-700"
+            >
+              <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                <path d="M8 3v10M3 8h10" strokeLinecap="round" />
+              </svg>
+              New payment
+            </button>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -568,10 +639,28 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                 <SortHeader label="Counterparty" sort={sort} colKey="counterparty" onToggle={toggleSort} />
               </th>
               <th className="px-2 py-1.5 text-left font-medium hidden md:table-cell">
-                <SortHeader label="Due date" sort={sort} colKey="dueDate" onToggle={toggleSort} />
+                <DateRangeHeader
+                  label="Due date"
+                  colKey="dueDate"
+                  sort={sort}
+                  onToggle={toggleSort}
+                  from={filters.dueFrom}
+                  to={filters.dueTo}
+                  onFrom={(v) => update("dueFrom", v)}
+                  onTo={(v) => update("dueTo", v)}
+                />
               </th>
               <th className="px-2 py-1.5 text-left font-medium hidden md:table-cell">
-                <SortHeader label="Payment date" sort={sort} colKey="paymentDate" onToggle={toggleSort} />
+                <DateRangeHeader
+                  label="Payment date"
+                  colKey="paymentDate"
+                  sort={sort}
+                  onToggle={toggleSort}
+                  from={filters.paymentFrom}
+                  to={filters.paymentTo}
+                  onFrom={(v) => update("paymentFrom", v)}
+                  onTo={(v) => update("paymentTo", v)}
+                />
               </th>
               <th className="px-2 py-1.5 text-right font-medium">
                 <HeaderFilterSelect
@@ -661,6 +750,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                         onChange={(next) => updateStatus(p.id, next)}
                         tone={tint.select}
                         direction={p.direction}
+                        saving={savingIds.has(p.id)}
                       />
                     </td>
                     <td className="px-2 py-1.5 text-right">
@@ -721,7 +811,6 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
               value={form.direction}
               onChange={(v) => updateField("direction", v as FormState["direction"])}
               required
-              hint="Inflow = money in (from clients). Outflow = money out (to subcontractors / suppliers)."
             >
               <option value="">—</option>
               <option value="Inflow">Inflow</option>
@@ -783,7 +872,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             <FormSelect
               label="Currency"
               value={form.invoiceCurrency}
-              onChange={(v) => updateField("invoiceCurrency", v)}
+              onChange={pickCurrency}
             >
               <option value="">—</option>
               {currencies.map((c) => (
@@ -801,6 +890,15 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
               value={form.fxRateToEur}
               onChange={(v) => updateField("fxRateToEur", v)}
               type="number"
+              hint={
+                fxLoading ? (
+                  <span className="text-slate-500">Fetching latest rate…</span>
+                ) : form.invoiceCurrency && form.invoiceCurrency !== "EUR" && form.fxRateToEur ? (
+                  <span className="text-slate-400">
+                    Auto-sourced from open.er-api.com — editable.
+                  </span>
+                ) : null
+              }
             />
             <FormField
               label="Value EUR (auto)"
@@ -878,6 +976,19 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
         onCancel={() => (deleting ? undefined : setDeleteTarget(null))}
         onConfirm={confirmDelete}
       />
+
+      {toast ? (
+        <div
+          role="status"
+          className={`pointer-events-none fixed bottom-4 right-4 z-50 rounded-lg border px-3 py-2 text-xs shadow-lg ${
+            toast.kind === "error"
+              ? "border-red-300 bg-red-50 text-red-800"
+              : "border-emerald-300 bg-emerald-50 text-emerald-800"
+          }`}
+        >
+          {toast.msg}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1036,11 +1147,13 @@ function StatusSelect({
   onChange,
   tone,
   direction,
+  saving,
 }: {
   value: string;
   onChange: (next: string) => void;
   tone: StatusTone;
   direction: "" | "Inflow" | "Outflow";
+  saving?: boolean;
 }) {
   const toneCls =
     tone === "scheduled"
@@ -1051,15 +1164,32 @@ function StatusSelect({
       ? "bg-slate-100 border-slate-300 text-slate-700"
       : "bg-white border-slate-300 text-slate-700";
   return (
-    <select
-      value={value || "Scheduled"}
-      onChange={(e) => onChange(e.target.value)}
-      className={`block w-full rounded-md px-1.5 py-0.5 text-[11px] font-medium ${toneCls} focus:outline-none focus:ring-1 focus:ring-brand-600`}
-    >
-      {PAYMENT_STATUSES.map((s) => (
-        <option key={s} value={s}>{statusLabel(s, direction)}</option>
-      ))}
-    </select>
+    <span className="relative inline-flex w-full items-center">
+      <select
+        value={value || "Scheduled"}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={saving}
+        className={`block w-full appearance-none rounded-full border px-2.5 py-1 pr-6 text-[11px] font-medium transition-colors ${toneCls} ${
+          saving ? "opacity-60" : ""
+        } focus:outline-none focus:ring-2 focus:ring-brand-500/30`}
+      >
+        {PAYMENT_STATUSES.map((s) => (
+          <option key={s} value={s}>{statusLabel(s, direction)}</option>
+        ))}
+      </select>
+      <span className="pointer-events-none absolute right-1.5 inline-flex h-3 w-3 items-center justify-center text-[10px] opacity-70">
+        {saving ? <Spinner /> : "▾"}
+      </span>
+    </span>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3 w-3 animate-spin" fill="none" stroke="currentColor" strokeWidth="3">
+      <circle cx="12" cy="12" r="9" opacity="0.25" />
+      <path d="M21 12a9 9 0 0 0-9-9" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -1095,35 +1225,102 @@ function DirectionPill({ direction }: { direction: string }) {
   );
 }
 
-function DateRangeFilter({
+function DateRangeHeader({
+  label,
+  colKey,
+  sort,
+  onToggle,
   from,
   to,
   onFrom,
   onTo,
 }: {
+  label: string;
+  colKey: SortKey;
+  sort: { key: SortKey | null; dir: "asc" | "desc" };
+  onToggle: (key: SortKey) => void;
   from: string;
   to: string;
   onFrom: (v: string) => void;
   onTo: (v: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const state = sort.key === colKey ? sort.dir : null;
+  const active = !!from || !!to;
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-xs text-slate-700">
-      <span className="text-[10px] uppercase tracking-wide text-slate-400">Invoice</span>
-      <input
-        type="date"
-        aria-label="From"
-        value={from}
-        onChange={(e) => onFrom(e.target.value)}
-        className="bg-transparent text-xs text-slate-700 focus:outline-none"
-      />
-      <span className="text-slate-400">→</span>
-      <input
-        type="date"
-        aria-label="To"
-        value={to}
-        onChange={(e) => onTo(e.target.value)}
-        className="bg-transparent text-xs text-slate-700 focus:outline-none"
-      />
+    <span className="relative inline-flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => onToggle(colKey)}
+        className="inline-flex items-center uppercase tracking-wide text-slate-500 hover:text-slate-900"
+      >
+        <span className={active ? "text-brand-700" : ""}>{label}</span>
+        <SortIcon state={state} />
+      </button>
+      <button
+        type="button"
+        aria-label={`Filter ${label}`}
+        onClick={() => setOpen((o) => !o)}
+        className={`inline-flex h-4 w-4 items-center justify-center rounded-md hover:bg-slate-200 ${
+          active ? "text-brand-700" : "text-slate-400"
+        }`}
+      >
+        <svg viewBox="0 0 16 16" className="h-3 w-3" fill="currentColor" aria-hidden>
+          <path d="M2 3h12l-4.5 6v4l-3 1V9z" />
+        </svg>
+      </button>
+      {open ? (
+        <>
+          <button
+            type="button"
+            aria-label="Close filter"
+            className="fixed inset-0 z-40 cursor-default"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              {label} range
+            </div>
+            <label className="mb-2 block text-[11px] text-slate-600 normal-case tracking-normal">
+              From
+              <input
+                type="date"
+                value={from}
+                onChange={(e) => onFrom(e.target.value)}
+                className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+              />
+            </label>
+            <label className="block text-[11px] text-slate-600 normal-case tracking-normal">
+              To
+              <input
+                type="date"
+                value={to}
+                onChange={(e) => onTo(e.target.value)}
+                className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+              />
+            </label>
+            <div className="mt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onFrom("");
+                  onTo("");
+                }}
+                className="rounded-md px-2 py-0.5 text-[11px] normal-case tracking-normal text-slate-600 hover:bg-slate-100"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="rounded-md bg-brand-600 px-2 py-0.5 text-[11px] font-medium normal-case tracking-normal text-white hover:bg-brand-700"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </>
+      ) : null}
     </span>
   );
 }
