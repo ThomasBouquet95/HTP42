@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
@@ -362,43 +362,6 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
 
   return (
     <div className="space-y-5">
-      <div className="bg-white rounded-lg border border-slate-200 p-3 sm:p-4">
-        <div className="grid gap-2 sm:gap-3 grid-cols-2 lg:grid-cols-4">
-          <FilterSelect label="Status" value={filters.status} onChange={(v) => update("status", v)}>
-            <option value="All">All statuses</option>
-            {statusOptions.map((s) => (
-              <option key={s} value={s}>
-                {filters.direction === "Inflow" ? statusLabel(s, "Inflow") : s}
-              </option>
-            ))}
-          </FilterSelect>
-          <FilterSelect label="Currency" value={filters.currency} onChange={(v) => update("currency", v)}>
-            <option value="All">All currencies</option>
-            {currencyOptions.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </FilterSelect>
-          <FilterDate label="From" value={filters.from} onChange={(v) => update("from", v)} />
-          <FilterDate label="To" value={filters.to} onChange={(v) => update("to", v)} />
-        </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
-          <div className="text-xs text-slate-600">
-            {filtered.length} payment{filtered.length === 1 ? "" : "s"}
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" onClick={() => setFilters(DEFAULT_FILTERS)}>
-              Reset
-            </Button>
-            <Button size="sm" onClick={exportCsv} disabled={filtered.length === 0}>
-              Export CSV
-            </Button>
-            <Button tone="primary" size="sm" onClick={openCreate}>
-              + New payment
-            </Button>
-          </div>
-        </div>
-      </div>
-
       <div className="grid gap-3 md:grid-cols-3">
         <StatCard
           label="Inflow (EUR)"
@@ -437,54 +400,117 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
         </div>
       </div>
 
-      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-        <div
-          role="tablist"
-          aria-label="Filter payments by direction"
-          className="flex items-center gap-1 border-b border-slate-100 px-2 py-1.5"
-        >
-          {(["All", "Inflow", "Outflow"] as const).map((d) => {
-            const active = filters.direction === d;
-            const label = d === "All" ? "All" : d === "Inflow" ? "Inflows" : "Outflows";
-            return (
-              <button
-                key={d}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => update("direction", d)}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                  active
-                    ? "bg-brand-600 text-white"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
+      <div className="bg-white rounded-lg border border-slate-200">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-2 py-1.5">
+          <div role="tablist" aria-label="Filter payments by direction" className="flex items-center gap-1">
+            {(["All", "Inflow", "Outflow"] as const).map((d) => {
+              const active = filters.direction === d;
+              const label = d === "All" ? "All" : d === "Inflow" ? "Inflows" : "Outflows";
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => update("direction", d)}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    active
+                      ? "bg-brand-600 text-white"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] text-slate-500">Invoice date</span>
+            <input
+              type="date"
+              aria-label="From"
+              value={filters.from}
+              onChange={(e) => update("from", e.target.value)}
+              className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-600"
+            />
+            <span className="text-[11px] text-slate-400">→</span>
+            <input
+              type="date"
+              aria-label="To"
+              value={filters.to}
+              onChange={(e) => update("to", e.target.value)}
+              className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-600"
+            />
+            <span className="hidden sm:inline text-[11px] text-slate-500 px-1">
+              {filtered.length} payment{filtered.length === 1 ? "" : "s"}
+            </span>
+            <Button size="sm" onClick={() => setFilters(DEFAULT_FILTERS)}>
+              Reset
+            </Button>
+            <Button size="sm" onClick={exportCsv} disabled={filtered.length === 0}>
+              Export CSV
+            </Button>
+            <Button tone="primary" size="sm" onClick={openCreate}>
+              + New payment
+            </Button>
+          </div>
         </div>
         <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-2 py-1.5 font-medium">Code</th>
-              <th className="text-left px-2 py-1.5 font-medium">Direction</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Type</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Project</th>
-              <th className="text-left px-2 py-1.5 font-medium">Counterparty</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Invoice date</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Due date</th>
-              <th className="text-right px-2 py-1.5 font-medium">Amount</th>
-              <th className="text-right px-2 py-1.5 font-medium hidden md:table-cell">EUR</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Status</th>
+              <th className="text-left px-2 pt-1.5 font-medium">Code</th>
+              <th className="text-left px-2 pt-1.5 font-medium">Direction</th>
+              <th className="text-left px-2 pt-1.5 font-medium hidden md:table-cell">Type</th>
+              <th className="text-left px-2 pt-1.5 font-medium hidden lg:table-cell">Project</th>
+              <th className="text-left px-2 pt-1.5 font-medium">Counterparty</th>
+              <th className="text-left px-2 pt-1.5 font-medium hidden md:table-cell">Invoice date</th>
+              <th className="text-left px-2 pt-1.5 font-medium hidden md:table-cell">Due date</th>
+              <th className="text-left px-2 pt-1.5 font-medium hidden md:table-cell">Payment date</th>
+              <th className="text-right px-2 pt-1.5 font-medium">Amount</th>
+              <th className="text-right px-2 pt-1.5 font-medium hidden md:table-cell">EUR</th>
+              <th className="text-left px-2 pt-1.5 font-medium hidden lg:table-cell">Status</th>
               <th />
+            </tr>
+            <tr className="border-b border-slate-100">
+              <th colSpan={7} className="px-2 pb-1.5" />
+              <th className="px-2 pb-1.5 hidden md:table-cell" />
+              <th className="px-2 pb-1.5">
+                <select
+                  aria-label="Filter by currency"
+                  value={filters.currency}
+                  onChange={(e) => update("currency", e.target.value)}
+                  className="block w-full rounded-md border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-normal normal-case tracking-normal text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                >
+                  <option value="All">Any ccy</option>
+                  {currencyOptions.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </th>
+              <th className="px-2 pb-1.5 hidden md:table-cell" />
+              <th className="px-2 pb-1.5 hidden lg:table-cell">
+                <select
+                  aria-label="Filter by status"
+                  value={filters.status}
+                  onChange={(e) => update("status", e.target.value)}
+                  className="block w-full rounded-md border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-normal normal-case tracking-normal text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                >
+                  <option value="All">Any status</option>
+                  {statusOptions.map((s) => (
+                    <option key={s} value={s}>
+                      {filters.direction === "Inflow" ? statusLabel(s, "Inflow") : s}
+                    </option>
+                  ))}
+                </select>
+              </th>
+              <th className="pb-1.5" />
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text-center text-slate-500 py-10">
+                <td colSpan={12} className="text-center text-slate-500 py-10">
                   No payments match these filters.
                 </td>
               </tr>
@@ -500,7 +526,12 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                     key={p.id}
                     className={`border-t border-slate-100 align-top ${tint.row}`}
                   >
-                    <td className="px-2 py-1.5 font-mono text-xs">{p.paymentCode}</td>
+                    <td className="px-2 py-1.5 font-mono text-xs whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1">
+                        {p.paymentCode}
+                        <PaymentDetailsPopover p={p} />
+                      </span>
+                    </td>
                     <td className="px-2 py-1.5"><DirectionPill direction={p.direction} /></td>
                     <td className="px-2 py-1.5 hidden md:table-cell">{p.type || "—"}</td>
                     <td className="px-2 py-1.5 font-mono text-xs hidden lg:table-cell">
@@ -510,6 +541,9 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                     <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell">{p.invoiceDate ?? "—"}</td>
                     <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell">
                       <DueDateCell dueDate={p.dueDate} status={p.paymentStatus} />
+                    </td>
+                    <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell">
+                      {p.paymentDate ?? <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums">
                       {formatMoney(p.invoiceValue, p.invoiceCurrency)}
@@ -941,50 +975,38 @@ function DirectionPill({ direction }: { direction: string }) {
   );
 }
 
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  children,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  children: React.ReactNode;
-}) {
+function PaymentDetailsPopover({ p }: { p: PaymentRecord }) {
+  const items: Array<[string, string]> = [];
+  if (p.invoiceReference) items.push(["Invoice ref.", p.invoiceReference]);
+  if (p.paymentTerms) items.push(["Payment terms", /^\d+$/.test(p.paymentTerms) ? `${p.paymentTerms} days` : p.paymentTerms]);
+  if (p.fxRateToEur != null) items.push(["FX to EUR", String(p.fxRateToEur)]);
+  if (p.beneficiary) items.push(["Beneficiary", p.beneficiary]);
+  if (p.comment) items.push(["Comment", p.comment]);
+  if (items.length === 0) return null;
   return (
-    <label className="block text-xs">
-      <span className="block text-slate-500 mb-1">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        aria-label="Show payment details"
+        className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-slate-300 bg-white text-[9px] font-bold leading-none text-slate-500 hover:border-slate-500 hover:text-slate-700"
+        onClick={(e) => e.stopPropagation()}
       >
-        {children}
-      </select>
-    </label>
-  );
-}
-
-function FilterDate({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <label className="block text-xs">
-      <span className="block text-slate-500 mb-1">{label}</span>
-      <input
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
-      />
-    </label>
+        i
+      </button>
+      <span
+        role="tooltip"
+        className="absolute left-5 top-0 z-30 hidden w-72 rounded-lg border border-slate-200 bg-white p-3 text-[11px] text-slate-700 shadow-lg group-hover:block group-focus-within:block"
+      >
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
+          {items.map(([k, v]) => (
+            <Fragment key={k}>
+              <dt className="text-slate-500">{k}</dt>
+              <dd className="break-words font-normal normal-case tracking-normal">{v}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      </span>
+    </span>
   );
 }
 
