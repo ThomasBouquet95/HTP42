@@ -22,6 +22,7 @@ type Filters = {
   currency: string;
   from: string;
   to: string;
+  search: string;
 };
 
 const DEFAULT_FILTERS: Filters = {
@@ -30,7 +31,20 @@ const DEFAULT_FILTERS: Filters = {
   currency: "All",
   from: "",
   to: "",
+  search: "",
 };
+
+type SortKey =
+  | "code"
+  | "direction"
+  | "type"
+  | "project"
+  | "counterparty"
+  | "dueDate"
+  | "paymentDate"
+  | "amount"
+  | "eur";
+type SortDir = "asc" | "desc";
 
 const PAYMENT_STATUSES = ["Scheduled", "To be paid", "Paid"] as const;
 
@@ -123,6 +137,10 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
   const memberLabel = (p: PaymentRecord) =>
     p.memberRecordIds.map((id) => membersById.get(id)?.name || membersById.get(id)?.code).filter(Boolean).join(", ");
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [sort, setSort] = useState<{ key: SortKey | null; dir: SortDir }>({
+    key: "code",
+    dir: "desc",
+  });
   const [editing, setEditing] = useState<PaymentRecord | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -144,15 +162,79 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
   }, [payments, currencies]);
 
   const filtered = useMemo(() => {
+    const q = filters.search.trim().toLowerCase();
     return payments.filter((p) => {
       if (filters.direction !== "All" && p.direction !== filters.direction) return false;
       if (filters.status !== "All" && p.paymentStatus !== filters.status) return false;
       if (filters.currency !== "All" && p.invoiceCurrency !== filters.currency) return false;
       if (filters.from && (p.invoiceDate ?? "") < filters.from) return false;
       if (filters.to && (p.invoiceDate ?? "") > filters.to) return false;
+      if (q) {
+        const counterparty =
+          p.direction === "Inflow"
+            ? clientLabel(p)
+            : memberLabel(p) || p.beneficiary;
+        const haystack = [
+          p.paymentCode,
+          p.type,
+          projectLabel(p),
+          counterparty,
+          p.invoiceReference,
+          p.beneficiary,
+          p.comment,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
       return true;
     });
-  }, [payments, filters]);
+  }, [payments, filters, clientLabel, memberLabel, projectLabel]);
+
+  const sorted = useMemo(() => {
+    if (!sort.key) return filtered;
+    const key = sort.key;
+    const mul = sort.dir === "asc" ? 1 : -1;
+    const value = (p: PaymentRecord): string | number => {
+      switch (key) {
+        case "code":
+          return p.paymentCode;
+        case "direction":
+          return p.direction;
+        case "type":
+          return p.type;
+        case "project":
+          return projectLabel(p);
+        case "counterparty":
+          return p.direction === "Inflow"
+            ? clientLabel(p)
+            : memberLabel(p) || p.beneficiary;
+        case "dueDate":
+          return p.dueDate ?? "";
+        case "paymentDate":
+          return p.paymentDate ?? "";
+        case "amount":
+          return p.invoiceValue ?? Number.NEGATIVE_INFINITY;
+        case "eur":
+          return p.invoiceValueEur ?? Number.NEGATIVE_INFINITY;
+      }
+    };
+    return [...filtered].sort((a, b) => {
+      const av = value(a);
+      const bv = value(b);
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * mul;
+      return String(av).localeCompare(String(bv)) * mul;
+    });
+  }, [filtered, sort, projectLabel, clientLabel, memberLabel]);
+
+  function toggleSort(key: SortKey) {
+    setSort((s) => {
+      if (s.key !== key) return { key, dir: "asc" };
+      if (s.dir === "asc") return { key, dir: "desc" };
+      return { key: null, dir: "asc" };
+    });
+  }
 
   const totals = useMemo(() => {
     let inflowEur = 0;
@@ -325,7 +407,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
       "Comment",
     ];
     const out: string[][] = [header];
-    for (const p of filtered) {
+    for (const p of sorted) {
       out.push([
         p.paymentCode,
         p.direction,
@@ -425,29 +507,40 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             })}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] text-slate-500">Invoice date</span>
-            <input
-              type="date"
-              aria-label="From"
-              value={filters.from}
-              onChange={(e) => update("from", e.target.value)}
-              className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-600"
-            />
-            <span className="text-[11px] text-slate-400">→</span>
-            <input
-              type="date"
-              aria-label="To"
-              value={filters.to}
-              onChange={(e) => update("to", e.target.value)}
-              className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-600"
+            <div className="relative">
+              <input
+                type="search"
+                aria-label="Search payments"
+                placeholder="Search…"
+                value={filters.search}
+                onChange={(e) => update("search", e.target.value)}
+                className="w-44 rounded-md border border-slate-300 bg-white pl-7 pr-2 py-1 text-xs text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+              />
+              <svg
+                aria-hidden
+                viewBox="0 0 16 16"
+                className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              >
+                <circle cx="7" cy="7" r="4.5" />
+                <path d="m11 11 3 3" strokeLinecap="round" />
+              </svg>
+            </div>
+            <DateRangeFilter
+              from={filters.from}
+              to={filters.to}
+              onFrom={(v) => update("from", v)}
+              onTo={(v) => update("to", v)}
             />
             <span className="hidden sm:inline text-[11px] text-slate-500 px-1">
-              {filtered.length} payment{filtered.length === 1 ? "" : "s"}
+              {sorted.length} payment{sorted.length === 1 ? "" : "s"}
             </span>
             <Button size="sm" onClick={() => setFilters(DEFAULT_FILTERS)}>
               Reset
             </Button>
-            <Button size="sm" onClick={exportCsv} disabled={filtered.length === 0}>
+            <Button size="sm" onClick={exportCsv} disabled={sorted.length === 0}>
               Export CSV
             </Button>
             <Button tone="primary" size="sm" onClick={openCreate}>
@@ -457,65 +550,72 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
         </div>
         <div className="overflow-x-auto">
         <table className="w-full text-xs">
-          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+          <thead className="border-b border-slate-100 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-2 pt-1.5 font-medium">Code</th>
-              <th className="text-left px-2 pt-1.5 font-medium">Direction</th>
-              <th className="text-left px-2 pt-1.5 font-medium hidden md:table-cell">Type</th>
-              <th className="text-left px-2 pt-1.5 font-medium hidden lg:table-cell">Project</th>
-              <th className="text-left px-2 pt-1.5 font-medium">Counterparty</th>
-              <th className="text-left px-2 pt-1.5 font-medium hidden md:table-cell">Invoice date</th>
-              <th className="text-left px-2 pt-1.5 font-medium hidden md:table-cell">Due date</th>
-              <th className="text-left px-2 pt-1.5 font-medium hidden md:table-cell">Payment date</th>
-              <th className="text-right px-2 pt-1.5 font-medium">Amount</th>
-              <th className="text-right px-2 pt-1.5 font-medium hidden md:table-cell">EUR</th>
-              <th className="text-left px-2 pt-1.5 font-medium hidden lg:table-cell">Status</th>
-              <th />
-            </tr>
-            <tr className="border-b border-slate-100">
-              <th colSpan={7} className="px-2 pb-1.5" />
-              <th className="px-2 pb-1.5 hidden md:table-cell" />
-              <th className="px-2 pb-1.5">
-                <select
-                  aria-label="Filter by currency"
+              <th className="px-2 py-1.5 text-left font-medium">
+                <SortHeader label="Code" sort={sort} colKey="code" onToggle={toggleSort} />
+              </th>
+              <th className="px-2 py-1.5 text-left font-medium">
+                <SortHeader label="Direction" sort={sort} colKey="direction" onToggle={toggleSort} />
+              </th>
+              <th className="px-2 py-1.5 text-left font-medium hidden md:table-cell">
+                <SortHeader label="Type" sort={sort} colKey="type" onToggle={toggleSort} />
+              </th>
+              <th className="px-2 py-1.5 text-left font-medium hidden lg:table-cell">
+                <SortHeader label="Project" sort={sort} colKey="project" onToggle={toggleSort} />
+              </th>
+              <th className="px-2 py-1.5 text-left font-medium">
+                <SortHeader label="Counterparty" sort={sort} colKey="counterparty" onToggle={toggleSort} />
+              </th>
+              <th className="px-2 py-1.5 text-left font-medium hidden md:table-cell">
+                <SortHeader label="Due date" sort={sort} colKey="dueDate" onToggle={toggleSort} />
+              </th>
+              <th className="px-2 py-1.5 text-left font-medium hidden md:table-cell">
+                <SortHeader label="Payment date" sort={sort} colKey="paymentDate" onToggle={toggleSort} />
+              </th>
+              <th className="px-2 py-1.5 text-right font-medium">
+                <HeaderFilterSelect
+                  label="Amount"
                   value={filters.currency}
-                  onChange={(e) => update("currency", e.target.value)}
-                  className="block w-full rounded-md border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-normal normal-case tracking-normal text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-600"
-                >
-                  <option value="All">Any ccy</option>
-                  {currencyOptions.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
+                  onChange={(v) => update("currency", v)}
+                  options={[{ value: "All", label: "Amount" }, ...currencyOptions.map((c) => ({ value: c, label: c }))]}
+                  active={filters.currency !== "All"}
+                  align="right"
+                  sort={sort}
+                  colKey="amount"
+                  onToggle={toggleSort}
+                />
               </th>
-              <th className="px-2 pb-1.5 hidden md:table-cell" />
-              <th className="px-2 pb-1.5 hidden lg:table-cell">
-                <select
-                  aria-label="Filter by status"
+              <th className="px-2 py-1.5 text-right font-medium hidden md:table-cell">
+                <SortHeader label="EUR" sort={sort} colKey="eur" onToggle={toggleSort} align="right" />
+              </th>
+              <th className="px-2 py-1.5 text-left font-medium hidden lg:table-cell">
+                <HeaderFilterSelect
+                  label="Status"
                   value={filters.status}
-                  onChange={(e) => update("status", e.target.value)}
-                  className="block w-full rounded-md border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-normal normal-case tracking-normal text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-600"
-                >
-                  <option value="All">Any status</option>
-                  {statusOptions.map((s) => (
-                    <option key={s} value={s}>
-                      {filters.direction === "Inflow" ? statusLabel(s, "Inflow") : s}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => update("status", v)}
+                  options={[
+                    { value: "All", label: "Status" },
+                    ...statusOptions.map((s) => ({
+                      value: s,
+                      label: filters.direction === "Inflow" ? statusLabel(s, "Inflow") : s,
+                    })),
+                  ]}
+                  active={filters.status !== "All"}
+                />
               </th>
-              <th className="pb-1.5" />
+              <th />
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {sorted.length === 0 ? (
               <tr>
-                <td colSpan={12} className="text-center text-slate-500 py-10">
+                <td colSpan={11} className="text-center text-slate-500 py-10">
                   No payments match these filters.
                 </td>
               </tr>
             ) : (
-              filtered.map((p) => {
+              sorted.map((p) => {
                 const counterparty =
                   p.direction === "Inflow"
                     ? clientLabel(p) || "—"
@@ -538,7 +638,6 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                       {projectLabel(p) || "—"}
                     </td>
                     <td className="px-2 py-1.5">{counterparty}</td>
-                    <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell">{p.invoiceDate ?? "—"}</td>
                     <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell">
                       <DueDateCell dueDate={p.dueDate} status={p.paymentStatus} />
                     </td>
@@ -615,129 +714,150 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
         <p className="text-xs text-slate-500 mb-3">
           Payment code is auto-generated by Airtable.
         </p>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormSelect
-            label="Direction"
-            value={form.direction}
-            onChange={(v) => updateField("direction", v as FormState["direction"])}
-            required
-            hint="Inflow = money coming in (from clients). Outflow = money going out (to subcontractors / suppliers)."
-          >
-            <option value="">—</option>
-            <option value="Inflow">Inflow</option>
-            <option value="Outflow">Outflow</option>
-          </FormSelect>
-          <FormSelect label="Type" value={form.type} onChange={(v) => updateField("type", v)}>
-            <option value="">—</option>
-            {PAYMENT_TYPES.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </FormSelect>
-          <FormSelect
-            label="Project"
-            value={form.projectId}
-            onChange={(v) => updateField("projectId", v)}
-          >
-            <option value="">—</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.code} — {p.name}
-              </option>
-            ))}
-          </FormSelect>
-          <FormSelect
-            label={form.direction === "Outflow" ? "Member (beneficiary)" : "Client"}
-            value={form.direction === "Outflow" ? form.memberId : form.clientId}
-            onChange={(v) =>
-              form.direction === "Outflow" ? updateField("memberId", v) : updateField("clientId", v)
-            }
-          >
-            <option value="">—</option>
-            {(form.direction === "Outflow" ? members : clients).map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.code} — {o.name}
-              </option>
-            ))}
-          </FormSelect>
-          <FormField
-            label="Invoice date"
-            value={form.invoiceDate}
-            onChange={(v) => updateField("invoiceDate", v)}
-            type="date"
-          />
-          <FormField
-            label="Invoice reference"
-            value={form.invoiceReference}
-            onChange={(v) => updateField("invoiceReference", v)}
-          />
-          <FormField
-            label="Invoice value"
-            value={form.invoiceValue}
-            onChange={(v) => updateField("invoiceValue", v)}
-            type="number"
-          />
-          <FormSelect
-            label="Invoice currency"
-            value={form.invoiceCurrency}
-            onChange={(v) => updateField("invoiceCurrency", v)}
-          >
-            <option value="">—</option>
-            {currencies.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </FormSelect>
-          <FormField
-            label="FX to EUR"
-            value={form.fxRateToEur}
-            onChange={(v) => updateField("fxRateToEur", v)}
-            type="number"
-          />
-          <FormField
-            label="Invoice value EUR (auto)"
-            value={derivedValueEur == null ? "" : derivedValueEur.toFixed(2)}
-            onChange={() => {}}
-            readOnly
-          />
-          <FormSelect
-            label={form.direction === "Inflow" ? "Receipt status" : "Payment status"}
-            value={form.paymentStatus}
-            onChange={(v) => updateField("paymentStatus", v)}
-          >
-            {PAYMENT_STATUSES.map((s) => (
-              <option key={s} value={s}>{statusLabel(s, form.direction)}</option>
-            ))}
-          </FormSelect>
-          <FormField
-            label="Due date"
-            value={form.dueDate}
-            onChange={(v) => updateField("dueDate", v)}
-            type="date"
-          />
-          <FormField
-            label="Payment date"
-            value={form.paymentDate}
-            onChange={(v) => updateField("paymentDate", v)}
-            type="date"
-          />
-          <FormField
-            label="Payment terms"
-            value={form.paymentTerms}
-            onChange={(v) => updateField("paymentTerms", v)}
-          />
-          <FormField
-            label="Beneficiary"
-            value={form.beneficiary}
-            onChange={(v) => updateField("beneficiary", v)}
-          />
-        </div>
-        <div className="mt-3">
-          <FormTextarea
-            label="Comment"
-            value={form.comment}
-            onChange={(v) => updateField("comment", v)}
-            rows={3}
-          />
-        </div>
+        <FormSection title="Classification">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormSelect
+              label="Direction"
+              value={form.direction}
+              onChange={(v) => updateField("direction", v as FormState["direction"])}
+              required
+              hint="Inflow = money in (from clients). Outflow = money out (to subcontractors / suppliers)."
+            >
+              <option value="">—</option>
+              <option value="Inflow">Inflow</option>
+              <option value="Outflow">Outflow</option>
+            </FormSelect>
+            <FormSelect label="Type" value={form.type} onChange={(v) => updateField("type", v)}>
+              <option value="">—</option>
+              {PAYMENT_TYPES.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </FormSelect>
+            <FormSelect
+              label="Project"
+              value={form.projectId}
+              onChange={(v) => updateField("projectId", v)}
+            >
+              <option value="">—</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.code} — {p.name}
+                </option>
+              ))}
+            </FormSelect>
+            <FormSelect
+              label={form.direction === "Outflow" ? "Member (beneficiary)" : "Client"}
+              value={form.direction === "Outflow" ? form.memberId : form.clientId}
+              onChange={(v) =>
+                form.direction === "Outflow" ? updateField("memberId", v) : updateField("clientId", v)
+              }
+            >
+              <option value="">—</option>
+              {(form.direction === "Outflow" ? members : clients).map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.code} — {o.name}
+                </option>
+              ))}
+            </FormSelect>
+          </div>
+        </FormSection>
+
+        <FormSection title="Invoice">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField
+              label="Invoice date"
+              value={form.invoiceDate}
+              onChange={(v) => updateField("invoiceDate", v)}
+              type="date"
+            />
+            <FormField
+              label="Invoice reference"
+              value={form.invoiceReference}
+              onChange={(v) => updateField("invoiceReference", v)}
+            />
+          </div>
+        </FormSection>
+
+        <FormSection title="Amount">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <FormSelect
+              label="Currency"
+              value={form.invoiceCurrency}
+              onChange={(v) => updateField("invoiceCurrency", v)}
+            >
+              <option value="">—</option>
+              {currencies.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </FormSelect>
+            <FormField
+              label="Invoice value"
+              value={form.invoiceValue}
+              onChange={(v) => updateField("invoiceValue", v)}
+              type="number"
+            />
+            <FormField
+              label="FX to EUR"
+              value={form.fxRateToEur}
+              onChange={(v) => updateField("fxRateToEur", v)}
+              type="number"
+            />
+            <FormField
+              label="Value EUR (auto)"
+              value={derivedValueEur == null ? "" : derivedValueEur.toFixed(2)}
+              onChange={() => {}}
+              readOnly
+            />
+          </div>
+        </FormSection>
+
+        <FormSection title={form.direction === "Inflow" ? "Receipt" : "Payment"}>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <FormSelect
+              label={form.direction === "Inflow" ? "Receipt status" : "Payment status"}
+              value={form.paymentStatus}
+              onChange={(v) => updateField("paymentStatus", v)}
+            >
+              {PAYMENT_STATUSES.map((s) => (
+                <option key={s} value={s}>{statusLabel(s, form.direction)}</option>
+              ))}
+            </FormSelect>
+            <FormField
+              label="Payment terms"
+              value={form.paymentTerms}
+              onChange={(v) => updateField("paymentTerms", v)}
+              placeholder="e.g. 30"
+            />
+            <FormField
+              label="Due date"
+              value={form.dueDate}
+              onChange={(v) => updateField("dueDate", v)}
+              type="date"
+            />
+            <FormField
+              label={form.direction === "Inflow" ? "Receipt date" : "Payment date"}
+              value={form.paymentDate}
+              onChange={(v) => updateField("paymentDate", v)}
+              type="date"
+            />
+          </div>
+        </FormSection>
+
+        <FormSection title="Notes">
+          <div className="grid gap-3">
+            <FormField
+              label="Beneficiary"
+              value={form.beneficiary}
+              onChange={(v) => updateField("beneficiary", v)}
+            />
+            <FormTextarea
+              label="Comment"
+              value={form.comment}
+              onChange={(v) => updateField("comment", v)}
+              rows={3}
+            />
+          </div>
+        </FormSection>
         {error ? (
           <div className="mt-3 rounded-md bg-red-50 text-red-700 p-2.5 text-xs">{error}</div>
         ) : null}
@@ -975,8 +1095,143 @@ function DirectionPill({ direction }: { direction: string }) {
   );
 }
 
+function DateRangeFilter({
+  from,
+  to,
+  onFrom,
+  onTo,
+}: {
+  from: string;
+  to: string;
+  onFrom: (v: string) => void;
+  onTo: (v: string) => void;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-xs text-slate-700">
+      <span className="text-[10px] uppercase tracking-wide text-slate-400">Invoice</span>
+      <input
+        type="date"
+        aria-label="From"
+        value={from}
+        onChange={(e) => onFrom(e.target.value)}
+        className="bg-transparent text-xs text-slate-700 focus:outline-none"
+      />
+      <span className="text-slate-400">→</span>
+      <input
+        type="date"
+        aria-label="To"
+        value={to}
+        onChange={(e) => onTo(e.target.value)}
+        className="bg-transparent text-xs text-slate-700 focus:outline-none"
+      />
+    </span>
+  );
+}
+
+function SortIcon({ state }: { state: "asc" | "desc" | null }) {
+  return (
+    <span aria-hidden className="ml-1 inline-flex w-2.5 flex-col leading-none text-slate-400">
+      <span className={state === "asc" ? "text-slate-700" : ""} style={{ fontSize: "8px" }}>▲</span>
+      <span className={state === "desc" ? "text-slate-700" : ""} style={{ fontSize: "8px", marginTop: "-1px" }}>▼</span>
+    </span>
+  );
+}
+
+function SortHeader({
+  label,
+  colKey,
+  sort,
+  onToggle,
+  align,
+}: {
+  label: string;
+  colKey: SortKey;
+  sort: { key: SortKey | null; dir: "asc" | "desc" };
+  onToggle: (key: SortKey) => void;
+  align?: "right";
+}) {
+  const state = sort.key === colKey ? sort.dir : null;
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(colKey)}
+      className={`inline-flex items-center gap-0.5 uppercase tracking-wide text-slate-500 hover:text-slate-900 ${
+        align === "right" ? "ml-auto" : ""
+      }`}
+    >
+      <span>{label}</span>
+      <SortIcon state={state} />
+    </button>
+  );
+}
+
+function HeaderFilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+  active,
+  align,
+  sort,
+  colKey,
+  onToggle,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  active: boolean;
+  align?: "right";
+  sort?: { key: SortKey | null; dir: "asc" | "desc" };
+  colKey?: SortKey;
+  onToggle?: (key: SortKey) => void;
+}) {
+  const state = sort && colKey && sort.key === colKey ? sort.dir : null;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 ${align === "right" ? "ml-auto justify-end" : ""}`}
+    >
+      {colKey && onToggle ? (
+        <button
+          type="button"
+          onClick={() => onToggle(colKey)}
+          className="uppercase tracking-wide hover:text-slate-900"
+          aria-label={`Sort by ${label}`}
+        >
+          <SortIcon state={state} />
+        </button>
+      ) : null}
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`max-w-[8rem] truncate rounded-md border border-transparent bg-transparent px-1 py-0 text-[11px] font-medium uppercase tracking-wide focus:outline-none focus:ring-1 focus:ring-brand-600 ${
+          active ? "text-brand-700" : "text-slate-500 hover:text-slate-900"
+        }`}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value} className="normal-case tracking-normal text-slate-700">
+            {o.value === "All" ? label : o.label}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
+function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mt-4 first:mt-0">
+      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
 function PaymentDetailsPopover({ p }: { p: PaymentRecord }) {
   const items: Array<[string, string]> = [];
+  if (p.invoiceDate) items.push(["Invoice date", p.invoiceDate]);
   if (p.invoiceReference) items.push(["Invoice ref.", p.invoiceReference]);
   if (p.paymentTerms) items.push(["Payment terms", /^\d+$/.test(p.paymentTerms) ? `${p.paymentTerms} days` : p.paymentTerms]);
   if (p.fxRateToEur != null) items.push(["FX to EUR", String(p.fxRateToEur)]);
@@ -995,12 +1250,12 @@ function PaymentDetailsPopover({ p }: { p: PaymentRecord }) {
       </button>
       <span
         role="tooltip"
-        className="absolute left-5 top-0 z-30 hidden w-72 rounded-lg border border-slate-200 bg-white p-3 text-[11px] text-slate-700 shadow-lg group-hover:block group-focus-within:block"
+        className="absolute left-5 top-0 z-30 hidden min-w-[14rem] max-w-sm whitespace-normal rounded-lg border border-slate-200 bg-white p-3 text-[11px] text-slate-700 shadow-lg group-hover:block group-focus-within:block"
       >
-        <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
+        <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1">
           {items.map(([k, v]) => (
             <Fragment key={k}>
-              <dt className="text-slate-500">{k}</dt>
+              <dt className="text-slate-500 whitespace-nowrap">{k}</dt>
               <dd className="break-words font-normal normal-case tracking-normal">{v}</dd>
             </Fragment>
           ))}
