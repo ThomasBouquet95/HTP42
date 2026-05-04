@@ -34,6 +34,15 @@ const DEFAULT_FILTERS: Filters = {
 
 const PAYMENT_STATUSES = ["Scheduled", "To be paid", "Paid"] as const;
 
+// Stored values are canonical (Scheduled / To be paid / Paid) regardless of
+// direction; for Inflow we surface friendlier wording in the UI.
+function statusLabel(status: string, direction: "" | "Inflow" | "Outflow"): string {
+  if (direction !== "Inflow") return status;
+  if (status === "To be paid") return "To be received";
+  if (status === "Paid") return "Received";
+  return status;
+}
+
 const PAYMENT_TYPES = ["Client Invoice", "Subcontractor", "Expense", "Other"] as const;
 
 type FormState = {
@@ -354,20 +363,13 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
   return (
     <div className="space-y-5">
       <div className="bg-white rounded-lg border border-slate-200 p-3 sm:p-4">
-        <div className="grid gap-2 sm:gap-3 grid-cols-2 lg:grid-cols-5">
-          <FilterSelect
-            label="Direction"
-            value={filters.direction}
-            onChange={(v) => update("direction", v as Filters["direction"])}
-          >
-            <option value="All">All</option>
-            <option value="Inflow">Inflow</option>
-            <option value="Outflow">Outflow</option>
-          </FilterSelect>
+        <div className="grid gap-2 sm:gap-3 grid-cols-2 lg:grid-cols-4">
           <FilterSelect label="Status" value={filters.status} onChange={(v) => update("status", v)}>
             <option value="All">All statuses</option>
             {statusOptions.map((s) => (
-              <option key={s} value={s}>{s}</option>
+              <option key={s} value={s}>
+                {filters.direction === "Inflow" ? statusLabel(s, "Inflow") : s}
+              </option>
             ))}
           </FilterSelect>
           <FilterSelect label="Currency" value={filters.currency} onChange={(v) => update("currency", v)}>
@@ -435,7 +437,34 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
         </div>
       </div>
 
-      <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+        <div
+          role="tablist"
+          aria-label="Filter payments by direction"
+          className="flex items-center gap-1 border-b border-slate-100 px-2 py-1.5"
+        >
+          {(["All", "Inflow", "Outflow"] as const).map((d) => {
+            const active = filters.direction === d;
+            const label = d === "All" ? "All" : d === "Inflow" ? "Inflows" : "Outflows";
+            return (
+              <button
+                key={d}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => update("direction", d)}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  active
+                    ? "bg-brand-600 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
@@ -498,6 +527,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                         value={p.paymentStatus}
                         onChange={(next) => updateStatus(p.id, next)}
                         tone={tint.select}
+                        direction={p.direction}
                       />
                     </td>
                     <td className="px-2 py-1.5 text-right">
@@ -517,6 +547,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       <Modal
@@ -634,12 +665,12 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             readOnly
           />
           <FormSelect
-            label="Payment status"
+            label={form.direction === "Inflow" ? "Receipt status" : "Payment status"}
             value={form.paymentStatus}
             onChange={(v) => updateField("paymentStatus", v)}
           >
             {PAYMENT_STATUSES.map((s) => (
-              <option key={s} value={s}>{s}</option>
+              <option key={s} value={s}>{statusLabel(s, form.direction)}</option>
             ))}
           </FormSelect>
           <FormField
@@ -850,10 +881,12 @@ function StatusSelect({
   value,
   onChange,
   tone,
+  direction,
 }: {
   value: string;
   onChange: (next: string) => void;
   tone: StatusTone;
+  direction: "" | "Inflow" | "Outflow";
 }) {
   const toneCls =
     tone === "scheduled"
@@ -870,7 +903,7 @@ function StatusSelect({
       className={`block w-full rounded-md px-1.5 py-0.5 text-[11px] font-medium ${toneCls} focus:outline-none focus:ring-1 focus:ring-brand-600`}
     >
       {PAYMENT_STATUSES.map((s) => (
-        <option key={s} value={s}>{s}</option>
+        <option key={s} value={s}>{statusLabel(s, direction)}</option>
       ))}
     </select>
   );
