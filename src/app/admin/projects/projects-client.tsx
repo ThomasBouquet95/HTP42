@@ -336,8 +336,9 @@ export function ProjectsAdminClient({
                   .map((id) => clientById.get(id)?.clientCode ?? "")
                   .filter(Boolean)
                   .join(", ");
+                const tint = projectRowTint(p.status);
                 return (
-                  <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50">
+                  <tr key={p.id} className={`border-t border-slate-100 ${tint}`}>
                     <td className="px-2 py-1.5 font-mono text-xs">{p.projectCode}</td>
                     <td className="px-2 py-1.5">
                       <div>{p.projectName}</div>
@@ -545,6 +546,22 @@ export function ProjectsAdminClient({
       />
     </div>
   );
+}
+
+function projectRowTint(status: string): string {
+  switch (status) {
+    case "In Progress":
+      return "bg-emerald-50/40 hover:bg-emerald-50";
+    case "On Hold":
+      return "bg-amber-50/50 hover:bg-amber-50";
+    case "Completed":
+      return "bg-blue-50/40 hover:bg-blue-50";
+    case "Planned":
+    case "Not Started":
+      return "bg-slate-50 hover:bg-slate-100";
+    default:
+      return "hover:bg-slate-50";
+  }
 }
 
 function ProjectStatusSelect({
