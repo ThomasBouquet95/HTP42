@@ -39,15 +39,13 @@ const DEFAULT_FILTERS: Filters = {
 };
 
 type SortKey =
-  | "code"
   | "direction"
   | "type"
   | "project"
   | "counterparty"
   | "dueDate"
   | "paymentDate"
-  | "amount"
-  | "eur";
+  | "amount";
 type SortDir = "asc" | "desc";
 
 const PAYMENT_STATUSES = ["Scheduled", "To be paid", "Paid"] as const;
@@ -153,7 +151,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
     p.memberRecordIds.map((id) => membersById.get(id)?.name || membersById.get(id)?.code).filter(Boolean).join(", ");
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [sort, setSort] = useState<{ key: SortKey | null; dir: SortDir }>({
-    key: "code",
+    key: "dueDate",
     dir: "desc",
   });
   const [editing, setEditing] = useState<PaymentRecord | null>(null);
@@ -215,8 +213,6 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
     const mul = sort.dir === "asc" ? 1 : -1;
     const value = (p: PaymentRecord): string | number => {
       switch (key) {
-        case "code":
-          return p.paymentCode;
         case "direction":
           return p.direction;
         case "type":
@@ -233,8 +229,6 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
           return p.paymentDate ?? "";
         case "amount":
           return p.invoiceValue ?? Number.NEGATIVE_INFINITY;
-        case "eur":
-          return p.invoiceValueEur ?? Number.NEGATIVE_INFINITY;
       }
     };
     return [...filtered].sort((a, b) => {
@@ -290,6 +284,16 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((prev) => ({ ...prev, [key]: value }));
   }
+
+  const isFiltered =
+    filters.direction !== DEFAULT_FILTERS.direction ||
+    filters.status !== DEFAULT_FILTERS.status ||
+    filters.currency !== DEFAULT_FILTERS.currency ||
+    filters.dueFrom !== "" ||
+    filters.dueTo !== "" ||
+    filters.paymentFrom !== "" ||
+    filters.paymentTo !== "" ||
+    filters.search !== "";
 
   function openCreate() {
     setEditing(null);
@@ -592,8 +596,18 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             <button
               type="button"
               onClick={() => setFilters(DEFAULT_FILTERS)}
-              className="h-8 rounded-full px-3 text-xs font-medium text-slate-600 hover:bg-slate-100"
+              disabled={!isFiltered}
+              className={`inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors ${
+                isFiltered
+                  ? "bg-brand-600 text-white shadow-sm hover:bg-brand-700"
+                  : "text-slate-400"
+              }`}
             >
+              {isFiltered ? (
+                <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                  <path d="M4 4h8M5.5 8h5M7 12h2" strokeLinecap="round" />
+                </svg>
+              ) : null}
               Reset
             </button>
             <button
@@ -623,9 +637,6 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
         <table className="w-full text-xs">
           <thead className="border-b border-slate-100 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-2 py-1.5 text-left font-medium">
-                <SortHeader label="Code" sort={sort} colKey="code" onToggle={toggleSort} />
-              </th>
               <th className="px-2 py-1.5 text-left font-medium">
                 <SortHeader label="Direction" sort={sort} colKey="direction" onToggle={toggleSort} />
               </th>
@@ -663,20 +674,19 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                 />
               </th>
               <th className="px-2 py-1.5 text-right font-medium">
+                <SortHeader label="Amount" sort={sort} colKey="amount" onToggle={toggleSort} align="right" />
+              </th>
+              <th className="px-2 py-1.5 text-left font-medium">
                 <HeaderFilterSelect
-                  label="Amount"
+                  label="Currency"
                   value={filters.currency}
                   onChange={(v) => update("currency", v)}
-                  options={[{ value: "All", label: "Amount" }, ...currencyOptions.map((c) => ({ value: c, label: c }))]}
+                  options={[
+                    { value: "All", label: "Currency" },
+                    ...currencyOptions.map((c) => ({ value: c, label: c })),
+                  ]}
                   active={filters.currency !== "All"}
-                  align="right"
-                  sort={sort}
-                  colKey="amount"
-                  onToggle={toggleSort}
                 />
-              </th>
-              <th className="px-2 py-1.5 text-right font-medium hidden md:table-cell">
-                <SortHeader label="EUR" sort={sort} colKey="eur" onToggle={toggleSort} align="right" />
               </th>
               <th className="px-2 py-1.5 text-left font-medium hidden lg:table-cell">
                 <HeaderFilterSelect
@@ -699,7 +709,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text-center text-slate-500 py-10">
+                <td colSpan={10} className="text-center text-slate-500 py-10">
                   No payments match these filters.
                 </td>
               </tr>
@@ -715,12 +725,6 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                     key={p.id}
                     className={`border-t border-slate-100 align-top ${tint.row}`}
                   >
-                    <td className="px-2 py-1.5 font-mono text-xs whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1">
-                        {p.paymentCode}
-                        <PaymentDetailsPopover p={p} />
-                      </span>
-                    </td>
                     <td className="px-2 py-1.5"><DirectionPill direction={p.direction} /></td>
                     <td className="px-2 py-1.5 hidden md:table-cell">{p.type || "—"}</td>
                     <td className="px-2 py-1.5 font-mono text-xs hidden lg:table-cell">
@@ -734,12 +738,12 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                       {p.paymentDate ?? <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums">
-                      {formatMoney(p.invoiceValue, p.invoiceCurrency)}
-                    </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell">
-                      {p.invoiceValueEur == null
+                      {p.invoiceValue == null
                         ? "—"
-                        : p.invoiceValueEur.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                        : p.invoiceValue.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-2 py-1.5 text-slate-600 font-mono text-[11px]">
+                      {p.invoiceCurrency || "—"}
                     </td>
                     <td
                       className="px-2 py-1.5 hidden lg:table-cell"
@@ -754,15 +758,18 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                       />
                     </td>
                     <td className="px-2 py-1.5 text-right">
-                      <button
-                        type="button"
-                        onClick={() => openEdit(p)}
-                        title="Edit"
-                        aria-label="Edit"
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                      >
-                        <EditIcon />
-                      </button>
+                      <div className="inline-flex items-center gap-1">
+                        <PaymentDetailsPopover p={p} />
+                        <button
+                          type="button"
+                          onClick={() => openEdit(p)}
+                          title="Edit"
+                          aria-label="Edit"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                        >
+                          <EditIcon />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1277,28 +1284,16 @@ function DateRangeHeader({
             className="fixed inset-0 z-40 cursor-default"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
-            <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              {label} range
+          <div className="absolute left-0 top-full z-50 mt-1 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+            <div className="mb-2 flex items-baseline justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                {label} range
+              </span>
+              <span className="text-[10px] normal-case tracking-normal text-slate-400">
+                {from || "—"} → {to || "—"}
+              </span>
             </div>
-            <label className="mb-2 block text-[11px] text-slate-600 normal-case tracking-normal">
-              From
-              <input
-                type="date"
-                value={from}
-                onChange={(e) => onFrom(e.target.value)}
-                className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
-              />
-            </label>
-            <label className="block text-[11px] text-slate-600 normal-case tracking-normal">
-              To
-              <input
-                type="date"
-                value={to}
-                onChange={(e) => onTo(e.target.value)}
-                className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
-              />
-            </label>
+            <CalendarRange from={from} to={to} onChange={(f, t) => { onFrom(f); onTo(t); }} />
             <div className="mt-2 flex justify-end gap-2">
               <button
                 type="button"
@@ -1325,12 +1320,154 @@ function DateRangeHeader({
   );
 }
 
-function SortIcon({ state }: { state: "asc" | "desc" | null }) {
+function ymd(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function fromYmd(s: string): Date | null {
+  if (!s) return null;
+  const [y, m, d] = s.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
+function CalendarRange({
+  from,
+  to,
+  onChange,
+}: {
+  from: string;
+  to: string;
+  onChange: (from: string, to: string) => void;
+}) {
+  const seedDate = fromYmd(from) ?? fromYmd(to) ?? new Date();
+  const [cursor, setCursor] = useState<Date>(new Date(seedDate.getFullYear(), seedDate.getMonth(), 1));
+  const [hover, setHover] = useState<string>("");
+
+  const fromD = fromYmd(from);
+  const toD = fromYmd(to);
+  const hoverD = fromYmd(hover);
+
+  // Range preview: when only `from` is set, hovering paints up to the hovered cell.
+  const rangeStart = fromD;
+  const rangeEnd = toD ?? (fromD && hoverD ? hoverD : null);
+  const [lo, hi] = (() => {
+    if (!rangeStart || !rangeEnd) return [rangeStart, null] as const;
+    return rangeStart <= rangeEnd ? ([rangeStart, rangeEnd] as const) : ([rangeEnd, rangeStart] as const);
+  })();
+
+  const monthLabel = cursor.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth();
+
+  // Mon-first weekday alignment.
+  const startWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const cells: Array<{ d: Date; inMonth: boolean }> = [];
+  const prevDays = new Date(year, month, 0).getDate();
+  for (let i = startWeekday; i > 0; i--) {
+    cells.push({ d: new Date(year, month - 1, prevDays - i + 1), inMonth: false });
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push({ d: new Date(year, month, d), inMonth: true });
+  }
+  while (cells.length < 42) {
+    const offset = cells.length - startWeekday - daysInMonth + 1;
+    cells.push({ d: new Date(year, month + 1, offset), inMonth: false });
+  }
+
+  function pick(d: Date) {
+    const s = ymd(d);
+    if (!fromD || (fromD && toD)) {
+      onChange(s, "");
+      return;
+    }
+    if (d < fromD) onChange(s, ymd(fromD));
+    else onChange(ymd(fromD), s);
+  }
+
+  const today = ymd(new Date());
+
   return (
-    <span aria-hidden className="ml-1 inline-flex w-2.5 flex-col leading-none text-slate-400">
-      <span className={state === "asc" ? "text-slate-700" : ""} style={{ fontSize: "8px" }}>▲</span>
-      <span className={state === "desc" ? "text-slate-700" : ""} style={{ fontSize: "8px", marginTop: "-1px" }}>▼</span>
-    </span>
+    <div className="w-[15.5rem] select-none normal-case tracking-normal">
+      <div className="mb-2 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setCursor(new Date(year, month - 1, 1))}
+          aria-label="Previous month"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
+        >
+          <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m7.5 3-3 3 3 3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </button>
+        <span className="text-xs font-medium text-slate-700">{monthLabel}</span>
+        <button
+          type="button"
+          onClick={() => setCursor(new Date(year, month + 1, 1))}
+          aria-label="Next month"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
+        >
+          <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m4.5 3 3 3-3 3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-y-0.5 text-[10px] uppercase tracking-wide text-slate-400">
+        {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((w) => (
+          <div key={w} className="text-center">{w}</div>
+        ))}
+      </div>
+      <div className="mt-1 grid grid-cols-7 gap-y-0.5">
+        {cells.map(({ d, inMonth }, idx) => {
+          const s = ymd(d);
+          const isFrom = fromD && ymd(fromD) === s;
+          const isTo = toD && ymd(toD) === s;
+          const isEndpoint = isFrom || isTo;
+          const inRange = lo && hi && d >= lo && d <= hi;
+          const isToday = s === today;
+          let cls = "h-7 text-[11px] flex items-center justify-center";
+          if (!inMonth) cls += " text-slate-300";
+          else cls += " text-slate-700";
+          if (isEndpoint) cls += " bg-brand-600 text-white rounded-md font-medium";
+          else if (inRange) cls += " bg-brand-50 text-brand-700";
+          if (isToday && !isEndpoint) cls += " ring-1 ring-inset ring-slate-300 rounded-md";
+          return (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => pick(d)}
+              onMouseEnter={() => setHover(s)}
+              onMouseLeave={() => setHover("")}
+              className={`${cls} hover:bg-brand-100 hover:text-brand-800 transition-colors`}
+            >
+              {d.getDate()}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SortIcon({ state }: { state: "asc" | "desc" | null }) {
+  if (state === null) {
+    return (
+      <svg viewBox="0 0 12 12" className="ml-1 h-3 w-3 text-slate-300" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+        <path d="m4 5 2-2 2 2M4 7l2 2 2-2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg
+      viewBox="0 0 12 12"
+      className={`ml-1 h-3 w-3 text-slate-700 transition-transform ${state === "desc" ? "rotate-180" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      aria-hidden
+    >
+      <path d="m3 7 3-3 3 3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -1428,37 +1565,59 @@ function FormSection({ title, children }: { title: string; children: React.React
 
 function PaymentDetailsPopover({ p }: { p: PaymentRecord }) {
   const items: Array<[string, string]> = [];
+  if (p.paymentCode) items.push(["Code", p.paymentCode]);
   if (p.invoiceDate) items.push(["Invoice date", p.invoiceDate]);
   if (p.invoiceReference) items.push(["Invoice ref.", p.invoiceReference]);
-  if (p.paymentTerms) items.push(["Payment terms", /^\d+$/.test(p.paymentTerms) ? `${p.paymentTerms} days` : p.paymentTerms]);
+  if (p.invoiceValueEur != null)
+    items.push([
+      "Value EUR",
+      p.invoiceValueEur.toLocaleString("en-US", { maximumFractionDigits: 2 }),
+    ]);
+  if (p.paymentTerms)
+    items.push([
+      "Payment terms",
+      /^\d+$/.test(p.paymentTerms) ? `${p.paymentTerms} days` : p.paymentTerms,
+    ]);
   if (p.fxRateToEur != null) items.push(["FX to EUR", String(p.fxRateToEur)]);
   if (p.beneficiary) items.push(["Beneficiary", p.beneficiary]);
   if (p.comment) items.push(["Comment", p.comment]);
-  if (items.length === 0) return null;
   return (
     <span className="group relative inline-flex">
       <button
         type="button"
         aria-label="Show payment details"
-        className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-slate-300 bg-white text-[9px] font-bold leading-none text-slate-500 hover:border-slate-500 hover:text-slate-700"
+        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900"
         onClick={(e) => e.stopPropagation()}
       >
-        i
+        <EyeIcon />
       </button>
       <span
         role="tooltip"
-        className="absolute left-5 top-0 z-30 hidden min-w-[14rem] max-w-sm whitespace-normal rounded-lg border border-slate-200 bg-white p-3 text-[11px] text-slate-700 shadow-lg group-hover:block group-focus-within:block"
+        className="pointer-events-none absolute right-9 top-0 z-30 hidden min-w-[14rem] max-w-sm whitespace-normal rounded-lg border border-slate-200 bg-white p-3 text-[11px] text-slate-700 shadow-lg group-hover:block group-focus-within:block"
       >
         <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1">
           {items.map(([k, v]) => (
             <Fragment key={k}>
               <dt className="text-slate-500 whitespace-nowrap">{k}</dt>
-              <dd className="break-words font-normal normal-case tracking-normal">{v}</dd>
+              <dd
+                className={`break-words font-normal normal-case tracking-normal ${k === "Code" ? "font-mono" : ""}`}
+              >
+                {v}
+              </dd>
             </Fragment>
           ))}
         </dl>
       </span>
     </span>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
   );
 }
 
