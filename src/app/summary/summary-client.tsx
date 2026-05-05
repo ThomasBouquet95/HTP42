@@ -6,6 +6,7 @@ import type { TimesheetRecord, TimesheetStatus } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/modal";
 import { EditIcon, EyeIcon, IconButton, TrashIcon } from "@/components/admin-icons";
+import { WeekChip } from "@/components/week-chip";
 import { formatHumanDate, formatWeekRange, parseIsoDate, thisMondayIso, toIsoDate } from "@/lib/dates";
 
 const ALL_STATUSES: TimesheetStatus[] = ["Draft", "Submitted", "Deleted"];
@@ -449,8 +450,8 @@ export function SummaryClient({
                       : "border-slate-100 hover:bg-slate-50"
                   }`}
                 >
-                  <td className="px-2 py-1.5 whitespace-nowrap text-slate-700">
-                    {formatWeekRange(t.startDate, t.endDate)}
+                  <td className="px-2 py-1.5 whitespace-nowrap">
+                    <WeekChip startIso={t.startDate} endIso={t.endDate} />
                   </td>
                   <td className="px-2 py-1.5">
                     <div className="font-mono text-[10px] text-slate-500">{t.staffingCode}</div>

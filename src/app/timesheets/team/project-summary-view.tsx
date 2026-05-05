@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { ProjectSummary, ProjectTeamMember, ProjectStatus } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
 import { formatWeekRange, formatHumanDate } from "@/lib/dates";
+import { WeekChip } from "@/components/week-chip";
 
 type Props = { summary: ProjectSummary };
 
@@ -295,8 +296,8 @@ function MemberRow({
                         onClick={() => onOpenTimesheet(t)}
                         className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
                       >
-                        <td className="py-1.5 pr-3 whitespace-nowrap text-slate-700">
-                          {formatWeekRange(t.startDate, t.endDate)}
+                        <td className="py-1.5 pr-3 whitespace-nowrap">
+                          <WeekChip startIso={t.startDate} endIso={t.endDate} />
                         </td>
                         <td className="py-1.5 pr-3 font-mono text-[10px] text-slate-500">
                           {t.staffingCode || "—"}
