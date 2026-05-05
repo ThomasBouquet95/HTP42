@@ -6,7 +6,7 @@ import type { TimesheetRecord, TimesheetStatus } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/modal";
 import { EditIcon, EyeIcon, IconButton, TrashIcon } from "@/components/admin-icons";
-import { formatRange, parseIsoDate, toIsoDate } from "@/lib/dates";
+import { formatRange, parseIsoDate, thisMondayIso, toIsoDate } from "@/lib/dates";
 
 const ALL_STATUSES: TimesheetStatus[] = ["Draft", "Submitted", "Deleted"];
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
@@ -121,11 +121,10 @@ export function SummaryClient({
         return true;
       })
       .sort((a, b) => {
-        const sa = STATUS_ORDER[a.status] ?? 99;
-        const sb = STATUS_ORDER[b.status] ?? 99;
-        if (sa !== sb) return sa - sb;
-        // Within the same status, newest week first.
-        return (b.startDate ?? "").localeCompare(a.startDate ?? "");
+        // Most recent week first; ties broken by status (Submitted → Draft → Deleted).
+        const dateCmp = (b.startDate ?? "").localeCompare(a.startDate ?? "");
+        if (dateCmp !== 0) return dateCmp;
+        return (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
       });
   }, [timesheets, filters]);
 
@@ -342,8 +341,17 @@ export function SummaryClient({
                 </td>
               </tr>
             ) : (
-              filtered.map((t) => (
-                <tr key={t.id} className="border-t border-slate-100 align-top hover:bg-slate-50">
+              filtered.map((t) => {
+                const isCurrentWeek = t.startDate === thisMondayIso();
+                return (
+                <tr
+                  key={t.id}
+                  className={`border-t align-top ${
+                    isCurrentWeek
+                      ? "bg-amber-50/60 border-amber-200 hover:bg-amber-50"
+                      : "border-slate-100 hover:bg-slate-50"
+                  }`}
+                >
                   <td className="px-2 py-1.5 whitespace-nowrap text-slate-700">
                     {formatRange(t.startDate, t.endDate)}
                   </td>
@@ -388,7 +396,8 @@ export function SummaryClient({
                     </td>
                   ) : null}
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>

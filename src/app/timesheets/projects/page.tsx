@@ -134,8 +134,8 @@ function ProjectRow({ project: p }: { project: MyProjectRecord }) {
         ) : null}
       </div>
 
-      {/* Team bubbles */}
-      <div className="col-span-5 lg:col-span-2 flex justify-start lg:justify-center">
+      {/* Team bubbles — left aligned, sorted: Engagement Lead → Project Leader → others. */}
+      <div className="col-span-5 lg:col-span-2 flex justify-start">
         {p.team.length > 0 ? <TeamBubbles team={p.team} /> : null}
       </div>
 
@@ -177,20 +177,45 @@ function TeamBubbles({ team }: { team: MyProjectTeamMember[] }) {
   const remainder = team.slice(VISIBLE);
   const remainderLabel = remainder.map((m) => m.fullName || m.memberCode).join(", ");
   return (
-    <div className="flex items-center -space-x-1.5">
+    // pt-2 leaves room for the star above leader avatars without clipping it.
+    <div className="flex items-center -space-x-1.5 pt-2">
       {visible.map((m) => {
-        const label = `${m.fullName || m.memberCode}${m.isLeader ? " · Project Leader" : ""}`;
-        const ringCls = m.isLeader ? "ring-brand-500" : "ring-white";
+        const label = `${m.fullName || m.memberCode}${m.role ? " · " + m.role : ""}`;
+        const isEL = m.role === "Engagement Lead";
+        const isPL = m.role === "Project Leader";
+        const showStar = isEL || isPL;
+        const ringCls = isEL
+          ? "ring-slate-900"
+          : isPL
+          ? "ring-brand-500"
+          : "ring-white";
         return (
-          <span
-            key={m.memberRecordId}
-            className="group relative"
-          >
+          <span key={m.memberRecordId} className="group relative">
+            {showStar ? (
+              <span
+                role="tooltip"
+                aria-label={isEL ? "Engagement Lead" : "Project Leader"}
+                className={`pointer-events-none absolute left-1/2 -translate-x-1/2 -top-2 z-10 flex h-3 w-3 items-center justify-center ${
+                  isEL ? "text-slate-900" : "text-brand-600"
+                }`}
+              >
+                <StarIcon />
+                <span className="pointer-events-none absolute bottom-full mb-0.5 whitespace-nowrap rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-medium text-white opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
+                  {isEL ? "Engagement Lead" : "Project Leader"}
+                </span>
+              </span>
+            ) : null}
             <span
               title={label}
               aria-label={label}
               className={`relative h-7 w-7 rounded-full ring-2 ${ringCls} overflow-hidden flex items-center justify-center text-[11px] font-semibold ${
-                m.photoUrl ? "" : m.isLeader ? "bg-brand-600 text-white" : "bg-slate-200 text-slate-700"
+                m.photoUrl
+                  ? ""
+                  : isEL
+                  ? "bg-slate-900 text-white"
+                  : isPL
+                  ? "bg-brand-600 text-white"
+                  : "bg-slate-200 text-slate-700"
               }`}
             >
               {m.photoUrl ? (
@@ -227,6 +252,14 @@ function TeamBubbles({ team }: { team: MyProjectTeamMember[] }) {
         </span>
       ) : null}
     </div>
+  );
+}
+
+function StarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor" aria-hidden="true">
+      <path d="M12 2.6 14.45 8.55 21 9.27l-4.95 4.42L17.5 20.4 12 17.05 6.5 20.4l1.45-6.71L3 9.27l6.55-.72L12 2.6Z" />
+    </svg>
   );
 }
 

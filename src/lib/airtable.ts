@@ -1081,12 +1081,14 @@ export async function getStaffingsForMember(
 // filterByFormula sees their primary-field values (the member codes). We filter
 // by the visible memberCode string with FIND to remain robust if multiple links exist.
 async function staffingsByMemberCodeString(memberCode: string): Promise<Map<string, StaffingRecord>> {
-  const records = await base(TABLES.projectStaffing)
-    .select({
-      filterByFormula: `FIND("${escape(memberCode)}", ARRAYJOIN({${FIELDS.projectStaffing.memberCode}}))`,
-    })
-    .all();
-  const projectNames = await getProjectNameMap();
+  const [records, projectNames] = await Promise.all([
+    base(TABLES.projectStaffing)
+      .select({
+        filterByFormula: `FIND("${escape(memberCode)}", ARRAYJOIN({${FIELDS.projectStaffing.memberCode}}))`,
+      })
+      .all(),
+    getProjectNameMap(),
+  ]);
   const map = new Map<string, StaffingRecord>();
   for (const r of records) {
     const projectCode = str(r, FIELDS.projectStaffing.projectCode);
@@ -1150,22 +1152,60 @@ export async function getTimesheetById(
   memberCode: string,
 ): Promise<TimesheetRecord | null> {
   try {
-    const r = await base(TABLES.timesheets).find(recordId);
-    const staffings = await staffingsByMemberCodeString(memberCode);
+    // Fan out the three Airtable calls instead of awaiting them in series.
+    // The ownership check uses the member-code map, which is also needed by
+    // toTimesheet's caller, so fetching it in parallel costs nothing extra.
+    const [r, staffings, memberCodeById] = await Promise.all([
+      base(TABLES.timesheets).find(recordId),
+      staffingsByMemberCodeString(memberCode),
+      getMemberCodeMap(),
+    ]);
     const ts = toTimesheet(r, staffings);
-    // Ownership check via the linked member's primary string value.
-    const memberField = r.get(FIELDS.timesheets.memberCode);
-    const linkedIds = Array.isArray(memberField) ? (memberField as string[]) : [];
-    // Linked IDs are record IDs; we don't have the member record here.
-    // Instead, verify by re-checking via memberCode filter:
-    if (!ts.memberRecordId || linkedIds.length === 0) return null;
-    // Cross-check: fetch the member and compare memberCode.
-    const member = await getMemberById(ts.memberRecordId);
-    if (!member || member.memberCode !== memberCode) return null;
+    if (!ts.memberRecordId) return null;
+    if (memberCodeById.get(ts.memberRecordId) !== memberCode) return null;
     return ts;
   } catch {
     return null;
   }
+}
+
+// Same as getTimesheetById, but also returns the eligible staffings the form
+// needs so the page can render fully on the server with no client-side fetch.
+export async function getTimesheetWithEligibleStaffings(
+  recordId: string,
+  memberCode: string,
+  weekMondayIso: string | null,
+): Promise<{ timesheet: TimesheetRecord; eligible: StaffingRecord[] } | null> {
+  try {
+    const [r, staffings, memberCodeById] = await Promise.all([
+      base(TABLES.timesheets).find(recordId),
+      staffingsByMemberCodeString(memberCode),
+      getMemberCodeMap(),
+    ]);
+    const ts = toTimesheet(r, staffings);
+    if (!ts.memberRecordId) return null;
+    if (memberCodeById.get(ts.memberRecordId) !== memberCode) return null;
+    const all = [...staffings.values()];
+    const active = all.filter(
+      (s) => s.status === null || s.status === "In Progress" || s.status === "Not Started",
+    );
+    const eligible = weekMondayIso
+      ? active.filter((s) => weekOverlapsRangeBetween(weekMondayIso, s.startDate, s.endDate))
+      : active;
+    return { timesheet: ts, eligible };
+  } catch {
+    return null;
+  }
+}
+
+function weekOverlapsRangeBetween(monday: string, start: string | null, end: string | null): boolean {
+  // Friday = monday + 4 days. Use string compare on YYYY-MM-DD.
+  const md = new Date(monday + "T00:00:00Z");
+  md.setUTCDate(md.getUTCDate() + 4);
+  const friday = md.toISOString().slice(0, 10);
+  if (start && friday < start) return false;
+  if (end && monday > end) return false;
+  return true;
 }
 
 export async function existsTimesheetForWeek(
@@ -1753,6 +1793,9 @@ export type MyProjectTeamMember = {
   fullName: string;
   photoUrl: string | null;
   isLeader: boolean;
+  // Strongest role across this member's staffings on the project.
+  // "Engagement Lead" > "Project Leader" > "Consultant" > "".
+  role: ProjectRole | "";
 };
 
 export type MyProjectRecord = {
@@ -1905,6 +1948,15 @@ export async function listMyProjects(
       ]),
     );
 
+    const ROLE_RANK: Record<ProjectRole | "", number> = {
+      "Engagement Lead": 0,
+      "Project Leader": 1,
+      "Consultant": 2,
+      "": 3,
+    };
+    const upgradeRole = (current: ProjectRole | "", candidate: ProjectRole | ""): ProjectRole | "" =>
+      ROLE_RANK[candidate] < ROLE_RANK[current] ? candidate : current;
+
     for (const s of allStaffingsForProjects) {
       const code = str(s, FIELDS.projectStaffing.projectCode);
       const acc = out.get(code);
@@ -1922,9 +1974,11 @@ export async function listMyProjects(
             fullName: m.fullName,
             photoUrl: m.photoUrl,
             isLeader: false,
+            role: "",
           };
           acc.team.push(existing);
         }
+        existing.role = upgradeRole(existing.role, projectRole);
         if (projectRole === "Project Leader" || projectRole === "Engagement Lead") {
           existing.isLeader = true;
         }
@@ -1941,6 +1995,7 @@ export async function listMyProjects(
         const existing = acc.team.find((t) => t.memberRecordId === lid);
         if (existing) {
           existing.isLeader = true;
+          existing.role = upgradeRole(existing.role, "Project Leader");
         } else {
           acc.team.push({
             memberRecordId: lid,
@@ -1948,12 +2003,15 @@ export async function listMyProjects(
             fullName: m.fullName,
             photoUrl: m.photoUrl,
             isLeader: true,
+            role: "Project Leader",
           });
         }
       }
-      // Sort: leaders first, then by full name.
+      // Sort: Engagement Lead → Project Leader → Consultant → others, then by name.
       acc.team.sort((a, b) => {
-        if (a.isLeader !== b.isLeader) return a.isLeader ? -1 : 1;
+        const ra = ROLE_RANK[a.role];
+        const rb = ROLE_RANK[b.role];
+        if (ra !== rb) return ra - rb;
         return (a.fullName || a.memberCode).localeCompare(b.fullName || b.memberCode);
       });
     }

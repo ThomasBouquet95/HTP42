@@ -217,12 +217,14 @@ export function TimesheetsByWeekView({
           <tbody>
             {weeksData.map((w) => {
               const isExpanded = expanded.has(w.monday);
+              const isCurrent = w.monday === thisMondayIso();
               return (
                 <WeekBlock
                   key={w.monday}
                   week={w}
                   columns={visibleColumns}
                   expanded={isExpanded}
+                  isCurrent={isCurrent}
                   onToggle={() => toggleWeek(w.monday)}
                 />
               );
@@ -249,25 +251,32 @@ function WeekBlock({
   columns,
   expanded,
   onToggle,
+  isCurrent,
 }: {
   week: WeekData;
   columns: StaffingColumn[];
   expanded: boolean;
   onToggle: () => void;
+  isCurrent: boolean;
 }) {
+  const headerCls = isCurrent
+    ? "bg-amber-50 border-y border-amber-300 hover:bg-amber-100 cursor-pointer"
+    : "bg-brand-50/40 border-y border-brand-100 hover:bg-brand-50/70 cursor-pointer";
+  const labelCls = isCurrent ? "text-amber-800" : "text-brand-700";
   return (
     <>
-      <tr
-        onClick={onToggle}
-        className="bg-brand-50/40 border-y border-brand-100 hover:bg-brand-50/70 cursor-pointer"
-        aria-expanded={expanded}
-      >
+      <tr onClick={onToggle} className={headerCls} aria-expanded={expanded}>
         <td className="px-2 py-1.5">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-brand-700">
+          <div className={`flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide ${labelCls}`}>
             <span aria-hidden className="text-slate-500">
               {expanded ? "▾" : "▸"}
             </span>
             <span>Week of {formatHumanDate(week.monday)}</span>
+            {isCurrent ? (
+              <span className="rounded-full bg-amber-200 px-1.5 py-0 text-[9px] font-semibold tracking-wide text-amber-900 normal-case">
+                THIS WEEK
+              </span>
+            ) : null}
             {!week.hasAnyEntry ? (
               <span className="font-normal normal-case tracking-normal text-slate-500">
                 · no entries
@@ -280,13 +289,13 @@ function WeekBlock({
           return (
             <td
               key={c.id}
-              className="px-2 py-1.5 text-right tabular-nums font-semibold text-brand-700"
+              className={`px-2 py-1.5 text-right tabular-nums font-semibold ${labelCls}`}
             >
               {t > 0 ? t.toFixed(2) : <span className="text-slate-300">—</span>}
             </td>
           );
         })}
-        <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-brand-700">
+        <td className={`px-2 py-1.5 text-right tabular-nums font-semibold ${labelCls}`}>
           {week.hasAnyEntry ? week.total.toFixed(2) : <span className="text-slate-300">—</span>}
         </td>
       </tr>

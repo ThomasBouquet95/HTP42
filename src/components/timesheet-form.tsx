@@ -24,6 +24,10 @@ type Props = {
   presetProjectCode?: string;
   onCancel?: () => void;
   onSaved?: () => void;
+  // When provided, the form skips the initial /api/staffings round-trip and
+  // uses these as the staffings for the current week. Used by the edit page
+  // to render the form fully on the server.
+  initialStaffings?: StaffingRecord[];
 };
 
 function blankDay(): DayState {
@@ -40,12 +44,22 @@ function initialFromExisting(t: TimesheetRecord): FormState {
   };
 }
 
-export function TimesheetForm({ mode, existing, presetProjectCode, onCancel, onSaved }: Props) {
+export function TimesheetForm({
+  mode,
+  existing,
+  presetProjectCode,
+  onCancel,
+  onSaved,
+  initialStaffings,
+}: Props) {
   const router = useRouter();
   const [weekStart, setWeekStart] = useState<string>(
     existing?.startDate ?? thisMondayIso(),
   );
-  const [staffings, setStaffings] = useState<StaffingRecord[]>([]);
+  const [staffings, setStaffings] = useState<StaffingRecord[]>(initialStaffings ?? []);
+  const [hasFetchedFor, setHasFetchedFor] = useState<string | null>(
+    initialStaffings ? mondayOf(existing?.startDate ?? thisMondayIso()) : null,
+  );
   const [loadingStaffings, setLoadingStaffings] = useState<boolean>(false);
   const [staffingId, setStaffingId] = useState<string>(existing?.staffingRecordId ?? "");
   const [days, setDays] = useState<FormState>(
@@ -64,6 +78,8 @@ export function TimesheetForm({ mode, existing, presetProjectCode, onCancel, onS
   const weekFriday = useMemo(() => fridayOfWeek(weekMonday), [weekMonday]);
 
   useEffect(() => {
+    // Skip the round-trip if the parent already passed the right list.
+    if (hasFetchedFor === weekMonday) return;
     let cancelled = false;
     setLoadingStaffings(true);
     fetch(`/api/staffings?week=${encodeURIComponent(weekMonday)}`)
@@ -97,12 +113,15 @@ export function TimesheetForm({ mode, existing, presetProjectCode, onCancel, onS
         if (!cancelled) setError("Unable to load project staffings.");
       })
       .finally(() => {
-        if (!cancelled) setLoadingStaffings(false);
+        if (!cancelled) {
+          setLoadingStaffings(false);
+          setHasFetchedFor(weekMonday);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [weekMonday, existing, staffingId]);
+  }, [weekMonday, existing, staffingId, hasFetchedFor]);
 
   const total = useMemo(
     () => DAY_KEYS.reduce((sum, k) => sum + (Number(days[k].hours) || 0), 0),
