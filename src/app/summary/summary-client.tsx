@@ -6,7 +6,7 @@ import type { TimesheetRecord, TimesheetStatus } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/modal";
 import { EditIcon, EyeIcon, IconButton, TrashIcon } from "@/components/admin-icons";
-import { formatRange, parseIsoDate, thisMondayIso, toIsoDate } from "@/lib/dates";
+import { formatHumanDate, formatRange, parseIsoDate, thisMondayIso, toIsoDate } from "@/lib/dates";
 
 const ALL_STATUSES: TimesheetStatus[] = ["Draft", "Submitted", "Deleted"];
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
@@ -27,10 +27,24 @@ type Props = {
   hideSummary?: boolean;
 };
 
+type PeriodKey =
+  | "all"
+  | "thisWeek"
+  | "last4Weeks"
+  | "last12Weeks"
+  | "thisMonth"
+  | "lastMonth"
+  | "thisQuarter"
+  | "ytd"
+  | "custom";
+
 type Filters = {
   status: "All" | TimesheetStatus;
   projectCode: string;
   staffingId: string;
+  period: PeriodKey;
+  // Resolved range; for presets these are computed from `period`. For "custom"
+  // they're the user-edited Monday→Friday range. Empty string means open-ended.
   from: string;
   to: string;
 };
@@ -39,9 +53,67 @@ const DEFAULT_FILTERS: Filters = {
   status: "Submitted",
   projectCode: "All",
   staffingId: "All",
+  period: "all",
   from: "",
   to: "",
 };
+
+const PERIOD_OPTIONS: { value: PeriodKey; label: string }[] = [
+  { value: "all", label: "All time" },
+  { value: "thisWeek", label: "This week" },
+  { value: "last4Weeks", label: "Last 4 weeks" },
+  { value: "last12Weeks", label: "Last 12 weeks" },
+  { value: "thisMonth", label: "This month" },
+  { value: "lastMonth", label: "Last month" },
+  { value: "thisQuarter", label: "This quarter" },
+  { value: "ytd", label: "Year to date" },
+  { value: "custom", label: "Custom range…" },
+];
+
+// All presets resolve to a [fromMonday, toMonday] range. The filter then keeps
+// every timesheet whose startDate (always a Monday) sits inside it.
+function resolvePeriod(period: PeriodKey): { from: string; to: string } {
+  if (period === "all" || period === "custom") return { from: "", to: "" };
+  const today = parseIsoDate(thisMondayIso());
+  const thisMonday = thisMondayIso();
+  const monday = (d: Date) => {
+    // Snap any date back to its containing Monday.
+    const day = d.getUTCDay();
+    const offset = day === 0 ? -6 : 1 - day; // Sunday → previous Monday
+    const m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + offset));
+    return toIsoDate(m);
+  };
+  const addDays = (n: number) => {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() + n);
+    return monday(d);
+  };
+  const year = today.getUTCFullYear();
+  const month = today.getUTCMonth();
+  if (period === "thisWeek") return { from: thisMonday, to: thisMonday };
+  if (period === "last4Weeks") return { from: addDays(-7 * 3), to: thisMonday };
+  if (period === "last12Weeks") return { from: addDays(-7 * 11), to: thisMonday };
+  if (period === "thisMonth") {
+    const first = new Date(Date.UTC(year, month, 1));
+    const last = new Date(Date.UTC(year, month + 1, 0));
+    return { from: monday(first), to: monday(last) };
+  }
+  if (period === "lastMonth") {
+    const first = new Date(Date.UTC(year, month - 1, 1));
+    const last = new Date(Date.UTC(year, month, 0));
+    return { from: monday(first), to: monday(last) };
+  }
+  if (period === "thisQuarter") {
+    const qStart = month - (month % 3);
+    const first = new Date(Date.UTC(year, qStart, 1));
+    return { from: monday(first), to: thisMonday };
+  }
+  if (period === "ytd") {
+    const first = new Date(Date.UTC(year, 0, 1));
+    return { from: monday(first), to: thisMonday };
+  }
+  return { from: "", to: "" };
+}
 
 export function SummaryClient({
   timesheets,
@@ -204,7 +276,7 @@ export function SummaryClient({
   return (
     <div className="space-y-3">
       <div className="bg-white rounded-lg border border-slate-200 p-3">
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Select
             label="Status"
             value={filters.status}
@@ -235,17 +307,42 @@ export function SummaryClient({
               })),
             ]}
           />
-          <DateInput
-            label="From"
-            value={filters.from}
-            onChange={(v) => update("from", v)}
-          />
-          <DateInput
-            label="To"
-            value={filters.to}
-            onChange={(v) => update("to", v)}
+          <Select
+            label="Period"
+            value={filters.period}
+            onChange={(v) => {
+              const next = v as PeriodKey;
+              if (next === "custom") {
+                update("period", next);
+              } else {
+                const { from, to } = resolvePeriod(next);
+                setFilters((prev) => ({ ...prev, period: next, from, to }));
+              }
+            }}
+            options={PERIOD_OPTIONS}
+            hint={
+              filters.period !== "all" && filters.period !== "custom" && filters.from && filters.to
+                ? `Weeks of ${formatHumanDate(filters.from)} → ${formatHumanDate(filters.to)}`
+                : undefined
+            }
           />
         </div>
+        {filters.period === "custom" ? (
+          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="lg:col-start-3 lg:col-span-2 grid gap-2 grid-cols-2">
+              <WeekStartInput
+                label="From week (Monday)"
+                value={filters.from}
+                onChange={(v) => update("from", v)}
+              />
+              <WeekStartInput
+                label="To week (Monday)"
+                value={filters.to}
+                onChange={(v) => update("to", v)}
+              />
+            </div>
+          </div>
+        ) : null}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
           <div className="text-xs text-slate-600">
             {filtered.length} timesheet{filtered.length === 1 ? "" : "s"} ·{" "}
@@ -435,11 +532,13 @@ function Select({
   value,
   onChange,
   options,
+  hint,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
+  hint?: string;
 }) {
   return (
     <label className="block">
@@ -457,11 +556,14 @@ function Select({
           </option>
         ))}
       </select>
+      {hint ? <span className="mt-0.5 block text-[10px] text-slate-500">{hint}</span> : null}
     </label>
   );
 }
 
-function DateInput({
+// Snaps any picked date to the Monday of its week, so the user never has to
+// know that timesheets are Monday-aligned.
+function WeekStartInput({
   label,
   value,
   onChange,
@@ -470,6 +572,14 @@ function DateInput({
   value: string;
   onChange: (v: string) => void;
 }) {
+  function snap(iso: string): string {
+    if (!iso) return "";
+    const d = parseIsoDate(iso);
+    const day = d.getUTCDay();
+    const offset = day === 0 ? -6 : 1 - day;
+    const m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + offset));
+    return toIsoDate(m);
+  }
   return (
     <label className="block">
       <span className="block text-[11px] uppercase tracking-wide font-medium text-slate-500 mb-0.5">
@@ -478,9 +588,14 @@ function DateInput({
       <input
         type="date"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => onChange(snap(e.target.value))}
         className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs"
       />
+      {value ? (
+        <span className="mt-0.5 block text-[10px] text-slate-500">
+          Week of {formatHumanDate(value)}
+        </span>
+      ) : null}
     </label>
   );
 }
