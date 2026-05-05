@@ -60,6 +60,29 @@ export function formatRange(startIso: string | null, endIso: string | null): str
   return `${formatHumanDate(startIso)} → ${formatHumanDate(endIso)}`;
 }
 
+// Compact label for a Monday-to-Friday timesheet week. Examples:
+//   "Week of 20 – 24 Apr 2026"        (within one month)
+//   "Week of 30 Mar – 3 Apr 2026"     (crosses a month)
+//   "Week of 29 Dec 2025 – 2 Jan 2026" (crosses a year)
+export function formatWeekRange(startIso: string | null, endIso: string | null): string {
+  if (!startIso || !endIso) return "—";
+  const start = parseIsoDate(startIso);
+  const end = parseIsoDate(endIso);
+  const startDay = start.getUTCDate();
+  const endDay = end.getUTCDate();
+  const startMonth = start.toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" });
+  const endMonth = end.toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" });
+  const startYear = start.getUTCFullYear();
+  const endYear = end.getUTCFullYear();
+  if (startYear !== endYear) {
+    return `Week of ${startDay} ${startMonth} ${startYear} – ${endDay} ${endMonth} ${endYear}`;
+  }
+  if (startMonth !== endMonth) {
+    return `Week of ${startDay} ${startMonth} – ${endDay} ${endMonth} ${endYear}`;
+  }
+  return `Week of ${startDay} – ${endDay} ${startMonth} ${startYear}`;
+}
+
 export function weekOverlapsRange(
   weekStartIso: string,
   weekEndIso: string,

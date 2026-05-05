@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getTimesheetsForMember, type TimesheetRecord, type TimesheetStatus } from "@/lib/airtable";
-import { formatRange, parseIsoDate, toIsoDate } from "@/lib/dates";
+import { formatWeekRange, parseIsoDate, toIsoDate } from "@/lib/dates";
 import { PrintTrigger } from "./print-trigger";
 
 export const dynamic = "force-dynamic";
@@ -157,7 +157,7 @@ export default async function SummaryPrintPage({
                       {t.timesheetCode} — {t.projectName || t.projectCode || "—"}
                     </div>
                     <div className="ts-sub">
-                      Staffing <span className="mono">{t.staffingCode}</span> · Week {formatRange(t.startDate, t.endDate)}
+                      Staffing <span className="mono">{t.staffingCode}</span> · {formatWeekRange(t.startDate, t.endDate)}
                       {t.submissionDate ? ` · Submitted ${t.submissionDate}` : ""}
                     </div>
                   </div>

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { AdminTimesheetRecord, TimesheetStatus } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
-import { formatRange, parseIsoDate, toIsoDate } from "@/lib/dates";
+import { formatWeekRange, parseIsoDate, toIsoDate } from "@/lib/dates";
 
 const ALL_STATUSES: TimesheetStatus[] = ["Draft", "Submitted", "Deleted"];
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
@@ -256,7 +256,7 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
               filtered.map((t) => (
                 <tr key={t.id} className="border-t border-slate-100 align-top">
                   <td className="px-2 py-1.5 whitespace-nowrap text-slate-700">
-                    {formatRange(t.startDate, t.endDate)}
+                    {formatWeekRange(t.startDate, t.endDate)}
                   </td>
                   <td className="px-2 py-1.5">
                     <div className="font-mono text-[10px] text-slate-500">{t.memberCode}</div>

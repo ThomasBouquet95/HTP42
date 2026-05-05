@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { ProjectSummary, ProjectTeamMember, ProjectStatus } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
-import { formatRange, formatHumanDate } from "@/lib/dates";
+import { formatWeekRange, formatHumanDate } from "@/lib/dates";
 
 type Props = { summary: ProjectSummary };
 
@@ -296,7 +296,7 @@ function MemberRow({
                         className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
                       >
                         <td className="py-1.5 pr-3 whitespace-nowrap text-slate-700">
-                          {formatRange(t.startDate, t.endDate)}
+                          {formatWeekRange(t.startDate, t.endDate)}
                         </td>
                         <td className="py-1.5 pr-3 font-mono text-[10px] text-slate-500">
                           {t.staffingCode || "—"}
@@ -521,7 +521,7 @@ function TimesheetReadModal({
           <div>
             <div className="text-[11px] font-mono text-slate-500">{t.timesheetCode}</div>
             <h2 className="text-sm font-semibold text-slate-900 mt-0.5">
-              {member.memberName || member.memberCode} · {formatRange(t.startDate, t.endDate)}
+              {member.memberName || member.memberCode} · {formatWeekRange(t.startDate, t.endDate)}
             </h2>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
               <span className="font-mono">{t.staffingCode}</span>

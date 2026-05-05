@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 import { getTimesheetWithEligibleStaffings } from "@/lib/airtable";
 import { TimesheetForm } from "@/components/timesheet-form";
 import { StatusBadge } from "@/components/status-badge";
-import { formatRange, mondayOf } from "@/lib/dates";
+import { formatWeekRange, mondayOf } from "@/lib/dates";
 import { ReadOnlyTimesheet } from "./read-only";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +57,7 @@ export default async function TimesheetDetailPage({
           <h1 className="text-base sm:text-lg font-semibold">Timesheet {ts.timesheetCode}</h1>
           <p className="text-xs text-slate-500 mt-0.5">
             {ts.staffingCode} — {ts.projectName || ts.projectCode} ·{" "}
-            {formatRange(ts.startDate, ts.endDate)}
+            {formatWeekRange(ts.startDate, ts.endDate)}
           </p>
         </div>
         <StatusBadge status={ts.status} />

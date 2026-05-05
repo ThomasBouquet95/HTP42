@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getLedProjects, getProjectSummaryByCode, type ProjectSummary, type ProjectTeamMember } from "@/lib/airtable";
-import { formatRange, formatHumanDate } from "@/lib/dates";
+import { formatWeekRange, formatHumanDate } from "@/lib/dates";
 import { PrintTrigger } from "./print-trigger";
 
 export const dynamic = "force-dynamic";
@@ -196,7 +196,7 @@ function MemberSection({ member: m }: { member: ProjectTeamMember }) {
         <article key={t.id} className="timesheet">
           <div className="ts-header">
             <div>
-              <span className="ts-title">{formatRange(t.startDate, t.endDate)}</span>
+              <span className="ts-title">{formatWeekRange(t.startDate, t.endDate)}</span>
               <span className="ts-sub"> · {t.staffingCode || "—"} · {t.timesheetCode}</span>
             </div>
             <div className={`status status-${t.status.toLowerCase()}`}>{t.status}</div>

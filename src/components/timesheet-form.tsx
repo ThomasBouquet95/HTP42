@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { StaffingRecord, TimesheetRecord } from "@/lib/airtable";
-import { formatRange, fridayOfWeek, mondayOf, thisMondayIso } from "@/lib/dates";
+import { formatWeekRange, fridayOfWeek, mondayOf, thisMondayIso } from "@/lib/dates";
 import { WeekPicker } from "@/components/week-picker";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
@@ -195,7 +195,7 @@ export function TimesheetForm({
           </label>
           <WeekPicker id="week-picker" value={weekStart} onChange={setWeekStart} />
           <span className="block text-[11px] text-slate-500 mt-1">
-            Week: {formatRange(weekMonday, weekFriday)}
+            {formatWeekRange(weekMonday, weekFriday)}
           </span>
         </div>
         <label className="block">

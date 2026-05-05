@@ -6,7 +6,7 @@ import type { TimesheetRecord, TimesheetStatus } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/modal";
 import { EditIcon, EyeIcon, IconButton, TrashIcon } from "@/components/admin-icons";
-import { formatHumanDate, formatRange, parseIsoDate, thisMondayIso, toIsoDate } from "@/lib/dates";
+import { formatHumanDate, formatWeekRange, parseIsoDate, thisMondayIso, toIsoDate } from "@/lib/dates";
 
 const ALL_STATUSES: TimesheetStatus[] = ["Draft", "Submitted", "Deleted"];
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
@@ -450,7 +450,7 @@ export function SummaryClient({
                   }`}
                 >
                   <td className="px-2 py-1.5 whitespace-nowrap text-slate-700">
-                    {formatRange(t.startDate, t.endDate)}
+                    {formatWeekRange(t.startDate, t.endDate)}
                   </td>
                   <td className="px-2 py-1.5">
                     <div className="font-mono text-[10px] text-slate-500">{t.staffingCode}</div>
@@ -508,7 +508,7 @@ export function SummaryClient({
             <p>
               This will move the timesheet for{" "}
               <span className="font-medium">
-                {deleteTarget ? formatRange(deleteTarget.startDate, deleteTarget.endDate) : ""}
+                {deleteTarget ? formatWeekRange(deleteTarget.startDate, deleteTarget.endDate) : ""}
               </span>{" "}
               to <span className="font-medium">Deleted</span>. You can recreate it later if needed.
             </p>
