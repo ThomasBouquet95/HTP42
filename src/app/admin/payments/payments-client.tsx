@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
@@ -1029,8 +1029,26 @@ function CumulativeCashFlowChart({
 }: {
   rows: [string, { inflow: number; outflow: number }][];
 }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  // Default width keeps SSR sensible; the observer below replaces it on mount.
+  const [width, setWidth] = useState(480);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      if (w > 0) setWidth(Math.floor(w));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   if (rows.length === 0) {
-    return <div className="text-center text-xs text-slate-500 py-8">No data for this period.</div>;
+    return (
+      <div ref={wrapRef} className="w-full">
+        <div className="text-center text-xs text-slate-500 py-8">No data for this period.</div>
+      </div>
+    );
   }
   // Build cumulative net (running total of inflow − outflow per month).
   const points = rows.map(([month, v], i, arr) => {
@@ -1042,11 +1060,12 @@ function CumulativeCashFlowChart({
   const range = hi - lo || 1;
   const padX = 24;
   const padY = 14;
-  const stepX = 36;
   const chartH = 160;
-  const chartW = padX * 2 + Math.max(1, points.length - 1) * stepX;
+  const chartW = Math.max(220, width);
+  const innerW = chartW - padX * 2;
+  const stepX = points.length > 1 ? innerW / (points.length - 1) : 0;
   const yFor = (v: number) => padY + (1 - (v - lo) / range) * (chartH - padY * 2);
-  const xFor = (i: number) => padX + i * stepX;
+  const xFor = (i: number) => (points.length > 1 ? padX + i * stepX : chartW / 2);
   const zeroY = yFor(0);
   const path = points
     .map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(i)} ${yFor(p.cumulative)}`)
@@ -1056,9 +1075,9 @@ function CumulativeCashFlowChart({
       ? `€${(n / 1000).toFixed(Math.abs(n) >= 10_000 ? 0 : 1)}k`
       : `€${n.toFixed(0)}`;
   return (
-    <div className="overflow-x-auto">
+    <div ref={wrapRef} className="w-full">
       <svg
-        width={Math.max(chartW, 220)}
+        width={chartW}
         height={chartH + 22}
         role="img"
         aria-label="Cumulative cash flow"

@@ -71,12 +71,12 @@ export function WeekPicker({ value, onChange, disabled, id }: Props) {
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className="mt-1 inline-flex w-full items-center justify-between rounded-md border border-slate-300 bg-white px-3 py-2 text-left text-sm shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-1 inline-flex w-full items-center justify-between rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-left text-xs hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
         aria-haspopup="dialog"
         aria-expanded={open}
       >
         <span className="truncate">{label}</span>
-        <svg className="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <svg className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path fillRule="evenodd" d="M6 2a1 1 0 0 1 1 1v1h6V3a1 1 0 1 1 2 0v1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1Zm11 6H3v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8Z" clipRule="evenodd" />
         </svg>
       </button>

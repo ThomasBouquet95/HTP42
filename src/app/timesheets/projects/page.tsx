@@ -73,7 +73,7 @@ function ProjectRow({ project: p }: { project: MyProjectRecord }) {
       : "";
   const frame = statusFrame(p.status);
   return (
-    <li className={`grid grid-cols-12 items-center gap-3 px-4 py-3 border-l-4 ${frame.border}`}>
+    <li className={`grid grid-cols-12 items-center gap-3 px-4 py-3 border-l-4 ${frame.border} ${frame.row}`}>
       {/* Title block */}
       <div className="col-span-12 lg:col-span-4 min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -141,30 +141,34 @@ function ProjectRow({ project: p }: { project: MyProjectRecord }) {
 
       {/* Actions */}
       <div className="col-span-12 lg:col-span-2 flex items-center justify-end gap-2">
-        <SubmitTimesheetButton
-          presetProjectCode={p.projectCode}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100"
-        >
-          <span className="sr-only">Add timesheet</span>
-          <PlusIcon />
-        </SubmitTimesheetButton>
+        <ActionTip label="Add timesheet">
+          <SubmitTimesheetButton
+            presetProjectCode={p.projectCode}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100"
+          >
+            <span className="sr-only">Add timesheet</span>
+            <PlusIcon />
+          </SubmitTimesheetButton>
+        </ActionTip>
         {p.isLeader ? (
-          <Link
-            href={`/timesheets/team?project=${encodeURIComponent(p.projectCode)}`}
-            title="Project Staffing Summary"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-          >
-            <span className="sr-only">Project Staffing Summary</span>
-            <SummaryIcon />
-          </Link>
+          <ActionTip label="Project Staffing Summary">
+            <Link
+              href={`/timesheets/team?project=${encodeURIComponent(p.projectCode)}`}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+            >
+              <span className="sr-only">Project Staffing Summary</span>
+              <SummaryIcon />
+            </Link>
+          </ActionTip>
         ) : (
-          <span
-            title="Available to Engagement Leads and Project Leaders"
-            aria-disabled="true"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-300 cursor-not-allowed"
-          >
-            <SummaryIcon />
-          </span>
+          <ActionTip label="Available to Engagement Leads and Project Leaders">
+            <span
+              aria-disabled="true"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-300 cursor-not-allowed"
+            >
+              <SummaryIcon />
+            </span>
+          </ActionTip>
         )}
       </div>
     </li>
@@ -255,6 +259,20 @@ function TeamBubbles({ team }: { team: MyProjectTeamMember[] }) {
   );
 }
 
+function ActionTip({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <span className="group relative inline-flex">
+      {children}
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute right-0 top-full mt-1 z-20 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 group-hover:opacity-100 transition-opacity duration-100 shadow-md"
+      >
+        {label}
+      </span>
+    </span>
+  );
+}
+
 function StarIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor" aria-hidden="true">
@@ -271,48 +289,50 @@ function initials(name: string): string {
   return `${first}${last}`.toUpperCase();
 }
 
-type FrameStyle = { frame: string; border: string; label: string };
+type FrameStyle = { row: string; border: string; label: string };
 const STATUS_FRAMES: Record<ProjectStatus, FrameStyle> = {
   "In Progress": {
-    frame: "bg-emerald-50/40 border-emerald-200 border-l-emerald-500",
+    row: "bg-emerald-50/60",
     border: "border-l-emerald-500",
     label: "text-emerald-700",
   },
   "Planned": {
-    frame: "bg-slate-50 border-slate-200 border-l-slate-400",
-    border: "border-l-slate-400",
-    label: "text-slate-600",
+    row: "bg-sky-50/70",
+    border: "border-l-sky-500",
+    label: "text-sky-700",
   },
   "Not Started": {
-    frame: "bg-slate-50 border-slate-200 border-l-slate-400",
-    border: "border-l-slate-400",
-    label: "text-slate-600",
+    row: "bg-sky-50/70",
+    border: "border-l-sky-500",
+    label: "text-sky-700",
   },
   "On Hold": {
-    frame: "bg-amber-50/50 border-amber-200 border-l-amber-500",
-    border: "border-l-amber-500",
-    label: "text-amber-700",
+    row: "bg-red-50/60",
+    border: "border-l-red-500",
+    label: "text-red-700",
   },
   "Completed": {
-    frame: "bg-blue-50/40 border-blue-200 border-l-blue-500",
-    border: "border-l-blue-500",
-    label: "text-blue-700",
+    row: "bg-slate-50",
+    border: "border-l-slate-400",
+    label: "text-slate-600",
   },
 };
 
 function statusFrame(status: ProjectStatus | ""): FrameStyle {
   if (!status) {
     return {
-      frame: "bg-white border-slate-200 border-l-slate-300",
+      row: "bg-white",
       border: "border-l-slate-300",
       label: "text-slate-500",
     };
   }
-  return STATUS_FRAMES[status] ?? {
-    frame: "bg-white border-slate-200 border-l-slate-300",
-    border: "border-l-slate-300",
-    label: "text-slate-500",
-  };
+  return (
+    STATUS_FRAMES[status] ?? {
+      row: "bg-white",
+      border: "border-l-slate-300",
+      label: "text-slate-500",
+    }
+  );
 }
 
 function EmptyState() {
