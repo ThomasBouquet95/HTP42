@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import type { ProjectSummary, ProjectTeamMember, ProjectStatus } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
-import { formatWeekRange, formatHumanDate } from "@/lib/dates";
+import { formatWeekRange } from "@/lib/dates";
 import { WeekChip } from "@/components/week-chip";
+import { DateRangeChip } from "@/components/date-range-chip";
 
 type Props = { summary: ProjectSummary };
 
@@ -45,7 +46,7 @@ export function ProjectSummaryView({ summary }: Props) {
               {project.projectName || "—"}
             </div>
             <div className="mt-1.5 text-xs text-slate-500">
-              {formatHumanDate(project.startDate)} → {formatHumanDate(project.endDate)}
+              <DateRangeChip startIso={project.startDate} endIso={project.endDate} variant="plain" />
             </div>
           </div>
           <div className="flex gap-2">
@@ -173,10 +174,13 @@ function MemberRow({
   const allocHours = member.daysAllocatedTotal * HOURS_PER_DAY;
   const pct = allocHours > 0 ? Math.min(100, (member.hoursActualTotal / allocHours) * 100) : 0;
   const over = member.hoursActualTotal > allocHours && allocHours > 0;
-  const isLeader =
-    member.staffings.some(
-      (s) => s.projectRole === "Project Leader" || s.projectRole === "Engagement Lead",
-    );
+  const isEL = member.staffings.some((s) => s.projectRole === "Engagement Lead");
+  const isPL = member.staffings.some((s) => s.projectRole === "Project Lead");
+  const leadLabel: "Engagement Lead" | "Project Lead" | null = isEL
+    ? "Engagement Lead"
+    : isPL
+    ? "Project Lead"
+    : null;
 
   return (
     <div>
@@ -200,9 +204,15 @@ function MemberRow({
               {member.memberName || member.memberCode}
             </span>
             <span className="font-mono text-xs text-slate-500">{member.memberCode}</span>
-            {isLeader ? (
-              <span className="shrink-0 inline-flex items-center rounded-full border border-brand-200 bg-brand-50 px-1.5 py-0 text-[10px] font-medium text-brand-700">
-                Project Leader
+            {leadLabel ? (
+              <span
+                className={`shrink-0 inline-flex items-center rounded-full px-1.5 py-0 text-[10px] font-medium ${
+                  isEL
+                    ? "border border-slate-300 bg-slate-100 text-slate-800"
+                    : "border border-brand-200 bg-brand-50 text-brand-700"
+                }`}
+              >
+                {leadLabel}
               </span>
             ) : null}
           </div>
@@ -264,7 +274,7 @@ function MemberRow({
                           {s.daysAllocated == null ? "N/A" : `${s.daysAllocated} d`}
                         </td>
                         <td className="py-1.5 whitespace-nowrap text-slate-600 text-xs">
-                          {formatHumanDate(s.startDate)} → {formatHumanDate(s.endDate)}
+                          <DateRangeChip startIso={s.startDate} endIso={s.endDate} variant="plain" />
                         </td>
                       </tr>
                     ))}

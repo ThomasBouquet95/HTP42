@@ -147,17 +147,17 @@ export const STAFFING_STATUSES: StaffingStatus[] = [
   "Completed",
 ];
 
-export type ProjectRole = "Engagement Lead" | "Project Leader" | "Consultant";
-export const PROJECT_ROLES: ProjectRole[] = ["Engagement Lead", "Project Leader", "Consultant"];
+export type ProjectRole = "Engagement Lead" | "Project Lead" | "Consultant";
+export const PROJECT_ROLES: ProjectRole[] = ["Engagement Lead", "Project Lead", "Consultant"];
 // Roles that grant access to the team's timesheets (Project Staffing Summary).
-export const LEADER_ROLES: ProjectRole[] = ["Engagement Lead", "Project Leader"];
+export const LEADER_ROLES: ProjectRole[] = ["Engagement Lead", "Project Lead"];
 
 // Leadership rank — lower is more senior. Used to sort team members in the
 // Project Staffing Summary so Engagement Leads appear first, then Project
 // Leaders, then everyone else.
 export function leadRank(m: { staffings: Array<{ projectRole: ProjectRole | "" }> }): number {
   if (m.staffings.some((s) => s.projectRole === "Engagement Lead")) return 0;
-  if (m.staffings.some((s) => s.projectRole === "Project Leader")) return 1;
+  if (m.staffings.some((s) => s.projectRole === "Project Lead")) return 1;
   return 2;
 }
 export type SowStatus = "Signed" | "In Progress" | "Draft" | "Not Started";
@@ -1509,7 +1509,7 @@ export type TeamTimesheetRecord = TimesheetRecord & {
 //   1. The project's "Project Leaders" linked field includes the member's
 //      record ID (the new, project-level source of truth).
 //   2. The member has a staffing on the project whose "Project Role" field is
-//      "Project Leader" (legacy / per-staffing source of truth).
+//      "Project Lead" (legacy / per-staffing source of truth).
 // The second signal is what older setups configured before the project-level
 // field existed and we honour it so existing data keeps working.
 export async function getLedProjects(
@@ -1537,7 +1537,7 @@ export async function getLedProjects(
             filterByFormula: `AND(
               FIND("${escape(memberCode)}", ARRAYJOIN(ARRAYCOMPACT({${FIELDS.projectStaffing.memberCode}}))),
               OR(
-                {${FIELDS.projectStaffing.projectRole}} = "Project Leader",
+                {${FIELDS.projectStaffing.projectRole}} = "Project Lead",
                 {${FIELDS.projectStaffing.projectRole}} = "Engagement Lead"
               )
             )`,
@@ -1590,7 +1590,7 @@ export async function getLedProjects(
 }
 
 // ---------------------------------------------------------------------------
-// Project summary (per-project view for a Project Leader)
+// Project summary (per-project view for a Project Lead)
 // ---------------------------------------------------------------------------
 
 export type ProjectTeamMember = {
@@ -1794,7 +1794,7 @@ export type MyProjectTeamMember = {
   photoUrl: string | null;
   isLeader: boolean;
   // Strongest role across this member's staffings on the project.
-  // "Engagement Lead" > "Project Leader" > "Consultant" > "".
+  // "Engagement Lead" > "Project Lead" > "Consultant" > "".
   role: ProjectRole | "";
 };
 
@@ -1820,7 +1820,7 @@ export type MyProjectRecord = {
 // Aggregates allocated days from the staffings + actual hours/days from the
 // member's timesheets on those staffings. Marks isLeader=true if either the
 // project's "Project Leaders" field includes the member or any of the
-// member's staffings has Project Role = "Project Leader".
+// member's staffings has Project Role = "Project Lead".
 export async function listMyProjects(
   memberRecordId: string,
   memberCode: string,
@@ -1882,7 +1882,7 @@ export async function listMyProjects(
     const acc = out.get(code)!;
     const daysAllocated = numOrNull(r, FIELDS.projectStaffing.daysAllocated);
     const projectRole = str(r, FIELDS.projectStaffing.projectRole) as ProjectRole | "";
-    if (projectRole === "Project Leader" || projectRole === "Engagement Lead") {
+    if (projectRole === "Project Lead" || projectRole === "Engagement Lead") {
       acc.isLeader = true;
     }
     acc.staffings.push({
@@ -1950,7 +1950,7 @@ export async function listMyProjects(
 
     const ROLE_RANK: Record<ProjectRole | "", number> = {
       "Engagement Lead": 0,
-      "Project Leader": 1,
+      "Project Lead": 1,
       "Consultant": 2,
       "": 3,
     };
@@ -1979,7 +1979,7 @@ export async function listMyProjects(
           acc.team.push(existing);
         }
         existing.role = upgradeRole(existing.role, projectRole);
-        if (projectRole === "Project Leader" || projectRole === "Engagement Lead") {
+        if (projectRole === "Project Lead" || projectRole === "Engagement Lead") {
           existing.isLeader = true;
         }
       }
@@ -1995,7 +1995,7 @@ export async function listMyProjects(
         const existing = acc.team.find((t) => t.memberRecordId === lid);
         if (existing) {
           existing.isLeader = true;
-          existing.role = upgradeRole(existing.role, "Project Leader");
+          existing.role = upgradeRole(existing.role, "Project Lead");
         } else {
           acc.team.push({
             memberRecordId: lid,
@@ -2003,11 +2003,11 @@ export async function listMyProjects(
             fullName: m.fullName,
             photoUrl: m.photoUrl,
             isLeader: true,
-            role: "Project Leader",
+            role: "Project Lead",
           });
         }
       }
-      // Sort: Engagement Lead → Project Leader → Consultant → others, then by name.
+      // Sort: Engagement Lead → Project Lead → Consultant → others, then by name.
       acc.team.sort((a, b) => {
         const ra = ROLE_RANK[a.role];
         const rb = ROLE_RANK[b.role];

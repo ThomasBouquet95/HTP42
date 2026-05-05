@@ -72,7 +72,7 @@ function NoProjectsLedNotice() {
       <h2 className="text-base font-semibold text-slate-900">You don't lead any project yet</h2>
       <p className="mt-1 text-sm text-slate-600 max-w-md mx-auto">
         This view is available to anyone, but it shows projects where you're listed as a{" "}
-        <span className="font-medium">Project Leader</span>. Ask an administrator to add you on
+        <span className="font-medium">Project Lead</span>. Ask an administrator to add you on
         the Projects table for any project you lead.
       </p>
       <div className="mt-4">

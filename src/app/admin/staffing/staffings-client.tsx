@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
-import { EditIcon, IconButton } from "@/components/admin-icons";
+import { EditIcon, IconButton, TrashIcon } from "@/components/admin-icons";
 import type {
   Currency,
   ProjectRole,
@@ -39,7 +39,6 @@ type FormState = {
   sowStatus: string;
   startDate: string;
   endDate: string;
-  status: string;
   notes: string;
 };
 
@@ -56,7 +55,6 @@ const EMPTY: FormState = {
   sowStatus: "",
   startDate: "",
   endDate: "",
-  status: "",
   notes: "",
 };
 
@@ -74,9 +72,44 @@ function fromRecord(s: StaffingAdminRecord): FormState {
     sowStatus: s.sowStatus,
     startDate: s.startDate ?? "",
     endDate: s.endDate ?? "",
-    status: s.status,
     notes: s.notes,
   };
+}
+
+function isPositiveNumber(s: string): boolean {
+  if (s === "") return true; // allow empty (optional)
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0;
+}
+
+function validateStaffingForm(f: FormState): string | null {
+  if (!f.projectCode) return "Pick a project before saving.";
+  if (!f.memberId) return "Pick a member before saving.";
+  if (!f.projectRole) return "Pick a project role before saving.";
+  if (f.startDate && f.endDate && f.endDate < f.startDate) {
+    return "End date can't be earlier than the start date.";
+  }
+  if (!isPositiveNumber(f.ratePerDay)) return "Rate per day must be a positive number.";
+  if (!isPositiveNumber(f.daysAllocated)) return "Days allocated must be a positive number.";
+  if (!isPositiveNumber(f.fxToEur)) return "FX to EUR must be a positive number.";
+  if (f.ratePerDay && !f.currency) return "Pick the currency that goes with the rate.";
+  if (f.currency && f.currency !== "EUR" && !f.fxToEur) {
+    return "An FX rate is required when the currency is not EUR.";
+  }
+  return null;
+}
+
+function roleHint(role: string): string | null {
+  if (role === "Project Lead") {
+    return "Can view team timesheets on this project (Project Staffing Summary).";
+  }
+  if (role === "Engagement Lead") {
+    return "Owns the client relationship — sees the full project team's timesheets and project P&L.";
+  }
+  if (role === "Consultant") {
+    return "Logs their own timesheets only.";
+  }
+  return null;
 }
 
 export function StaffingsAdminClient({
@@ -97,6 +130,12 @@ export function StaffingsAdminClient({
     if (p) setSearch(p);
   }, [searchParams]);
   const [statusFilter, setStatusFilter] = useState<"All" | StaffingStatus>("All");
+  const [toast, setToast] = useState<{ kind: "error" | "ok"; msg: string } | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
   const [editing, setEditing] = useState<StaffingAdminRecord | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY);
@@ -150,10 +189,14 @@ export function StaffingsAdminClient({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ status: next }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? `Update failed (HTTP ${res.status})`);
+      }
+      setToast({ kind: "ok", msg: "Status updated" });
       router.refresh();
-    } catch {
-      // Silent on transient error.
+    } catch (e) {
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Status update failed" });
     }
   }
 
@@ -190,12 +233,9 @@ export function StaffingsAdminClient({
 
   async function submit() {
     setError(null);
-    if (!form.projectCode) {
-      setError("Project is required.");
-      return;
-    }
-    if (!form.memberId) {
-      setError("Member is required.");
+    const v = validateStaffingForm(form);
+    if (v) {
+      setError(v);
       return;
     }
     setSaving(true);
@@ -213,7 +253,9 @@ export function StaffingsAdminClient({
         sowStatus: form.sowStatus,
         startDate: form.startDate || null,
         endDate: form.endDate || null,
-        status: form.status,
+        // Status is no longer in the form — preserve whatever the row already
+        // has on edit, default to empty on create.
+        status: editing?.status ?? "",
         notes: form.notes,
       };
       const url = creating ? "/api/admin/staffings" : `/api/admin/staffings/${editing!.id}`;
@@ -358,9 +400,18 @@ export function StaffingsAdminClient({
                     />
                   </td>
                   <td className="px-2 py-1.5 text-right">
-                    <IconButton title="Edit" onClick={() => openEdit(s)}>
-                      <EditIcon />
-                    </IconButton>
+                    <div className="inline-flex items-center gap-1">
+                      <IconButton title="Edit" onClick={() => openEdit(s)}>
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton
+                        title="Delete staffing"
+                        tone="danger"
+                        onClick={() => setDeleteTarget(s)}
+                      >
+                        <TrashIcon />
+                      </IconButton>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -433,10 +484,8 @@ export function StaffingsAdminClient({
             onChange={(v) => updateField("projectRole", v)}
             required
             hint={
-              form.projectRole === "Project Leader" ? (
-                <span className="text-brand-600">
-                  This person can view team timesheets on this project.
-                </span>
+              roleHint(form.projectRole) ? (
+                <span className="text-slate-600">{roleHint(form.projectRole)}</span>
               ) : null
             }
           >
@@ -451,12 +500,6 @@ export function StaffingsAdminClient({
             onChange={(v) => updateField("roleInProject", v)}
             placeholder="e.g. Lead Data Scientist"
           />
-          <FormSelect label="Status" value={form.status} onChange={(v) => updateField("status", v)}>
-            <option value="">—</option>
-            {staffingStatuses.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </FormSelect>
           <FormField
             label="Rate per day"
             value={form.ratePerDay}
@@ -560,6 +603,19 @@ export function StaffingsAdminClient({
         onCancel={() => (deleting ? undefined : setDeleteTarget(null))}
         onConfirm={confirmDelete}
       />
+
+      {toast ? (
+        <div
+          role="status"
+          className={`pointer-events-none fixed bottom-4 right-4 z-50 rounded-lg border px-3 py-2 text-xs shadow-lg ${
+            toast.kind === "error"
+              ? "border-red-300 bg-red-50 text-red-800"
+              : "border-emerald-300 bg-emerald-50 text-emerald-800"
+          }`}
+        >
+          {toast.msg}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -603,7 +659,7 @@ function StaffingStatusSelect({
 function ProjectRolePill({ role }: { role: string }) {
   if (!role) return <span className="text-slate-400">—</span>;
   const cls =
-    role === "Project Leader"
+    role === "Project Lead"
       ? "bg-brand-50 text-brand-700 border-brand-200"
       : "bg-slate-100 text-slate-600 border-slate-200";
   return (

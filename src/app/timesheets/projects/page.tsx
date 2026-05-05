@@ -8,6 +8,7 @@ import {
   type ProjectStatus,
 } from "@/lib/airtable";
 import { formatHumanDate } from "@/lib/dates";
+import { DateRangeChip } from "@/components/date-range-chip";
 import { TimesheetsTabs } from "@/components/timesheets-tabs";
 import { SubmitTimesheetButton } from "@/components/submit-timesheet-modal";
 
@@ -73,7 +74,7 @@ function ProjectRow({ project: p }: { project: MyProjectRecord }) {
       : "";
   const frame = statusFrame(p.status);
   return (
-    <li className={`grid grid-cols-12 items-center gap-3 px-4 py-3 border-l-4 ${frame.border} ${frame.row}`}>
+    <li className={`grid grid-cols-12 items-center gap-3 px-4 py-3 border-l-[6px] ${frame.border} ${frame.row}`}>
       {/* Title block */}
       <div className="col-span-12 lg:col-span-4 min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -85,7 +86,7 @@ function ProjectRow({ project: p }: { project: MyProjectRecord }) {
           ) : null}
           {p.isLeader ? (
             <span className="text-[10px] font-medium text-brand-700 bg-brand-50 border border-brand-200 rounded-full px-1.5 py-0.5">
-              Project Leader
+              Project Lead
             </span>
           ) : null}
         </div>
@@ -95,7 +96,7 @@ function ProjectRow({ project: p }: { project: MyProjectRecord }) {
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 mt-0.5">
           {clientLabel ? <span className="truncate max-w-[16rem]">{clientLabel}</span> : null}
           <span>·</span>
-          <span>{formatHumanDate(p.startDate)} → {formatHumanDate(p.endDate)}</span>
+          <DateRangeChip startIso={p.startDate} endIso={p.endDate} variant="plain" />
         </div>
         {jobTitles.length > 0 ? (
           <div className="text-[11px] mt-0.5">
@@ -134,7 +135,7 @@ function ProjectRow({ project: p }: { project: MyProjectRecord }) {
         ) : null}
       </div>
 
-      {/* Team bubbles — left aligned, sorted: Engagement Lead → Project Leader → others. */}
+      {/* Team bubbles — left aligned, sorted: Engagement Lead → Project Lead → others. */}
       <div className="col-span-5 lg:col-span-2 flex justify-start">
         {p.team.length > 0 ? <TeamBubbles team={p.team} /> : null}
       </div>
@@ -186,7 +187,7 @@ function TeamBubbles({ team }: { team: MyProjectTeamMember[] }) {
       {visible.map((m) => {
         const label = `${m.fullName || m.memberCode}${m.role ? " · " + m.role : ""}`;
         const isEL = m.role === "Engagement Lead";
-        const isPL = m.role === "Project Leader";
+        const isPL = m.role === "Project Lead";
         const showStar = isEL || isPL;
         const ringCls = isEL
           ? "ring-slate-900"
@@ -198,14 +199,14 @@ function TeamBubbles({ team }: { team: MyProjectTeamMember[] }) {
             {showStar ? (
               <span
                 role="tooltip"
-                aria-label={isEL ? "Engagement Lead" : "Project Leader"}
+                aria-label={isEL ? "Engagement Lead" : "Project Lead"}
                 className={`pointer-events-none absolute left-1/2 -translate-x-1/2 -top-2 z-10 flex h-3 w-3 items-center justify-center ${
                   isEL ? "text-slate-900" : "text-brand-600"
                 }`}
               >
                 <StarIcon />
                 <span className="pointer-events-none absolute bottom-full mb-0.5 whitespace-nowrap rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-medium text-white opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
-                  {isEL ? "Engagement Lead" : "Project Leader"}
+                  {isEL ? "Engagement Lead" : "Project Lead"}
                 </span>
               </span>
             ) : null}

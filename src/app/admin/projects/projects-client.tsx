@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { EditIcon, IconButton, ListIcon } from "@/components/admin-icons";
-import { formatHumanDate } from "@/lib/dates";
+import { DateRangeChip } from "@/components/date-range-chip";
 import type {
   ClientRecord,
   Currency,
@@ -62,6 +62,31 @@ function emptyForm(defaultYear: number): FormState {
     sowSigned: "",
     sowValidityDate: "",
   };
+}
+
+function isPositiveNumber(s: string): boolean {
+  if (s === "") return true;
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0;
+}
+
+function validateProjectForm(f: FormState): string | null {
+  if (!f.projectCode.trim()) return "Project code is required.";
+  if (!f.projectName.trim()) return "Project name is required.";
+  if (!f.clientId) return "Pick a client before saving.";
+  if (f.startDate && f.endDate && f.endDate < f.startDate) {
+    return "End date can't be earlier than the start date.";
+  }
+  if (!isPositiveNumber(f.totalAmount)) return "Total amount must be a positive number.";
+  if (!isPositiveNumber(f.fxToEur)) return "FX to EUR must be a positive number.";
+  if (f.totalAmount && !f.currency) return "Pick the currency that goes with the total amount.";
+  if (f.currency && f.currency !== "EUR" && f.totalAmount && !f.fxToEur) {
+    return "An FX rate is required when the currency is not EUR.";
+  }
+  if (f.sowSigned === "Yes" && !f.sowValidityDate) {
+    return "If the SOW is signed, fill in its validity date.";
+  }
+  return null;
 }
 
 function fromRecord(p: ProjectRecord): FormState {
@@ -238,6 +263,11 @@ export function ProjectsAdminClient({
 
   async function submit() {
     setError(null);
+    const v = validateProjectForm(form);
+    if (v) {
+      setError(v);
+      return;
+    }
     setSaving(true);
     try {
       const body = {
@@ -320,8 +350,7 @@ export function ProjectsAdminClient({
               <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Client</th>
               <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Type</th>
               <th className="text-left px-2 py-1.5 font-medium">Status</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden xl:table-cell">Start</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden xl:table-cell">End</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden xl:table-cell">Dates</th>
               <th className="text-right px-2 py-1.5 font-medium hidden md:table-cell">Total</th>
               <th />
             </tr>
@@ -360,8 +389,9 @@ export function ProjectsAdminClient({
                         onChange={(next) => updateStatus(p.id, next)}
                       />
                     </td>
-                    <td className="px-2 py-1.5 hidden xl:table-cell">{formatHumanDate(p.startDate)}</td>
-                    <td className="px-2 py-1.5 hidden xl:table-cell">{formatHumanDate(p.endDate)}</td>
+                    <td className="px-2 py-1.5 hidden xl:table-cell">
+                      <DateRangeChip startIso={p.startDate} endIso={p.endDate} />
+                    </td>
                     <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell">
                       {p.totalAmount == null
                         ? "—"
@@ -551,19 +581,22 @@ export function ProjectsAdminClient({
   );
 }
 
+// Returns Tailwind classes for both the row background tint and the
+// 4px left border, using project status as the colour key.
 function projectRowTint(status: string): string {
   switch (status) {
     case "In Progress":
-      return "bg-emerald-50/40 hover:bg-emerald-50";
-    case "On Hold":
-      return "bg-amber-50/50 hover:bg-amber-50";
-    case "Completed":
-      return "bg-blue-50/40 hover:bg-blue-50";
-    case "Planned":
+    case "Active": // legacy choice — render like In Progress
+      return "border-l-4 border-l-emerald-500 bg-emerald-50/50 hover:bg-emerald-50";
     case "Not Started":
-      return "bg-slate-50 hover:bg-slate-100";
+    case "Planned":
+      return "border-l-4 border-l-sky-500 bg-sky-50/60 hover:bg-sky-100/60";
+    case "On Hold":
+      return "border-l-4 border-l-red-500 bg-red-50/50 hover:bg-red-50";
+    case "Completed":
+      return "border-l-4 border-l-slate-400 bg-slate-50 hover:bg-slate-100";
     default:
-      return "hover:bg-slate-50";
+      return "border-l-4 border-l-slate-200 hover:bg-slate-50";
   }
 }
 
