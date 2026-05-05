@@ -132,6 +132,9 @@ export function ProjectsAdminClient({
 
   function closeModal() {
     if (saving) return;
+    closeModalNow();
+  }
+  function closeModalNow() {
     setEditing(null);
     setCreating(false);
     setError(null);
@@ -264,7 +267,7 @@ export function ProjectsAdminClient({
         const d = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(d.error ?? "Save failed.");
       }
-      closeModal();
+      closeModalNow();
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed.");
@@ -284,7 +287,7 @@ export function ProjectsAdminClient({
       }
       const wasEditing = editing?.id === deleteTarget.id;
       setDeleteTarget(null);
-      if (wasEditing) closeModal();
+      if (wasEditing) closeModalNow();
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed.");

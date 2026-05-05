@@ -1,8 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { TimesheetRecord, TimesheetStatus } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
+import { ConfirmDialog } from "@/components/modal";
+import { EditIcon, EyeIcon, IconButton, TrashIcon } from "@/components/admin-icons";
 import { formatRange, parseIsoDate, toIsoDate } from "@/lib/dates";
 
 const ALL_STATUSES: TimesheetStatus[] = ["Draft", "Submitted", "Deleted"];
@@ -48,9 +51,35 @@ export function SummaryClient({
   defaultStatus,
   hideSummary = false,
 }: Props) {
+  const router = useRouter();
   const [filters, setFilters] = useState<Filters>(() =>
     defaultStatus ? { ...DEFAULT_FILTERS, status: defaultStatus } : DEFAULT_FILTERS,
   );
+  const [deleteTarget, setDeleteTarget] = useState<TimesheetRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/timesheets/${deleteTarget.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "delete" }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Delete failed.");
+      }
+      setDeleteTarget(null);
+      router.refresh();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Delete failed.");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const projectOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -337,12 +366,25 @@ export function SummaryClient({
                   </td>
                   {editable ? (
                     <td className="px-2 py-1.5 text-right">
-                      <a
-                        href={`/timesheets/${t.id}`}
-                        className="text-brand-600 hover:text-brand-700 font-medium text-[11px]"
-                      >
-                        {t.status === "Draft" ? "Edit" : "View"}
-                      </a>
+                      <div className="inline-flex items-center gap-1">
+                        <a
+                          href={`/timesheets/${t.id}`}
+                          title={t.status === "Draft" ? "Edit" : "View"}
+                          aria-label={t.status === "Draft" ? "Edit" : "View"}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                        >
+                          {t.status === "Draft" ? <EditIcon /> : <EyeIcon />}
+                        </a>
+                        {t.status !== "Deleted" ? (
+                          <IconButton
+                            onClick={() => setDeleteTarget(t)}
+                            title="Delete timesheet"
+                            tone="danger"
+                          >
+                            <TrashIcon />
+                          </IconButton>
+                        ) : null}
+                      </div>
                     </td>
                   ) : null}
                 </tr>
@@ -351,6 +393,30 @@ export function SummaryClient({
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete timesheet?"
+        message={
+          <>
+            <p>
+              This will move the timesheet for{" "}
+              <span className="font-medium">
+                {deleteTarget ? formatRange(deleteTarget.startDate, deleteTarget.endDate) : ""}
+              </span>{" "}
+              to <span className="font-medium">Deleted</span>. You can recreate it later if needed.
+            </p>
+            {deleteError ? (
+              <p className="mt-2 rounded-md bg-red-50 p-2 text-red-700">{deleteError}</p>
+            ) : null}
+          </>
+        }
+        confirmLabel="Delete"
+        confirmTone="danger"
+        busy={deleting}
+        onCancel={() => (deleting ? undefined : (setDeleteTarget(null), setDeleteError(null)))}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }
