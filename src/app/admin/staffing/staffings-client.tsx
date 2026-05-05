@@ -14,7 +14,21 @@ import type {
 } from "@/lib/airtable";
 
 type ProjectOpt = { code: string; name: string };
-type MemberOpt = { id: string; code: string; name: string };
+type MemberOpt = {
+  id: string;
+  code: string;
+  name: string;
+  email: string;
+  status: string;
+  role: string;
+  title: string;
+  country: string;
+  phone: string;
+  legalEntity: string;
+  photoUrl: string | null;
+  dailyRate: number | null;
+  currency: string;
+};
 
 type Props = {
   staffings: StaffingAdminRecord[];
@@ -130,6 +144,8 @@ export function StaffingsAdminClient({
     if (p) setSearch(p);
   }, [searchParams]);
   const [statusFilter, setStatusFilter] = useState<"All" | StaffingStatus>("All");
+  const [memberOpen, setMemberOpen] = useState<MemberOpt | null>(null);
+  const membersById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
   const [toast, setToast] = useState<{ kind: "error" | "ok"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -182,23 +198,6 @@ export function StaffingsAdminClient({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  async function updateStatus(id: string, next: string) {
-    try {
-      const res = await fetch(`/api/admin/staffings/${id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status: next }),
-      });
-      if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? `Update failed (HTTP ${res.status})`);
-      }
-      setToast({ kind: "ok", msg: "Status updated" });
-      router.refresh();
-    } catch (e) {
-      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Status update failed" });
-    }
-  }
 
   async function updateCurrency(currency: string) {
     setForm((f) => ({ ...f, currency }));
@@ -359,8 +358,30 @@ export function StaffingsAdminClient({
                     <div>{s.projectName || "—"}</div>
                   </td>
                   <td className="px-2 py-1.5">
-                    <div className="font-mono text-xs text-slate-500">
-                      {s.memberCodes.join(", ") || "—"}
+                    <div className="flex flex-wrap items-center gap-1">
+                      {s.memberRecordIds.length === 0 ? (
+                        <span className="text-slate-400">—</span>
+                      ) : (
+                        s.memberRecordIds.map((mid, i) => {
+                          const m = membersById.get(mid);
+                          const code = m?.code ?? s.memberCodes[i] ?? mid;
+                          return m ? (
+                            <button
+                              key={mid}
+                              type="button"
+                              onClick={() => setMemberOpen(m)}
+                              className="font-mono text-xs text-brand-700 hover:text-brand-800 hover:underline"
+                              title={`${m.name || m.code} — show details`}
+                            >
+                              {code}
+                            </button>
+                          ) : (
+                            <span key={mid} className="font-mono text-xs text-slate-500">
+                              {code}
+                            </span>
+                          );
+                        })
+                      )}
                     </div>
                     <div className="text-xs text-slate-500 md:hidden">{s.projectCode}</div>
                   </td>
@@ -393,11 +414,7 @@ export function StaffingsAdminClient({
                       : `${s.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${s.currency || ""}`.trim()}
                   </td>
                   <td className="px-2 py-1.5">
-                    <StaffingStatusSelect
-                      value={s.status}
-                      statuses={staffingStatuses}
-                      onChange={(next) => updateStatus(s.id, next)}
-                    />
+                    <StaffingStatusPill value={s.status} />
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     <div className="inline-flex items-center gap-1">
@@ -587,6 +604,8 @@ export function StaffingsAdminClient({
         ) : null}
       </Modal>
 
+      <MemberInfoModal member={memberOpen} onClose={() => setMemberOpen(null)} />
+
       <ConfirmDialog
         open={!!deleteTarget}
         title="Delete staffing?"
@@ -620,40 +639,96 @@ export function StaffingsAdminClient({
   );
 }
 
-function StaffingStatusSelect({
-  value,
-  statuses,
-  onChange,
-}: {
-  value: string;
-  statuses: readonly string[];
-  onChange: (next: string) => void;
-}) {
+// Read-only pill: staffing status is auto-derived from days used vs allocated.
+function StaffingStatusPill({ value }: { value: string }) {
   const cls =
     value === "In Progress"
       ? "bg-emerald-50 border-emerald-300 text-emerald-800"
       : value === "Completed"
-      ? "bg-blue-50 border-blue-300 text-blue-800"
-      : value === "On Hold"
-      ? "bg-amber-50 border-amber-300 text-amber-800"
+      ? "bg-slate-200 border-slate-300 text-slate-700"
       : value === "Not Started"
-      ? "bg-slate-100 border-slate-300 text-slate-700"
-      : "bg-white border-slate-300 text-slate-700";
+      ? "bg-sky-50 border-sky-300 text-sky-800"
+      : "bg-white border-slate-300 text-slate-500";
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      className={`block w-full rounded-md px-1.5 py-0.5 text-[11px] font-medium ${cls} focus:outline-none focus:ring-1 focus:ring-brand-600`}
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${cls}`}
+      title="Auto-derived from days logged vs allocated"
     >
-      <option value="">—</option>
-      {statuses.map((s) => (
-        <option key={s} value={s}>
-          {s}
-        </option>
-      ))}
-    </select>
+      {value || "—"}
+    </span>
   );
+}
+
+function MemberInfoModal({
+  member,
+  onClose,
+}: {
+  member: MemberOpt | null;
+  onClose: () => void;
+}) {
+  return (
+    <Modal open={!!member} onClose={onClose} title={member?.name || "Member"} size="lg">
+      {member ? (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="h-14 w-14 rounded-full overflow-hidden bg-brand-50 text-brand-700 flex items-center justify-center text-base font-semibold">
+              {member.photoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={member.photoUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                memberInitials(member.name || member.code)
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="text-base font-semibold text-slate-900 truncate">
+                {member.name || "—"}
+              </div>
+              <div className="font-mono text-xs text-slate-500">{member.code}</div>
+              {member.title ? (
+                <div className="text-xs text-slate-600 mt-0.5">{member.title}</div>
+              ) : null}
+            </div>
+          </div>
+          <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1.5 text-xs">
+            <InfoRow label="Status" value={member.status} />
+            <InfoRow label="Network role" value={member.role} />
+            <InfoRow label="Email" value={member.email} mono />
+            {member.phone ? <InfoRow label="Phone" value={member.phone} /> : null}
+            {member.country ? <InfoRow label="Country" value={member.country} /> : null}
+            {member.legalEntity ? (
+              <InfoRow label="Legal entity" value={member.legalEntity} />
+            ) : null}
+            {member.dailyRate != null ? (
+              <InfoRow
+                label="Daily rate"
+                value={`${member.dailyRate.toLocaleString("en-US", { maximumFractionDigits: 2 })}${
+                  member.currency ? " " + member.currency : ""
+                }`}
+              />
+            ) : null}
+          </dl>
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
+
+function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  if (!value) return null;
+  return (
+    <>
+      <dt className="text-slate-500 whitespace-nowrap">{label}</dt>
+      <dd className={`text-slate-800 break-words ${mono ? "font-mono" : ""}`}>{value}</dd>
+    </>
+  );
+}
+
+function memberInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const first = parts[0][0] ?? "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return `${first}${last}`.toUpperCase();
 }
 
 function ProjectRolePill({ role }: { role: string }) {

@@ -36,7 +36,21 @@ export default async function AdminStaffingPage() {
         <StaffingsAdminClient
           staffings={staffings}
           projects={projects.map((p) => ({ code: p.projectCode, name: p.projectName }))}
-          members={members.map((m) => ({ id: m.id, code: m.memberCode, name: m.fullName }))}
+          members={members.map((m) => ({
+            id: m.id,
+            code: m.memberCode,
+            name: m.fullName,
+            email: m.email,
+            status: m.status,
+            role: m.role,
+            title: m.title,
+            country: m.country,
+            phone: m.phone,
+            legalEntity: m.legalEntity,
+            photoUrl: m.photo?.url ?? null,
+            dailyRate: m.dailyRate,
+            currency: m.currency,
+          }))}
           currencies={CURRENCIES}
           staffingStatuses={STAFFING_STATUSES}
           sowStatuses={SOW_STATUSES}

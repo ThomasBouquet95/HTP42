@@ -96,7 +96,7 @@ function ProjectRow({ project: p }: { project: MyProjectRecord }) {
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 mt-0.5">
           {clientLabel ? <span className="truncate max-w-[16rem]">{clientLabel}</span> : null}
           <span>·</span>
-          <DateRangeChip startIso={p.startDate} endIso={p.endDate} variant="plain" />
+          <DateRangeChip startIso={p.startDate} endIso={p.endDate} />
         </div>
         {jobTitles.length > 0 ? (
           <div className="text-[11px] mt-0.5">
@@ -291,29 +291,30 @@ function initials(name: string): string {
 }
 
 type FrameStyle = { row: string; border: string; label: string };
+// Same palette as the admin Projects page so the two views look consistent.
 const STATUS_FRAMES: Record<ProjectStatus, FrameStyle> = {
   "In Progress": {
-    row: "bg-emerald-50/60",
+    row: "bg-emerald-50/50 hover:bg-emerald-50",
     border: "border-l-emerald-500",
     label: "text-emerald-700",
   },
   "Planned": {
-    row: "bg-sky-50/70",
+    row: "bg-sky-50/60 hover:bg-sky-100/60",
     border: "border-l-sky-500",
     label: "text-sky-700",
   },
   "Not Started": {
-    row: "bg-sky-50/70",
+    row: "bg-sky-50/60 hover:bg-sky-100/60",
     border: "border-l-sky-500",
     label: "text-sky-700",
   },
   "On Hold": {
-    row: "bg-red-50/60",
+    row: "bg-red-50/50 hover:bg-red-50",
     border: "border-l-red-500",
     label: "text-red-700",
   },
   "Completed": {
-    row: "bg-slate-50",
+    row: "bg-slate-50 hover:bg-slate-100",
     border: "border-l-slate-400",
     label: "text-slate-600",
   },

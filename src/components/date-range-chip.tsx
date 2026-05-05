@@ -78,19 +78,27 @@ export function DateRangeChip({ startIso, endIso, variant = "chip", className }:
           className="pointer-events-none z-[60] rounded-lg border border-slate-200 bg-white p-3 shadow-xl"
         >
           {sameMonth ? (
-            <SingleMonthCalendar startIso={startIso} endIso={endIso} />
+            <SingleMonthCalendar
+              anchorIso={startIso ?? endIso}
+              rangeStartIso={startIso}
+              rangeEndIso={endIso}
+            />
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              {startIso ? (
-                <SingleMonthCalendar startIso={startIso} endIso={null} compact label="Starts" />
-              ) : (
-                <span />
-              )}
-              {endIso ? (
-                <SingleMonthCalendar startIso={null} endIso={endIso} compact label="Ends" />
-              ) : (
-                <span />
-              )}
+              <SingleMonthCalendar
+                anchorIso={startIso}
+                rangeStartIso={startIso}
+                rangeEndIso={endIso}
+                compact
+                label={startIso ? "Starts" : undefined}
+              />
+              <SingleMonthCalendar
+                anchorIso={endIso}
+                rangeStartIso={startIso}
+                rangeEndIso={endIso}
+                compact
+                label={endIso ? "Ends" : undefined}
+              />
             </div>
           )}
         </div>
@@ -105,18 +113,19 @@ function sameYearMonth(a: string | null, b: string | null): boolean {
 }
 
 function SingleMonthCalendar({
-  startIso,
-  endIso,
+  anchorIso,
+  rangeStartIso,
+  rangeEndIso,
   compact,
   label,
 }: {
-  startIso: string | null;
-  endIso: string | null;
+  anchorIso: string | null;
+  rangeStartIso: string | null;
+  rangeEndIso: string | null;
   compact?: boolean;
   label?: string;
 }) {
-  // The "anchor" month is start's month if present, otherwise end's.
-  const anchor = parseIsoDate(startIso || endIso || toIsoDate(new Date()));
+  const anchor = parseIsoDate(anchorIso || rangeStartIso || rangeEndIso || toIsoDate(new Date()));
   const year = anchor.getUTCFullYear();
   const month = anchor.getUTCMonth();
   const monthLabel = anchor.toLocaleDateString("en-US", {
@@ -140,8 +149,8 @@ function SingleMonthCalendar({
     cells.push({ d: new Date(Date.UTC(year, month + 1, offset)), inMonth: false });
   }
 
-  const start = startIso ? parseIsoDate(startIso) : null;
-  const end = endIso ? parseIsoDate(endIso) : null;
+  const start = rangeStartIso ? parseIsoDate(rangeStartIso) : null;
+  const end = rangeEndIso ? parseIsoDate(rangeEndIso) : null;
   const today = toIsoDate(new Date());
 
   const cellH = compact ? "h-6" : "h-7";
@@ -174,7 +183,7 @@ function SingleMonthCalendar({
           else cls += " text-slate-700";
           if (isStart || isEnd) {
             cls += " bg-brand-600 text-white rounded-md font-medium";
-          } else if (inRange) {
+          } else if (inRange && inMonth) {
             cls += " bg-brand-50 text-brand-700";
           }
           if (isToday && !(isStart || isEnd)) cls += " ring-1 ring-inset ring-slate-300 rounded-md";

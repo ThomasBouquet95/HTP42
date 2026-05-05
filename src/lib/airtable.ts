@@ -139,13 +139,24 @@ export const MEMBER_ROLES: MemberRole[] = [
   "Admin",
 ];
 
-export type StaffingStatus = "In Progress" | "Not Started" | "Completed" | "Opportunity";
+export type StaffingStatus = "Not Started" | "In Progress" | "Completed";
 export const STAFFING_STATUSES: StaffingStatus[] = [
-  "Opportunity",
   "Not Started",
   "In Progress",
   "Completed",
 ];
+
+// Staffing status is derived from the data, not stored: a staffing is
+// "Completed" once its allocation has been consumed, "In Progress" as soon
+// as a single timesheet has been logged, and "Not Started" otherwise.
+export function deriveStaffingStatus(
+  daysAllocated: number | null,
+  daysUsed: number,
+): StaffingStatus {
+  if (daysAllocated != null && daysAllocated > 0 && daysUsed >= daysAllocated) return "Completed";
+  if (daysUsed > 0) return "In Progress";
+  return "Not Started";
+}
 
 export type ProjectRole = "Engagement Lead" | "Project Lead" | "Consultant";
 export const PROJECT_ROLES: ProjectRole[] = ["Engagement Lead", "Project Lead", "Consultant"];
@@ -1069,12 +1080,10 @@ export async function getStaffingsForMember(
     };
   });
   if (!activeOnly) return all;
-  // Treat staffings whose status hasn't been set as eligible; only exclude the
-  // explicitly-finished states (Completed) and pure pipeline (Opportunity) so
-  // a freshly-created staffing without a status is still selectable.
-  return all.filter(
-    (s) => s.status === null || s.status === "In Progress" || s.status === "Not Started",
-  );
+  // Treat staffings whose status is null or anything other than Completed as
+  // eligible. Status is auto-derived (see deriveStaffingStatus) so this in
+  // practice excludes only staffings whose allocation has been fully consumed.
+  return all.filter((s) => s.status !== "Completed");
 }
 
 // The linked Member Code field on staffing uses Network Members record IDs, but
@@ -1323,7 +1332,8 @@ function staffingAdminFromRecord(
     sowStatus: str(r, FIELDS.projectStaffing.sowStatus) as SowStatus | "",
     startDate: dateOrNull(r, FIELDS.projectStaffing.startDate),
     endDate: dateOrNull(r, FIELDS.projectStaffing.endDate),
-    status: (str(r, FIELDS.projectStaffing.status) as StaffingStatus) || "",
+    // Status is derived from the data; the stored field is no longer source-of-truth.
+    status: deriveStaffingStatus(days, daysUsedByStaffingId?.get(r.id) ?? 0),
     notes: str(r, FIELDS.projectStaffing.notes),
   };
 }
