@@ -140,7 +140,6 @@ export function MemberInfoModal({ memberId, preview, onClose }: Props) {
               ) : null}
               <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1.5 text-xs">
                 <Row label="Network role" value={data.role} />
-                <Row label="Status" value={data.status} />
                 <Row
                   label="Email"
                   value={data.email}

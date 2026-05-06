@@ -38,6 +38,13 @@ const GROUPS: Group[] = [
         Icon: BriefcaseIcon,
         tone: "people",
       },
+      {
+        href: "/admin/sign-ins",
+        title: "Sign-in activity",
+        description: "Last sign-in and total sign-in count per member.",
+        Icon: ActivityIcon,
+        tone: "people",
+      },
     ],
   },
   {
@@ -181,6 +188,14 @@ function CashIcon() {
       <rect x="3" y="6" width="18" height="12" rx="2" />
       <circle cx="12" cy="12" r="2.5" />
       <path d="M6 9.5h.01M18 14.5h.01" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ActivityIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M3 12h4l2-6 4 12 2-6h6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

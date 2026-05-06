@@ -208,14 +208,14 @@ function ProjectRow({
           </div>
         </div>
         {hasAllocation ? (
-          <div className="mt-1 h-1.5 rounded-full bg-slate-200/70 overflow-hidden">
+          <div className="mt-2.5 h-1.5 rounded-full bg-slate-200/70 overflow-hidden">
             <div
               className={`h-full ${over ? "bg-amber-500" : "bg-brand-600"}`}
               style={{ width: `${Math.max(2, pct)}%` }}
             />
           </div>
         ) : (
-          <div className="mt-1 text-[10px] text-slate-400">No allocation set</div>
+          <div className="mt-2.5 text-[10px] text-slate-400">No allocation set</div>
         )}
       </div>
 

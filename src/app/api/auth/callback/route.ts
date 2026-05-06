@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import { revalidateMember, startSession, verifyOAuthStateToken } from "@/lib/auth";
+import { recordSignIn } from "@/lib/airtable";
 import { env } from "@/lib/env";
 
 const OAUTH_COOKIE = "htp42_oauth";
@@ -85,6 +86,9 @@ export async function GET(request: Request) {
   if (!member) return redirectWithError("not_active");
 
   await startSession(member);
+  // Bump sign-in counters in the background so a slow Airtable round-trip
+  // can't delay the redirect back to the app.
+  void recordSignIn(member.id);
 
   // Best-effort safe redirect to the requested returnTo; otherwise dashboard.
   const safeReturn =

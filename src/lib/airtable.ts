@@ -38,6 +38,8 @@ export const FIELDS = {
     currency: "Currency",
     photo: "Photo",
     cv: "CV",
+    lastSignIn: "Last Sign In",
+    signInCount: "Sign In Count",
   },
   projects: {
     projectCode: "Project Code",
@@ -533,6 +535,69 @@ export async function listAllMembers(): Promise<MemberAdminRecord[]> {
     })
     .all();
   return records.map(memberAdminFromRecord);
+}
+
+export type SignInActivity = {
+  id: string;
+  memberCode: string;
+  fullName: string;
+  email: string;
+  status: MemberStatus;
+  role: MemberRole | "";
+  photoUrl: string | null;
+  lastSignIn: string | null; // ISO datetime string
+  signInCount: number;
+};
+
+// Admin: list every member with their sign-in activity. Members who have
+// never signed in have lastSignIn = null and signInCount = 0.
+export async function listSignInActivity(): Promise<SignInActivity[]> {
+  const records = await base(TABLES.networkMembers)
+    .select({
+      fields: [
+        FIELDS.networkMembers.memberCode,
+        FIELDS.networkMembers.fullName,
+        FIELDS.networkMembers.email,
+        FIELDS.networkMembers.memberStatus,
+        FIELDS.networkMembers.role,
+        FIELDS.networkMembers.photo,
+        FIELDS.networkMembers.lastSignIn,
+        FIELDS.networkMembers.signInCount,
+      ],
+    })
+    .all();
+  return records.map((r) => ({
+    id: r.id,
+    memberCode: str(r, FIELDS.networkMembers.memberCode),
+    fullName: str(r, FIELDS.networkMembers.fullName),
+    email: str(r, FIELDS.networkMembers.email),
+    status: (str(r, FIELDS.networkMembers.memberStatus) as MemberStatus) || "Inactive",
+    role: (str(r, FIELDS.networkMembers.role) as MemberRole) || "",
+    photoUrl: firstAttachment(r, FIELDS.networkMembers.photo)?.url ?? null,
+    lastSignIn: (r.get(FIELDS.networkMembers.lastSignIn) as string | undefined) ?? null,
+    signInCount: num(r, FIELDS.networkMembers.signInCount),
+  }));
+}
+
+// Best-effort: bump Last Sign In and Sign In Count for the member who just
+// completed an SSO login. Failures are swallowed — we never want a transient
+// Airtable hiccup to block someone from signing in.
+export async function recordSignIn(memberRecordId: string): Promise<void> {
+  try {
+    const r = await base(TABLES.networkMembers).find(memberRecordId);
+    const current = num(r, FIELDS.networkMembers.signInCount);
+    await base(TABLES.networkMembers).update([
+      {
+        id: memberRecordId,
+        fields: {
+          [FIELDS.networkMembers.lastSignIn]: new Date().toISOString(),
+          [FIELDS.networkMembers.signInCount]: current + 1,
+        },
+      },
+    ]);
+  } catch {
+    // ignore
+  }
 }
 
 export type MemberAdminUpdate = MemberProfileUpdate & {

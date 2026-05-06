@@ -7,7 +7,8 @@ type TabKey =
   | "projects"
   | "staffing"
   | "timesheets"
-  | "payments";
+  | "payments"
+  | "signins";
 
 const TABS: Array<{ key: TabKey; href: string; label: string }> = [
   { key: "home", href: "/admin", label: "Overview" },
@@ -17,6 +18,7 @@ const TABS: Array<{ key: TabKey; href: string; label: string }> = [
   { key: "staffing", href: "/admin/staffing", label: "Project Staffing" },
   { key: "timesheets", href: "/admin/timesheets", label: "Timesheets" },
   { key: "payments", href: "/admin/payments", label: "Payments" },
+  { key: "signins", href: "/admin/sign-ins", label: "Sign-in activity" },
 ];
 
 export function AdminTabs({ active }: { active: TabKey }) {
