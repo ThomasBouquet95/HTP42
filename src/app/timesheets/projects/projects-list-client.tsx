@@ -45,9 +45,12 @@ export function ProjectsListClient({ projects }: { projects: MyProjectRecord[] }
         </div>
       ) : (
         <div className="rounded-lg border border-slate-200 bg-white">
-          <ul className="divide-y divide-slate-100">
-            {visible.map((p) => (
-              <ProjectRow key={p.projectCode} project={p} />
+          {/* No divide-y here: it sets `border-color` on every sibling row,
+              which overrides each <li>'s border-l-* status colour and made
+              the coloured bar visible only on the first row. */}
+          <ul>
+            {visible.map((p, i) => (
+              <ProjectRow key={p.projectCode} project={p} isFirst={i === 0} />
             ))}
           </ul>
         </div>
@@ -127,7 +130,7 @@ function strongestRole(p: MyProjectRecord): ProjectRole | "" {
   return best;
 }
 
-function ProjectRow({ project: p }: { project: MyProjectRecord }) {
+function ProjectRow({ project: p, isFirst }: { project: MyProjectRecord; isFirst: boolean }) {
   const allocHours = p.daysAllocatedTotal * HOURS_PER_DAY;
   const hasAllocation = allocHours > 0;
   const pct = hasAllocation ? Math.min(100, (p.hoursActualTotal / allocHours) * 100) : 0;
@@ -141,7 +144,11 @@ function ProjectRow({ project: p }: { project: MyProjectRecord }) {
   const frame = statusFrame(p.status);
   const role = strongestRole(p);
   return (
-    <li className={`grid grid-cols-12 items-center gap-3 px-4 py-3 border-l-[6px] ${frame.border} ${frame.row}`}>
+    <li
+      className={`grid grid-cols-12 items-center gap-x-4 gap-y-2 px-4 py-3 border-l-[6px] ${
+        isFirst ? "" : "border-t border-t-slate-100"
+      } ${frame.border} ${frame.row}`}
+    >
       {/* Title block */}
       <div className="col-span-12 lg:col-span-4 min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -184,8 +191,9 @@ function ProjectRow({ project: p }: { project: MyProjectRecord }) {
         )}
       </div>
 
-      {/* Team bubbles */}
-      <div className="col-span-5 lg:col-span-3 flex justify-start">
+      {/* Team bubbles — extra left padding pushes the avatars away from the
+          progress bar so the two columns don't visually merge. */}
+      <div className="col-span-5 lg:col-span-3 flex justify-start lg:pl-4">
         {p.team.length > 0 ? <TeamBubbles team={p.team} /> : null}
       </div>
 

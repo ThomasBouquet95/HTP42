@@ -17,14 +17,12 @@ type Card = {
 
 type Group = {
   title: string;
-  caption: string;
   cards: Card[];
 };
 
 const GROUPS: Group[] = [
   {
     title: "People",
-    caption: "Who's in the network and who they're working for.",
     cards: [
       {
         href: "/admin/members",
@@ -44,7 +42,6 @@ const GROUPS: Group[] = [
   },
   {
     title: "Delivery",
-    caption: "Projects, staffing, and the work being logged.",
     cards: [
       {
         href: "/admin/projects",
@@ -71,7 +68,6 @@ const GROUPS: Group[] = [
   },
   {
     title: "Finance",
-    caption: "Money in, money out.",
     cards: [
       {
         href: "/admin/payments",
@@ -99,20 +95,14 @@ export default async function AdminLandingPage() {
       <AdminTabs active="home" />
       <header className="mb-6">
         <h1 className="text-lg sm:text-xl font-semibold text-slate-900">Admin</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Manage the network, the work in flight, and the money moving through it.
-        </p>
       </header>
 
       <div className="space-y-8">
         {GROUPS.map((g) => (
           <section key={g.title}>
-            <div className="mb-3 flex items-baseline justify-between">
-              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                {g.title}
-              </h2>
-              <span className="text-xs text-slate-400">{g.caption}</span>
-            </div>
+            <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              {g.title}
+            </h2>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {g.cards.map((c) => (
                 <Link

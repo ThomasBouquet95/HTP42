@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { getMemberById } from "@/lib/airtable";
 import { AppHeader } from "@/components/app-header";
 
 export default async function TimesheetsLayout({
@@ -9,9 +10,14 @@ export default async function TimesheetsLayout({
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
+  // Re-fetch the photo on every render: Airtable attachment URLs are short-
+  // lived and existing JWTs predate the photoUrl field on SessionPayload, so
+  // pulling it server-side keeps the header avatar current without a re-login.
+  const member = await getMemberById(session.sub);
+  const photoUrl = member?.photo?.url ?? session.photoUrl ?? null;
   return (
     <>
-      <AppHeader session={session} />
+      <AppHeader session={session} photoUrl={photoUrl} />
       {children}
     </>
   );

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { ProjectSummary, ProjectTeamMember, ProjectStatus } from "@/lib/airtable";
+import { useEffect, useMemo, useState } from "react";
+import type { ProjectSummary, ProjectTeamMember, ProjectRole, ProjectStatus } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
-import { formatWeekRange } from "@/lib/dates";
+import { addWeeksIso, formatHumanDate, formatWeekRange, mondayOf, thisMondayIso } from "@/lib/dates";
 import { WeekChip } from "@/components/week-chip";
 import { DateRangeChip } from "@/components/date-range-chip";
 
@@ -13,149 +13,417 @@ const HOURS_PER_DAY = 8;
 
 type MemberTimesheet = ProjectTeamMember["timesheets"][number];
 
+const ROLE_RANK: Record<ProjectRole | "", number> = {
+  "Engagement Lead": 0,
+  "Project Lead": 1,
+  Consultant: 2,
+  "": 3,
+};
+
+function strongestRole(m: ProjectTeamMember): ProjectRole | "" {
+  let best: ProjectRole | "" = "";
+  for (const s of m.staffings) {
+    if (s.projectRole && ROLE_RANK[s.projectRole] < ROLE_RANK[best]) {
+      best = s.projectRole;
+    }
+  }
+  return best;
+}
+
 export function ProjectSummaryView({ summary }: Props) {
   const { project, members, totals } = summary;
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [tab, setTab] = useState<"members" | "weeks">("members");
   const [activeSheet, setActiveSheet] = useState<{
     timesheet: MemberTimesheet;
     member: ProjectTeamMember;
   } | null>(null);
 
+  // Sort team: Engagement Lead → Project Lead → Consultant → others, then by name.
+  const orderedMembers = useMemo(() => {
+    return [...members].sort((a, b) => {
+      const ra = ROLE_RANK[strongestRole(a)];
+      const rb = ROLE_RANK[strongestRole(b)];
+      if (ra !== rb) return ra - rb;
+      return (a.memberName || a.memberCode).localeCompare(b.memberName || b.memberCode);
+    });
+  }, [members]);
+
   const allocatedHours = totals.allocatedDays * HOURS_PER_DAY;
   const progressPct =
     allocatedHours > 0 ? Math.min(100, (totals.actualHours / allocatedHours) * 100) : 0;
+  const overall = totals.actualHours > allocatedHours && allocatedHours > 0;
 
   const frame = statusFrame(project.status);
   return (
-    <div className="space-y-5">
-      {/* Project header */}
-      <div className={`rounded-lg border-l-4 border-y border-r p-4 sm:p-5 ${frame.frame}`}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="text-xs uppercase tracking-wide text-slate-500 font-mono">
+    <div className="space-y-4">
+      {/* Compact project header */}
+      <div className={`rounded-lg border-l-4 border-y border-r ${frame.frame}`}>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-mono uppercase tracking-wide text-slate-500">
                 {project.projectCode}
-              </div>
+              </span>
               {project.status ? (
                 <span className={`text-[10px] font-semibold uppercase tracking-wide ${frame.label}`}>
                   {project.status}
                 </span>
               ) : null}
+              <DateRangeChip startIso={project.startDate} endIso={project.endDate} />
             </div>
-            <div className="text-lg sm:text-xl font-semibold text-slate-900 mt-0.5">
+            <div className="mt-0.5 text-base font-semibold text-slate-900 truncate">
               {project.projectName || "—"}
             </div>
-            <div className="mt-1.5 text-xs text-slate-500">
-              <DateRangeChip startIso={project.startDate} endIso={project.endDate} variant="plain" />
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Inline KPIs */}
+            <div className="hidden sm:flex items-center gap-4 text-[11px] text-slate-500">
+              <KpiInline label="Team" value={String(members.length)} />
+              <KpiInline
+                label="Allocated"
+                value={totals.allocatedDays > 0 ? `${totals.allocatedDays.toFixed(1)} d` : "N/A"}
+              />
+              <KpiInline label="Logged" value={`${totals.actualDays.toFixed(1)} d`} tone={overall ? "warn" : undefined} />
+              {allocatedHours > 0 ? (
+                <KpiInline label="Progress" value={`${progressPct.toFixed(0)}%`} tone={overall ? "warn" : "ok"} />
+              ) : null}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => exportCsv(summary)}
+                className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
+              >
+                Export CSV
+              </button>
+              <a
+                href={`/timesheets/team/print?project=${encodeURIComponent(project.projectCode)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-2.5 py-1 text-xs font-medium"
+              >
+                Export PDF
+              </a>
             </div>
           </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => exportCsv(summary)}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-50"
-            >
-              Export CSV
-            </button>
-            <a
-              href={`/timesheets/team/print?project=${encodeURIComponent(project.projectCode)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 text-xs font-medium"
-            >
-              Export PDF
-            </a>
-          </div>
         </div>
+        {allocatedHours > 0 ? (
+          <div className="px-4 pb-3">
+            <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+              <div
+                className={`h-full ${overall ? "bg-amber-500" : "bg-brand-600"}`}
+                style={{ width: `${Math.max(2, progressPct)}%` }}
+              />
+            </div>
+          </div>
+        ) : null}
       </div>
 
-      {/* Stats row */}
-      <div className="grid gap-3 sm:grid-cols-4">
-        <StatCard
-          label="Team size"
-          value={String(members.length)}
-          sub={`${totals.submittedTimesheets} submitted · ${totals.draftTimesheets} draft`}
-        />
-        <StatCard
-          label="Allocated"
-          value={totals.allocatedDays > 0 ? `${totals.allocatedDays.toFixed(1)} d` : "N/A"}
-          sub={totals.allocatedDays > 0 ? `${allocatedHours.toFixed(0)} h total` : undefined}
-        />
-        <StatCard
-          label="Logged"
-          value={`${totals.actualDays.toFixed(1)} d`}
-          sub={`${totals.actualHours.toFixed(1)} h`}
-          tone={totals.actualDays > totals.allocatedDays && totals.allocatedDays > 0 ? "warning" : "neutral"}
-        />
-        <StatCard
-          label="Progress"
-          value={allocatedHours > 0 ? `${progressPct.toFixed(0)}%` : "—"}
-          sub={
-            allocatedHours === 0
-              ? "No allocation set"
-              : totals.actualHours > allocatedHours
-              ? "Over budget"
-              : "On track"
-          }
-          tone={
-            allocatedHours === 0
-              ? "neutral"
-              : totals.actualHours > allocatedHours
-              ? "warning"
-              : "positive"
-          }
-          accent={allocatedHours > 0}
-        />
-      </div>
-
-      {allocatedHours > 0 ? (
+      {/* Team bubble row */}
+      {orderedMembers.length > 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-          <div className="flex items-center justify-between text-xs text-slate-600 mb-1.5">
-            <span className="font-medium">Overall progress</span>
-            <span className="tabular-nums">
-              {totals.actualHours.toFixed(1)} / {allocatedHours.toFixed(0)} h
-            </span>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">
+            Team
           </div>
-          <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-            <div
-              className={`h-full ${totals.actualHours > allocatedHours ? "bg-amber-500" : "bg-brand-600"}`}
-              style={{ width: `${Math.max(2, progressPct)}%` }}
-            />
-          </div>
+          <TeamBubbleRow members={orderedMembers} />
         </div>
       ) : null}
 
-      {/* Team list */}
-      <div className="rounded-lg border border-slate-200 bg-white">
-        <div className="border-b border-slate-100 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Team
-        </div>
-        {members.length === 0 ? (
-          <div className="text-center text-sm text-slate-500 py-10">
-            No one is staffed on this project yet.
-          </div>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {members.map((m) => (
-              <li key={m.memberRecordId}>
-                <MemberRow
-                  member={m}
-                  expanded={expanded === m.memberRecordId}
-                  onToggle={() =>
-                    setExpanded(expanded === m.memberRecordId ? null : m.memberRecordId)
-                  }
-                  onOpenTimesheet={(t) => setActiveSheet({ timesheet: t, member: m })}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
+      {/* Tab toggle */}
+      <div className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5">
+        {(
+          [
+            { v: "members", label: "By member" },
+            { v: "weeks", label: "By week" },
+          ] as const
+        ).map((t) => {
+          const active = tab === t.v;
+          return (
+            <button
+              key={t.v}
+              type="button"
+              onClick={() => setTab(t.v)}
+              aria-pressed={active}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
-      <TimesheetReadModal
-        active={activeSheet}
-        onClose={() => setActiveSheet(null)}
-      />
+      {tab === "members" ? (
+        <div className="rounded-lg border border-slate-200 bg-white">
+          {orderedMembers.length === 0 ? (
+            <div className="text-center text-sm text-slate-500 py-10">
+              No one is staffed on this project yet.
+            </div>
+          ) : (
+            <ul>
+              {orderedMembers.map((m, i) => (
+                <li
+                  key={m.memberRecordId}
+                  className={i === 0 ? "" : "border-t border-slate-100"}
+                >
+                  <MemberRow
+                    member={m}
+                    expanded={expanded === m.memberRecordId}
+                    onToggle={() =>
+                      setExpanded(expanded === m.memberRecordId ? null : m.memberRecordId)
+                    }
+                    onOpenTimesheet={(t) => setActiveSheet({ timesheet: t, member: m })}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : (
+        <ProjectWeeksTab
+          members={orderedMembers}
+          onOpenTimesheet={(t, m) => setActiveSheet({ timesheet: t, member: m })}
+        />
+      )}
+
+      <TimesheetReadModal active={activeSheet} onClose={() => setActiveSheet(null)} />
+    </div>
+  );
+}
+
+function KpiInline({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "ok" | "warn";
+}) {
+  const v = tone === "warn" ? "text-amber-700" : tone === "ok" ? "text-brand-700" : "text-slate-900";
+  return (
+    <span className="inline-flex items-baseline gap-1">
+      <span className="text-[10px] uppercase tracking-wide text-slate-500">{label}</span>
+      <span className={`text-sm font-semibold tabular-nums ${v}`}>{value}</span>
+    </span>
+  );
+}
+
+function TeamBubbleRow({ members }: { members: ProjectTeamMember[] }) {
+  return (
+    <div className="flex flex-wrap items-end gap-x-1.5 gap-y-3 pt-2">
+      {members.map((m) => {
+        const role = strongestRole(m);
+        const isEL = role === "Engagement Lead";
+        const isPL = role === "Project Lead";
+        const showStar = isEL || isPL;
+        const ringCls = isEL ? "ring-slate-900" : isPL ? "ring-brand-500" : "ring-slate-200";
+        const fallbackBg = isEL
+          ? "bg-slate-900 text-white"
+          : isPL
+          ? "bg-brand-600 text-white"
+          : "bg-slate-200 text-slate-700";
+        const label = `${m.memberName || m.memberCode}${role ? " · " + role : ""}`;
+        return (
+          <span key={m.memberRecordId} className="group relative inline-flex flex-col items-center">
+            {showStar ? (
+              <span
+                className={`pointer-events-none absolute left-1/2 -translate-x-1/2 -top-2 z-10 flex h-3 w-3 items-center justify-center ${
+                  isEL ? "text-slate-900" : "text-brand-600"
+                }`}
+              >
+                <StarIcon />
+              </span>
+            ) : null}
+            <span
+              title={label}
+              aria-label={label}
+              className={`relative h-9 w-9 rounded-full ring-2 ${ringCls} overflow-hidden flex items-center justify-center text-[12px] font-semibold ${
+                m.photoUrl ? "" : fallbackBg
+              }`}
+            >
+              {m.photoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={m.photoUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                initials(m.memberName || m.memberCode)
+              )}
+            </span>
+            <span className="mt-1 max-w-[6.5rem] truncate text-[10px] text-slate-600 text-center">
+              {m.memberName || m.memberCode}
+            </span>
+            <span
+              role="tooltip"
+              className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-9 z-20 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 group-hover:opacity-100 transition-opacity duration-100 shadow-md"
+            >
+              {label}
+            </span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function RolePill({ role }: { role: ProjectRole }) {
+  const cls =
+    role === "Engagement Lead"
+      ? "border-slate-300 bg-slate-100 text-slate-800"
+      : role === "Project Lead"
+      ? "border-brand-200 bg-brand-50 text-brand-700"
+      : "border-slate-200 bg-white text-slate-600";
+  return (
+    <span
+      className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${cls}`}
+    >
+      {role}
+    </span>
+  );
+}
+
+function StarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor" aria-hidden="true">
+      <path d="M12 2.6 14.45 8.55 21 9.27l-4.95 4.42L17.5 20.4 12 17.05 6.5 20.4l1.45-6.71L3 9.27l6.55-.72L12 2.6Z" />
+    </svg>
+  );
+}
+
+// "By week" view: weeks down rows, members across columns. Cells show total
+// hours for that member that week. Click a cell with timesheet(s) to open the
+// most recent timesheet's modal.
+function ProjectWeeksTab({
+  members,
+  onOpenTimesheet,
+}: {
+  members: ProjectTeamMember[];
+  onOpenTimesheet: (t: MemberTimesheet, m: ProjectTeamMember) => void;
+}) {
+  const INITIAL_WEEKS = 8;
+  const WEEKS_PER_LOAD = 8;
+  const [weekCount, setWeekCount] = useState(INITIAL_WEEKS);
+
+  const weekMondays = useMemo(() => {
+    const cur = thisMondayIso();
+    const out: string[] = [];
+    for (let i = 0; i < weekCount; i++) out.push(addWeeksIso(cur, -i));
+    return out;
+  }, [weekCount]);
+
+  // Index timesheets by member + week.
+  type Cell = { hours: number; ts: MemberTimesheet[] };
+  const grid = useMemo(() => {
+    const map = new Map<string, Map<string, Cell>>(); // memberRecordId → weekMonday → cell
+    for (const m of members) {
+      const inner = new Map<string, Cell>();
+      map.set(m.memberRecordId, inner);
+      for (const t of m.timesheets) {
+        if (!t.startDate || t.status === "Deleted") continue;
+        const monday = mondayOf(t.startDate);
+        const cur = inner.get(monday) ?? { hours: 0, ts: [] };
+        cur.hours += t.totalHours;
+        cur.ts.push(t);
+        inner.set(monday, cur);
+      }
+    }
+    return map;
+  }, [members]);
+
+  if (members.length === 0) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+        No team members yet.
+      </div>
+    );
+  }
+
+  const today = thisMondayIso();
+
+  return (
+    <div className="space-y-2">
+      <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
+        <table className="w-full text-xs border-collapse">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="text-left px-3 py-2 font-medium align-bottom whitespace-nowrap">Week</th>
+              {members.map((m) => (
+                <th
+                  key={m.memberRecordId}
+                  className="px-2 py-2 font-medium align-bottom"
+                  style={{ minWidth: 100 }}
+                >
+                  <div className="flex flex-col items-end gap-0.5 normal-case tracking-normal">
+                    <span className="font-mono text-[10px] text-slate-500 truncate w-full text-right">
+                      {m.memberCode}
+                    </span>
+                    <span className="block text-[11px] font-semibold text-slate-700 truncate w-full text-right">
+                      {m.memberName || m.memberCode}
+                    </span>
+                  </div>
+                </th>
+              ))}
+              <th className="text-right px-3 py-2 font-medium align-bottom whitespace-nowrap">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {weekMondays.map((mon) => {
+              const isCurrent = mon === today;
+              let weekTotal = 0;
+              for (const m of members) weekTotal += grid.get(m.memberRecordId)?.get(mon)?.hours ?? 0;
+              return (
+                <tr
+                  key={mon}
+                  className={`border-t border-slate-100 ${isCurrent ? "bg-amber-50/50" : "hover:bg-slate-50"}`}
+                >
+                  <td className="px-3 py-1.5 whitespace-nowrap">
+                    <span className={`text-[11px] font-medium ${isCurrent ? "text-amber-800" : "text-slate-700"}`}>
+                      Week of {formatHumanDate(mon)}
+                    </span>
+                    {isCurrent ? (
+                      <span className="ml-1 rounded-full bg-amber-200 px-1 py-0 text-[9px] font-semibold tracking-wide text-amber-900 align-middle">
+                        THIS
+                      </span>
+                    ) : null}
+                  </td>
+                  {members.map((m) => {
+                    const cell = grid.get(m.memberRecordId)?.get(mon);
+                    const hours = cell?.hours ?? 0;
+                    const click = cell && cell.ts.length > 0 ? () => onOpenTimesheet(cell.ts[0], m) : undefined;
+                    return (
+                      <td
+                        key={m.memberRecordId}
+                        className={`px-2 py-1.5 text-right tabular-nums ${click ? "cursor-pointer hover:text-brand-700" : ""}`}
+                        onClick={click}
+                        title={click ? "Click to open the timesheet" : undefined}
+                      >
+                        {hours > 0 ? (
+                          <span className="font-medium text-slate-900">{hours.toFixed(2)}</span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900">
+                    {weekTotal > 0 ? weekTotal.toFixed(2) : <span className="text-slate-300">—</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex justify-center">
+        <button
+          type="button"
+          onClick={() => setWeekCount((w) => w + WEEKS_PER_LOAD)}
+          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-50"
+        >
+          + Show {WEEKS_PER_LOAD} more weeks
+        </button>
+      </div>
     </div>
   );
 }
@@ -174,13 +442,7 @@ function MemberRow({
   const allocHours = member.daysAllocatedTotal * HOURS_PER_DAY;
   const pct = allocHours > 0 ? Math.min(100, (member.hoursActualTotal / allocHours) * 100) : 0;
   const over = member.hoursActualTotal > allocHours && allocHours > 0;
-  const isEL = member.staffings.some((s) => s.projectRole === "Engagement Lead");
-  const isPL = member.staffings.some((s) => s.projectRole === "Project Lead");
-  const leadLabel: "Engagement Lead" | "Project Lead" | null = isEL
-    ? "Engagement Lead"
-    : isPL
-    ? "Project Lead"
-    : null;
+  const role = strongestRole(member);
 
   return (
     <div>
@@ -204,17 +466,7 @@ function MemberRow({
               {member.memberName || member.memberCode}
             </span>
             <span className="font-mono text-xs text-slate-500">{member.memberCode}</span>
-            {leadLabel ? (
-              <span
-                className={`shrink-0 inline-flex items-center rounded-full px-1.5 py-0 text-[10px] font-medium ${
-                  isEL
-                    ? "border border-slate-300 bg-slate-100 text-slate-800"
-                    : "border border-brand-200 bg-brand-50 text-brand-700"
-                }`}
-              >
-                {leadLabel}
-              </span>
-            ) : null}
+            {role ? <RolePill role={role} /> : null}
           </div>
           <div className="text-xs text-slate-500 mt-0.5">
             {member.timesheets.length} timesheet{member.timesheets.length === 1 ? "" : "s"}
@@ -250,7 +502,8 @@ function MemberRow({
                   <thead className="text-xs uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="text-left py-1 pr-3 font-medium">Code</th>
-                      <th className="text-left py-1 pr-3 font-medium">Role</th>
+                      <th className="text-left py-1 pr-3 font-medium">Project role</th>
+                      <th className="text-left py-1 pr-3 font-medium">Job title</th>
                       <th className="text-right py-1 pr-3 font-medium">Days</th>
                       <th className="text-left py-1 font-medium">Period</th>
                     </tr>
@@ -261,14 +514,15 @@ function MemberRow({
                         <td className="py-1.5 pr-3 font-mono text-xs text-slate-700">
                           {s.staffingCode || "—"}
                         </td>
-                        <td className="py-1.5 pr-3 text-slate-700">
+                        <td className="py-1.5 pr-3">
                           {s.projectRole ? (
-                            <span className="font-medium text-brand-700">{s.projectRole}</span>
-                          ) : null}
-                          {s.roleInProject ? (
-                            <span className={`text-slate-600${s.projectRole ? " ml-1" : ""}`}>{s.roleInProject}</span>
-                          ) : null}
-                          {!s.projectRole && !s.roleInProject ? "—" : null}
+                            <RolePill role={s.projectRole} />
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="py-1.5 pr-3 text-slate-700">
+                          {s.roleInProject || <span className="text-slate-400">—</span>}
                         </td>
                         <td className="py-1.5 pr-3 text-right tabular-nums text-slate-700">
                           {s.daysAllocated == null ? "N/A" : `${s.daysAllocated} d`}
@@ -384,39 +638,6 @@ function initials(name: string): string {
   const first = parts[0][0] ?? "";
   const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
   return `${first}${last}`.toUpperCase();
-}
-
-function StatCard({
-  label,
-  value,
-  sub,
-  tone = "neutral",
-  accent,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  tone?: "neutral" | "positive" | "warning";
-  accent?: boolean;
-}) {
-  const bg = accent ? "bg-brand-50 border-brand-200" : "bg-white border-slate-200";
-  const valueColor =
-    tone === "positive"
-      ? "text-emerald-700"
-      : tone === "warning"
-      ? "text-amber-700"
-      : accent
-      ? "text-brand-700"
-      : "text-slate-900";
-  return (
-    <div className={`rounded-lg border p-3 sm:p-4 ${bg}`}>
-      <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`mt-1 text-xl sm:text-2xl font-semibold tabular-nums ${valueColor}`}>
-        {value}
-      </div>
-      {sub ? <div className="mt-0.5 text-xs text-slate-500">{sub}</div> : null}
-    </div>
-  );
 }
 
 function exportCsv(summary: ProjectSummary) {

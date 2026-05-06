@@ -28,10 +28,17 @@ const ADMIN_NAV: NavItem = {
   match: (p) => p === "/admin" || p.startsWith("/admin/"),
 };
 
-export function AppHeader({ session }: { session: SessionPayload }) {
+export function AppHeader({
+  session,
+  photoUrl,
+}: {
+  session: SessionPayload;
+  photoUrl?: string | null;
+}) {
   const admin = isAdmin(session);
   const pathname = usePathname() ?? "";
   const items = admin ? [...NAV, ADMIN_NAV] : NAV;
+  const effectivePhoto = photoUrl ?? session.photoUrl ?? null;
 
   return (
     <header className="bg-white border-b border-slate-200">
@@ -84,9 +91,9 @@ export function AppHeader({ session }: { session: SessionPayload }) {
             aria-label="My profile"
             className="relative inline-flex h-8 w-8 items-center justify-center rounded-full overflow-hidden ring-2 ring-white shadow-sm bg-brand-50 text-brand-700 text-xs font-semibold hover:ring-brand-200 transition"
           >
-            {session.photoUrl ? (
+            {effectivePhoto ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={session.photoUrl} alt="" className="h-full w-full object-cover" />
+              <img src={effectivePhoto} alt="" className="h-full w-full object-cover" />
             ) : (
               <span>{userInitials(session.fullName, session.email)}</span>
             )}

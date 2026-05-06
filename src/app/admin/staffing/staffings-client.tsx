@@ -335,7 +335,9 @@ export function StaffingsAdminClient({
               <th className="text-right px-2 py-1.5 font-medium hidden lg:table-cell">Days alloc.</th>
               <th className="text-right px-2 py-1.5 font-medium hidden lg:table-cell">Days used</th>
               <th className="text-right px-2 py-1.5 font-medium hidden lg:table-cell">Total</th>
-              <th className="text-left px-2 py-1.5 font-medium">Status</th>
+              <th className="text-left px-2 py-1.5 font-medium whitespace-nowrap min-w-[7.5rem]">
+                Status
+              </th>
               <th />
             </tr>
           </thead>
@@ -413,7 +415,7 @@ export function StaffingsAdminClient({
                       ? "—"
                       : `${s.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${s.currency || ""}`.trim()}
                   </td>
-                  <td className="px-2 py-1.5">
+                  <td className="px-2 py-1.5 whitespace-nowrap">
                     <StaffingStatusPill value={s.status} />
                   </td>
                   <td className="px-2 py-1.5 text-right">
@@ -651,7 +653,7 @@ function StaffingStatusPill({ value }: { value: string }) {
       : "bg-white border-slate-300 text-slate-500";
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${cls}`}
+      className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${cls}`}
       title="Auto-derived from days logged vs allocated"
     >
       {value || "—"}
