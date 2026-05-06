@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { addWeeksIso, formatHumanDate, formatWeekRange, mondayOf, thisMondayIso } from "@/lib/dates";
 import { WeekChip } from "@/components/week-chip";
 import { DateRangeChip } from "@/components/date-range-chip";
+import { MemberInfoModal } from "@/components/member-info-modal";
 
 type Props = { summary: ProjectSummary };
 
@@ -34,6 +35,7 @@ export function ProjectSummaryView({ summary }: Props) {
   const { project, members, totals } = summary;
   const [expanded, setExpanded] = useState<string | null>(null);
   const [tab, setTab] = useState<"members" | "weeks">("members");
+  const [memberOpen, setMemberOpen] = useState<ProjectTeamMember | null>(null);
   const [activeSheet, setActiveSheet] = useState<{
     timesheet: MemberTimesheet;
     member: ProjectTeamMember;
@@ -70,7 +72,7 @@ export function ProjectSummaryView({ summary }: Props) {
                   {project.status}
                 </span>
               ) : null}
-              <DateRangeChip startIso={project.startDate} endIso={project.endDate} />
+              <DateRangeChip startIso={project.startDate} endIso={project.endDate} size="sm" />
             </div>
             <div className="mt-0.5 text-base font-semibold text-slate-900 truncate">
               {project.projectName || "—"}
@@ -126,7 +128,7 @@ export function ProjectSummaryView({ summary }: Props) {
           <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">
             Team
           </div>
-          <TeamBubbleRow members={orderedMembers} />
+          <TeamBubbleRow members={orderedMembers} onSelect={setMemberOpen} />
         </div>
       ) : null}
 
@@ -175,6 +177,7 @@ export function ProjectSummaryView({ summary }: Props) {
                       setExpanded(expanded === m.memberRecordId ? null : m.memberRecordId)
                     }
                     onOpenTimesheet={(t) => setActiveSheet({ timesheet: t, member: m })}
+                    onOpenMember={() => setMemberOpen(m)}
                   />
                 </li>
               ))}
@@ -189,6 +192,19 @@ export function ProjectSummaryView({ summary }: Props) {
       )}
 
       <TimesheetReadModal active={activeSheet} onClose={() => setActiveSheet(null)} />
+      <MemberInfoModal
+        memberId={memberOpen?.memberRecordId ?? null}
+        preview={
+          memberOpen
+            ? {
+                fullName: memberOpen.memberName,
+                memberCode: memberOpen.memberCode,
+                photoUrl: memberOpen.photoUrl,
+              }
+            : undefined
+        }
+        onClose={() => setMemberOpen(null)}
+      />
     </div>
   );
 }
@@ -211,7 +227,13 @@ function KpiInline({
   );
 }
 
-function TeamBubbleRow({ members }: { members: ProjectTeamMember[] }) {
+function TeamBubbleRow({
+  members,
+  onSelect,
+}: {
+  members: ProjectTeamMember[];
+  onSelect: (m: ProjectTeamMember) => void;
+}) {
   return (
     <div className="flex flex-wrap items-end gap-x-1.5 gap-y-3 pt-2">
       {members.map((m) => {
@@ -227,7 +249,13 @@ function TeamBubbleRow({ members }: { members: ProjectTeamMember[] }) {
           : "bg-slate-200 text-slate-700";
         const label = `${m.memberName || m.memberCode}${role ? " · " + role : ""}`;
         return (
-          <span key={m.memberRecordId} className="group relative inline-flex flex-col items-center">
+          <button
+            key={m.memberRecordId}
+            type="button"
+            onClick={() => onSelect(m)}
+            aria-label={label}
+            className="group relative inline-flex flex-col items-center"
+          >
             {showStar ? (
               <span
                 className={`pointer-events-none absolute left-1/2 -translate-x-1/2 -top-2 z-10 flex h-3 w-3 items-center justify-center ${
@@ -239,8 +267,7 @@ function TeamBubbleRow({ members }: { members: ProjectTeamMember[] }) {
             ) : null}
             <span
               title={label}
-              aria-label={label}
-              className={`relative h-9 w-9 rounded-full ring-2 ${ringCls} overflow-hidden flex items-center justify-center text-[12px] font-semibold ${
+              className={`relative h-9 w-9 rounded-full ring-2 ${ringCls} overflow-hidden flex items-center justify-center text-[12px] font-semibold transition-transform group-hover:scale-110 ${
                 m.photoUrl ? "" : fallbackBg
               }`}
             >
@@ -260,7 +287,7 @@ function TeamBubbleRow({ members }: { members: ProjectTeamMember[] }) {
             >
               {label}
             </span>
-          </span>
+          </button>
         );
       })}
     </div>
@@ -433,11 +460,13 @@ function MemberRow({
   expanded,
   onToggle,
   onOpenTimesheet,
+  onOpenMember,
 }: {
   member: ProjectTeamMember;
   expanded: boolean;
   onToggle: () => void;
   onOpenTimesheet: (t: MemberTimesheet) => void;
+  onOpenMember: () => void;
 }) {
   const allocHours = member.daysAllocatedTotal * HOURS_PER_DAY;
   const pct = allocHours > 0 ? Math.min(100, (member.hoursActualTotal / allocHours) * 100) : 0;
@@ -446,20 +475,40 @@ function MemberRow({
 
   return (
     <div>
-      <button
-        type="button"
+      {/* Plain div (not a <button>) so the avatar inside can be its own
+          interactive element. Click anywhere on the row toggles the expand
+          state; clicking the avatar stops propagation and opens the member
+          info modal instead. */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onToggle}
-        className="w-full grid grid-cols-[auto,1fr,auto] items-center gap-3 px-4 py-3 text-left hover:bg-slate-50"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+        className="grid grid-cols-[auto,1fr,auto] items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 cursor-pointer"
         aria-expanded={expanded}
       >
-        <div className="flex h-8 w-8 items-center justify-center rounded-full overflow-hidden bg-brand-50 text-brand-700 text-xs font-semibold">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenMember();
+          }}
+          aria-label={`${member.memberName || member.memberCode} — show profile`}
+          title="Show profile"
+          className="flex h-8 w-8 items-center justify-center rounded-full overflow-hidden bg-brand-50 text-brand-700 text-xs font-semibold ring-2 ring-transparent transition hover:ring-brand-200"
+        >
           {member.photoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={member.photoUrl} alt="" className="h-full w-full object-cover" />
           ) : (
             initials(member.memberName || member.memberCode)
           )}
-        </div>
+        </button>
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm">
             <span className="font-medium text-slate-900 truncate">
@@ -479,7 +528,7 @@ function MemberRow({
             {member.daysAllocatedTotal > 0 ? `${member.daysAllocatedTotal.toFixed(1)} d` : "N/A"}
           </div>
         </div>
-      </button>
+      </div>
       {allocHours > 0 ? (
         <div className="px-4 pb-2">
           <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">

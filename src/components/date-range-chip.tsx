@@ -7,6 +7,7 @@ type Props = {
   startIso: string | null;
   endIso: string | null;
   variant?: "chip" | "plain";
+  size?: "sm" | "md";
   className?: string;
 };
 
@@ -17,7 +18,7 @@ const POPOVER_H = 230;
 // A date range with a hover calendar tooltip. Used for project lifetimes
 // (e.g. "01 Mar 2026 → 28 Feb 2027") so users can see where the dates fall
 // in their respective months at a glance.
-export function DateRangeChip({ startIso, endIso, variant = "chip", className }: Props) {
+export function DateRangeChip({ startIso, endIso, variant = "chip", size = "md", className }: Props) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number; w: number }>({
     left: 0,
@@ -53,10 +54,13 @@ export function DateRangeChip({ startIso, endIso, variant = "chip", className }:
       ? `from ${formatHumanDate(startIso)}`
       : `until ${formatHumanDate(endIso)}`;
 
+  // Stays on a single line; the table cells around it (admin/projects) are
+  // narrow and the previous wrapping made the range look like two stray dates.
+  const sizeCls = size === "sm" ? "text-[11px]" : "text-xs";
   const labelCls =
     variant === "plain"
-      ? `text-slate-700 ${className ?? ""}`
-      : `inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-slate-700 ring-1 ring-slate-200 ${className ?? ""}`;
+      ? `whitespace-nowrap text-slate-700 ${sizeCls} ${className ?? ""}`
+      : `inline-flex items-center whitespace-nowrap rounded-md bg-slate-100 px-2 py-0.5 text-slate-700 ring-1 ring-slate-200 ${sizeCls} ${className ?? ""}`;
 
   return (
     <>

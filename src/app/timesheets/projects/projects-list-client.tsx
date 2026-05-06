@@ -10,6 +10,7 @@ import {
 } from "@/lib/airtable";
 import { SubmitTimesheetButton } from "@/components/submit-timesheet-modal";
 import { DateRangeChip } from "@/components/date-range-chip";
+import { MemberInfoModal } from "@/components/member-info-modal";
 
 const HOURS_PER_DAY = 8;
 
@@ -25,6 +26,7 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
 
 export function ProjectsListClient({ projects }: { projects: MyProjectRecord[] }) {
   const [filter, setFilter] = useState<StatusFilter>("All");
+  const [memberOpen, setMemberOpen] = useState<MyProjectTeamMember | null>(null);
   const visible = useMemo(() => {
     if (filter === "All") return projects;
     if (filter === "Not Started") {
@@ -50,11 +52,29 @@ export function ProjectsListClient({ projects }: { projects: MyProjectRecord[] }
               the coloured bar visible only on the first row. */}
           <ul>
             {visible.map((p, i) => (
-              <ProjectRow key={p.projectCode} project={p} isFirst={i === 0} />
+              <ProjectRow
+                key={p.projectCode}
+                project={p}
+                isFirst={i === 0}
+                onSelectMember={setMemberOpen}
+              />
             ))}
           </ul>
         </div>
       )}
+      <MemberInfoModal
+        memberId={memberOpen?.memberRecordId ?? null}
+        preview={
+          memberOpen
+            ? {
+                fullName: memberOpen.fullName,
+                memberCode: memberOpen.memberCode,
+                photoUrl: memberOpen.photoUrl,
+              }
+            : undefined
+        }
+        onClose={() => setMemberOpen(null)}
+      />
     </div>
   );
 }
@@ -130,7 +150,15 @@ function strongestRole(p: MyProjectRecord): ProjectRole | "" {
   return best;
 }
 
-function ProjectRow({ project: p, isFirst }: { project: MyProjectRecord; isFirst: boolean }) {
+function ProjectRow({
+  project: p,
+  isFirst,
+  onSelectMember,
+}: {
+  project: MyProjectRecord;
+  isFirst: boolean;
+  onSelectMember: (m: MyProjectTeamMember) => void;
+}) {
   const allocHours = p.daysAllocatedTotal * HOURS_PER_DAY;
   const hasAllocation = allocHours > 0;
   const pct = hasAllocation ? Math.min(100, (p.hoursActualTotal / allocHours) * 100) : 0;
@@ -194,7 +222,7 @@ function ProjectRow({ project: p, isFirst }: { project: MyProjectRecord; isFirst
       {/* Team bubbles — extra left padding pushes the avatars away from the
           progress bar so the two columns don't visually merge. */}
       <div className="col-span-5 lg:col-span-3 flex justify-start lg:pl-4">
-        {p.team.length > 0 ? <TeamBubbles team={p.team} /> : null}
+        {p.team.length > 0 ? <TeamBubbles team={p.team} onSelect={onSelectMember} /> : null}
       </div>
 
       {/* Actions */}
@@ -252,7 +280,13 @@ function RolePill({ role }: { role: ProjectRole | "" }) {
   );
 }
 
-function TeamBubbles({ team }: { team: MyProjectTeamMember[] }) {
+function TeamBubbles({
+  team,
+  onSelect,
+}: {
+  team: MyProjectTeamMember[];
+  onSelect: (m: MyProjectTeamMember) => void;
+}) {
   const VISIBLE = 6;
   const visible = team.slice(0, VISIBLE);
   const remainder = team.slice(VISIBLE);
@@ -266,7 +300,13 @@ function TeamBubbles({ team }: { team: MyProjectTeamMember[] }) {
         const showStar = isEL || isPL;
         const ringCls = isEL ? "ring-slate-900" : isPL ? "ring-brand-500" : "ring-white";
         return (
-          <span key={m.memberRecordId} className="group relative">
+          <button
+            key={m.memberRecordId}
+            type="button"
+            onClick={() => onSelect(m)}
+            aria-label={label}
+            className="group relative"
+          >
             {showStar ? (
               <span
                 className={`pointer-events-none absolute left-1/2 -translate-x-1/2 -top-2 z-10 flex h-3 w-3 items-center justify-center ${
@@ -278,8 +318,7 @@ function TeamBubbles({ team }: { team: MyProjectTeamMember[] }) {
             ) : null}
             <span
               title={label}
-              aria-label={label}
-              className={`relative h-7 w-7 rounded-full ring-2 ${ringCls} overflow-hidden flex items-center justify-center text-[11px] font-semibold ${
+              className={`relative h-7 w-7 rounded-full ring-2 ${ringCls} overflow-hidden flex items-center justify-center text-[11px] font-semibold transition-transform group-hover:scale-110 ${
                 m.photoUrl
                   ? ""
                   : isEL
@@ -302,7 +341,7 @@ function TeamBubbles({ team }: { team: MyProjectTeamMember[] }) {
             >
               {label}
             </span>
-          </span>
+          </button>
         );
       })}
       {remainder.length > 0 ? (
