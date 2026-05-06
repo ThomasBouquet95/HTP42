@@ -8,6 +8,7 @@ export type SessionPayload = {
   email: string;
   fullName: string;
   role: string; // "Admin" gates admin UI; empty/other = regular member
+  photoUrl?: string | null; // optional Airtable photo URL for the header avatar
 };
 
 export function isAdmin(session: SessionPayload | null | undefined): boolean {

@@ -68,7 +68,7 @@ export function AppHeader({ session }: { session: SessionPayload }) {
             })}
           </nav>
         </div>
-        <div className="flex items-center gap-4 text-sm">
+        <div className="flex items-center gap-3 text-sm">
           <span className="text-slate-600 hidden sm:inline">
             {session.fullName || session.email} ·{" "}
             <span className="font-mono">{session.memberCode}</span>
@@ -78,6 +78,19 @@ export function AppHeader({ session }: { session: SessionPayload }) {
               </span>
             ) : null}
           </span>
+          <Link
+            href="/profile"
+            title="My profile"
+            aria-label="My profile"
+            className="relative inline-flex h-8 w-8 items-center justify-center rounded-full overflow-hidden ring-2 ring-white shadow-sm bg-brand-50 text-brand-700 text-xs font-semibold hover:ring-brand-200 transition"
+          >
+            {session.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={session.photoUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span>{userInitials(session.fullName, session.email)}</span>
+            )}
+          </Link>
           <form action="/api/auth/signout" method="post">
             <button type="submit" className="text-slate-600 hover:text-slate-900">
               Sign out
@@ -87,4 +100,13 @@ export function AppHeader({ session }: { session: SessionPayload }) {
       </div>
     </header>
   );
+}
+
+function userInitials(fullName: string, email: string): string {
+  const source = fullName || email || "?";
+  const parts = source.trim().split(/[\s@.]+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const first = parts[0][0] ?? "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return `${first}${last}`.toUpperCase();
 }

@@ -70,6 +70,7 @@ export async function startSession(member: MemberRecord): Promise<void> {
       email: member.email,
       fullName: member.fullName,
       role: member.role || "",
+      photoUrl: member.photo?.url ?? null,
     } satisfies SessionPayload,
     SESSION_TTL_SECONDS,
   );
