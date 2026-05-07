@@ -1,17 +1,19 @@
+"use client";
+
 // Animated hero: the HTP42 lemniscate (∞) drawn in motion, with data
-// particles travelling its full length and a 3-D cube rotating at the
-// crossover point. Data / AI vibe. SMIL animations for the SVG bits and
-// CSS 3-D for the cube — no JS, no client component needed.
-//
-// SAFE on server: all motion is declarative (SMIL + CSS @keyframes).
+// particles travelling its full length and a horizontal DNA double helix
+// rotating around its long axis at the centre. Brand-blue palette matches
+// the logo. The lemniscate stroke + travelling particles are SMIL; the
+// helix is JS-driven for smooth, true-3D rotation.
+
+import { useEffect, useRef, useState } from "react";
 
 const LEMNI =
   "M120 100 c0 -36 24 -60 54 -60 s54 24 66 60 c12 36 36 60 66 60 s54 -24 54 -60 s-24 -60 -54 -60 s-54 24 -66 60 c-12 36 -36 60 -66 60 s-54 -24 -54 -60 z";
 
 export function HeroInfinity({ name }: { name: string }) {
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-sky-50/40 to-violet-50/40 px-6 py-10 sm:px-10 sm:py-14">
-      {/* Subtle dot grid background */}
+    <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-sky-50/40 to-brand-50/40 px-6 py-10 sm:px-10 sm:py-14">
       <DotGrid />
 
       <div className="relative grid items-center gap-8 sm:grid-cols-[1fr,auto]">
@@ -26,13 +28,12 @@ export function HeroInfinity({ name }: { name: string }) {
             A consulting network for data and AI in pharma.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] font-medium uppercase tracking-wider">
-            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700 ring-1 ring-emerald-100">Pharma</span>
+            <span className="rounded-full bg-brand-50 px-2 py-0.5 text-brand-700 ring-1 ring-brand-100">Pharma</span>
             <span className="rounded-full bg-brand-50 px-2 py-0.5 text-brand-700 ring-1 ring-brand-100">Data</span>
-            <span className="rounded-full bg-violet-50 px-2 py-0.5 text-violet-700 ring-1 ring-violet-100">AI</span>
+            <span className="rounded-full bg-brand-50 px-2 py-0.5 text-brand-700 ring-1 ring-brand-100">AI</span>
           </div>
         </div>
 
-        {/* Animation — sized via aspect ratio so it scales nicely */}
         <div className="relative h-[200px] w-full sm:h-[220px] sm:w-[440px]">
           <svg
             viewBox="0 0 480 200"
@@ -41,9 +42,9 @@ export function HeroInfinity({ name }: { name: string }) {
           >
             <defs>
               <linearGradient id="lemni-stroke" x1="0" x2="1">
-                <stop offset="0" stopColor="#60a5fa" />
+                <stop offset="0" stopColor="#7abeff" />
                 <stop offset=".5" stopColor="#1E91F9" />
-                <stop offset="1" stopColor="#a78bfa" />
+                <stop offset="1" stopColor="#0d5ca6" />
               </linearGradient>
               <radialGradient id="hero-glow" cx="50%" cy="50%" r="50%">
                 <stop offset="0" stopColor="#1E91F9" stopOpacity="0.18" />
@@ -54,18 +55,10 @@ export function HeroInfinity({ name }: { name: string }) {
               </filter>
             </defs>
 
-            {/* Glow halo behind everything */}
             <rect x="0" y="0" width="480" height="200" fill="url(#hero-glow)" />
 
-            {/* Faint reference loop (fixed) */}
-            <path
-              d={LEMNI}
-              fill="none"
-              stroke="rgba(30,145,249,0.18)"
-              strokeWidth="1"
-            />
+            <path d={LEMNI} fill="none" stroke="rgba(30,145,249,0.18)" strokeWidth="1" />
 
-            {/* Animated stroke — draws and erases the loop */}
             <path
               d={LEMNI}
               fill="none"
@@ -83,28 +76,26 @@ export function HeroInfinity({ name }: { name: string }) {
               />
             </path>
 
-            {/* Definition of the path used by motion elements below */}
             <path id="hero-lemni-path" d={LEMNI} fill="none" stroke="none" />
 
-            {/* Glow sphere following the path */}
-            <circle r="6" fill="#1E91F9" opacity="0.35" filter="url(#soft-glow)">
+            <circle r="6" fill="#1E91F9" opacity="0.32" filter="url(#soft-glow)">
               <animateMotion dur="5s" repeatCount="indefinite" rotate="auto">
                 <mpath href="#hero-lemni-path" />
               </animateMotion>
             </circle>
 
-            {/* Crisp data particles travelling at staggered offsets */}
+            {/* Brand-blue particles only — drops the previous emerald/violet
+                so the whole hero stays on the logo's palette. */}
             <Dot color="#1E91F9" begin="0s" />
-            <Dot color="#a78bfa" begin="-1.25s" />
-            <Dot color="#60a5fa" begin="-2.5s" />
-            <Dot color="#34d399" begin="-3.75s" />
+            <Dot color="#7abeff" begin="-1.25s" />
+            <Dot color="#0d5ca6" begin="-2.5s" />
+            <Dot color="#4ca8ff" begin="-3.75s" />
           </svg>
 
-          {/* Pharma motif at the visual centre — a DNA double helix
-              twisting in place. Says clinical-trial / life sciences at a
-              glance and stays small enough not to overpower the loop. */}
+          {/* Horizontal DNA helix rotating around its long axis. JS-driven
+              for smooth, mathematically correct 3-D rotation. */}
           <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-            <DnaHelix />
+            <DnaHorizontal />
           </div>
         </div>
       </div>
@@ -129,88 +120,163 @@ function Dot({ color, begin }: { color: string; begin: string }) {
   );
 }
 
-// Pharma / clinical-trial motif: vertical DNA double helix. Two
-// sinusoidal strands (brand-blue + violet) intertwined, with horizontal
-// base-pair rungs. The whole helix periodically flips horizontally
-// (scaleX 1 → -1) to mimic a 3-D twist; rungs pulse at staggered offsets
-// like AI signals lighting base pairs. No JS, no client component.
-function DnaHelix() {
-  // Pre-computed rung y positions and corresponding strand x amplitudes.
-  // The amplitudes vary so the helix reads as a 3-D twist — wide rungs
-  // where the strands are facing the viewer, thinner ones at the sides.
-  const rungs: Array<{ y: number; w: number; color: string }> = [
-    { y: -30, w: 10, color: "#0ea5e9" },
-    { y: -22, w: 6, color: "#1E91F9" },
-    { y: -14, w: 2, color: "#60a5fa" },
-    { y: -6, w: 6, color: "#a78bfa" },
-    { y: 2, w: 10, color: "#0ea5e9" },
-    { y: 10, w: 6, color: "#1E91F9" },
-    { y: 18, w: 2, color: "#60a5fa" },
-    { y: 26, w: 6, color: "#a78bfa" },
-  ];
+// JS-driven 3-D helix. Each frame we recompute the strands and rungs as
+// a 2-D projection of a cylinder rotating around the X axis. Per-segment
+// opacity + stroke-width follow the depth (z) so points behind the
+// cylinder fade and thin out — gives genuine depth rather than a flat
+// scaleX flip. Brand-blue palette throughout.
+function DnaHorizontal() {
+  const ref = useRef<SVGSVGElement>(null);
+  const phaseRef = useRef(0);
+  const [, setTick] = useState(0);
 
-  const css = `
-    @keyframes htp42-dna-twist {
-      0%, 100% { transform: scaleX(1); }
-      50%      { transform: scaleX(-1); }
+  useEffect(() => {
+    let raf = 0;
+    let last = performance.now();
+    const loop = (t: number) => {
+      const dt = t - last;
+      last = t;
+      // ~0.45 turns per second; gentle enough to read as elegant, not frantic.
+      phaseRef.current = (phaseRef.current + dt * 0.0028) % (Math.PI * 2);
+      setTick((n) => n + 1);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  // Geometry — local SVG coordinates, viewBox -W/2..+W/2 horizontally.
+  const W = 160; // helix length
+  const R = 16; // helix radius (vertical extent of the rendered helix)
+  const SEG = 64; // strand segments
+  const NUM_BASES = 12;
+  const PERIOD = 80; // px for one full helix turn
+
+  // Brand palette (matches tailwind.config.ts → colors.brand)
+  const STRAND_A = "#1E91F9"; // brand-500
+  const STRAND_B = "#0d5ca6"; // brand-800
+  const RUNG_LIGHT = "#7abeff"; // brand-300
+  const RUNG_DARK = "#1474d0"; // brand-700
+
+  const phase = phaseRef.current;
+  function strandSegments(strandPhase: number) {
+    const segs: Array<{
+      x1: number; y1: number; z1: number;
+      x2: number; y2: number; z2: number;
+    }> = [];
+    let prev: { x: number; y: number; z: number } | null = null;
+    for (let i = 0; i <= SEG; i++) {
+      const x = (i / SEG) * W - W / 2;
+      const angle = (2 * Math.PI * x) / PERIOD + phase + strandPhase;
+      const y = R * Math.sin(angle);
+      const z = R * Math.cos(angle);
+      if (prev) segs.push({ x1: prev.x, y1: prev.y, z1: prev.z, x2: x, y2: y, z2: z });
+      prev = { x, y, z };
     }
-    .htp42-dna { transform-origin: center; animation: htp42-dna-twist 7s ease-in-out infinite; }
-    @keyframes htp42-rung-pulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
-    .htp42-rung { animation: htp42-rung-pulse 2.4s ease-in-out infinite; }
-    .htp42-rung:nth-child(2) { animation-delay: -0.3s; }
-    .htp42-rung:nth-child(3) { animation-delay: -0.6s; }
-    .htp42-rung:nth-child(4) { animation-delay: -0.9s; }
-    .htp42-rung:nth-child(5) { animation-delay: -1.2s; }
-    .htp42-rung:nth-child(6) { animation-delay: -1.5s; }
-    .htp42-rung:nth-child(7) { animation-delay: -1.8s; }
-    .htp42-rung:nth-child(8) { animation-delay: -2.1s; }
-  `;
+    return segs;
+  }
+  const segsA = strandSegments(0);
+  const segsB = strandSegments(Math.PI);
+
+  // Depth → opacity (1 in front, ~0.3 behind) and stroke width.
+  const depth = (z: number) => (z + R) / (2 * R); // 0..1
+  const opacity = (z: number) => 0.35 + depth(z) * 0.65;
+  const strokeWidth = (z: number) => 1.4 + depth(z) * 1.4;
+
+  // Rungs: each connects strand A and strand B at the same x.
+  const rungs: Array<{
+    x: number; yA: number; yB: number; zA: number; zB: number; color: string;
+  }> = [];
+  for (let i = 0; i < NUM_BASES; i++) {
+    const t = (i + 0.5) / NUM_BASES;
+    const x = t * W - W / 2;
+    const angle = (2 * Math.PI * x) / PERIOD + phase;
+    const yA = R * Math.sin(angle);
+    const zA = R * Math.cos(angle);
+    const yB = -yA;
+    const zB = -zA;
+    rungs.push({
+      x,
+      yA,
+      yB,
+      zA,
+      zB,
+      color: i % 2 ? RUNG_DARK : RUNG_LIGHT,
+    });
+  }
+
+  // Render strands segment-by-segment, sorted so segments with smaller
+  // average z draw first (i.e. behind), front segments draw on top.
+  const allSegs: Array<{
+    x1: number; y1: number; x2: number; y2: number; avgZ: number;
+    color: string;
+  }> = [];
+  for (const s of segsA) allSegs.push({ ...s, avgZ: (s.z1 + s.z2) / 2, color: STRAND_A });
+  for (const s of segsB) allSegs.push({ ...s, avgZ: (s.z1 + s.z2) / 2, color: STRAND_B });
+  allSegs.sort((a, b) => a.avgZ - b.avgZ);
 
   return (
-    <div style={{ width: 64, height: 96 }}>
-      <style dangerouslySetInnerHTML={{ __html: css }} />
-      <svg viewBox="-22 -42 44 84" width="64" height="96" className="block">
-        <defs>
-          <radialGradient id="dna-glow" cx="50%" cy="50%" r="50%">
-            <stop offset="0" stopColor="#1E91F9" stopOpacity="0.32" />
-            <stop offset="1" stopColor="#1E91F9" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-        <ellipse cx="0" cy="0" rx="22" ry="34" fill="url(#dna-glow)" />
-        <g className="htp42-dna">
-          {/* Strand A — brand blue, sinusoidal cubic-Bezier path */}
-          <path
-            d="M 0 -38 C 14 -34 14 -22 0 -18 C -14 -14 -14 -2 0 2 C 14 6 14 18 0 22 C -14 26 -14 34 0 38"
-            stroke="#1E91F9"
-            strokeWidth="2.2"
-            fill="none"
+    <svg
+      ref={ref}
+      viewBox={`-${W / 2 + 6} -${R + 6} ${W + 12} ${R * 2 + 12}`}
+      width={W + 12}
+      height={R * 2 + 12}
+      aria-hidden
+    >
+      <defs>
+        <radialGradient id="dna-h-glow" cx="50%" cy="50%" r="60%">
+          <stop offset="0" stopColor="#1E91F9" stopOpacity="0.32" />
+          <stop offset="1" stopColor="#1E91F9" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <ellipse cx="0" cy="0" rx={W / 2} ry={R + 4} fill="url(#dna-h-glow)" />
+
+      {/* Rungs first (behind the closer strand segments will draw on top of
+          rungs that pass through; front rungs themselves stay strong). */}
+      {rungs.map((r, i) => {
+        const avgZ = (r.zA + r.zB) / 2;
+        return (
+          <line
+            key={`rung-${i}`}
+            x1={r.x}
+            y1={r.yA}
+            x2={r.x}
+            y2={r.yB}
+            stroke={r.color}
+            strokeWidth={1.4 + depth(avgZ) * 1.0}
+            opacity={0.4 + depth(avgZ) * 0.6}
             strokeLinecap="round"
           />
-          {/* Strand B — violet, mirrored phase */}
-          <path
-            d="M 0 -38 C -14 -34 -14 -22 0 -18 C 14 -14 14 -2 0 2 C -14 6 -14 18 0 22 C 14 26 14 34 0 38"
-            stroke="#a78bfa"
-            strokeWidth="2.2"
-            fill="none"
+        );
+      })}
+
+      {/* Strand segments back-to-front for proper occlusion. */}
+      {allSegs.map((s, i) => {
+        const avgZ = s.avgZ;
+        return (
+          <line
+            key={`seg-${i}`}
+            x1={s.x1}
+            y1={s.y1}
+            x2={s.x2}
+            y2={s.y2}
+            stroke={s.color}
+            strokeWidth={strokeWidth(avgZ)}
+            opacity={opacity(avgZ)}
             strokeLinecap="round"
           />
-          {/* Base-pair rungs */}
-          {rungs.map((r, i) => (
-            <line
-              key={i}
-              className="htp42-rung"
-              x1={-r.w}
-              y1={r.y}
-              x2={r.w}
-              y2={r.y}
-              stroke={r.color}
-              strokeWidth="1.6"
-              strokeLinecap="round"
-            />
-          ))}
+        );
+      })}
+
+      {/* Tiny base-pair dots at the ends of each rung, so the eye reads
+          them as nucleotide nodes rather than empty line endpoints. */}
+      {rungs.map((r, i) => (
+        <g key={`bp-${i}`}>
+          <circle cx={r.x} cy={r.yA} r={1.4 + depth(r.zA) * 0.6} fill="#1E91F9" opacity={opacity(r.zA)} />
+          <circle cx={r.x} cy={r.yB} r={1.4 + depth(r.zB) * 0.6} fill="#0d5ca6" opacity={opacity(r.zB)} />
         </g>
-      </svg>
-    </div>
+      ))}
+    </svg>
   );
 }
 
