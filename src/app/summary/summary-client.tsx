@@ -30,16 +30,7 @@ type Props = {
   hideSummary?: boolean;
 };
 
-type PeriodKey =
-  | "all"
-  | "thisWeek"
-  | "last4Weeks"
-  | "last12Weeks"
-  | "thisMonth"
-  | "lastMonth"
-  | "thisQuarter"
-  | "ytd"
-  | "custom";
+type PeriodKey = "all" | "thisWeek" | "thisMonth" | "custom";
 
 type Filters = {
   status: "All" | TimesheetStatus;
@@ -66,12 +57,7 @@ const DEFAULT_FILTERS: Filters = {
 const PERIOD_OPTIONS: { value: PeriodKey; label: string }[] = [
   { value: "all", label: "All time" },
   { value: "thisWeek", label: "This week" },
-  { value: "last4Weeks", label: "Last 4 weeks" },
-  { value: "last12Weeks", label: "Last 12 weeks" },
   { value: "thisMonth", label: "This month" },
-  { value: "lastMonth", label: "Last month" },
-  { value: "thisQuarter", label: "This quarter" },
-  { value: "ytd", label: "Year to date" },
   { value: "custom", label: "Custom range…" },
 ];
 
@@ -88,34 +74,13 @@ function resolvePeriod(period: PeriodKey): { from: string; to: string } {
     const m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + offset));
     return toIsoDate(m);
   };
-  const addDays = (n: number) => {
-    const d = new Date(today);
-    d.setUTCDate(d.getUTCDate() + n);
-    return monday(d);
-  };
   const year = today.getUTCFullYear();
   const month = today.getUTCMonth();
   if (period === "thisWeek") return { from: thisMonday, to: thisMonday };
-  if (period === "last4Weeks") return { from: addDays(-7 * 3), to: thisMonday };
-  if (period === "last12Weeks") return { from: addDays(-7 * 11), to: thisMonday };
   if (period === "thisMonth") {
     const first = new Date(Date.UTC(year, month, 1));
     const last = new Date(Date.UTC(year, month + 1, 0));
     return { from: monday(first), to: monday(last) };
-  }
-  if (period === "lastMonth") {
-    const first = new Date(Date.UTC(year, month - 1, 1));
-    const last = new Date(Date.UTC(year, month, 0));
-    return { from: monday(first), to: monday(last) };
-  }
-  if (period === "thisQuarter") {
-    const qStart = month - (month % 3);
-    const first = new Date(Date.UTC(year, qStart, 1));
-    return { from: monday(first), to: thisMonday };
-  }
-  if (period === "ytd") {
-    const first = new Date(Date.UTC(year, 0, 1));
-    return { from: monday(first), to: thisMonday };
   }
   return { from: "", to: "" };
 }
@@ -363,7 +328,14 @@ export function SummaryClient({
           <div className="flex gap-1.5">
             <button
               type="button"
-              onClick={() => setFilters(DEFAULT_FILTERS)}
+              onClick={() => {
+                // Reset has to RE-RESOLVE the default period's range so the
+                // table actually filters back to the current week (raw
+                // DEFAULT_FILTERS keeps from/to empty so they're not stale
+                // when stored).
+                const range = resolvePeriod(DEFAULT_FILTERS.period);
+                setFilters({ ...DEFAULT_FILTERS, ...range });
+              }}
               className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
             >
               Reset
