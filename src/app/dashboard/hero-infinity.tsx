@@ -100,11 +100,11 @@ export function HeroInfinity({ name }: { name: string }) {
             <Dot color="#34d399" begin="-3.75s" />
           </svg>
 
-          {/* Pharma motif at the visual centre — a slowly-rotating molecule
-              (benzene ring with a side group). Smaller than the previous
-              cube and makes the data + AI + pharma story explicit. */}
+          {/* Pharma motif at the visual centre — a DNA double helix
+              twisting in place. Says clinical-trial / life sciences at a
+              glance and stays small enough not to overpower the loop. */}
           <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-            <Molecule />
+            <DnaHelix />
           </div>
         </div>
       </div>
@@ -129,93 +129,83 @@ function Dot({ color, begin }: { color: string; begin: string }) {
   );
 }
 
-// Pharma motif: a benzene ring (6 atoms in a hexagon) with a small side
-// group, gently rotating. Atoms pulse subtly to suggest computation /
-// signal flow. Smaller than the previous cube so it doesn't dominate.
-function Molecule() {
-  // Hexagon vertices around (0,0), radius 14.
-  const r = 14;
-  const verts = Array.from({ length: 6 }, (_, i) => {
-    const a = (Math.PI / 3) * i - Math.PI / 2;
-    return [Math.round(Math.cos(a) * r * 100) / 100, Math.round(Math.sin(a) * r * 100) / 100] as const;
-  });
-  // Side group: one extra atom hanging off the top vertex (vertex 0).
-  const side = [verts[0][0], verts[0][1] - 10] as const;
+// Pharma / clinical-trial motif: vertical DNA double helix. Two
+// sinusoidal strands (brand-blue + violet) intertwined, with horizontal
+// base-pair rungs. The whole helix periodically flips horizontally
+// (scaleX 1 → -1) to mimic a 3-D twist; rungs pulse at staggered offsets
+// like AI signals lighting base pairs. No JS, no client component.
+function DnaHelix() {
+  // Pre-computed rung y positions and corresponding strand x amplitudes.
+  // The amplitudes vary so the helix reads as a 3-D twist — wide rungs
+  // where the strands are facing the viewer, thinner ones at the sides.
+  const rungs: Array<{ y: number; w: number; color: string }> = [
+    { y: -30, w: 10, color: "#0ea5e9" },
+    { y: -22, w: 6, color: "#1E91F9" },
+    { y: -14, w: 2, color: "#60a5fa" },
+    { y: -6, w: 6, color: "#a78bfa" },
+    { y: 2, w: 10, color: "#0ea5e9" },
+    { y: 10, w: 6, color: "#1E91F9" },
+    { y: 18, w: 2, color: "#60a5fa" },
+    { y: 26, w: 6, color: "#a78bfa" },
+  ];
 
   const css = `
-    @keyframes htp42-mol-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
-    .htp42-mol-scene { display: inline-block; }
-    .htp42-mol-atom { animation: htp42-mol-pulse 2.6s ease-in-out infinite; }
-    .htp42-mol-atom:nth-child(2) { animation-delay: -0.4s; }
-    .htp42-mol-atom:nth-child(3) { animation-delay: -0.8s; }
-    .htp42-mol-atom:nth-child(4) { animation-delay: -1.2s; }
-    .htp42-mol-atom:nth-child(5) { animation-delay: -1.6s; }
-    .htp42-mol-atom:nth-child(6) { animation-delay: -2.0s; }
+    @keyframes htp42-dna-twist {
+      0%, 100% { transform: scaleX(1); }
+      50%      { transform: scaleX(-1); }
+    }
+    .htp42-dna { transform-origin: center; animation: htp42-dna-twist 7s ease-in-out infinite; }
+    @keyframes htp42-rung-pulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+    .htp42-rung { animation: htp42-rung-pulse 2.4s ease-in-out infinite; }
+    .htp42-rung:nth-child(2) { animation-delay: -0.3s; }
+    .htp42-rung:nth-child(3) { animation-delay: -0.6s; }
+    .htp42-rung:nth-child(4) { animation-delay: -0.9s; }
+    .htp42-rung:nth-child(5) { animation-delay: -1.2s; }
+    .htp42-rung:nth-child(6) { animation-delay: -1.5s; }
+    .htp42-rung:nth-child(7) { animation-delay: -1.8s; }
+    .htp42-rung:nth-child(8) { animation-delay: -2.1s; }
   `;
 
-  // Bond pairs (alternating, mimicking aromatic ring).
-  const ringBonds = verts.map((_, i) => [i, (i + 1) % 6] as const);
-
   return (
-    <div className="htp42-mol-scene">
+    <div style={{ width: 64, height: 96 }}>
       <style dangerouslySetInnerHTML={{ __html: css }} />
-      <svg viewBox="-22 -22 44 44" width="68" height="68" className="block">
+      <svg viewBox="-22 -42 44 84" width="64" height="96" className="block">
         <defs>
-          <radialGradient id="mol-glow" cx="50%" cy="50%" r="50%">
-            <stop offset="0" stopColor="#1E91F9" stopOpacity="0.35" />
+          <radialGradient id="dna-glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stopColor="#1E91F9" stopOpacity="0.32" />
             <stop offset="1" stopColor="#1E91F9" stopOpacity="0" />
           </radialGradient>
         </defs>
-        <circle cx="0" cy="0" r="22" fill="url(#mol-glow)" />
-        <g>
-          <animateTransform
-            attributeName="transform"
-            type="rotate"
-            from="0"
-            to="360"
-            dur="22s"
-            repeatCount="indefinite"
-          />
-          {/* Side bond + atom (functional group) */}
-          <line
-            x1={verts[0][0]}
-            y1={verts[0][1]}
-            x2={side[0]}
-            y2={side[1]}
-            stroke="#a78bfa"
-            strokeWidth="1.4"
+        <ellipse cx="0" cy="0" rx="22" ry="34" fill="url(#dna-glow)" />
+        <g className="htp42-dna">
+          {/* Strand A — brand blue, sinusoidal cubic-Bezier path */}
+          <path
+            d="M 0 -38 C 14 -34 14 -22 0 -18 C -14 -14 -14 -2 0 2 C 14 6 14 18 0 22 C -14 26 -14 34 0 38"
+            stroke="#1E91F9"
+            strokeWidth="2.2"
+            fill="none"
             strokeLinecap="round"
           />
-          <circle cx={side[0]} cy={side[1]} r="2.6" fill="#a78bfa" />
-
-          {/* Aromatic inner circle (signals "ring" without alternating double bonds) */}
-          <circle cx="0" cy="0" r={r - 4} fill="none" stroke="#1E91F9" strokeWidth="0.8" opacity="0.55" />
-
-          {/* Ring bonds */}
-          {ringBonds.map(([a, b], i) => (
+          {/* Strand B — violet, mirrored phase */}
+          <path
+            d="M 0 -38 C -14 -34 -14 -22 0 -18 C 14 -14 14 -2 0 2 C -14 6 -14 18 0 22 C 14 26 14 34 0 38"
+            stroke="#a78bfa"
+            strokeWidth="2.2"
+            fill="none"
+            strokeLinecap="round"
+          />
+          {/* Base-pair rungs */}
+          {rungs.map((r, i) => (
             <line
               key={i}
-              x1={verts[a][0]}
-              y1={verts[a][1]}
-              x2={verts[b][0]}
-              y2={verts[b][1]}
-              stroke="#1E91F9"
+              className="htp42-rung"
+              x1={-r.w}
+              y1={r.y}
+              x2={r.w}
+              y2={r.y}
+              stroke={r.color}
               strokeWidth="1.6"
               strokeLinecap="round"
-            />
-          ))}
-
-          {/* Ring atoms */}
-          {verts.map(([x, y], i) => (
-            <circle
-              key={i}
-              className="htp42-mol-atom"
-              cx={x}
-              cy={y}
-              r="3"
-              fill="#1E91F9"
-              stroke="white"
-              strokeWidth="1"
             />
           ))}
         </g>
