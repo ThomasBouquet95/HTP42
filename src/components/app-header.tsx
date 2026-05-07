@@ -9,11 +9,14 @@ type NavItem = { href: string; label: string; match: (p: string) => boolean };
 
 const NAV: NavItem[] = [
   {
+    href: "/dashboard",
+    label: "Home",
+    match: (p) => p === "/dashboard" || p === "/dashboard/",
+  },
+  {
     href: "/timesheets/projects",
     label: "Client Engagements",
     match: (p) =>
-      p === "/dashboard" ||
-      p.startsWith("/dashboard/") ||
       p === "/timesheets" ||
       p.startsWith("/timesheets/") ||
       p === "/summary" ||
@@ -44,7 +47,7 @@ export function AppHeader({
     <header className="bg-white border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
         <div className="flex items-center gap-8">
-          <Link href="/timesheets/mine" className="flex items-center gap-2 py-4" aria-label="HealthTech Partners 42">
+          <Link href="/dashboard" className="flex items-center gap-2 py-4" aria-label="HealthTech Partners 42">
             <Image src="/logo-mark.svg" alt="" width={28} height={28} priority />
             <span className="text-base font-semibold text-brand-600 tracking-tight">
               HealthTech Partners 42
