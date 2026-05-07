@@ -146,11 +146,11 @@ function DnaHorizontal() {
   }, []);
 
   // Geometry — local SVG coordinates, viewBox -W/2..+W/2 horizontally.
-  const W = 160; // helix length
-  const R = 16; // helix radius (vertical extent of the rendered helix)
-  const SEG = 64; // strand segments
-  const NUM_BASES = 12;
-  const PERIOD = 80; // px for one full helix turn
+  const W = 110; // helix length (smaller so it nests inside the lemniscate)
+  const R = 11; // helix radius (vertical extent)
+  const SEG = 56; // strand segments
+  const NUM_BASES = 10;
+  const PERIOD = 60; // px for one full helix turn (tighter twist on the smaller body)
 
   // Brand palette (matches tailwind.config.ts → colors.brand)
   const STRAND_A = "#1E91F9"; // brand-500
@@ -179,9 +179,11 @@ function DnaHorizontal() {
   const segsB = strandSegments(Math.PI);
 
   // Depth → opacity (1 in front, ~0.3 behind) and stroke width.
+  // Slightly thicker strokes than before so the strands read more clearly
+  // at the new smaller size.
   const depth = (z: number) => (z + R) / (2 * R); // 0..1
   const opacity = (z: number) => 0.35 + depth(z) * 0.65;
-  const strokeWidth = (z: number) => 1.4 + depth(z) * 1.4;
+  const strokeWidth = (z: number) => 1.8 + depth(z) * 1.6;
 
   // Rungs: each connects strand A and strand B at the same x.
   const rungs: Array<{
@@ -243,7 +245,7 @@ function DnaHorizontal() {
             x2={r.x}
             y2={r.yB}
             stroke={r.color}
-            strokeWidth={1.4 + depth(avgZ) * 1.0}
+            strokeWidth={1.7 + depth(avgZ) * 1.0}
             opacity={0.4 + depth(avgZ) * 0.6}
             strokeLinecap="round"
           />
