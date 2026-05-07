@@ -78,6 +78,7 @@ type FormState = {
   dueDate: string;
   beneficiary: string;
   comment: string;
+  invoiceUrl: string;
 };
 
 const EMPTY_FORM: FormState = {
@@ -97,6 +98,7 @@ const EMPTY_FORM: FormState = {
   dueDate: "",
   beneficiary: "",
   comment: "",
+  invoiceUrl: "",
 };
 
 function fromRecord(p: PaymentRecord): FormState {
@@ -117,6 +119,7 @@ function fromRecord(p: PaymentRecord): FormState {
     dueDate: p.dueDate ?? "",
     beneficiary: p.beneficiary,
     comment: p.comment,
+    invoiceUrl: p.invoiceUrl,
   };
 }
 
@@ -419,6 +422,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
         dueDate: form.dueDate || null,
         beneficiary: form.beneficiary,
         comment: form.comment,
+        invoiceUrl: form.invoiceUrl.trim(),
       };
       const url = creating ? "/api/admin/payments" : `/api/admin/payments/${editing!.id}`;
       const method = creating ? "POST" : "PUT";
@@ -783,6 +787,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                     </td>
                     <td className="px-2 py-1.5 text-right">
                       <div className="inline-flex items-center gap-1">
+                        <InvoiceLink url={p.invoiceUrl} />
                         <PaymentDetailsPopover p={p} />
                         <button
                           type="button"
@@ -894,6 +899,26 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
               label="Invoice reference"
               value={form.invoiceReference}
               onChange={(v) => updateField("invoiceReference", v)}
+            />
+            <FormField
+              label="Invoice URL"
+              value={form.invoiceUrl}
+              onChange={(v) => updateField("invoiceUrl", v)}
+              type="url"
+              placeholder="https://…"
+              className="sm:col-span-2"
+              hint={
+                form.invoiceUrl ? (
+                  <a
+                    href={form.invoiceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-brand-700 hover:underline"
+                  >
+                    Open invoice ↗
+                  </a>
+                ) : null
+              }
             />
           </div>
         </FormSection>
@@ -1754,6 +1779,42 @@ function PaymentDetailsPopover({ p }: { p: PaymentRecord }) {
         </dl>
       </span>
     </span>
+  );
+}
+
+function InvoiceLink({ url }: { url: string }) {
+  if (!url) {
+    return (
+      <span
+        title="No invoice link on file"
+        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-300"
+        aria-label="No invoice link on file"
+      >
+        <DocIcon />
+      </span>
+    );
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Open invoice"
+      aria-label="Open invoice"
+      onClick={(e) => e.stopPropagation()}
+      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100"
+    >
+      <DocIcon />
+    </a>
+  );
+}
+
+function DocIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" strokeLinejoin="round" />
+      <path d="M14 3v6h6" strokeLinejoin="round" />
+    </svg>
   );
 }
 

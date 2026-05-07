@@ -7,6 +7,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/modal";
 import { EditIcon, EyeIcon, IconButton, TrashIcon } from "@/components/admin-icons";
 import { WeekChip } from "@/components/week-chip";
+import { CalendarRange } from "@/components/calendar-range";
+import { TimesheetDetailModal } from "@/components/timesheet-detail-modal";
 import { formatHumanDate, formatWeekRange, parseIsoDate, thisMondayIso, toIsoDate } from "@/lib/dates";
 
 const ALL_STATUSES: TimesheetStatus[] = ["Draft", "Submitted", "Deleted"];
@@ -50,11 +52,13 @@ type Filters = {
   to: string;
 };
 
+// Defaults: this week so the user lands on what they're working on right now,
+// status=All so they don't miss their own drafts at first glance.
 const DEFAULT_FILTERS: Filters = {
-  status: "Submitted",
+  status: "All",
   projectCode: "All",
   staffingId: "All",
-  period: "all",
+  period: "thisWeek",
   from: "",
   to: "",
 };
@@ -125,9 +129,14 @@ export function SummaryClient({
   hideSummary = false,
 }: Props) {
   const router = useRouter();
-  const [filters, setFilters] = useState<Filters>(() =>
-    defaultStatus ? { ...DEFAULT_FILTERS, status: defaultStatus } : DEFAULT_FILTERS,
-  );
+  const [filters, setFilters] = useState<Filters>(() => {
+    // Resolve the default period's from/to so the table is filtered on first
+    // paint — useState is initialised once so the resolved range is fine.
+    const range = resolvePeriod(DEFAULT_FILTERS.period);
+    const base = { ...DEFAULT_FILTERS, ...range };
+    return defaultStatus ? { ...base, status: defaultStatus } : base;
+  });
+  const [openTimesheetId, setOpenTimesheetId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TimesheetRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -329,19 +338,21 @@ export function SummaryClient({
           />
         </div>
         {filters.period === "custom" ? (
-          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="lg:col-start-3 lg:col-span-2 grid gap-2 grid-cols-2">
-              <WeekStartInput
-                label="From week (Monday)"
-                value={filters.from}
-                onChange={(v) => update("from", v)}
-              />
-              <WeekStartInput
-                label="To week (Monday)"
-                value={filters.to}
-                onChange={(v) => update("to", v)}
-              />
-            </div>
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <CustomRangePicker
+              from={filters.from}
+              to={filters.to}
+              onChange={(from, to) => setFilters((prev) => ({ ...prev, from, to }))}
+            />
+            <button
+              type="button"
+              onClick={() =>
+                setFilters((prev) => ({ ...prev, period: "all", from: "", to: "" }))
+              }
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              All time
+            </button>
           </div>
         ) : null}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
@@ -473,14 +484,15 @@ export function SummaryClient({
                   {editable ? (
                     <td className="px-2 py-1.5 text-right">
                       <div className="inline-flex items-center gap-1">
-                        <a
-                          href={`/timesheets/${t.id}`}
+                        <button
+                          type="button"
+                          onClick={() => setOpenTimesheetId(t.id)}
                           title={t.status === "Draft" ? "Edit" : "View"}
                           aria-label={t.status === "Draft" ? "Edit" : "View"}
                           className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                         >
                           {t.status === "Draft" ? <EditIcon /> : <EyeIcon />}
-                        </a>
+                        </button>
                         {t.status !== "Deleted" ? (
                           <IconButton
                             onClick={() => setDeleteTarget(t)}
@@ -500,6 +512,12 @@ export function SummaryClient({
           </tbody>
         </table>
       </div>
+
+      <TimesheetDetailModal
+        timesheetId={openTimesheetId}
+        onClose={() => setOpenTimesheetId(null)}
+        onSaved={() => router.refresh()}
+      />
 
       <ConfirmDialog
         open={!!deleteTarget}
@@ -564,16 +582,28 @@ function Select({
 
 // Snaps any picked date to the Monday of its week, so the user never has to
 // know that timesheets are Monday-aligned.
-function WeekStartInput({
-  label,
-  value,
+// Click to expand a calendar popover for picking a from/to range. Whatever
+// dates the user picks get auto-snapped to the Monday of their week so a
+// stray Wednesday click can never miss a timesheet.
+function CustomRangePicker({
+  from,
+  to,
   onChange,
 }: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
+  from: string;
+  to: string;
+  onChange: (from: string, to: string) => void;
 }) {
-  function snap(iso: string): string {
+  const [open, setOpen] = useState(false);
+  const display =
+    from && to
+      ? `${formatHumanDate(from)} → ${formatHumanDate(to)}`
+      : from
+      ? `from ${formatHumanDate(from)}`
+      : to
+      ? `until ${formatHumanDate(to)}`
+      : "Pick a date range…";
+  function mondayOf(iso: string): string {
     if (!iso) return "";
     const d = parseIsoDate(iso);
     const day = d.getUTCDay();
@@ -582,22 +612,59 @@ function WeekStartInput({
     return toIsoDate(m);
   }
   return (
-    <label className="block">
-      <span className="block text-[11px] uppercase tracking-wide font-medium text-slate-500 mb-0.5">
-        {label}
-      </span>
-      <input
-        type="date"
-        value={value}
-        onChange={(e) => onChange(snap(e.target.value))}
-        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs"
-      />
-      {value ? (
-        <span className="mt-0.5 block text-[10px] text-slate-500">
-          Week of {formatHumanDate(value)}
-        </span>
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs ${
+          from || to
+            ? "border-brand-300 bg-brand-50 text-brand-800"
+            : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+        }`}
+      >
+        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+          <rect x="3" y="5" width="18" height="16" rx="2" />
+          <path d="M3 9h18M8 3v4M16 3v4" strokeLinecap="round" />
+        </svg>
+        {display}
+      </button>
+      {open ? (
+        <>
+          <button
+            type="button"
+            aria-label="Close calendar"
+            className="fixed inset-0 z-40 cursor-default"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute left-0 top-full z-50 mt-1 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              Range (snaps to Mondays)
+            </div>
+            <CalendarRange
+              from={from}
+              to={to}
+              onChange={(f, t) => onChange(mondayOf(f), mondayOf(t))}
+            />
+            <div className="mt-2 flex justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => onChange("", "")}
+                className="rounded-md px-2 py-0.5 text-[11px] text-slate-600 hover:bg-slate-100"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="rounded-md bg-brand-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-brand-700"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </>
       ) : null}
-    </label>
+    </span>
   );
 }
 

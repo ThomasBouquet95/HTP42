@@ -121,6 +121,7 @@ export const FIELDS = {
     dueDate: "Due Date",
     beneficiary: "Beneficiary",
     comment: "Comment",
+    invoiceUrl: "Invoice URL",
   },
 } as const;
 
@@ -286,6 +287,7 @@ export type PaymentRecord = {
   dueDate: string | null;
   beneficiary: string;
   comment: string;
+  invoiceUrl: string;
 };
 
 export type StaffingRecord = {
@@ -1012,6 +1014,7 @@ function paymentFromRecord(r: AirtableRecord<FieldSet>): PaymentRecord {
     dueDate: dateOrNull(r, FIELDS.payments.dueDate),
     beneficiary: str(r, FIELDS.payments.beneficiary),
     comment: str(r, FIELDS.payments.comment),
+    invoiceUrl: str(r, FIELDS.payments.invoiceUrl),
   };
 }
 
@@ -1049,6 +1052,7 @@ export type PaymentInput = {
   dueDate: string | null;
   beneficiary: string;
   comment: string;
+  invoiceUrl: string;
 };
 
 function paymentFields(input: PaymentInput): Record<string, unknown> {
@@ -1070,6 +1074,8 @@ function paymentFields(input: PaymentInput): Record<string, unknown> {
     [FIELDS.payments.dueDate]: input.dueDate,
     [FIELDS.payments.beneficiary]: input.beneficiary,
     [FIELDS.payments.comment]: input.comment,
+    // Empty string clears the URL field; Airtable accepts "" for url fields.
+    [FIELDS.payments.invoiceUrl]: input.invoiceUrl || null,
   };
 }
 

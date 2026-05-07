@@ -86,9 +86,10 @@ export async function GET(request: Request) {
   if (!member) return redirectWithError("not_active");
 
   await startSession(member);
-  // Bump sign-in counters in the background so a slow Airtable round-trip
-  // can't delay the redirect back to the app.
-  void recordSignIn(member.id);
+  // Await the counter bump — on Vercel/serverless a fire-and-forget Promise
+  // gets killed when the function returns, so logins were silently never
+  // being recorded. Adds ~200ms to the redirect, which is fine.
+  await recordSignIn(member.id);
 
   // Best-effort safe redirect to the requested returnTo; otherwise dashboard.
   const safeReturn =

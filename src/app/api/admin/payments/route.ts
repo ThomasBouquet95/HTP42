@@ -26,6 +26,7 @@ const schema = z.object({
   dueDate: nullableDate,
   beneficiary: z.string().trim().max(200).default(""),
   comment: z.string().max(5000).default(""),
+  invoiceUrl: z.string().trim().max(2000).default(""),
 });
 
 export async function POST(request: Request) {
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
     dueDate: d.dueDate ?? null,
     beneficiary: d.beneficiary,
     comment: d.comment,
+    invoiceUrl: d.invoiceUrl,
   });
   return NextResponse.json({ id });
 }
