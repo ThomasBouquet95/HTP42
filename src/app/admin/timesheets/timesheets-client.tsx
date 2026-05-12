@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { AdminTimesheetRecord, TimesheetStatus } from "@/lib/airtable";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import type { AdminTimesheetRecord, BillingStatus, TimesheetStatus } from "@/lib/airtable";
+import { BILLING_STATUSES } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
 import { parseIsoDate, toIsoDate } from "@/lib/dates";
 import { WeekChip } from "@/components/week-chip";
@@ -11,6 +13,7 @@ const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as con
 
 type Filters = {
   status: "All" | TimesheetStatus;
+  billing: "All" | BillingStatus | "Unset";
   memberCode: string;
   projectCode: string;
   staffingId: string;
@@ -20,6 +23,7 @@ type Filters = {
 
 const DEFAULT_FILTERS: Filters = {
   status: "All",
+  billing: "All",
   memberCode: "All",
   projectCode: "All",
   staffingId: "All",
@@ -32,27 +36,70 @@ type Props = {
 };
 
 export function AdminTimesheetsClient({ timesheets }: Props) {
+  const router = useRouter();
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  // Local mirror so an inline Billing Status change feels instant even before
+  // the server round-trip lands.
+  const [rows, setRows] = useState<AdminTimesheetRecord[]>(timesheets);
+  useEffect(() => setRows(timesheets), [timesheets]);
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  async function updateBilling(id: string, next: BillingStatus | "") {
+    const previous = rows.find((r) => r.id === id)?.billingStatus ?? "";
+    if (previous === next) return;
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, billingStatus: next } : r)));
+    setSavingIds((s) => new Set(s).add(id));
+    try {
+      const res = await fetch(`/api/admin/timesheets/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ billingStatus: next }),
+      });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? `Update failed (HTTP ${res.status})`);
+      }
+      setToast({ kind: "ok", msg: "Billing status updated" });
+      router.refresh();
+    } catch (e) {
+      setRows((rs) =>
+        rs.map((r) => (r.id === id ? { ...r, billingStatus: previous } : r)),
+      );
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Update failed" });
+    } finally {
+      setSavingIds((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
 
   const memberOptions = useMemo(() => {
     const map = new Map<string, string>();
-    for (const t of timesheets) {
+    for (const t of rows) {
       if (t.memberCode) map.set(t.memberCode, t.memberName || t.memberCode);
     }
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [timesheets]);
+  }, [rows]);
 
   const projectOptions = useMemo(() => {
     const map = new Map<string, string>();
-    for (const t of timesheets) {
+    for (const t of rows) {
       if (t.projectCode) map.set(t.projectCode, t.projectName || t.projectCode);
     }
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
-  }, [timesheets]);
+  }, [rows]);
 
   const staffingOptions = useMemo(() => {
     const map = new Map<string, { code: string; project: string; projectCode: string }>();
-    for (const t of timesheets) {
+    for (const t of rows) {
       if (!map.has(t.staffingRecordId) && t.staffingRecordId) {
         map.set(t.staffingRecordId, {
           code: t.staffingCode,
@@ -64,11 +111,19 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
     return [...map.entries()]
       .filter(([, v]) => filters.projectCode === "All" || v.projectCode === filters.projectCode)
       .sort((a, b) => a[1].code.localeCompare(b[1].code));
-  }, [timesheets, filters.projectCode]);
+  }, [rows, filters.projectCode]);
 
   const filtered = useMemo(() => {
-    return timesheets.filter((t) => {
+    return rows.filter((t) => {
       if (filters.status !== "All" && t.status !== filters.status) return false;
+      if (filters.billing === "Unset" && t.billingStatus !== "") return false;
+      else if (
+        filters.billing !== "All" &&
+        filters.billing !== "Unset" &&
+        t.billingStatus !== filters.billing
+      ) {
+        return false;
+      }
       if (filters.memberCode !== "All" && t.memberCode !== filters.memberCode) return false;
       if (filters.projectCode !== "All" && t.projectCode !== filters.projectCode) return false;
       if (filters.staffingId !== "All" && t.staffingRecordId !== filters.staffingId) return false;
@@ -76,7 +131,7 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
       if (filters.to && (t.startDate ?? "") > filters.to) return false;
       return true;
     });
-  }, [timesheets, filters]);
+  }, [rows, filters]);
 
   const total = useMemo(() => filtered.reduce((s, t) => s + t.totalHours, 0), [filtered]);
 
@@ -134,7 +189,7 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
           <Select
             label="Status"
             value={filters.status}
@@ -142,6 +197,16 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
             options={[
               { value: "All", label: "All statuses" },
               ...ALL_STATUSES.map((s) => ({ value: s, label: s })),
+            ]}
+          />
+          <Select
+            label="Billing"
+            value={filters.billing}
+            onChange={(v) => update("billing", v as Filters["billing"])}
+            options={[
+              { value: "All", label: "All billing" },
+              ...BILLING_STATUSES.map((s) => ({ value: s, label: s })),
+              { value: "Unset", label: "Unset" },
             ]}
           />
           <Select
@@ -238,6 +303,7 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
               <th className="text-left px-2 py-1.5 font-medium">Member</th>
               <th className="text-left px-2 py-1.5 font-medium">Staffing</th>
               <th className="text-left px-2 py-1.5 font-medium">Status</th>
+              <th className="text-left px-2 py-1.5 font-medium whitespace-nowrap">Billing</th>
               {DAY_KEYS.map((k) => (
                 <th key={k} className="text-right px-2 py-1.5 font-medium normal-case tracking-normal">
                   {k.slice(0, 3).replace(/^./, (c) => c.toUpperCase())}
@@ -249,7 +315,7 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center text-slate-500 py-8 text-xs">
+                <td colSpan={11} className="text-center text-slate-500 py-8 text-xs">
                   No timesheets match these filters.
                 </td>
               </tr>
@@ -270,6 +336,16 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
                   <td className="px-2 py-1.5">
                     <StatusBadge status={t.status} />
                   </td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">
+                    <BillingStatusSelect
+                      value={t.billingStatus}
+                      // Editing makes sense once a timesheet has been submitted.
+                      // Allow editing on Submitted only; Draft / Deleted show
+                      // a static "—".
+                      disabled={t.status !== "Submitted" || savingIds.has(t.id)}
+                      onChange={(v) => updateBilling(t.id, v)}
+                    />
+                  </td>
                   {DAY_KEYS.map((k) => (
                     <td key={k} className="px-2 py-1.5 text-right tabular-nums">
                       {t[k].hours ? t[k].hours.toFixed(2) : <span className="text-slate-300">—</span>}
@@ -284,7 +360,55 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
           </tbody>
         </table>
       </div>
+
+      {toast ? (
+        <div
+          role="status"
+          className={`pointer-events-none fixed bottom-4 right-4 z-50 rounded-lg border px-3 py-2 text-xs shadow-lg ${
+            toast.kind === "error"
+              ? "border-red-300 bg-red-50 text-red-800"
+              : "border-emerald-300 bg-emerald-50 text-emerald-800"
+          }`}
+        >
+          {toast.msg}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function BillingStatusSelect({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: BillingStatus | "";
+  disabled?: boolean;
+  onChange: (v: BillingStatus | "") => void;
+}) {
+  if (disabled && !value) return <span className="text-slate-300 text-[11px]">—</span>;
+  const cls =
+    value === "Paid"
+      ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+      : value === "Invoiced"
+      ? "bg-amber-50 border-amber-300 text-amber-800"
+      : value === "To invoice"
+      ? "bg-sky-50 border-sky-300 text-sky-800"
+      : "bg-white border-slate-300 text-slate-500";
+  return (
+    <select
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value as BillingStatus | "")}
+      className={`block rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${cls} focus:outline-none focus:ring-1 focus:ring-brand-600 disabled:opacity-60`}
+    >
+      <option value="">—</option>
+      {BILLING_STATUSES.map((s) => (
+        <option key={s} value={s}>
+          {s}
+        </option>
+      ))}
+    </select>
   );
 }
 

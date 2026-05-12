@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { TimesheetRecord, TimesheetStatus } from "@/lib/airtable";
+import type { BillingStatus, TimesheetRecord, TimesheetStatus } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/modal";
 import { EditIcon, EyeIcon, IconButton, TrashIcon } from "@/components/admin-icons";
@@ -405,6 +405,7 @@ export function SummaryClient({
               <th className="text-left px-2 py-1.5 font-medium whitespace-nowrap">Week</th>
               <th className="text-left px-2 py-1.5 font-medium">Staffing</th>
               <th className="text-left px-2 py-1.5 font-medium">Status</th>
+              <th className="text-left px-2 py-1.5 font-medium whitespace-nowrap">Billing</th>
               {DAY_KEYS.map((k) => (
                 <th key={k} className="text-right px-2 py-1.5 font-medium normal-case tracking-normal">
                   {DAY_LABELS[k].slice(0, 3)}
@@ -444,6 +445,9 @@ export function SummaryClient({
                   </td>
                   <td className="px-2 py-1.5">
                     <StatusBadge status={t.status} />
+                  </td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">
+                    <BillingPill value={t.billingStatus} />
                   </td>
                   {DAY_KEYS.map((k) => (
                     <td key={k} className="px-2 py-1.5 text-right tabular-nums">
@@ -515,6 +519,24 @@ export function SummaryClient({
         onConfirm={confirmDelete}
       />
     </div>
+  );
+}
+
+function BillingPill({ value }: { value: BillingStatus | "" }) {
+  if (!value) return <span className="text-slate-300 text-[11px]">—</span>;
+  const cls =
+    value === "Paid"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : value === "Invoiced"
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+      : "border-sky-200 bg-sky-50 text-sky-700";
+  return (
+    <span
+      className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-medium ${cls}`}
+      title="Billing status — managed by admins"
+    >
+      {value}
+    </span>
   );
 }
 

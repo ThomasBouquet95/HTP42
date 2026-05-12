@@ -101,6 +101,7 @@ export const FIELDS = {
     fridayHours: "Friday (hours)",
     fridayTask: "Friday (task)",
     status: "Status",
+    billingStatus: "Billing Status",
   },
   payments: {
     paymentCode: "Payment Code",
@@ -178,6 +179,12 @@ export type SowStatus = "Signed" | "In Progress" | "Draft" | "Not Started";
 export const SOW_STATUSES: SowStatus[] = ["Not Started", "Draft", "In Progress", "Signed"];
 
 export type TimesheetStatus = "Draft" | "Submitted" | "Deleted";
+
+// Billing lifecycle for a timesheet. Defaults to "To invoice" on submission;
+// admin flips to "Invoiced" once a client invoice is raised and "Paid" once
+// the client has paid. Empty string = unset (e.g. drafts).
+export type BillingStatus = "To invoice" | "Invoiced" | "Paid";
+export const BILLING_STATUSES: BillingStatus[] = ["To invoice", "Invoiced", "Paid"];
 
 export type ProjectStatus =
   | "Completed"
@@ -336,6 +343,8 @@ export type TimesheetRecord = {
   endDate: string | null;
   submissionDate: string | null;
   status: TimesheetStatus;
+  // Empty until an admin sets it; defaults to "To invoice" on submission.
+  billingStatus: BillingStatus | "";
   monday: { hours: number; task: string };
   tuesday: { hours: number; task: string };
   wednesday: { hours: number; task: string };
@@ -1205,6 +1214,7 @@ function toTimesheet(r: AirtableRecord<FieldSet>, staffings: Map<string, Staffin
     endDate: (r.get(FIELDS.timesheets.endDate) as string | undefined) ?? null,
     submissionDate: (r.get(FIELDS.timesheets.submissionDate) as string | undefined) ?? null,
     status: (str(r, FIELDS.timesheets.status) as TimesheetStatus) || "Draft",
+    billingStatus: (str(r, FIELDS.timesheets.billingStatus) as BillingStatus) || "",
     monday,
     tuesday,
     wednesday,
@@ -1358,7 +1368,32 @@ export async function updateTimesheetStatus(
 ): Promise<void> {
   const fields: Record<string, unknown> = { [FIELDS.timesheets.status]: status };
   if (submissionDate !== undefined) fields[FIELDS.timesheets.submissionDate] = submissionDate;
+  // When a timesheet transitions to Submitted, seed Billing Status to
+  // "To invoice" if it hasn't been set yet, so admins see a clear queue.
+  if (status === "Submitted") {
+    try {
+      const r = await base(TABLES.timesheets).find(recordId);
+      const existing = str(r, FIELDS.timesheets.billingStatus);
+      if (!existing) fields[FIELDS.timesheets.billingStatus] = "To invoice";
+    } catch {
+      // ignore — worst case the admin sets it manually
+    }
+  }
   await base(TABLES.timesheets).update([{ id: recordId, fields: fields as FieldSet }]);
+}
+
+export async function updateTimesheetBilling(
+  recordId: string,
+  billingStatus: BillingStatus | "",
+): Promise<void> {
+  await base(TABLES.timesheets).update([
+    {
+      id: recordId,
+      fields: {
+        [FIELDS.timesheets.billingStatus]: billingStatus === "" ? null : billingStatus,
+      } as FieldSet,
+    },
+  ]);
 }
 
 // ---------------------------------------------------------------------------

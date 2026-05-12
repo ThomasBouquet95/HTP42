@@ -45,9 +45,27 @@ export function ReadOnlyTimesheet({ timesheet }: { timesheet: TimesheetRecord })
         </table>
       </div>
 
-      {timesheet.submissionDate ? (
-        <p className="text-[11px] text-slate-500">Submitted on {timesheet.submissionDate}.</p>
-      ) : null}
+      <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+        {timesheet.submissionDate ? (
+          <span>Submitted on {timesheet.submissionDate}.</span>
+        ) : null}
+        {timesheet.billingStatus ? (
+          <span className="inline-flex items-center gap-1">
+            Billing:
+            <span
+              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                timesheet.billingStatus === "Paid"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : timesheet.billingStatus === "Invoiced"
+                  ? "border-amber-200 bg-amber-50 text-amber-700"
+                  : "border-sky-200 bg-sky-50 text-sky-700"
+              }`}
+            >
+              {timesheet.billingStatus}
+            </span>
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
