@@ -8,10 +8,16 @@ import { TASK_PRIORITIES, TASK_STATUSES } from "@/lib/airtable";
 type ProjectOpt = { id: string; code: string; name: string };
 type MemberOpt = { id: string; code: string; name: string };
 
+// Two top-level modes, surfaced as a segmented control so the personal vs
+// team distinction is immediately visible:
+//   - "mine"   → everything I created or am assigned to (personal + project)
+//   - "shared" → every project task I can see (because I'm staffed on it),
+//                regardless of whether I'm assigned to it
+type Mode = "mine" | "shared";
+
 type Filters = {
   status: "All" | TaskStatus;
   priority: "All" | TaskPriority;
-  scope: "All" | "Mine" | "Personal" | "Assigned" | "Created";
   project: "All" | string;
   search: string;
 };
@@ -19,7 +25,6 @@ type Filters = {
 const DEFAULT_FILTERS: Filters = {
   status: "All",
   priority: "All",
-  scope: "All",
   project: "All",
   search: "",
 };
@@ -40,6 +45,7 @@ export function TasksClient({
   const router = useRouter();
   const [rows, setRows] = useState(tasks);
   useEffect(() => setRows(tasks), [tasks]);
+  const [mode, setMode] = useState<Mode>("mine");
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<TaskRecord | null>(null);
@@ -56,18 +62,19 @@ export function TasksClient({
   const filtered = useMemo(() => {
     const q = filters.search.trim().toLowerCase();
     return rows.filter((t) => {
+      // Mode is the primary cut. "mine" = created or assigned (personal +
+      // project flavors); "shared" = project tasks I can see (everything with
+      // a project, since visibility is already enforced server-side).
+      const created = t.createdByRecordId === currentMemberId;
+      const assigned = t.assigneeRecordIds.includes(currentMemberId);
+      if (mode === "mine") {
+        if (!(created || assigned)) return false;
+      } else {
+        if (!t.projectRecordId) return false;
+      }
       if (filters.status !== "All" && t.status !== filters.status) return false;
       if (filters.priority !== "All" && t.priority !== filters.priority) return false;
       if (filters.project !== "All" && t.projectRecordId !== filters.project) return false;
-      if (filters.scope !== "All") {
-        const created = t.createdByRecordId === currentMemberId;
-        const assigned = t.assigneeRecordIds.includes(currentMemberId);
-        const personal = !t.projectRecordId;
-        if (filters.scope === "Mine" && !(created || assigned)) return false;
-        if (filters.scope === "Personal" && !(personal && created)) return false;
-        if (filters.scope === "Assigned" && !assigned) return false;
-        if (filters.scope === "Created" && !created) return false;
-      }
       if (q) {
         const blob = [
           t.title,
@@ -83,7 +90,19 @@ export function TasksClient({
       }
       return true;
     });
-  }, [rows, filters, currentMemberId]);
+  }, [rows, filters, mode, currentMemberId]);
+
+  const counts = useMemo(() => {
+    let mine = 0;
+    let shared = 0;
+    for (const t of rows) {
+      const created = t.createdByRecordId === currentMemberId;
+      const assigned = t.assigneeRecordIds.includes(currentMemberId);
+      if (created || assigned) mine += 1;
+      if (t.projectRecordId) shared += 1;
+    }
+    return { mine, shared };
+  }, [rows, currentMemberId]);
 
   const grouped = useMemo(() => {
     const map = new Map<TaskStatus, TaskRecord[]>();
@@ -173,8 +192,45 @@ export function TasksClient({
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5">
+          {(
+            [
+              { v: "mine", label: "My tasks", count: counts.mine, hint: "Personal + project tasks where you're creator or assignee" },
+              { v: "shared", label: "Shared (projects)", count: counts.shared, hint: "All project tasks you can see, even if not assigned" },
+            ] as const
+          ).map((opt) => {
+            const active = mode === opt.v;
+            return (
+              <button
+                key={opt.v}
+                type="button"
+                onClick={() => setMode(opt.v)}
+                aria-pressed={active}
+                title={opt.hint}
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  active
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                {opt.label}
+                <span className={`text-[10px] tabular-nums ${active ? "text-slate-500" : "text-slate-400"}`}>
+                  {opt.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-slate-500">
+          {mode === "mine"
+            ? "Everything you created or are assigned to — including your personal tasks."
+            : "All project tasks visible to you, including ones you're not personally on."}
+        </p>
+      </div>
+
       <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Select
             label="Status"
             value={filters.status}
@@ -191,18 +247,6 @@ export function TasksClient({
             options={[
               { value: "All", label: "All priorities" },
               ...TASK_PRIORITIES.map((p) => ({ value: p, label: p })),
-            ]}
-          />
-          <Select
-            label="Scope"
-            value={filters.scope}
-            onChange={(v) => update("scope", v as Filters["scope"])}
-            options={[
-              { value: "All", label: "All visible" },
-              { value: "Mine", label: "Mine (created or assigned)" },
-              { value: "Personal", label: "Personal only" },
-              { value: "Assigned", label: "Assigned to me" },
-              { value: "Created", label: "Created by me" },
             ]}
           />
           <Select
