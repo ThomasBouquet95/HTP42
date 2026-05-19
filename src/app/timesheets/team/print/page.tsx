@@ -183,16 +183,18 @@ export default async function ProjectSummaryPrintPage({
 }
 
 function MemberSection({ member: m }: { member: ProjectTeamMember }) {
-  if (m.timesheets.length === 0) return null;
-  const submitted = m.timesheets.filter((t) => t.status === "Submitted").length;
+  // Reports only include the official record — drafts and deleted rows are
+  // filtered out before counting and rendering.
+  const submittedTimesheets = m.timesheets.filter((t) => t.status === "Submitted");
+  if (submittedTimesheets.length === 0) return null;
   return (
     <div className="member-section">
       <div className="member-header">
         <span className="bold">{m.memberName || m.memberCode}</span>
         <span className="mono"> {m.memberCode}</span>
-        <span className="muted"> · {m.timesheets.length} timesheet{m.timesheets.length === 1 ? "" : "s"} · {submitted} submitted · {(m.daysActualTotal).toFixed(1)} d logged</span>
+        <span className="muted"> · {submittedTimesheets.length} submitted timesheet{submittedTimesheets.length === 1 ? "" : "s"} · {(m.daysActualTotal).toFixed(1)} d logged</span>
       </div>
-      {m.timesheets.map((t) => (
+      {submittedTimesheets.map((t) => (
         <article key={t.id} className="timesheet">
           <div className="ts-header">
             <div>

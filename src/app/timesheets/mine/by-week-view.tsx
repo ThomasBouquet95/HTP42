@@ -132,6 +132,43 @@ export function TimesheetsByWeekView({
     return weekMondays.map((m) => byMonday.get(m)!);
   }, [active, weekMondays]);
 
+  // Same aggregation as weeksData but only over Submitted timesheets, used
+  // for the CSV export so the exported report matches the organisation's
+  // official record (no drafts, no deleted rows).
+  const submittedWeeksData = useMemo(() => {
+    const byMonday = new Map<string, WeekData>();
+    for (const monday of weekMondays) {
+      byMonday.set(monday, emptyWeek(monday));
+    }
+    for (const t of active) {
+      if (t.status !== "Submitted" || !t.startDate) continue;
+      const w = byMonday.get(t.startDate);
+      if (!w) continue;
+      for (const k of DAY_KEYS) {
+        const day = t[k];
+        if (!day || day.hours === 0) continue;
+        const existing = w.cells[k].get(t.staffingRecordId);
+        if (existing) {
+          w.cells[k].set(t.staffingRecordId, {
+            ...existing,
+            hours: existing.hours + day.hours,
+            task: [existing.task, day.task].filter(Boolean).join(" / "),
+          });
+        } else {
+          w.cells[k].set(t.staffingRecordId, { hours: day.hours, task: day.task, status: t.status });
+        }
+        w.perDayTotal[k] += day.hours;
+        w.perStaffingTotal.set(
+          t.staffingRecordId,
+          (w.perStaffingTotal.get(t.staffingRecordId) ?? 0) + day.hours,
+        );
+        w.total += day.hours;
+        w.hasAnyEntry = true;
+      }
+    }
+    return weekMondays.map((m) => byMonday.get(m)!);
+  }, [active, weekMondays]);
+
   function toggleWeek(monday: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -174,7 +211,7 @@ export function TimesheetsByWeekView({
           ) : null}
           <button
             type="button"
-            onClick={exportCsv(weeksData, visibleColumns)}
+            onClick={exportCsv(submittedWeeksData, visibleColumns)}
             className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
           >
             Export CSV

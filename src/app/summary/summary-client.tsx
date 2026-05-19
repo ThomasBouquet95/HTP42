@@ -221,7 +221,9 @@ export function SummaryClient({
   }
 
   function exportCsv() {
-    const rows = toCsvRows(filtered);
+    // Exports always represent the official record — only Submitted
+    // timesheets, never drafts or deleted ones.
+    const rows = toCsvRows(filtered.filter((t) => t.status === "Submitted"));
     const csv = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);

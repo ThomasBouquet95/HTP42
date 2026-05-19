@@ -173,7 +173,10 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
   }
 
   function exportCsv() {
-    const rows = toCsvRows(filtered);
+    // Exports only contain the official record of work — drafts and deleted
+    // timesheets are excluded everywhere so the file always matches what the
+    // organisation considers actually submitted.
+    const rows = toCsvRows(filtered.filter((t) => t.status === "Submitted"));
     const csv = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);

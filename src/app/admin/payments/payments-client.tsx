@@ -581,10 +581,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
         />
       </div>
 
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-          Cash-flow charts
-        </div>
+      <div className="flex items-center gap-3">
         <div className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5">
           {(
             [
@@ -607,6 +604,9 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
               </button>
             );
           })}
+        </div>
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          Cash-flow charts
         </div>
       </div>
 
@@ -1411,20 +1411,65 @@ function StatusBreakdown({
   }
   const max = rows.reduce((m, r) => Math.max(m, r.total), 0);
   const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  // Scheduled and To be paid are "planned" — render their bars with the
+  // same diagonal hatch the monthly chart uses, so the two charts read as
+  // a consistent system: solid = executed, hatched = planned.
   return (
     <ul className="space-y-3">
+      <svg width="0" height="0" aria-hidden className="absolute">
+        <defs>
+          <pattern id="breakdown-hatch-inflow" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+            <rect width="6" height="6" fill="#1E91F9" opacity="0.15" />
+            <line x1="0" y1="0" x2="0" y2="6" stroke="#1E91F9" strokeWidth="1.6" />
+          </pattern>
+          <pattern id="breakdown-hatch-outflow" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+            <rect width="6" height="6" fill="#f87171" opacity="0.15" />
+            <line x1="0" y1="0" x2="0" y2="6" stroke="#f87171" strokeWidth="1.6" />
+          </pattern>
+        </defs>
+      </svg>
       {rows.map((r) => {
         const inflowPct = max === 0 ? 0 : (r.inflow / max) * 100;
         const outflowPct = max === 0 ? 0 : (r.outflow / max) * 100;
+        const isPlanned = r.status === "Scheduled" || r.status === "To be paid";
         return (
           <li key={r.status}>
             <div className="flex items-center justify-between text-xs">
-              <span className="font-medium text-slate-800">{r.status}</span>
+              <span className="font-medium text-slate-800">
+                {r.status}
+                {isPlanned ? (
+                  <span className="ml-1 text-[10px] uppercase tracking-wide text-slate-400">planned</span>
+                ) : null}
+              </span>
               <span className="tabular-nums text-slate-600">€{fmt(r.total)}</span>
             </div>
-            <div className="mt-1 flex h-2 rounded-full bg-slate-100 overflow-hidden">
-              <div className="h-full bg-brand-600" style={{ width: `${inflowPct}%` }} title={`Inflow €${fmt(r.inflow)}`} />
-              <div className="h-full bg-red-400" style={{ width: `${outflowPct}%` }} title={`Outflow €${fmt(r.outflow)}`} />
+            <div className="relative mt-1 h-2.5 rounded-full bg-slate-100 overflow-hidden">
+              <svg className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
+                {/* Inflow slice */}
+                <rect
+                  x="0"
+                  y="0"
+                  width={`${inflowPct}%`}
+                  height="100%"
+                  fill={isPlanned ? "url(#breakdown-hatch-inflow)" : "#1E91F9"}
+                  stroke={isPlanned ? "#1E91F9" : "none"}
+                  strokeWidth={isPlanned ? 1 : 0}
+                >
+                  <title>{`Inflow €${fmt(r.inflow)}`}</title>
+                </rect>
+                {/* Outflow slice, sitting to the right of the inflow slice */}
+                <rect
+                  x={`${inflowPct}%`}
+                  y="0"
+                  width={`${outflowPct}%`}
+                  height="100%"
+                  fill={isPlanned ? "url(#breakdown-hatch-outflow)" : "#f87171"}
+                  stroke={isPlanned ? "#f87171" : "none"}
+                  strokeWidth={isPlanned ? 1 : 0}
+                >
+                  <title>{`Outflow €${fmt(r.outflow)}`}</title>
+                </rect>
+              </svg>
             </div>
             <div className="mt-0.5 flex items-center gap-3 text-[10px] text-slate-500 tabular-nums">
               <span className="inline-flex items-center gap-1">

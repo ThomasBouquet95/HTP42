@@ -210,7 +210,10 @@ function applyFilters(
   sp: { status?: string; project?: string; staffing?: string; from?: string; to?: string },
 ): TimesheetRecord[] {
   return rows.filter((t) => {
-    if (sp.status && t.status !== (sp.status as TimesheetStatus)) return false;
+    // Reports always show only Submitted timesheets — drafts and deleted
+    // rows are excluded regardless of the requested status filter.
+    if (t.status !== "Submitted") return false;
+    if (sp.status && (sp.status as TimesheetStatus) !== "Submitted") return false;
     if (sp.project && t.projectCode !== sp.project) return false;
     if (sp.staffing && t.staffingRecordId !== sp.staffing) return false;
     if (sp.from && (t.startDate ?? "") < sp.from) return false;

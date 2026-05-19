@@ -715,7 +715,9 @@ function exportCsv(summary: ProjectSummary) {
   ];
   rows.push(tsHeader);
   for (const m of members) {
+    // Exports only contain the official record — Submitted timesheets only.
     for (const t of m.timesheets) {
+      if (t.status !== "Submitted") continue;
       rows.push([
         project.projectCode, m.memberCode, m.memberName, t.timesheetCode, t.status, t.staffingCode,
         t.startDate ?? "", t.endDate ?? "", t.submissionDate ?? "",
