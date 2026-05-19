@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { listInvoicesForMember, listMyProjects } from "@/lib/airtable";
+import { getStaffingsForMember, listInvoicesForMember } from "@/lib/airtable";
 import { TimesheetsTabs } from "@/components/timesheets-tabs";
 import { InvoicesClient } from "./invoices-client";
 
@@ -10,17 +10,19 @@ export default async function InvoicesPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const [invoices, projects] = await Promise.all([
+  const [invoices, staffings] = await Promise.all([
     listInvoicesForMember(session.sub),
-    listMyProjects(session.sub, session.memberCode),
+    getStaffingsForMember(session.memberCode),
   ]);
 
-  // Only let the member submit invoices for projects they're actually
-  // staffed on — keeps the picker tidy and avoids accidental cross-project
-  // submissions.
-  const pickerProjects = projects.map((p) => ({
-    code: p.projectCode,
-    name: p.projectName,
+  // Members invoice against a specific staffing line — keeps the picker
+  // scoped to the user's own engagements (incl. their internal pro-bono
+  // staffing) and ties each invoice back to a SoW/contract.
+  const pickerStaffings = staffings.map((s) => ({
+    id: s.id,
+    staffingCode: s.staffingCode,
+    projectCode: s.projectCode,
+    projectName: s.projectName,
   }));
 
   return (
@@ -34,7 +36,7 @@ export default async function InvoicesPage() {
           </p>
         </div>
       </div>
-      <InvoicesClient invoices={invoices} projects={pickerProjects} />
+      <InvoicesClient invoices={invoices} staffings={pickerStaffings} />
     </main>
   );
 }

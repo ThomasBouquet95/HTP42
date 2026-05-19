@@ -6,14 +6,19 @@ import type { MemberInvoiceRecord } from "@/lib/airtable";
 
 const MAX_BYTES = 1 * 1024 * 1024;
 
-type ProjectOpt = { code: string; name: string };
+type StaffingOpt = {
+  id: string;
+  staffingCode: string;
+  projectCode: string;
+  projectName: string;
+};
 
 export function InvoicesClient({
   invoices,
-  projects,
+  staffings,
 }: {
   invoices: MemberInvoiceRecord[];
-  projects: ProjectOpt[];
+  staffings: StaffingOpt[];
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(invoices);
@@ -58,10 +63,10 @@ export function InvoicesClient({
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          disabled={projects.length === 0}
+          disabled={staffings.length === 0}
           className="inline-flex items-center gap-1 rounded-full bg-brand-600 px-3 h-8 text-xs font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
           title={
-            projects.length === 0
+            staffings.length === 0
               ? "No project staffing yet — an admin must staff you first"
               : undefined
           }
@@ -75,7 +80,7 @@ export function InvoicesClient({
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
             <tr>
               <th className="text-left px-3 py-2 font-medium">Submitted</th>
-              <th className="text-left px-3 py-2 font-medium">Project</th>
+              <th className="text-left px-3 py-2 font-medium">Staffing</th>
               <th className="text-right px-3 py-2 font-medium">Amount</th>
               <th className="text-left px-3 py-2 font-medium">Status</th>
               <th className="text-left px-3 py-2 font-medium">PDF</th>
@@ -105,7 +110,7 @@ export function InvoicesClient({
                   </td>
                   <td className="px-3 py-2">
                     <div className="font-mono text-[10px] text-brand-700">
-                      {inv.projectCode || "—"}
+                      {inv.staffingCode || inv.projectCode || "—"}
                     </div>
                     <div className="truncate max-w-[18rem]">{inv.projectName || "—"}</div>
                   </td>
@@ -166,7 +171,7 @@ export function InvoicesClient({
       <NewInvoiceModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        projects={projects}
+        staffings={staffings}
         onSubmitted={() => {
           setModalOpen(false);
           setToast({ kind: "ok", msg: "Invoice submitted" });
@@ -194,17 +199,17 @@ export function InvoicesClient({
 function NewInvoiceModal({
   open,
   onClose,
-  projects,
+  staffings,
   onSubmitted,
   onError,
 }: {
   open: boolean;
   onClose: () => void;
-  projects: ProjectOpt[];
+  staffings: StaffingOpt[];
   onSubmitted: () => void;
   onError: (msg: string) => void;
 }) {
-  const [project, setProject] = useState("");
+  const [staffingId, setStaffingId] = useState("");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<"EUR" | "USD" | "CHF" | "">("EUR");
   const [comment, setComment] = useState("");
@@ -214,7 +219,7 @@ function NewInvoiceModal({
 
   useEffect(() => {
     if (!open) return;
-    setProject("");
+    setStaffingId("");
     setAmount("");
     setCurrency("EUR");
     setComment("");
@@ -238,7 +243,7 @@ function NewInvoiceModal({
   if (!open) return null;
 
   async function submit() {
-    if (!project) return onError("Pick a project.");
+    if (!staffingId) return onError("Pick a staffing.");
     if (!file) return onError("Attach a PDF.");
     if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
       return onError("Only PDF files are accepted.");
@@ -249,7 +254,7 @@ function NewInvoiceModal({
     setSubmitting(true);
     try {
       const fd = new FormData();
-      fd.set("projectCode", project);
+      fd.set("staffingId", staffingId);
       fd.set("amount", amount);
       fd.set("currency", currency);
       fd.set("comment", comment);
@@ -293,17 +298,18 @@ function NewInvoiceModal({
         <div className="space-y-3 px-5 py-4">
           <label className="block">
             <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-              Project <span className="text-red-500">*</span>
+              Staffing <span className="text-red-500">*</span>
             </span>
             <select
-              value={project}
-              onChange={(e) => setProject(e.target.value)}
+              value={staffingId}
+              onChange={(e) => setStaffingId(e.target.value)}
               className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
             >
-              <option value="">— pick a project —</option>
-              {projects.map((p) => (
-                <option key={p.code} value={p.code}>
-                  {p.code} — {p.name}
+              <option value="">— pick a staffing —</option>
+              {staffings.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.staffingCode || s.projectCode}
+                  {s.projectName ? ` — ${s.projectName}` : ""}
                 </option>
               ))}
             </select>
@@ -386,7 +392,7 @@ function NewInvoiceModal({
           <button
             type="button"
             onClick={submit}
-            disabled={submitting || !project || !file}
+            disabled={submitting || !staffingId || !file}
             className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
           >
             {submitting ? "Submitting…" : "Submit invoice"}

@@ -4,6 +4,7 @@ import {
   attachInvoicePdf,
   createMemberInvoice,
   getInvoiceById,
+  getStaffingsForMember,
   listInvoicesForMember,
   listProjects,
   markInvoiceEmail,
@@ -29,13 +30,13 @@ export async function POST(request: Request) {
   const form = await request.formData().catch(() => null);
   if (!form) return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
 
-  const projectCode = String(form.get("projectCode") ?? "").trim();
+  const staffingId = String(form.get("staffingId") ?? "").trim();
   const amountStr = String(form.get("amount") ?? "").trim();
   const currency = String(form.get("currency") ?? "").trim();
   const comment = String(form.get("comment") ?? "").trim().slice(0, 5000);
   const file = form.get("pdf");
 
-  if (!projectCode) return NextResponse.json({ error: "Project is required." }, { status: 400 });
+  if (!staffingId) return NextResponse.json({ error: "Staffing is required." }, { status: 400 });
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "A PDF file is required." }, { status: 400 });
   }
@@ -49,12 +50,26 @@ export async function POST(request: Request) {
     );
   }
 
-  // Resolve project record id from the code (form sends the human-friendly
-  // code; we need the record id for the linked-record field).
+  // Resolve and authorise: the staffing must belong to the submitting member.
+  // We pull the member's own staffings rather than trusting a free-form id —
+  // this enforces "users only see/invoice against their own staffing".
+  const myStaffings = await getStaffingsForMember(session.memberCode);
+  const staffing = myStaffings.find((s) => s.id === staffingId);
+  if (!staffing) {
+    return NextResponse.json(
+      { error: "Unknown staffing — pick one from your list." },
+      { status: 400 },
+    );
+  }
+  // Resolve the project record id from the staffing's project code so the
+  // legacy Project link on the invoice stays populated for admin views.
   const projects = await listProjects();
-  const project = projects.find((p) => p.projectCode === projectCode);
+  const project = projects.find((p) => p.projectCode === staffing.projectCode);
   if (!project) {
-    return NextResponse.json({ error: "Unknown project." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Staffing is not linked to a known project." },
+      { status: 400 },
+    );
   }
 
   const amount = amountStr === "" ? null : Number(amountStr);
@@ -65,6 +80,7 @@ export async function POST(request: Request) {
   // 1) Create the invoice record (no PDF yet).
   const invoiceId = await createMemberInvoice({
     memberRecordId: session.sub,
+    staffingRecordId: staffing.id,
     projectRecordId: project.id,
     amount,
     currency: (["EUR", "USD", "CHF"].includes(currency) ? (currency as Currency) : "") as Currency | "",
@@ -83,9 +99,10 @@ export async function POST(request: Request) {
     // attachment so the recipient gets it without clicking back into the
     // portal. Records the outcome on the invoice.
     const member = session.fullName || session.email || session.memberCode;
-    const subject = `Invoice from ${member} — ${project.projectCode}`;
+    const subject = `Invoice from ${member} — ${staffing.staffingCode || project.projectCode}`;
     const text = [
       `New invoice submitted by ${member} (${session.email}).`,
+      `Staffing: ${staffing.staffingCode}`,
       `Project: ${project.projectCode} — ${project.projectName}`,
       amount != null ? `Amount: ${amount.toLocaleString("en-US")} ${currency || ""}`.trim() : null,
       comment ? `Comment: ${comment}` : null,
@@ -96,6 +113,7 @@ export async function POST(request: Request) {
     const html = `
       <p>New invoice submitted by <strong>${member}</strong> (${session.email}).</p>
       <ul>
+        <li><strong>Staffing:</strong> ${staffing.staffingCode}</li>
         <li><strong>Project:</strong> ${project.projectCode} — ${project.projectName}</li>
         ${amount != null ? `<li><strong>Amount:</strong> ${amount.toLocaleString("en-US")} ${currency || ""}</li>` : ""}
         ${comment ? `<li><strong>Comment:</strong> ${comment.replace(/</g, "&lt;").replace(/\n/g, "<br/>")}</li>` : ""}

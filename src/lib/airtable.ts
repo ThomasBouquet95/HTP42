@@ -129,6 +129,7 @@ export const FIELDS = {
     invoiceCode: "Invoice Code",
     member: "Member",
     project: "Project",
+    staffing: "Staffing",
     pdf: "PDF",
     submissionDate: "Submission Date",
     amount: "Amount",
@@ -1150,6 +1151,8 @@ export type MemberInvoiceRecord = {
   memberRecordId: string;
   memberCode: string;
   memberName: string;
+  staffingRecordId: string;
+  staffingCode: string;
   projectRecordId: string;
   projectCode: string;
   projectName: string;
@@ -1168,20 +1171,30 @@ function invoiceFromRecord(
   r: AirtableRecord<FieldSet>,
   memberById: Map<string, { code: string; name: string }>,
   projectById: Map<string, { code: string; name: string }>,
+  staffingById: Map<string, { code: string; projectCode: string; projectName: string }>,
 ): MemberInvoiceRecord {
   const memberIds = linkedIds(r, FIELDS.memberInvoices.member);
   const projectIds = linkedIds(r, FIELDS.memberInvoices.project);
+  const staffingIds = linkedIds(r, FIELDS.memberInvoices.staffing);
   const m = memberIds[0] ? memberById.get(memberIds[0]) : undefined;
+  const s = staffingIds[0] ? staffingById.get(staffingIds[0]) : undefined;
+  // Project info: prefer the staffing's project (the source of truth now);
+  // fall back to the legacy Project link for invoices created before the
+  // staffing field existed.
   const p = projectIds[0] ? projectById.get(projectIds[0]) : undefined;
+  const projectCode = s?.projectCode || p?.code || "";
+  const projectName = s?.projectName || p?.name || "";
   return {
     id: r.id,
     invoiceCode: str(r, FIELDS.memberInvoices.invoiceCode),
     memberRecordId: memberIds[0] ?? "",
     memberCode: m?.code ?? "",
     memberName: m?.name ?? "",
+    staffingRecordId: staffingIds[0] ?? "",
+    staffingCode: s?.code ?? "",
     projectRecordId: projectIds[0] ?? "",
-    projectCode: p?.code ?? "",
-    projectName: p?.name ?? "",
+    projectCode,
+    projectName,
     pdf: firstAttachment(r, FIELDS.memberInvoices.pdf),
     submissionDate: (r.get(FIELDS.memberInvoices.submissionDate) as string | undefined) ?? null,
     amount: numOrNull(r, FIELDS.memberInvoices.amount),
@@ -1226,40 +1239,66 @@ async function getMemberIndex(): Promise<Map<string, { code: string; name: strin
   );
 }
 
+async function getStaffingIndex(): Promise<
+  Map<string, { code: string; projectCode: string; projectName: string }>
+> {
+  const [records, projectNames] = await Promise.all([
+    base(TABLES.projectStaffing)
+      .select({
+        fields: [FIELDS.projectStaffing.staffingCode, FIELDS.projectStaffing.projectCode],
+      })
+      .all(),
+    getProjectNameMap(),
+  ]);
+  const map = new Map<string, { code: string; projectCode: string; projectName: string }>();
+  for (const r of records) {
+    const projectCode = str(r, FIELDS.projectStaffing.projectCode);
+    map.set(r.id, {
+      code: str(r, FIELDS.projectStaffing.staffingCode),
+      projectCode,
+      projectName: projectNames.get(projectCode) ?? "",
+    });
+  }
+  return map;
+}
+
 export async function listInvoicesForMember(
   memberRecordId: string,
 ): Promise<MemberInvoiceRecord[]> {
-  const [records, projectById, memberById] = await Promise.all([
+  const [records, projectById, memberById, staffingById] = await Promise.all([
     base(TABLES.memberInvoices)
       .select({ sort: [{ field: FIELDS.memberInvoices.submissionDate, direction: "desc" }] })
       .all(),
     getProjectIndex(),
     getMemberIndex(),
+    getStaffingIndex(),
   ]);
   return records
-    .map((r) => invoiceFromRecord(r, memberById, projectById))
+    .map((r) => invoiceFromRecord(r, memberById, projectById, staffingById))
     .filter((inv) => inv.memberRecordId === memberRecordId);
 }
 
 export async function listAllInvoices(): Promise<MemberInvoiceRecord[]> {
-  const [records, projectById, memberById] = await Promise.all([
+  const [records, projectById, memberById, staffingById] = await Promise.all([
     base(TABLES.memberInvoices)
       .select({ sort: [{ field: FIELDS.memberInvoices.submissionDate, direction: "desc" }] })
       .all(),
     getProjectIndex(),
     getMemberIndex(),
+    getStaffingIndex(),
   ]);
-  return records.map((r) => invoiceFromRecord(r, memberById, projectById));
+  return records.map((r) => invoiceFromRecord(r, memberById, projectById, staffingById));
 }
 
 export async function getInvoiceById(recordId: string): Promise<MemberInvoiceRecord | null> {
   try {
-    const [r, projectById, memberById] = await Promise.all([
+    const [r, projectById, memberById, staffingById] = await Promise.all([
       base(TABLES.memberInvoices).find(recordId),
       getProjectIndex(),
       getMemberIndex(),
+      getStaffingIndex(),
     ]);
-    return invoiceFromRecord(r, memberById, projectById);
+    return invoiceFromRecord(r, memberById, projectById, staffingById);
   } catch {
     return null;
   }
@@ -1267,6 +1306,9 @@ export async function getInvoiceById(recordId: string): Promise<MemberInvoiceRec
 
 export type InvoiceCreateInput = {
   memberRecordId: string;
+  staffingRecordId: string;
+  // Derived from the staffing for convenience: keeps the legacy Project
+  // link populated so admin views that filter by project still work.
   projectRecordId: string;
   amount: number | null;
   currency: Currency | "";
@@ -1280,6 +1322,7 @@ export type InvoiceCreateInput = {
 export async function createMemberInvoice(input: InvoiceCreateInput): Promise<string> {
   const fields: Record<string, unknown> = {
     [FIELDS.memberInvoices.member]: [input.memberRecordId],
+    [FIELDS.memberInvoices.staffing]: [input.staffingRecordId],
     [FIELDS.memberInvoices.project]: [input.projectRecordId],
     [FIELDS.memberInvoices.submissionDate]: new Date().toISOString(),
     [FIELDS.memberInvoices.amount]: input.amount,

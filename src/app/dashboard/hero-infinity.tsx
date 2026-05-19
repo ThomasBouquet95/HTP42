@@ -3,26 +3,23 @@
 // of brand-blue particles travelling the loop. No center motif: the logo
 // itself is the star. All declarative SVG / SMIL — server-renderable.
 
-// Asymmetric ∞ that mirrors the real HTP42 logo on htp42.com — the left
-// lobe is noticeably larger than the right and the path flows as a
-// continuous ribbon, traced in figure-8 order so an animated stroke
-// "draws" naturally around both lobes.
-//
-// Lobes are wider than tall to match the chubby look of the real mark.
-// Right lobe: centred near (290, 100), radius ≈ 50.
-// Left  lobe: centred near (140, 100), radius ≈ 80.  (~1.6× bigger)
+// Lemniscate traced faithfully from the real HTP42 mark on htp42.com.
+// Single closed cubic-Bezier path that self-intersects at (273, 100) with
+// tangents along ±45° — the visible X at the centre. Left lobe is ≈1.5×
+// wider than the right and noticeably taller, matching the asymmetry of
+// the brand mark.
 const LEMNI =
-  "M 240 100 " +
-  // From the centre crossing, up-right to the top of the small right lobe
-  "C 240 60, 270 50, 290 50 " +
-  "C 320 50, 340 75, 340 100 " +
-  "C 340 125, 320 150, 290 150 " +
-  "C 270 150, 240 140, 240 100 " +
-  // Continue smoothly down-left into the big left lobe
-  "C 240 140, 200 170, 150 170 " +
-  "C  90 170,  60 140,  60 100 " +
-  "C  60  60,  90  30, 150  30 " +
-  "C 200  30, 240  60, 240 100 " +
+  "M 273 100 " +
+  // Crossover → top of small right lobe
+  "C 309  64, 313  24, 342  24 " +
+  "C 382  24, 409  58, 409  91 " +
+  "C 409 127, 376 160, 343 160 " +
+  "C 313 160, 309 136, 273 100 " +
+  // Pass through crossover tangent (-1,-1) into the big left lobe
+  "C 236  64, 194  13, 158  13 " +
+  "C 122  13,  71  55,  71  96 " +
+  "C  71 145, 131 187, 171 187 " +
+  "C 207 187, 236 136, 273 100 " +
   "Z";
 
 export function HeroInfinity({ name }: { name: string }) {
@@ -72,20 +69,19 @@ export function HeroInfinity({ name }: { name: string }) {
               d={LEMNI}
               fill="none"
               stroke="#1E91F9"
-              strokeWidth="22"
+              strokeWidth="40"
               strokeLinecap="round"
               strokeLinejoin="round"
               opacity="0.18"
               filter="url(#hero-glow-blur)"
             />
 
-            {/* Main solid stroke — same blue as the real logo, much thicker
-                than the previous 2.4 px so the ∞ reads as the logo itself. */}
+            {/* Main solid stroke — chunky like the real mark (~11% of width). */}
             <path
               d={LEMNI}
               fill="none"
               stroke="#1E91F9"
-              strokeWidth="14"
+              strokeWidth="30"
               strokeLinecap="round"
               strokeLinejoin="round"
             />
@@ -97,10 +93,10 @@ export function HeroInfinity({ name }: { name: string }) {
               d={LEMNI}
               fill="none"
               stroke="#7abeff"
-              strokeWidth="14"
+              strokeWidth="30"
               strokeLinecap="round"
               strokeLinejoin="round"
-              strokeDasharray="120 760"
+              strokeDasharray="160 880"
               opacity="0.95"
             >
               <animate
