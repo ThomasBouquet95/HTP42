@@ -30,7 +30,7 @@ export default async function ProjectSummaryPage({
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <TimesheetsTabs active="team" />
-        <h1 className="text-base sm:text-lg font-semibold mb-4">Project Staffing Summary</h1>
+        <h1 className="text-base sm:text-lg font-semibold mb-4">Project summary</h1>
 
         {led.length === 0 ? (
           <NoProjectsLedNotice />

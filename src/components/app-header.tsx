@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { isAdmin, type SessionPayload } from "@/lib/session";
 
@@ -20,6 +21,11 @@ const NAV: NavItem[] = [
       p.startsWith("/timesheets/") ||
       p === "/summary" ||
       p.startsWith("/summary/"),
+  },
+  {
+    href: "/tasks",
+    label: "Tasks",
+    match: (p) => p === "/tasks" || p.startsWith("/tasks/"),
   },
   { href: "/profile", label: "Profile", match: (p) => p === "/profile" || p.startsWith("/profile/") },
 ];
@@ -45,7 +51,21 @@ export function AppHeader({
   return (
     <header className="bg-white border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/dashboard"
+            aria-label="HealthTech Partners 42 — home"
+            className="flex items-center py-3"
+          >
+            <Image
+              src="/htp42-mark.png"
+              alt=""
+              width={580}
+              height={326}
+              priority
+              className="h-7 w-auto"
+            />
+          </Link>
           <nav className="flex items-center gap-1 text-sm">
             {items.map((item) => {
               const active = item.match(pathname);

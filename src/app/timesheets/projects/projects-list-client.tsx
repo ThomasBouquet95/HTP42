@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import {
   type MyProjectRecord,
   type MyProjectTeamMember,
@@ -10,6 +9,7 @@ import {
 import { SubmitTimesheetButton } from "@/components/submit-timesheet-modal";
 import { DateRangeChip } from "@/components/date-range-chip";
 import { MemberInfoModal } from "@/components/member-info-modal";
+import { ProjectSummaryModal } from "@/components/project-summary-modal";
 
 const HOURS_PER_DAY = 8;
 
@@ -33,6 +33,7 @@ function bucket(status: MyProjectRecord["status"]): GroupKey {
 
 export function ProjectsListClient({ projects }: { projects: MyProjectRecord[] }) {
   const [memberOpen, setMemberOpen] = useState<MyProjectTeamMember | null>(null);
+  const [summaryFor, setSummaryFor] = useState<{ code: string; name: string } | null>(null);
   const [expanded, setExpanded] = useState<Record<GroupKey, boolean>>({
     inProgress: true,
     notStarted: false,
@@ -66,8 +67,16 @@ export function ProjectsListClient({ projects }: { projects: MyProjectRecord[] }
           expanded={expanded[g]}
           onToggle={() => toggle(g)}
           onSelectMember={setMemberOpen}
+          onOpenSummary={(p) =>
+            setSummaryFor({ code: p.projectCode, name: p.projectName ?? "" })
+          }
         />
       ))}
+      <ProjectSummaryModal
+        projectCode={summaryFor?.code ?? null}
+        projectName={summaryFor?.name}
+        onClose={() => setSummaryFor(null)}
+      />
       <MemberInfoModal
         memberId={memberOpen?.memberRecordId ?? null}
         preview={
@@ -91,12 +100,14 @@ function GroupSection({
   expanded,
   onToggle,
   onSelectMember,
+  onOpenSummary,
 }: {
   label: string;
   items: MyProjectRecord[];
   expanded: boolean;
   onToggle: () => void;
   onSelectMember: (m: MyProjectTeamMember) => void;
+  onOpenSummary: (p: MyProjectRecord) => void;
 }) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white">
@@ -127,6 +138,7 @@ function GroupSection({
                 project={p}
                 isFirst={i === 0}
                 onSelectMember={onSelectMember}
+                onOpenSummary={onOpenSummary}
               />
             ))}
           </ul>
@@ -173,10 +185,12 @@ function ProjectRow({
   project: p,
   isFirst,
   onSelectMember,
+  onOpenSummary,
 }: {
   project: MyProjectRecord;
   isFirst: boolean;
   onSelectMember: (m: MyProjectTeamMember) => void;
+  onOpenSummary: (p: MyProjectRecord) => void;
 }) {
   const allocHours = p.daysAllocatedTotal * HOURS_PER_DAY;
   const hasAllocation = allocHours > 0;
@@ -255,14 +269,15 @@ function ProjectRow({
           </SubmitTimesheetButton>
         </ActionTip>
         {p.isLeader ? (
-          <ActionTip label="Project Staffing Summary">
-            <Link
-              href={`/timesheets/team?project=${encodeURIComponent(p.projectCode)}`}
+          <ActionTip label="Project summary">
+            <button
+              type="button"
+              onClick={() => onOpenSummary(p)}
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
             >
-              <span className="sr-only">Project Staffing Summary</span>
+              <span className="sr-only">Project summary</span>
               <SummaryIcon />
-            </Link>
+            </button>
           </ActionTip>
         ) : (
           <ActionTip label="Available to Engagement Leads and Project Leads">

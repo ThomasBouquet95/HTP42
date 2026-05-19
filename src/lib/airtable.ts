@@ -19,6 +19,7 @@ export const TABLES = {
   clients: "Clients",
   payments: "Payments",
   memberInvoices: "Member Invoices",
+  tasks: "Tasks",
 } as const;
 
 export const FIELDS = {
@@ -140,6 +141,19 @@ export const FIELDS = {
     emailSent: "Email Sent",
     emailSentAt: "Email Sent At",
     emailError: "Email Error",
+  },
+  tasks: {
+    title: "Title",
+    description: "Description",
+    status: "Status",
+    priority: "Priority",
+    dueDate: "Due Date",
+    effortHours: "Effort (hours)",
+    project: "Project",
+    assignees: "Assignees",
+    createdBy: "Created By",
+    createdAt: "Created At",
+    updatedAt: "Updated At",
   },
 } as const;
 
@@ -2413,3 +2427,185 @@ export async function listMyProjects(
   return [...out.values()].sort((a, b) => a.projectCode.localeCompare(b.projectCode));
 }
 
+
+// ---------------------------------------------------------------------------
+// Tasks — lightweight tracker. A task is either personal (no Project link) or
+// attached to a project (visible to anyone staffed on it). Assignees + the
+// creator can always see + edit it.
+// ---------------------------------------------------------------------------
+
+export type TaskStatus = "To do" | "In Progress" | "Done" | "Cancelled";
+export const TASK_STATUSES: TaskStatus[] = ["To do", "In Progress", "Done", "Cancelled"];
+
+export type TaskPriority = "Low" | "Medium" | "High" | "Urgent";
+export const TASK_PRIORITIES: TaskPriority[] = ["Low", "Medium", "High", "Urgent"];
+
+export type TaskRecord = {
+  id: string;
+  title: string;
+  description: string;
+  status: TaskStatus | "";
+  priority: TaskPriority | "";
+  dueDate: string | null;
+  effortHours: number | null;
+  projectRecordId: string;
+  projectCode: string;
+  projectName: string;
+  assigneeRecordIds: string[];
+  assigneeCodes: string[];
+  assigneeNames: string[];
+  createdByRecordId: string;
+  createdByCode: string;
+  createdByName: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+function taskFromRecord(
+  r: AirtableRecord<FieldSet>,
+  memberById: Map<string, { code: string; name: string }>,
+  projectById: Map<string, { code: string; name: string }>,
+): TaskRecord {
+  const assigneeIds = linkedIds(r, FIELDS.tasks.assignees);
+  const createdByIds = linkedIds(r, FIELDS.tasks.createdBy);
+  const projectIds = linkedIds(r, FIELDS.tasks.project);
+  const p = projectIds[0] ? projectById.get(projectIds[0]) : undefined;
+  const creator = createdByIds[0] ? memberById.get(createdByIds[0]) : undefined;
+  return {
+    id: r.id,
+    title: str(r, FIELDS.tasks.title),
+    description: str(r, FIELDS.tasks.description),
+    status: (str(r, FIELDS.tasks.status) as TaskStatus) || "",
+    priority: (str(r, FIELDS.tasks.priority) as TaskPriority) || "",
+    dueDate: dateOrNull(r, FIELDS.tasks.dueDate),
+    effortHours: numOrNull(r, FIELDS.tasks.effortHours),
+    projectRecordId: projectIds[0] ?? "",
+    projectCode: p?.code ?? "",
+    projectName: p?.name ?? "",
+    assigneeRecordIds: assigneeIds,
+    assigneeCodes: assigneeIds.map((id) => memberById.get(id)?.code ?? ""),
+    assigneeNames: assigneeIds.map((id) => memberById.get(id)?.name ?? ""),
+    createdByRecordId: createdByIds[0] ?? "",
+    createdByCode: creator?.code ?? "",
+    createdByName: creator?.name ?? "",
+    createdAt: (r.get(FIELDS.tasks.createdAt) as string | undefined) ?? null,
+    updatedAt: (r.get(FIELDS.tasks.updatedAt) as string | undefined) ?? null,
+  };
+}
+
+// Returns every task the caller is allowed to see:
+//   - they created it, OR they are assigned, OR
+//   - the task is linked to a project they are staffed on, OR
+//   - the caller is an admin (admins use listAllTasks instead).
+export async function listTasksVisibleTo(
+  memberRecordId: string,
+  memberCode: string,
+): Promise<TaskRecord[]> {
+  const [records, projectById, memberById, myStaffings] = await Promise.all([
+    base(TABLES.tasks)
+      .select({ sort: [{ field: FIELDS.tasks.createdAt, direction: "desc" }] })
+      .all(),
+    getProjectIndex(),
+    getMemberIndex(),
+    getStaffingsForMember(memberCode),
+  ]);
+  const myProjectCodes = new Set(myStaffings.map((s) => s.projectCode));
+  return records
+    .map((r) => taskFromRecord(r, memberById, projectById))
+    .filter((t) => {
+      if (t.createdByRecordId === memberRecordId) return true;
+      if (t.assigneeRecordIds.includes(memberRecordId)) return true;
+      if (t.projectCode && myProjectCodes.has(t.projectCode)) return true;
+      return false;
+    });
+}
+
+export async function listAllTasks(): Promise<TaskRecord[]> {
+  const [records, projectById, memberById] = await Promise.all([
+    base(TABLES.tasks)
+      .select({ sort: [{ field: FIELDS.tasks.createdAt, direction: "desc" }] })
+      .all(),
+    getProjectIndex(),
+    getMemberIndex(),
+  ]);
+  return records.map((r) => taskFromRecord(r, memberById, projectById));
+}
+
+export async function getTaskById(recordId: string): Promise<TaskRecord | null> {
+  try {
+    const [r, projectById, memberById] = await Promise.all([
+      base(TABLES.tasks).find(recordId),
+      getProjectIndex(),
+      getMemberIndex(),
+    ]);
+    return taskFromRecord(r, memberById, projectById);
+  } catch {
+    return null;
+  }
+}
+
+export type TaskCreateInput = {
+  title: string;
+  description: string;
+  status: TaskStatus;
+  priority: TaskPriority | "";
+  dueDate: string | null;
+  effortHours: number | null;
+  projectRecordId: string;
+  assigneeRecordIds: string[];
+  createdByRecordId: string;
+};
+
+export async function createTask(input: TaskCreateInput): Promise<string> {
+  const now = new Date().toISOString();
+  const fields: Record<string, unknown> = {
+    [FIELDS.tasks.title]: input.title,
+    [FIELDS.tasks.description]: input.description,
+    [FIELDS.tasks.status]: input.status,
+    [FIELDS.tasks.priority]: input.priority || null,
+    [FIELDS.tasks.dueDate]: input.dueDate,
+    [FIELDS.tasks.effortHours]: input.effortHours,
+    [FIELDS.tasks.project]: input.projectRecordId ? [input.projectRecordId] : [],
+    [FIELDS.tasks.assignees]: input.assigneeRecordIds,
+    [FIELDS.tasks.createdBy]: [input.createdByRecordId],
+    [FIELDS.tasks.createdAt]: now,
+    [FIELDS.tasks.updatedAt]: now,
+  };
+  const [created] = await base(TABLES.tasks).create([{ fields: fields as FieldSet }]);
+  return created.id;
+}
+
+export type TaskUpdateInput = Partial<{
+  title: string;
+  description: string;
+  status: TaskStatus;
+  priority: TaskPriority | "";
+  dueDate: string | null;
+  effortHours: number | null;
+  projectRecordId: string;
+  assigneeRecordIds: string[];
+}>;
+
+export async function updateTask(recordId: string, input: TaskUpdateInput): Promise<void> {
+  const fields: Record<string, unknown> = {};
+  if (input.title !== undefined) fields[FIELDS.tasks.title] = input.title;
+  if (input.description !== undefined) fields[FIELDS.tasks.description] = input.description;
+  if (input.status !== undefined) fields[FIELDS.tasks.status] = input.status;
+  if (input.priority !== undefined) {
+    fields[FIELDS.tasks.priority] = input.priority || null;
+  }
+  if (input.dueDate !== undefined) fields[FIELDS.tasks.dueDate] = input.dueDate;
+  if (input.effortHours !== undefined) fields[FIELDS.tasks.effortHours] = input.effortHours;
+  if (input.projectRecordId !== undefined) {
+    fields[FIELDS.tasks.project] = input.projectRecordId ? [input.projectRecordId] : [];
+  }
+  if (input.assigneeRecordIds !== undefined) {
+    fields[FIELDS.tasks.assignees] = input.assigneeRecordIds;
+  }
+  fields[FIELDS.tasks.updatedAt] = new Date().toISOString();
+  await base(TABLES.tasks).update([{ id: recordId, fields: fields as FieldSet }]);
+}
+
+export async function deleteTask(recordId: string): Promise<void> {
+  await base(TABLES.tasks).destroy([recordId]);
+}
