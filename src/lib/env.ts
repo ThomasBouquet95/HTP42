@@ -27,4 +27,14 @@ export const env = {
       clientSecret: required("AZURE_CLIENT_SECRET"),
     };
   },
+  // Inbox that receives invoice submissions.
+  get invoiceRecipient() {
+    return process.env.INVOICE_RECIPIENT_EMAIL ?? "invoices@htp42.com";
+  },
+  // Mailbox that sends those emails (Azure app needs Mail.Send application
+  // permission granted to send as this user). Defaults to the recipient so
+  // submissions self-archive when not explicitly configured.
+  get invoiceSender() {
+    return process.env.INVOICE_SENDER_UPN ?? process.env.INVOICE_RECIPIENT_EMAIL ?? "";
+  },
 };

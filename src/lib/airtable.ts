@@ -18,6 +18,7 @@ export const TABLES = {
   projects: "Projects",
   clients: "Clients",
   payments: "Payments",
+  memberInvoices: "Member Invoices",
 } as const;
 
 export const FIELDS = {
@@ -123,6 +124,20 @@ export const FIELDS = {
     beneficiary: "Beneficiary",
     comment: "Comment",
     invoiceUrl: "Invoice URL",
+  },
+  memberInvoices: {
+    invoiceCode: "Invoice Code",
+    member: "Member",
+    project: "Project",
+    pdf: "PDF",
+    submissionDate: "Submission Date",
+    amount: "Amount",
+    currency: "Currency",
+    status: "Status",
+    comment: "Comment",
+    emailSent: "Email Sent",
+    emailSentAt: "Email Sent At",
+    emailError: "Email Error",
   },
 } as const;
 
@@ -1120,6 +1135,217 @@ export async function updatePayment(recordId: string, input: PaymentInput): Prom
 
 export async function deletePayment(recordId: string): Promise<void> {
   await base(TABLES.payments).destroy([recordId]);
+}
+
+// ---------------------------------------------------------------------------
+// Member Invoices — submitted by network members (PDF upload + status flow)
+// ---------------------------------------------------------------------------
+
+export type InvoiceStatus = "To be paid" | "Paid" | "Cancelled";
+export const INVOICE_STATUSES: InvoiceStatus[] = ["To be paid", "Paid", "Cancelled"];
+
+export type MemberInvoiceRecord = {
+  id: string;
+  invoiceCode: string;
+  memberRecordId: string;
+  memberCode: string;
+  memberName: string;
+  projectRecordId: string;
+  projectCode: string;
+  projectName: string;
+  pdf: AttachmentRef | null;
+  submissionDate: string | null;
+  amount: number | null;
+  currency: Currency | "";
+  status: InvoiceStatus | "";
+  comment: string;
+  emailSent: boolean;
+  emailSentAt: string | null;
+  emailError: string;
+};
+
+function invoiceFromRecord(
+  r: AirtableRecord<FieldSet>,
+  memberById: Map<string, { code: string; name: string }>,
+  projectById: Map<string, { code: string; name: string }>,
+): MemberInvoiceRecord {
+  const memberIds = linkedIds(r, FIELDS.memberInvoices.member);
+  const projectIds = linkedIds(r, FIELDS.memberInvoices.project);
+  const m = memberIds[0] ? memberById.get(memberIds[0]) : undefined;
+  const p = projectIds[0] ? projectById.get(projectIds[0]) : undefined;
+  return {
+    id: r.id,
+    invoiceCode: str(r, FIELDS.memberInvoices.invoiceCode),
+    memberRecordId: memberIds[0] ?? "",
+    memberCode: m?.code ?? "",
+    memberName: m?.name ?? "",
+    projectRecordId: projectIds[0] ?? "",
+    projectCode: p?.code ?? "",
+    projectName: p?.name ?? "",
+    pdf: firstAttachment(r, FIELDS.memberInvoices.pdf),
+    submissionDate: (r.get(FIELDS.memberInvoices.submissionDate) as string | undefined) ?? null,
+    amount: numOrNull(r, FIELDS.memberInvoices.amount),
+    currency: str(r, FIELDS.memberInvoices.currency) as Currency | "",
+    status: (str(r, FIELDS.memberInvoices.status) as InvoiceStatus) || "",
+    comment: str(r, FIELDS.memberInvoices.comment),
+    emailSent: r.get(FIELDS.memberInvoices.emailSent) === true,
+    emailSentAt: (r.get(FIELDS.memberInvoices.emailSentAt) as string | undefined) ?? null,
+    emailError: str(r, FIELDS.memberInvoices.emailError),
+  };
+}
+
+async function getProjectIndex(): Promise<Map<string, { code: string; name: string }>> {
+  const records = await base(TABLES.projects)
+    .select({ fields: [FIELDS.projects.projectCode, FIELDS.projects.projectName] })
+    .all();
+  return new Map(
+    records.map((r) => [
+      r.id,
+      {
+        code: str(r, FIELDS.projects.projectCode),
+        name: str(r, FIELDS.projects.projectName),
+      },
+    ]),
+  );
+}
+
+async function getMemberIndex(): Promise<Map<string, { code: string; name: string }>> {
+  const records = await base(TABLES.networkMembers)
+    .select({
+      fields: [FIELDS.networkMembers.memberCode, FIELDS.networkMembers.fullName],
+    })
+    .all();
+  return new Map(
+    records.map((r) => [
+      r.id,
+      {
+        code: str(r, FIELDS.networkMembers.memberCode),
+        name: str(r, FIELDS.networkMembers.fullName),
+      },
+    ]),
+  );
+}
+
+export async function listInvoicesForMember(
+  memberRecordId: string,
+): Promise<MemberInvoiceRecord[]> {
+  const [records, projectById, memberById] = await Promise.all([
+    base(TABLES.memberInvoices)
+      .select({ sort: [{ field: FIELDS.memberInvoices.submissionDate, direction: "desc" }] })
+      .all(),
+    getProjectIndex(),
+    getMemberIndex(),
+  ]);
+  return records
+    .map((r) => invoiceFromRecord(r, memberById, projectById))
+    .filter((inv) => inv.memberRecordId === memberRecordId);
+}
+
+export async function listAllInvoices(): Promise<MemberInvoiceRecord[]> {
+  const [records, projectById, memberById] = await Promise.all([
+    base(TABLES.memberInvoices)
+      .select({ sort: [{ field: FIELDS.memberInvoices.submissionDate, direction: "desc" }] })
+      .all(),
+    getProjectIndex(),
+    getMemberIndex(),
+  ]);
+  return records.map((r) => invoiceFromRecord(r, memberById, projectById));
+}
+
+export async function getInvoiceById(recordId: string): Promise<MemberInvoiceRecord | null> {
+  try {
+    const [r, projectById, memberById] = await Promise.all([
+      base(TABLES.memberInvoices).find(recordId),
+      getProjectIndex(),
+      getMemberIndex(),
+    ]);
+    return invoiceFromRecord(r, memberById, projectById);
+  } catch {
+    return null;
+  }
+}
+
+export type InvoiceCreateInput = {
+  memberRecordId: string;
+  projectRecordId: string;
+  amount: number | null;
+  currency: Currency | "";
+  comment: string;
+  // PDF is uploaded directly via Airtable's content endpoint and the
+  // returned URL is passed back in here so the record references it as
+  // an attachment.
+  pdfAttachment: { url: string; filename: string } | null;
+};
+
+export async function createMemberInvoice(input: InvoiceCreateInput): Promise<string> {
+  const fields: Record<string, unknown> = {
+    [FIELDS.memberInvoices.member]: [input.memberRecordId],
+    [FIELDS.memberInvoices.project]: [input.projectRecordId],
+    [FIELDS.memberInvoices.submissionDate]: new Date().toISOString(),
+    [FIELDS.memberInvoices.amount]: input.amount,
+    [FIELDS.memberInvoices.currency]: input.currency === "" ? null : input.currency,
+    [FIELDS.memberInvoices.status]: "To be paid",
+    [FIELDS.memberInvoices.comment]: input.comment,
+    [FIELDS.memberInvoices.emailSent]: false,
+  };
+  const [created] = await base(TABLES.memberInvoices).create([
+    { fields: fields as FieldSet },
+  ]);
+  return created.id;
+}
+
+// Uploads the PDF directly to the invoice record's PDF field via Airtable's
+// content endpoint (the only supported way to attach a file we hold in
+// memory rather than referenced by URL).
+export async function attachInvoicePdf(
+  recordId: string,
+  filename: string,
+  base64: string,
+): Promise<void> {
+  const url = `https://content.airtable.com/v0/${env.airtableBaseId}/${recordId}/${encodeURIComponent(FIELDS.memberInvoices.pdf)}/uploadAttachment`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.airtablePat}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ contentType: "application/pdf", filename, file: base64 }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Airtable upload failed (${res.status}): ${text}`);
+  }
+}
+
+export async function updateInvoiceStatus(
+  recordId: string,
+  status: InvoiceStatus,
+): Promise<void> {
+  await base(TABLES.memberInvoices).update([
+    { id: recordId, fields: { [FIELDS.memberInvoices.status]: status } as FieldSet },
+  ]);
+}
+
+export async function deleteInvoice(recordId: string): Promise<void> {
+  await base(TABLES.memberInvoices).destroy([recordId]);
+}
+
+export async function markInvoiceEmail(
+  recordId: string,
+  result: { ok: true; sentAt: string } | { ok: false; error: string },
+): Promise<void> {
+  const fields: Record<string, unknown> = {};
+  if (result.ok) {
+    fields[FIELDS.memberInvoices.emailSent] = true;
+    fields[FIELDS.memberInvoices.emailSentAt] = result.sentAt;
+    fields[FIELDS.memberInvoices.emailError] = "";
+  } else {
+    fields[FIELDS.memberInvoices.emailSent] = false;
+    fields[FIELDS.memberInvoices.emailError] = result.error.slice(0, 250);
+  }
+  await base(TABLES.memberInvoices).update([
+    { id: recordId, fields: fields as FieldSet },
+  ]);
 }
 
 async function getProjectNameMap(): Promise<Map<string, string>> {
