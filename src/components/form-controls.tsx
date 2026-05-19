@@ -62,10 +62,12 @@ export function FormSelect({
   children,
   hint,
   className,
+  disabled,
 }: Common & {
   value: string;
   onChange: (v: string) => void;
   children: ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
@@ -76,7 +78,8 @@ export function FormSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+        disabled={disabled}
+        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 disabled:bg-slate-50 disabled:text-slate-400"
       >
         {children}
       </select>

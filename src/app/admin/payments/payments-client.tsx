@@ -8,11 +8,28 @@ import type { Currency, PaymentRecord, PaymentStatus } from "@/lib/airtable";
 
 type LinkOpt = { id: string; code: string; name: string };
 
+type MemberInvoiceOpt = {
+  id: string;
+  invoiceCode: string;
+  memberRecordId: string;
+  memberCode: string;
+  memberName: string;
+  projectCode: string;
+  projectName: string;
+  staffingCode: string;
+  amount: number | null;
+  currency: string;
+  status: string;
+  submissionDate: string | null;
+  pdfUrl: string;
+};
+
 type Props = {
   payments: PaymentRecord[];
   projects: LinkOpt[];
   clients: LinkOpt[];
   members: LinkOpt[];
+  memberInvoices: MemberInvoiceOpt[];
   currencies: readonly Currency[];
 };
 
@@ -61,12 +78,38 @@ function statusLabel(status: string, direction: "" | "Inflow" | "Outflow"): stri
 
 const PAYMENT_TYPES = ["Client Invoice", "Subcontractor", "Expense", "Other"] as const;
 
+// Which types belong to which direction. Drives the dynamic Type picker so
+// finance doesn't see options that don't apply (e.g. "Subcontractor" makes
+// no sense for an Inflow).
+const TYPES_BY_DIRECTION = {
+  Inflow: ["Client Invoice", "Other"],
+  Outflow: ["Subcontractor", "Expense", "Other"],
+} as const;
+
+// Per (direction, type) which counterparty applies:
+//   "client"  → pick a Client (defined in Clients table)
+//   "member"  → pick a Network Member (and optionally one of their invoices)
+//   "none"    → no linked counterparty (use Beneficiary text field instead)
+function counterpartyKind(
+  direction: "" | "Inflow" | "Outflow",
+  type: string,
+): "client" | "member" | "none" {
+  if (direction === "Inflow") return type === "Client Invoice" ? "client" : "none";
+  if (direction === "Outflow") {
+    if (type === "Subcontractor") return "member";
+    if (type === "Expense") return "member"; // expenses are usually reimbursements
+    return "none";
+  }
+  return "none";
+}
+
 type FormState = {
   direction: "" | "Inflow" | "Outflow";
   type: string;
   projectId: string;
   clientId: string;
   memberId: string;
+  memberInvoiceId: string;
   invoiceDate: string;
   invoiceReference: string;
   invoiceCurrency: string;
@@ -87,6 +130,7 @@ const EMPTY_FORM: FormState = {
   projectId: "",
   clientId: "",
   memberId: "",
+  memberInvoiceId: "",
   invoiceDate: "",
   invoiceReference: "",
   invoiceCurrency: "",
@@ -108,6 +152,7 @@ function fromRecord(p: PaymentRecord): FormState {
     projectId: p.projectRecordIds[0] ?? "",
     clientId: p.clientRecordIds[0] ?? "",
     memberId: p.memberRecordIds[0] ?? "",
+    memberInvoiceId: p.memberInvoiceRecordIds[0] ?? "",
     invoiceDate: p.invoiceDate ?? "",
     invoiceReference: p.invoiceReference,
     invoiceCurrency: p.invoiceCurrency,
@@ -128,7 +173,14 @@ function formatMoney(value: number | null, currency: string): string {
   return `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}${currency ? " " + currency : ""}`;
 }
 
-export function PaymentsClient({ payments, projects, clients, members, currencies }: Props) {
+export function PaymentsClient({
+  payments,
+  projects,
+  clients,
+  members,
+  memberInvoices,
+  currencies,
+}: Props) {
   const router = useRouter();
   // Local mirror of the server-side payment list so we can apply optimistic
   // updates (e.g. inline status change) without a full refresh.
@@ -466,6 +518,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
         projectRecordIds: form.projectId ? [form.projectId] : [],
         clientRecordIds: form.clientId ? [form.clientId] : [],
         memberRecordIds: form.memberId ? [form.memberId] : [],
+        memberInvoiceRecordIds: form.memberInvoiceId ? [form.memberInvoiceId] : [],
         invoiceDate: form.invoiceDate || null,
         invoiceReference: form.invoiceReference,
         invoiceCurrency: form.invoiceCurrency,
@@ -937,18 +990,53 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
           <div className="grid gap-3 sm:grid-cols-2">
             <FormSelect
               label="Direction"
+              hint="Inflow = money in (client paying us). Outflow = money out (paying a member or expense)."
               value={form.direction}
-              onChange={(v) => updateField("direction", v as FormState["direction"])}
+              onChange={(v) => {
+                const dir = v as FormState["direction"];
+                // Direction change wipes any incompatible downstream picks so
+                // we never accidentally save e.g. an Inflow with a Member link.
+                setForm((prev) => ({
+                  ...prev,
+                  direction: dir,
+                  type: "",
+                  clientId: "",
+                  memberId: "",
+                  memberInvoiceId: "",
+                }));
+              }}
               required
             >
-              <option value="">—</option>
-              <option value="Inflow">Inflow</option>
-              <option value="Outflow">Outflow</option>
+              <option value="">Direction</option>
+              <option value="Inflow">Inflow (money in)</option>
+              <option value="Outflow">Outflow (money out)</option>
             </FormSelect>
-            <FormSelect label="Type" value={form.type} onChange={(v) => updateField("type", v)}>
-              <option value="">—</option>
-              {PAYMENT_TYPES.map((t) => (
-                <option key={t} value={t}>{t}</option>
+            <FormSelect
+              label="Type"
+              value={form.type}
+              onChange={(v) => {
+                setForm((prev) => ({
+                  ...prev,
+                  type: v,
+                  // Counterparty kind may change with type → clear stale picks.
+                  clientId: counterpartyKind(prev.direction, v) === "client" ? prev.clientId : "",
+                  memberId: counterpartyKind(prev.direction, v) === "member" ? prev.memberId : "",
+                  memberInvoiceId:
+                    counterpartyKind(prev.direction, v) === "member" ? prev.memberInvoiceId : "",
+                }));
+              }}
+              disabled={!form.direction}
+              required
+              hint={!form.direction ? "Pick a direction first." : undefined}
+            >
+              <option value="">Type</option>
+              {(form.direction
+                ? TYPES_BY_DIRECTION[form.direction]
+                : []
+              ).map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
               ))}
             </FormSelect>
             <FormSelect
@@ -956,27 +1044,22 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
               value={form.projectId}
               onChange={(v) => updateField("projectId", v)}
             >
-              <option value="">—</option>
+              <option value="">No project</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.code} — {p.name}
                 </option>
               ))}
             </FormSelect>
-            <FormSelect
-              label={form.direction === "Outflow" ? "Member (beneficiary)" : "Client"}
-              value={form.direction === "Outflow" ? form.memberId : form.clientId}
-              onChange={(v) =>
-                form.direction === "Outflow" ? updateField("memberId", v) : updateField("clientId", v)
-              }
-            >
-              <option value="">—</option>
-              {(form.direction === "Outflow" ? members : clients).map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.code} — {o.name}
-                </option>
-              ))}
-            </FormSelect>
+            <CounterpartyPicker
+              form={form}
+              setForm={setForm}
+              updateField={updateField}
+              clients={clients}
+              members={members}
+              memberInvoices={memberInvoices}
+              currencies={currencies}
+            />
           </div>
         </FormSection>
 
@@ -2159,4 +2242,145 @@ function todayStamp(): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}${m}${day}`;
+}
+
+// Counterparty step of the payment form. Renders nothing until direction + type
+// imply a counterparty kind, then shows the right picker (Client / Member +
+// Member-invoice link). Selecting a member invoice pre-fills the financials
+// from the invoice so admins don't retype numbers that already live elsewhere.
+function CounterpartyPicker({
+  form,
+  setForm,
+  updateField,
+  clients,
+  members,
+  memberInvoices,
+  currencies,
+}: {
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  updateField: <K extends keyof FormState>(key: K, value: FormState[K]) => void;
+  clients: LinkOpt[];
+  members: LinkOpt[];
+  memberInvoices: MemberInvoiceOpt[];
+  currencies: readonly Currency[];
+}) {
+  const kind = counterpartyKind(form.direction, form.type);
+  if (kind === "none") {
+    return (
+      <FormSelect
+        label="Counterparty"
+        value=""
+        onChange={() => {}}
+        disabled
+        hint={
+          !form.direction || !form.type
+            ? "Pick a direction and a type first."
+            : "No Client / Member link for this type — use Beneficiary in Notes below."
+        }
+      >
+        <option value="">—</option>
+      </FormSelect>
+    );
+  }
+  if (kind === "client") {
+    return (
+      <FormSelect
+        label="Client"
+        value={form.clientId}
+        onChange={(v) => updateField("clientId", v)}
+        required
+      >
+        <option value="">Pick a client</option>
+        {clients.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.code} — {c.name}
+          </option>
+        ))}
+      </FormSelect>
+    );
+  }
+  // kind === "member": show the Member picker AND the Member-invoice picker
+  // (the invoice list is filtered to the chosen member; picking one back-fills
+  // amount/currency/reference).
+  const memberInvoicesForMember = form.memberId
+    ? memberInvoices.filter((i) => i.memberRecordId === form.memberId)
+    : [];
+  const selectedInvoice = memberInvoices.find((i) => i.id === form.memberInvoiceId);
+  return (
+    <>
+      <FormSelect
+        label="Network member"
+        value={form.memberId}
+        onChange={(v) =>
+          // Changing the member invalidates any previously linked invoice.
+          setForm((prev) => ({ ...prev, memberId: v, memberInvoiceId: "" }))
+        }
+        required
+      >
+        <option value="">Pick a network member</option>
+        {members.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.code} — {m.name}
+          </option>
+        ))}
+      </FormSelect>
+      <FormSelect
+        label="Member invoice"
+        value={form.memberInvoiceId}
+        onChange={(v) => {
+          const inv = memberInvoices.find((i) => i.id === v);
+          setForm((prev) => ({
+            ...prev,
+            memberInvoiceId: v,
+            // Only back-fill empty fields so an admin who has already typed
+            // numbers doesn't have them silently overwritten.
+            invoiceValue:
+              prev.invoiceValue !== "" || !inv?.amount ? prev.invoiceValue : String(inv.amount),
+            invoiceCurrency:
+              prev.invoiceCurrency || (inv?.currency && currencies.includes(inv.currency as Currency)
+                ? inv.currency
+                : prev.invoiceCurrency),
+            invoiceReference:
+              prev.invoiceReference || (inv?.invoiceCode ?? prev.invoiceReference),
+            invoiceUrl: prev.invoiceUrl || (inv?.pdfUrl ?? prev.invoiceUrl),
+          }));
+        }}
+        disabled={!form.memberId}
+        hint={
+          !form.memberId
+            ? "Pick a member to see their submitted invoices."
+            : memberInvoicesForMember.length === 0
+              ? "This member hasn't submitted any invoices yet."
+              : selectedInvoice
+                ? `Links this payment to invoice ${selectedInvoice.invoiceCode}.`
+                : "Optional — links this payment to a submitted invoice and pre-fills the amount."
+        }
+        className="sm:col-span-2"
+      >
+        <option value="">No invoice linked</option>
+        {memberInvoicesForMember
+          .slice()
+          .sort((a, b) => (b.submissionDate ?? "").localeCompare(a.submissionDate ?? ""))
+          .map((i) => {
+            const amt =
+              i.amount != null
+                ? ` · ${i.amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}${
+                    i.currency ? " " + i.currency : ""
+                  }`
+                : "";
+            const submitted = i.submissionDate ? ` · ${i.submissionDate.slice(0, 10)}` : "";
+            const status = i.status ? ` · ${i.status}` : "";
+            return (
+              <option key={i.id} value={i.id}>
+                {i.invoiceCode}
+                {amt}
+                {submitted}
+                {status}
+              </option>
+            );
+          })}
+      </FormSelect>
+    </>
+  );
 }

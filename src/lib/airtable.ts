@@ -111,6 +111,7 @@ export const FIELDS = {
     project: "Project",
     member: "Member",
     client: "Client",
+    memberInvoice: "Member Invoice",
     invoiceDate: "Invoice Date",
     invoiceReference: "Invoice Reference",
     invoiceCurrency: "Invoice Currency",
@@ -295,6 +296,7 @@ export type PaymentRecord = {
   projectRecordIds: string[];
   clientRecordIds: string[];
   memberRecordIds: string[];
+  memberInvoiceRecordIds: string[];
   projectCodes: string[];
   clientCodes: string[];
   memberCodes: string[];
@@ -1024,6 +1026,7 @@ function paymentFromRecord(r: AirtableRecord<FieldSet>): PaymentRecord {
     projectRecordIds: linkedIds(r, FIELDS.payments.project),
     clientRecordIds: linkedIds(r, FIELDS.payments.client),
     memberRecordIds: linkedIds(r, FIELDS.payments.member),
+    memberInvoiceRecordIds: linkedIds(r, FIELDS.payments.memberInvoice),
     projectCodes: linkedDisplay(r, FIELDS.payments.project),
     clientCodes: linkedDisplay(r, FIELDS.payments.client),
     memberCodes: linkedDisplay(r, FIELDS.payments.member),
@@ -1065,6 +1068,7 @@ export type PaymentInput = {
   projectRecordIds: string[];
   clientRecordIds: string[];
   memberRecordIds: string[];
+  memberInvoiceRecordIds: string[];
   invoiceDate: string | null;
   invoiceReference: string;
   invoiceCurrency: Currency | "";
@@ -1087,6 +1091,7 @@ function paymentFields(input: PaymentInput): Record<string, unknown> {
     [FIELDS.payments.project]: input.projectRecordIds,
     [FIELDS.payments.client]: input.clientRecordIds,
     [FIELDS.payments.member]: input.memberRecordIds,
+    [FIELDS.payments.memberInvoice]: input.memberInvoiceRecordIds,
     [FIELDS.payments.invoiceDate]: input.invoiceDate,
     [FIELDS.payments.invoiceReference]: input.invoiceReference,
     [FIELDS.payments.invoiceCurrency]: input.invoiceCurrency === "" ? null : input.invoiceCurrency,
