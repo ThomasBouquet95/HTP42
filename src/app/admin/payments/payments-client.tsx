@@ -153,6 +153,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
   const memberLabel = (p: PaymentRecord) =>
     p.memberRecordIds.map((id) => membersById.get(id)?.name || membersById.get(id)?.code).filter(Boolean).join(", ");
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [chartScope, setChartScope] = useState<"all" | "executed">("all");
   const [sort, setSort] = useState<{ key: SortKey | null; dir: SortDir }>({
     key: "dueDate",
     dir: "desc",
@@ -267,28 +268,67 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
     return { inflowEur, outflowEur, netEur: inflowEur - outflowEur };
   }, [filtered]);
 
+  // ---- Chart data ---------------------------------------------------------
+  // Charts always EXCLUDE canceled payments — they shouldn't influence
+  // historical or forward-looking views. The "Executed only" toggle further
+  // narrows to status === "Paid"; otherwise we keep Scheduled + To be paid +
+  // Paid (i.e. real planned and executed money movements).
+  const chartFiltered = useMemo(() => {
+    return filtered.filter((p) => {
+      if (p.paymentStatus === "Canceled") return false;
+      if (chartScope === "executed" && p.paymentStatus !== "Paid") return false;
+      return true;
+    });
+  }, [filtered, chartScope]);
+
+  // Monthly: every month gets a (planned, executed) inflow/outflow split so
+  // the bar chart can show the "planned" portion with a hatched fill stacked
+  // on top of the solid executed portion.
   const monthly = useMemo(() => {
-    const map = new Map<string, { inflow: number; outflow: number }>();
-    for (const p of filtered) {
+    type Cell = {
+      inflowExecuted: number; inflowPlanned: number;
+      outflowExecuted: number; outflowPlanned: number;
+    };
+    const map = new Map<string, Cell>();
+    for (const p of chartFiltered) {
       if (!p.invoiceDate) continue;
       const key = p.invoiceDate.slice(0, 7);
-      const cur = map.get(key) ?? { inflow: 0, outflow: 0 };
+      const cur = map.get(key) ?? {
+        inflowExecuted: 0, inflowPlanned: 0,
+        outflowExecuted: 0, outflowPlanned: 0,
+      };
       const eur = p.invoiceValueEur ?? 0;
-      if (p.direction === "Inflow") cur.inflow += eur;
-      else if (p.direction === "Outflow") cur.outflow += eur;
+      const executed = p.paymentStatus === "Paid";
+      if (p.direction === "Inflow") {
+        if (executed) cur.inflowExecuted += eur;
+        else cur.inflowPlanned += eur;
+      } else if (p.direction === "Outflow") {
+        if (executed) cur.outflowExecuted += eur;
+        else cur.outflowPlanned += eur;
+      }
       map.set(key, cur);
     }
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [filtered]);
+  }, [chartFiltered]);
 
+  // Status breakdown splits per direction. Previously every payment was
+  // summed as a positive number regardless of direction, so a status with
+  // €50k inflow and €30k outflow read as €80k — which is what users were
+  // calling "incorrect".
   const statusBreakdown = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const p of filtered) {
+    type Row = { status: string; inflow: number; outflow: number; total: number };
+    const map = new Map<string, Row>();
+    for (const p of chartFiltered) {
       const key = p.paymentStatus || "—";
-      map.set(key, (map.get(key) ?? 0) + (p.invoiceValueEur ?? 0));
+      const cur = map.get(key) ?? { status: key, inflow: 0, outflow: 0, total: 0 };
+      const eur = p.invoiceValueEur ?? 0;
+      if (p.direction === "Inflow") cur.inflow += eur;
+      else if (p.direction === "Outflow") cur.outflow += eur;
+      cur.total = cur.inflow + cur.outflow;
+      map.set(key, cur);
     }
-    return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }, [filtered]);
+    return [...map.values()].sort((a, b) => b.total - a.total);
+  }, [chartFiltered]);
 
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -541,13 +581,42 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
         />
       </div>
 
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          Cash-flow charts
+        </div>
+        <div className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5">
+          {(
+            [
+              { v: "all", label: "All payments" },
+              { v: "executed", label: "Executed only" },
+            ] as const
+          ).map((opt) => {
+            const active = chartScope === opt.v;
+            return (
+              <button
+                key={opt.v}
+                type="button"
+                onClick={() => setChartScope(opt.v)}
+                aria-pressed={active}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="grid gap-3 lg:grid-cols-3">
         <div className="rounded-lg border border-slate-200 bg-white">
           <div className="border-b border-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Monthly inflow vs outflow (EUR)
           </div>
           <div className="p-4">
-            <MonthlyBarChart rows={monthly} />
+            <MonthlyBarChart rows={monthly} showPlannedSplit={chartScope === "all"} />
           </div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white">
@@ -677,6 +746,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
               <th className="px-2 py-1.5 text-left font-medium">
                 <SortHeader label="Counterparty" sort={sort} colKey="counterparty" onToggle={toggleSort} />
               </th>
+              <th className="px-2 py-1.5 text-left font-medium hidden lg:table-cell">Invoice ref</th>
               <th className="px-2 py-1.5 text-left font-medium hidden md:table-cell">
                 <DateRangeHeader
                   label="Due date"
@@ -737,7 +807,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center text-slate-500 py-10">
+                <td colSpan={11} className="text-center text-slate-500 py-10">
                   No payments match these filters.
                 </td>
               </tr>
@@ -759,11 +829,18 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
                       {projectLabel(p) || "—"}
                     </td>
                     <td className="px-2 py-1.5">{counterparty}</td>
+                    <td className="px-2 py-1.5 hidden lg:table-cell text-slate-700">
+                      {p.invoiceReference || <span className="text-slate-300">—</span>}
+                    </td>
                     <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell">
                       <DueDateCell dueDate={p.dueDate} status={p.paymentStatus} />
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell">
-                      {p.paymentDate ?? <span className="text-slate-300">—</span>}
+                      {p.paymentStatus === "Paid" && p.paymentDate ? (
+                        p.paymentDate
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums">
                       {p.invoiceValue == null
@@ -990,9 +1067,15 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             />
             <FormField
               label={form.direction === "Inflow" ? "Receipt date" : "Payment date"}
-              value={form.paymentDate}
+              value={form.paymentStatus === "Paid" ? form.paymentDate : ""}
               onChange={(v) => updateField("paymentDate", v)}
               type="date"
+              readOnly={form.paymentStatus !== "Paid"}
+              hint={
+                form.paymentStatus !== "Paid"
+                  ? "Available once the status is set to Paid."
+                  : undefined
+              }
             />
           </div>
         </FormSection>
@@ -1052,7 +1135,7 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
 function CumulativeCashFlowChart({
   rows,
 }: {
-  rows: [string, { inflow: number; outflow: number }][];
+  rows: [string, MonthCell][];
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   // Default width keeps SSR sensible; the observer below replaces it on mount.
@@ -1076,8 +1159,12 @@ function CumulativeCashFlowChart({
     );
   }
   // Build cumulative net (running total of inflow − outflow per month).
-  const points = rows.map(([month, v], i, arr) => {
-    const cumulative = arr.slice(0, i + 1).reduce((sum, [, vv]) => sum + (vv.inflow - vv.outflow), 0);
+  const points = rows.map(([month], i, arr) => {
+    const cumulative = arr.slice(0, i + 1).reduce((sum, [, vv]) => {
+      const inflow = vv.inflowExecuted + vv.inflowPlanned;
+      const outflow = vv.outflowExecuted + vv.outflowPlanned;
+      return sum + (inflow - outflow);
+    }, 0);
     return { month, cumulative };
   });
   const lo = Math.min(0, ...points.map((p) => p.cumulative));
@@ -1163,40 +1250,126 @@ function CumulativeCashFlowChart({
   );
 }
 
-function MonthlyBarChart({ rows }: { rows: [string, { inflow: number; outflow: number }][] }) {
+type MonthCell = {
+  inflowExecuted: number;
+  inflowPlanned: number;
+  outflowExecuted: number;
+  outflowPlanned: number;
+};
+
+function MonthlyBarChart({
+  rows,
+  showPlannedSplit,
+}: {
+  rows: [string, MonthCell][];
+  showPlannedSplit: boolean;
+}) {
   if (rows.length === 0) {
     return <div className="text-center text-xs text-slate-500 py-8">No data for this period.</div>;
   }
-  const max = rows.reduce((m, [, v]) => Math.max(m, v.inflow, v.outflow), 0);
+  const max = rows.reduce(
+    (m, [, v]) =>
+      Math.max(
+        m,
+        v.inflowExecuted + v.inflowPlanned,
+        v.outflowExecuted + v.outflowPlanned,
+      ),
+    0,
+  );
   const barW = 16;
   const groupW = barW * 2 + 4;
   const gap = 14;
   const chartH = 160;
   const chartW = rows.length * (groupW + gap) + gap;
+  const inflowSolid = "#1E91F9";
+  const outflowSolid = "#f87171";
 
   return (
     <div className="overflow-x-auto">
       <svg width={Math.max(chartW, 200)} height={chartH + 36} role="img" aria-label="Monthly inflow vs outflow">
+        <defs>
+          <pattern id="hatch-inflow" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+            <rect width="6" height="6" fill="#1E91F9" opacity="0.15" />
+            <line x1="0" y1="0" x2="0" y2="6" stroke="#1E91F9" strokeWidth="1.6" />
+          </pattern>
+          <pattern id="hatch-outflow" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+            <rect width="6" height="6" fill="#f87171" opacity="0.15" />
+            <line x1="0" y1="0" x2="0" y2="6" stroke="#f87171" strokeWidth="1.6" />
+          </pattern>
+        </defs>
         <line x1={0} x2={chartW} y1={chartH} y2={chartH} stroke="#e2e8f0" />
         {rows.map(([month, v], i) => {
           const x = gap + i * (groupW + gap);
-          const inH = max === 0 ? 0 : (v.inflow / max) * (chartH - 16);
-          const outH = max === 0 ? 0 : (v.outflow / max) * (chartH - 16);
+          const inExecuted = v.inflowExecuted;
+          const inPlanned = showPlannedSplit ? v.inflowPlanned : 0;
+          const outExecuted = v.outflowExecuted;
+          const outPlanned = showPlannedSplit ? v.outflowPlanned : 0;
+          const inTotal = inExecuted + inPlanned;
+          const outTotal = outExecuted + outPlanned;
+          const inH = max === 0 ? 0 : (inTotal / max) * (chartH - 16);
+          const outH = max === 0 ? 0 : (outTotal / max) * (chartH - 16);
+          const inExecH = inTotal === 0 ? 0 : (inExecuted / inTotal) * inH;
+          const outExecH = outTotal === 0 ? 0 : (outExecuted / outTotal) * outH;
           return (
             <g key={month}>
-              <rect x={x} y={chartH - inH} width={barW} height={inH} fill="#1E91F9" rx={2}>
-                <title>{`${month} · Inflow: €${v.inflow.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
-              </rect>
-              <rect
-                x={x + barW + 4}
-                y={chartH - outH}
-                width={barW}
-                height={outH}
-                fill="#f87171"
-                rx={2}
-              >
-                <title>{`${month} · Outflow: €${v.outflow.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
-              </rect>
+              {/* Inflow — solid executed at the bottom, hatched planned on top */}
+              {inH > 0 ? (
+                <>
+                  <rect
+                    x={x}
+                    y={chartH - inExecH}
+                    width={barW}
+                    height={inExecH}
+                    fill={inflowSolid}
+                    rx={2}
+                  >
+                    <title>{`${month} · Inflow executed: €${inExecuted.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
+                  </rect>
+                  {inPlanned > 0 ? (
+                    <rect
+                      x={x}
+                      y={chartH - inH}
+                      width={barW}
+                      height={inH - inExecH}
+                      fill="url(#hatch-inflow)"
+                      stroke={inflowSolid}
+                      strokeWidth="1"
+                      rx={2}
+                    >
+                      <title>{`${month} · Inflow planned: €${inPlanned.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
+                    </rect>
+                  ) : null}
+                </>
+              ) : null}
+              {/* Outflow — same pattern, just the other colour */}
+              {outH > 0 ? (
+                <>
+                  <rect
+                    x={x + barW + 4}
+                    y={chartH - outExecH}
+                    width={barW}
+                    height={outExecH}
+                    fill={outflowSolid}
+                    rx={2}
+                  >
+                    <title>{`${month} · Outflow executed: €${outExecuted.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
+                  </rect>
+                  {outPlanned > 0 ? (
+                    <rect
+                      x={x + barW + 4}
+                      y={chartH - outH}
+                      width={barW}
+                      height={outH - outExecH}
+                      fill="url(#hatch-outflow)"
+                      stroke={outflowSolid}
+                      strokeWidth="1"
+                      rx={2}
+                    >
+                      <title>{`${month} · Outflow planned: €${outPlanned.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
+                    </rect>
+                  ) : null}
+                </>
+              ) : null}
               <text
                 x={x + groupW / 2}
                 y={chartH + 14}
@@ -1210,35 +1383,62 @@ function MonthlyBarChart({ rows }: { rows: [string, { inflow: number; outflow: n
           );
         })}
       </svg>
-      <div className="mt-2 flex gap-4 text-xs text-slate-600">
-        <LegendDot color="#1E91F9" label="Inflow" />
-        <LegendDot color="#f87171" label="Outflow" />
+      <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-slate-600">
+        <LegendDot color={inflowSolid} label="Inflow" />
+        <LegendDot color={outflowSolid} label="Outflow" />
+        {showPlannedSplit ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden
+              className="inline-block h-3 w-4 rounded-sm border border-slate-300"
+              style={{ backgroundImage: "repeating-linear-gradient(45deg, #94a3b8 0 1.5px, transparent 1.5px 5px)" }}
+            />
+            Planned (not yet executed)
+          </span>
+        ) : null}
       </div>
     </div>
   );
 }
 
-function StatusBreakdown({ rows }: { rows: [string, number][] }) {
+function StatusBreakdown({
+  rows,
+}: {
+  rows: { status: string; inflow: number; outflow: number; total: number }[];
+}) {
   if (rows.length === 0) {
     return <div className="text-center text-xs text-slate-500 py-8">No data.</div>;
   }
-  const max = rows.reduce((m, [, v]) => Math.max(m, v), 0);
+  const max = rows.reduce((m, r) => Math.max(m, r.total), 0);
+  const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
   return (
-    <ul className="space-y-2">
-      {rows.map(([label, v]) => (
-        <li key={label}>
-          <div className="flex items-center justify-between text-xs text-slate-600">
-            <span className="font-medium text-slate-800">{label}</span>
-            <span className="tabular-nums">{v.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
-          </div>
-          <div className="mt-1 h-2 rounded-full bg-slate-100 overflow-hidden">
-            <div
-              className="h-full bg-brand-600"
-              style={{ width: max === 0 ? "0%" : `${Math.max(4, (v / max) * 100)}%` }}
-            />
-          </div>
-        </li>
-      ))}
+    <ul className="space-y-3">
+      {rows.map((r) => {
+        const inflowPct = max === 0 ? 0 : (r.inflow / max) * 100;
+        const outflowPct = max === 0 ? 0 : (r.outflow / max) * 100;
+        return (
+          <li key={r.status}>
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-medium text-slate-800">{r.status}</span>
+              <span className="tabular-nums text-slate-600">€{fmt(r.total)}</span>
+            </div>
+            <div className="mt-1 flex h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div className="h-full bg-brand-600" style={{ width: `${inflowPct}%` }} title={`Inflow €${fmt(r.inflow)}`} />
+              <div className="h-full bg-red-400" style={{ width: `${outflowPct}%` }} title={`Outflow €${fmt(r.outflow)}`} />
+            </div>
+            <div className="mt-0.5 flex items-center gap-3 text-[10px] text-slate-500 tabular-nums">
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-600" />
+                Inflow €{fmt(r.inflow)}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-400" />
+                Outflow €{fmt(r.outflow)}
+              </span>
+            </div>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -1297,7 +1497,7 @@ function DueDateCell({
   );
 }
 
-type StatusTone = "scheduled" | "tobepaid" | "paid" | "neutral";
+type StatusTone = "scheduled" | "tobepaid" | "paid" | "canceled" | "neutral";
 
 function paymentRowTint(status: string): { row: string; select: StatusTone } {
   if (status === "Scheduled") {
@@ -1308,6 +1508,9 @@ function paymentRowTint(status: string): { row: string; select: StatusTone } {
   }
   if (status === "Paid") {
     return { row: "bg-slate-50 hover:bg-slate-100", select: "paid" };
+  }
+  if (status === "Canceled") {
+    return { row: "bg-red-50/40 hover:bg-red-50", select: "canceled" };
   }
   return { row: "hover:bg-slate-50", select: "neutral" };
 }
@@ -1332,6 +1535,8 @@ function StatusSelect({
       ? "bg-amber-50 border-amber-300 text-amber-800"
       : tone === "paid"
       ? "bg-slate-100 border-slate-300 text-slate-700"
+      : tone === "canceled"
+      ? "bg-red-50 border-red-300 text-red-700 line-through"
       : "bg-white border-slate-300 text-slate-700";
   return (
     <span className="relative inline-flex w-full items-center">

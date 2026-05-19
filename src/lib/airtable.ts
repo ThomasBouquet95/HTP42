@@ -207,8 +207,8 @@ export type SowSigned = "Yes" | "In Progress" | "No";
 export const SOW_SIGNED_OPTIONS: SowSigned[] = ["Yes", "In Progress", "No"];
 
 export type PaymentDirection = "Inflow" | "Outflow";
-export type PaymentStatus = "Scheduled" | "To be paid" | "Paid";
-export const PAYMENT_STATUSES: PaymentStatus[] = ["Scheduled", "To be paid", "Paid"];
+export type PaymentStatus = "Scheduled" | "To be paid" | "Paid" | "Canceled";
+export const PAYMENT_STATUSES: PaymentStatus[] = ["Scheduled", "To be paid", "Paid", "Canceled"];
 
 export type AttachmentRef = {
   id: string;
@@ -1079,7 +1079,9 @@ function paymentFields(input: PaymentInput): Record<string, unknown> {
     [FIELDS.payments.invoiceValueEur]: input.invoiceValueEur,
     [FIELDS.payments.paymentTerms]: input.paymentTerms,
     [FIELDS.payments.paymentStatus]: input.paymentStatus === "" ? null : input.paymentStatus,
-    [FIELDS.payments.paymentDate]: input.paymentDate,
+    // Payment Date should reflect the day money actually moved — only
+    // accept it when the payment has been executed (Paid). Otherwise clear.
+    [FIELDS.payments.paymentDate]: input.paymentStatus === "Paid" ? input.paymentDate : null,
     [FIELDS.payments.dueDate]: input.dueDate,
     [FIELDS.payments.beneficiary]: input.beneficiary,
     [FIELDS.payments.comment]: input.comment,
@@ -1099,14 +1101,15 @@ export async function updatePaymentStatus(
   recordId: string,
   status: PaymentStatus | "",
 ): Promise<void> {
-  await base(TABLES.payments).update([
-    {
-      id: recordId,
-      fields: {
-        [FIELDS.payments.paymentStatus]: status === "" ? null : status,
-      } as FieldSet,
-    },
-  ]);
+  const fields: Record<string, unknown> = {
+    [FIELDS.payments.paymentStatus]: status === "" ? null : status,
+  };
+  // Keep Payment Date consistent with the lifecycle: if the payment isn't
+  // executed anymore, drop any stale date that might have been set earlier.
+  if (status !== "Paid") {
+    fields[FIELDS.payments.paymentDate] = null;
+  }
+  await base(TABLES.payments).update([{ id: recordId, fields: fields as FieldSet }]);
 }
 
 export async function updatePayment(recordId: string, input: PaymentInput): Promise<void> {
