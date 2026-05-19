@@ -4,7 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
-import type { Currency, PaymentRecord } from "@/lib/airtable";
+import type { Currency, PaymentRecord, PaymentStatus } from "@/lib/airtable";
 
 type LinkOpt = { id: string; code: string; name: string };
 
@@ -311,23 +311,39 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [chartFiltered]);
 
-  // Status breakdown splits per direction. Previously every payment was
-  // summed as a positive number regardless of direction, so a status with
-  // €50k inflow and €30k outflow read as €80k — which is what users were
-  // calling "incorrect".
+  // Status breakdown — separate inflow vs outflow so they can be shown
+  // as two parallel mini-charts (mixing them up confused users). Only the
+  // current canonical statuses ("Scheduled", "To be paid", "Paid") are
+  // surfaced; legacy values like "Pending" / "Unpaid" / "Overdue" are
+  // bucketed away under "Other" and don't get their own bar.
   const statusBreakdown = useMemo(() => {
-    type Row = { status: string; inflow: number; outflow: number; total: number };
-    const map = new Map<string, Row>();
+    const inflow: Record<PaymentStatus, number> = {
+      Scheduled: 0,
+      "To be paid": 0,
+      Paid: 0,
+      Canceled: 0,
+    };
+    const outflow: Record<PaymentStatus, number> = {
+      Scheduled: 0,
+      "To be paid": 0,
+      Paid: 0,
+      Canceled: 0,
+    };
     for (const p of chartFiltered) {
-      const key = p.paymentStatus || "—";
-      const cur = map.get(key) ?? { status: key, inflow: 0, outflow: 0, total: 0 };
+      const status = p.paymentStatus as PaymentStatus | "";
+      if (!status || !(status in inflow)) continue;
       const eur = p.invoiceValueEur ?? 0;
-      if (p.direction === "Inflow") cur.inflow += eur;
-      else if (p.direction === "Outflow") cur.outflow += eur;
-      cur.total = cur.inflow + cur.outflow;
-      map.set(key, cur);
+      if (p.direction === "Inflow") inflow[status] += eur;
+      else if (p.direction === "Outflow") outflow[status] += eur;
     }
-    return [...map.values()].sort((a, b) => b.total - a.total);
+    // Only the lifecycle statuses (no Canceled in the chart — Canceled
+    // is already excluded by chartFiltered, but we keep the bucket
+    // available for completeness).
+    const order: PaymentStatus[] = ["Scheduled", "To be paid", "Paid"];
+    return {
+      inflow: order.map((s) => ({ status: s, value: inflow[s] })),
+      outflow: order.map((s) => ({ status: s, value: outflow[s] })),
+    };
   }, [chartFiltered]);
 
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
@@ -605,9 +621,6 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             );
           })}
         </div>
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-          Cash-flow charts
-        </div>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-3">
@@ -632,7 +645,10 @@ export function PaymentsClient({ payments, projects, clients, members, currencie
             By payment status (EUR)
           </div>
           <div className="p-4">
-            <StatusBreakdown rows={statusBreakdown} />
+            <StatusBreakdown
+              inflow={statusBreakdown.inflow}
+              outflow={statusBreakdown.outflow}
+            />
           </div>
         </div>
       </div>
@@ -1402,20 +1418,29 @@ function MonthlyBarChart({
 }
 
 function StatusBreakdown({
-  rows,
+  inflow,
+  outflow,
 }: {
-  rows: { status: string; inflow: number; outflow: number; total: number }[];
+  inflow: { status: string; value: number }[];
+  outflow: { status: string; value: number }[];
 }) {
-  if (rows.length === 0) {
+  // Use the same scale for both sub-charts so the bars are visually
+  // comparable across directions.
+  const max = Math.max(
+    0,
+    ...inflow.map((r) => r.value),
+    ...outflow.map((r) => r.value),
+  );
+  const empty =
+    inflow.every((r) => r.value === 0) && outflow.every((r) => r.value === 0);
+  if (empty) {
     return <div className="text-center text-xs text-slate-500 py-8">No data.</div>;
   }
-  const max = rows.reduce((m, r) => Math.max(m, r.total), 0);
   const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
-  // Scheduled and To be paid are "planned" — render their bars with the
-  // same diagonal hatch the monthly chart uses, so the two charts read as
-  // a consistent system: solid = executed, hatched = planned.
+  // Two stacked sub-charts so inflow and outflow can be read independently.
+  // Hatched = planned (Scheduled / To be paid), solid = executed (Paid).
   return (
-    <ul className="space-y-3">
+    <div className="space-y-4">
       <svg width="0" height="0" aria-hidden className="absolute">
         <defs>
           <pattern id="breakdown-hatch-inflow" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
@@ -1428,63 +1453,85 @@ function StatusBreakdown({
           </pattern>
         </defs>
       </svg>
-      {rows.map((r) => {
-        const inflowPct = max === 0 ? 0 : (r.inflow / max) * 100;
-        const outflowPct = max === 0 ? 0 : (r.outflow / max) * 100;
-        const isPlanned = r.status === "Scheduled" || r.status === "To be paid";
-        return (
-          <li key={r.status}>
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-medium text-slate-800">
-                {r.status}
-                {isPlanned ? (
-                  <span className="ml-1 text-[10px] uppercase tracking-wide text-slate-400">planned</span>
-                ) : null}
-              </span>
-              <span className="tabular-nums text-slate-600">€{fmt(r.total)}</span>
-            </div>
-            <div className="relative mt-1 h-2.5 rounded-full bg-slate-100 overflow-hidden">
-              <svg className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
-                {/* Inflow slice */}
-                <rect
-                  x="0"
-                  y="0"
-                  width={`${inflowPct}%`}
-                  height="100%"
-                  fill={isPlanned ? "url(#breakdown-hatch-inflow)" : "#1E91F9"}
-                  stroke={isPlanned ? "#1E91F9" : "none"}
-                  strokeWidth={isPlanned ? 1 : 0}
-                >
-                  <title>{`Inflow €${fmt(r.inflow)}`}</title>
-                </rect>
-                {/* Outflow slice, sitting to the right of the inflow slice */}
-                <rect
-                  x={`${inflowPct}%`}
-                  y="0"
-                  width={`${outflowPct}%`}
-                  height="100%"
-                  fill={isPlanned ? "url(#breakdown-hatch-outflow)" : "#f87171"}
-                  stroke={isPlanned ? "#f87171" : "none"}
-                  strokeWidth={isPlanned ? 1 : 0}
-                >
-                  <title>{`Outflow €${fmt(r.outflow)}`}</title>
-                </rect>
-              </svg>
-            </div>
-            <div className="mt-0.5 flex items-center gap-3 text-[10px] text-slate-500 tabular-nums">
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-600" />
-                Inflow €{fmt(r.inflow)}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-400" />
-                Outflow €{fmt(r.outflow)}
-              </span>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+      <BreakdownGroup
+        title="Inflow"
+        rows={inflow}
+        max={max}
+        solidColor="#1E91F9"
+        hatchId="breakdown-hatch-inflow"
+        fmt={fmt}
+      />
+      <BreakdownGroup
+        title="Outflow"
+        rows={outflow}
+        max={max}
+        solidColor="#f87171"
+        hatchId="breakdown-hatch-outflow"
+        fmt={fmt}
+      />
+    </div>
+  );
+}
+
+function BreakdownGroup({
+  title,
+  rows,
+  max,
+  solidColor,
+  hatchId,
+  fmt,
+}: {
+  title: string;
+  rows: { status: string; value: number }[];
+  max: number;
+  solidColor: string;
+  hatchId: string;
+  fmt: (n: number) => string;
+}) {
+  const total = rows.reduce((s, r) => s + r.value, 0);
+  return (
+    <section>
+      <div className="flex items-baseline justify-between mb-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          {title}
+        </span>
+        <span className="text-[10px] tabular-nums text-slate-500">
+          Total €{fmt(total)}
+        </span>
+      </div>
+      <ul className="space-y-2">
+        {rows.map((r) => {
+          const pct = max === 0 ? 0 : (r.value / max) * 100;
+          const isPlanned = r.status === "Scheduled" || r.status === "To be paid";
+          return (
+            <li key={r.status}>
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-700">
+                  {r.status}
+                  {isPlanned ? (
+                    <span className="ml-1 text-[9px] uppercase tracking-wide text-slate-400">planned</span>
+                  ) : null}
+                </span>
+                <span className="tabular-nums text-slate-600">€{fmt(r.value)}</span>
+              </div>
+              <div className="relative mt-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+                <svg className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
+                  <rect
+                    x="0"
+                    y="0"
+                    width={`${pct}%`}
+                    height="100%"
+                    fill={isPlanned ? `url(#${hatchId})` : solidColor}
+                    stroke={isPlanned ? solidColor : "none"}
+                    strokeWidth={isPlanned ? 1 : 0}
+                  />
+                </svg>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

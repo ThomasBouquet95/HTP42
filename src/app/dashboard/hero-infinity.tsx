@@ -3,8 +3,27 @@
 // of brand-blue particles travelling the loop. No center motif: the logo
 // itself is the star. All declarative SVG / SMIL — server-renderable.
 
+// Asymmetric ∞ that mirrors the real HTP42 logo on htp42.com — the left
+// lobe is noticeably larger than the right and the path flows as a
+// continuous ribbon, traced in figure-8 order so an animated stroke
+// "draws" naturally around both lobes.
+//
+// Lobes are wider than tall to match the chubby look of the real mark.
+// Right lobe: centred near (290, 100), radius ≈ 50.
+// Left  lobe: centred near (140, 100), radius ≈ 80.  (~1.6× bigger)
 const LEMNI =
-  "M120 100 c0 -36 24 -60 54 -60 s54 24 66 60 c12 36 36 60 66 60 s54 -24 54 -60 s-24 -60 -54 -60 s-54 24 -66 60 c-12 36 -36 60 -66 60 s-54 -24 -54 -60 z";
+  "M 240 100 " +
+  // From the centre crossing, up-right to the top of the small right lobe
+  "C 240 60, 270 50, 290 50 " +
+  "C 320 50, 340 75, 340 100 " +
+  "C 340 125, 320 150, 290 150 " +
+  "C 270 150, 240 140, 240 100 " +
+  // Continue smoothly down-left into the big left lobe
+  "C 240 140, 200 170, 150 170 " +
+  "C  90 170,  60 140,  60 100 " +
+  "C  60  60,  90  30, 150  30 " +
+  "C 200  30, 240  60, 240 100 " +
+  "Z";
 
 export function HeroInfinity({ name }: { name: string }) {
   return (

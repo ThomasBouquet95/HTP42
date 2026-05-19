@@ -29,6 +29,7 @@ type Cell = { hours: number; task: string; status: string };
 type StaffingColumn = {
   id: string;
   code: string;
+  projectCode: string;
   project: string;
   lastWeek: string; // ISO Monday of the most recent timesheet on this staffing
 };
@@ -68,6 +69,7 @@ export function TimesheetsByWeekView({
         map.set(t.staffingRecordId, {
           id: t.staffingRecordId,
           code: t.staffingCode,
+          projectCode: t.projectCode,
           project: t.projectName || t.projectCode,
           lastWeek: week,
         });
@@ -230,18 +232,21 @@ export function TimesheetsByWeekView({
                 <th
                   key={c.id}
                   className="px-2 py-2 font-medium align-bottom"
-                  title={`${c.code} — ${c.project}`}
-                  style={{ width: 120, minWidth: 120, maxWidth: 120 }}
+                  title={`${c.projectCode || c.code} — ${c.project}`}
+                  style={{ width: 130, minWidth: 130, maxWidth: 130 }}
                 >
                   <div className="flex flex-col items-end gap-0.5 normal-case tracking-normal">
-                    <span className="font-mono text-[10px] text-slate-500 truncate w-full text-right">
-                      {c.code}
+                    <span className="font-mono text-[10px] text-brand-700 truncate w-full text-right">
+                      {c.projectCode || "—"}
                     </span>
                     <span
                       className="block text-[11px] font-semibold text-slate-700 truncate w-full text-right"
                       title={c.project}
                     >
                       {c.project}
+                    </span>
+                    <span className="font-mono text-[9px] text-slate-400 truncate w-full text-right">
+                      {c.code}
                     </span>
                   </div>
                 </th>
