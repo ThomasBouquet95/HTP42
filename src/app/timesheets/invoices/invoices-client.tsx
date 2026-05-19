@@ -286,7 +286,7 @@ function NewInvoiceModal({
       onClick={() => !submitting && onClose()}
     >
       <div
-        className="relative w-full max-w-lg rounded-xl bg-white shadow-xl"
+        className="relative w-full max-w-2xl rounded-xl bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">

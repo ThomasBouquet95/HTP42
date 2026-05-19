@@ -188,7 +188,7 @@ export function TimesheetForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-[14rem_minmax(0,1fr)]">
         <div className="block">
           <label htmlFor="week-picker" className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
             Week starting (Monday)
@@ -198,12 +198,12 @@ export function TimesheetForm({
             {formatWeekRange(weekMonday, weekFriday)}
           </span>
         </div>
-        <label className="block">
+        <label className="block min-w-0">
           <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">Project Staffing</span>
           <select
             value={staffingId}
             onChange={(e) => setStaffingId(e.target.value)}
-            className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+            className="mt-1 block w-full max-w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
             disabled={loadingStaffings}
           >
             {staffings.length === 0 ? (

@@ -1,11 +1,13 @@
 import Link from "next/link";
 
+// "team" is still a valid key (the page exists and is reachable from Projects
+// row actions for leaders), but it no longer surfaces as a top-level tab —
+// the Project Staffing Summary lives inside a project, not in the nav.
 type TabKey = "projects" | "mine" | "team" | "invoices";
 
 const TABS: Array<{ key: TabKey; href: string; label: string }> = [
   { key: "projects", href: "/timesheets/projects", label: "Projects" },
   { key: "mine", href: "/timesheets/mine", label: "Timesheets" },
-  { key: "team", href: "/timesheets/team", label: "Project Staffing Summary" },
   { key: "invoices", href: "/timesheets/invoices", label: "Invoices" },
 ];
 

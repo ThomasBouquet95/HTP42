@@ -194,18 +194,18 @@ export default async function DashboardHomePage() {
           <h2 className="text-sm font-semibold text-slate-900">Quick actions</h2>
           <div className="mt-3 grid gap-2">
             <ActionLink
-              href="/timesheets/mine"
-              title="My timesheets"
-              caption="Submit, edit, and review weekly timesheets"
-              tone="brand"
-              Icon={ClockIcon}
-            />
-            <ActionLink
               href="/timesheets/projects"
               title="My projects"
               caption="See where you're staffed and team progress"
               tone="emerald"
               Icon={FolderIcon}
+            />
+            <ActionLink
+              href="/timesheets/mine"
+              title="My timesheets"
+              caption="Submit, edit, and review weekly timesheets"
+              tone="brand"
+              Icon={ClockIcon}
             />
             <ActionLink
               href="/profile"

@@ -19,7 +19,14 @@ export default function LoginForm() {
     <main className="min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-md bg-white rounded-xl shadow-sm border border-slate-200 p-8">
         <div className="flex flex-col items-center text-center">
-          <Image src="/logo-full.svg" alt="HealthTech Partners 42" width={220} height={96} priority />
+          <Image
+            src="/htp42-logo-full.png"
+            alt="HealthTech Partners 42"
+            width={1418}
+            height={932}
+            priority
+            className="h-auto w-56"
+          />
         </div>
         <p className="mt-6 text-center text-sm text-slate-600">
           Sign in with your HTP42 Microsoft account.
