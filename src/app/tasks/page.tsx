@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { isAdmin } from "@/lib/session";
 import {
   getStaffingsForMember,
+  getTeammateMemberRecordIds,
   listAllMembers,
   listProjects,
   listTasksVisibleTo,
@@ -14,11 +16,14 @@ export default async function TasksPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const [tasks, myStaffings, members, allProjects] = await Promise.all([
+  const admin = isAdmin(session);
+
+  const [tasks, myStaffings, members, allProjects, teammateIds] = await Promise.all([
     listTasksVisibleTo(session.sub, session.memberCode),
     getStaffingsForMember(session.memberCode),
     listAllMembers(),
     listProjects(),
+    admin ? Promise.resolve(null) : getTeammateMemberRecordIds(session.memberCode),
   ]);
 
   // The Tasks form needs a Project record id (linked-record field) but
@@ -33,6 +38,12 @@ export default async function TasksPage() {
       name: p.projectName,
     }));
 
+  // Assignee picker scope: admins see the whole network; everyone else only
+  // sees teammates (members they share at least one project with).
+  const allowedMembers = admin
+    ? members
+    : members.filter((m) => teammateIds!.has(m.id));
+
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <div className="mb-4">
@@ -44,12 +55,13 @@ export default async function TasksPage() {
       <TasksClient
         tasks={tasks}
         projects={projects}
-        members={members.map((m) => ({
+        members={allowedMembers.map((m) => ({
           id: m.id,
           code: m.memberCode,
           name: m.fullName,
         }))}
         currentMemberId={session.sub}
+        isAdmin={admin}
       />
     </main>
   );

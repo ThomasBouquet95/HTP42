@@ -1457,6 +1457,34 @@ export async function getStaffingsForMember(
   return all.filter((s) => s.status !== "Completed");
 }
 
+// Returns the set of network-member record IDs the given user shares at least
+// one project with — used to scope the Tasks "assignees" picker so members
+// can only tag teammates, not arbitrary people in the network. Always
+// includes the caller themselves.
+export async function getTeammateMemberRecordIds(
+  memberCode: string,
+): Promise<Set<string>> {
+  const staffings = await base(TABLES.projectStaffing).select().all();
+  const myProjectCodes = new Set<string>();
+  for (const r of staffings) {
+    if (str(r, FIELDS.projectStaffing.memberCode) === memberCode) {
+      myProjectCodes.add(str(r, FIELDS.projectStaffing.projectCode));
+    }
+  }
+  const teammateCodes = new Set<string>([memberCode]);
+  for (const r of staffings) {
+    if (myProjectCodes.has(str(r, FIELDS.projectStaffing.projectCode))) {
+      teammateCodes.add(str(r, FIELDS.projectStaffing.memberCode));
+    }
+  }
+  const members = await listAllMembers();
+  const ids = new Set<string>();
+  for (const m of members) {
+    if (teammateCodes.has(m.memberCode)) ids.add(m.id);
+  }
+  return ids;
+}
+
 // The linked Member Code field on staffing uses Network Members record IDs, but
 // filterByFormula sees their primary-field values (the member codes). We filter
 // by the visible memberCode string with FIND to remain robust if multiple links exist.
