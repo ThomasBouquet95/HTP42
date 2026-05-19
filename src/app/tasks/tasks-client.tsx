@@ -2,18 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { TaskPriority, TaskRecord, TaskStatus } from "@/lib/airtable";
+import type { TaskPriority, TaskRecord, TaskStatus, TaskVisibility } from "@/lib/airtable";
 import { TASK_PRIORITIES, TASK_STATUSES } from "@/lib/airtable";
 
 type ProjectOpt = { id: string; code: string; name: string };
 type MemberOpt = { id: string; code: string; name: string };
 
-// Two top-level modes, surfaced as a colored segmented control so the personal
-// vs team distinction is immediately visible:
-//   - "mine"   → everything I created or am assigned to (personal + project)
-//   - "shared" → every project task I can see (because I'm staffed on it),
-//                regardless of whether I'm assigned to it
-type Mode = "mine" | "shared";
+// Tabs map directly onto the Visibility field on Airtable: tasks created from
+// the Personal tab are private (only the creator sees them, even when linked
+// to a project); tasks created from the Shared tab are visible to everyone
+// staffed on the linked project.
+type Mode = TaskVisibility;
 type View = "kanban" | "list";
 
 type Subtask = { id: string; title: string; done: boolean };
@@ -84,12 +83,11 @@ export function TasksClient({
   const router = useRouter();
   const [rows, setRows] = useState(tasks);
   useEffect(() => setRows(tasks), [tasks]);
-  const [mode, setMode] = useState<Mode>("mine");
-  const [view, setView] = useState<View>("kanban");
+  const [mode, setMode] = useState<Mode>("Personal");
+  const [view, setView] = useState<View>("list");
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<TaskRecord | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -100,19 +98,19 @@ export function TasksClient({
   const projectsById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
   const membersById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
 
+  // All updates are optimistic: apply the patch locally first, fire the
+  // request, and roll back + surface "Backend error" if it fails. Keeps the
+  // UI snappy without a global loading curtain.
+  function showError(msg: string) {
+    setToast({ kind: "error", msg: msg || "Backend error" });
+  }
+
   const filtered = useMemo(() => {
     const q = filters.search.trim().toLowerCase();
     return rows.filter((t) => {
-      // Mode is the primary cut. "mine" = created or assigned (personal +
-      // project flavors); "shared" = project tasks I can see (everything with
-      // a project, since visibility is already enforced server-side).
-      const created = t.createdByRecordId === currentMemberId;
-      const assigned = t.assigneeRecordIds.includes(currentMemberId);
-      if (mode === "mine") {
-        if (!(created || assigned)) return false;
-      } else {
-        if (!t.projectRecordId) return false;
-      }
+      // Mode maps 1:1 to the Visibility field — tasks created from the
+      // Personal tab never show up in Shared and vice versa.
+      if (t.visibility !== mode) return false;
       if (filters.status !== "All" && t.status !== filters.status) return false;
       if (filters.priority !== "All" && t.priority !== filters.priority) return false;
       if (filters.project !== "All" && t.projectRecordId !== filters.project) return false;
@@ -131,19 +129,20 @@ export function TasksClient({
       }
       return true;
     });
-  }, [rows, filters, mode, currentMemberId]);
+  }, [rows, filters, mode]);
 
+  // Counts shown on the tab pills only include active work — Done and
+  // Cancelled don't pad the number you're glancing at.
   const counts = useMemo(() => {
-    let mine = 0;
+    let personal = 0;
     let shared = 0;
     for (const t of rows) {
-      const created = t.createdByRecordId === currentMemberId;
-      const assigned = t.assigneeRecordIds.includes(currentMemberId);
-      if (created || assigned) mine += 1;
-      if (t.projectRecordId) shared += 1;
+      if (t.status === "Done" || t.status === "Cancelled") continue;
+      if (t.visibility === "Personal") personal += 1;
+      else shared += 1;
     }
-    return { mine, shared };
-  }, [rows, currentMemberId]);
+    return { personal, shared };
+  }, [rows]);
 
   const grouped = useMemo(() => {
     const map = new Map<TaskStatus, TaskRecord[]>();
@@ -191,11 +190,11 @@ export function TasksClient({
     setEditing(null);
   }
 
+  // Optimistic status change — apply locally, PATCH, revert on failure.
   async function quickStatus(t: TaskRecord, next: TaskStatus) {
     if (t.status === next) return;
     const previous = t.status;
     setRows((rs) => rs.map((r) => (r.id === t.id ? { ...r, status: next } : r)));
-    setBusy("Updating status…");
     try {
       const res = await fetch(`/api/tasks/${encodeURIComponent(t.id)}`, {
         method: "PATCH",
@@ -204,40 +203,36 @@ export function TasksClient({
       });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? "Update failed");
+        throw new Error(d.error ?? "Backend error");
       }
       router.refresh();
     } catch (e) {
       setRows((rs) => rs.map((r) => (r.id === t.id ? { ...r, status: previous } : r)));
-      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Update failed" });
-    } finally {
-      setBusy(null);
+      showError(e instanceof Error ? e.message : "Backend error");
     }
   }
 
   async function remove(t: TaskRecord) {
     if (!confirm(`Delete task "${t.title}"? This can't be undone.`)) return;
-    setBusy("Deleting task…");
+    const snapshot = rows;
+    setRows((rs) => rs.filter((r) => r.id !== t.id));
+    setToast({ kind: "ok", msg: "Task deleted" });
     try {
       const res = await fetch(`/api/tasks/${encodeURIComponent(t.id)}`, {
         method: "DELETE",
       });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? "Delete failed");
+        throw new Error(d.error ?? "Backend error");
       }
-      setRows((rs) => rs.filter((r) => r.id !== t.id));
-      setToast({ kind: "ok", msg: "Task deleted" });
       router.refresh();
     } catch (e) {
-      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Delete failed" });
-    } finally {
-      setBusy(null);
+      setRows(snapshot);
+      showError(e instanceof Error ? e.message : "Backend error");
     }
   }
 
-  // Toggle a single subtask checkbox from the card / list view without opening
-  // the modal. Optimistic: rewrite the description locally then PATCH.
+  // Optimistic subtask toggle from the card / list — no modal needed.
   async function toggleSubtaskOnCard(t: TaskRecord, subtaskId: string) {
     const list = parseSubtasks(t.description);
     const next = list.map((s) => (s.id === subtaskId ? { ...s, done: !s.done } : s));
@@ -252,13 +247,26 @@ export function TasksClient({
       });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? "Update failed");
+        throw new Error(d.error ?? "Backend error");
       }
     } catch (e) {
       setRows((rs) => rs.map((r) => (r.id === t.id ? { ...r, description: prev } : r)));
-      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Update failed" });
+      showError(e instanceof Error ? e.message : "Backend error");
     }
   }
+
+  const personalPalette = {
+    activeBg: "bg-brand-600",
+    activeText: "text-white",
+    idleText: "text-brand-700 hover:bg-brand-50",
+    dot: "bg-brand-500",
+  };
+  const sharedPalette = {
+    activeBg: "bg-slate-500",
+    activeText: "text-white",
+    idleText: "text-slate-600 hover:bg-slate-100",
+    dot: "bg-slate-400",
+  };
 
   return (
     <div className="space-y-4">
@@ -266,42 +274,24 @@ export function TasksClient({
         <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-sm">
           {(
             [
-              {
-                v: "mine",
-                label: "Personal tasks",
-                count: counts.mine,
-                hint: "Your personal to-dos plus any project task where you're the creator or an assignee.",
-                activeBg: "bg-indigo-600",
-                activeText: "text-white",
-                idleText: "text-indigo-700 hover:bg-indigo-50",
-                dot: "bg-indigo-500",
-              },
-              {
-                v: "shared",
-                label: "Shared (projects)",
-                count: counts.shared,
-                hint: "Every project task you can see, even if you're not personally assigned.",
-                activeBg: "bg-emerald-600",
-                activeText: "text-white",
-                idleText: "text-emerald-700 hover:bg-emerald-50",
-                dot: "bg-emerald-500",
-              },
+              { v: "Personal", label: "Personal tasks", count: counts.personal, palette: personalPalette },
+              { v: "Shared", label: "Shared (projects)", count: counts.shared, palette: sharedPalette },
             ] as const
           ).map((opt) => {
             const active = mode === opt.v;
+            const p = opt.palette;
             return (
               <button
                 key={opt.v}
                 type="button"
                 onClick={() => setMode(opt.v)}
                 aria-pressed={active}
-                title={opt.hint}
                 className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  active ? `${opt.activeBg} ${opt.activeText} shadow-sm` : opt.idleText
+                  active ? `${p.activeBg} ${p.activeText} shadow-sm` : p.idleText
                 }`}
               >
                 <span
-                  className={`h-1.5 w-1.5 rounded-full ${active ? "bg-white/80" : opt.dot}`}
+                  className={`h-1.5 w-1.5 rounded-full ${active ? "bg-white/80" : p.dot}`}
                   aria-hidden
                 />
                 {opt.label}
@@ -316,35 +306,7 @@ export function TasksClient({
             );
           })}
         </div>
-        <div className="ml-auto inline-flex items-center rounded-md border border-slate-200 bg-white p-0.5 shadow-sm">
-          {(
-            [
-              { v: "kanban", label: "Board" },
-              { v: "list", label: "List" },
-            ] as const
-          ).map((opt) => {
-            const active = view === opt.v;
-            return (
-              <button
-                key={opt.v}
-                type="button"
-                onClick={() => setView(opt.v)}
-                aria-pressed={active}
-                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                  active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
       </div>
-      <p className="text-xs text-slate-500 -mt-2">
-        {mode === "mine"
-          ? "Everything you created or are assigned to, including your personal tasks."
-          : "All project tasks visible to you, including ones you're not personally on."}
-      </p>
 
       <div className="bg-white rounded-lg border border-slate-200 p-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -412,9 +374,35 @@ export function TasksClient({
         </div>
       </div>
 
+      <div className="flex items-center">
+        <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-0.5 shadow-sm">
+          {(
+            [
+              { v: "list", label: "List" },
+              { v: "kanban", label: "Board" },
+            ] as const
+          ).map((opt) => {
+            const active = view === opt.v;
+            return (
+              <button
+                key={opt.v}
+                type="button"
+                onClick={() => setView(opt.v)}
+                aria-pressed={active}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {view === "kanban" ? (
-        // Wider To do / In Progress columns, narrower Done / Cancelled —
-        // they're terminal states that mostly need scanning, not editing.
+        // Wider To do / In Progress columns, narrower Done / Cancelled — they
+        // are terminal states that mostly need scanning, not editing.
         <div className="grid gap-3 lg:grid-cols-[2fr_2fr_1fr_1fr]">
           {STATUS_ORDER.map((s) => (
             <Column
@@ -439,19 +427,21 @@ export function TasksClient({
           membersById={membersById}
           onOpen={openEdit}
           onStatusChange={quickStatus}
+          onToggleSubtask={toggleSubtaskOnCard}
         />
       )}
 
       <TaskModal
         open={modalOpen}
         editing={editing}
+        defaultVisibility={mode}
         projects={projects}
         members={members}
         currentMemberId={currentMemberId}
         isAdmin={isAdmin}
         onClose={closeModal}
-        onSaved={(saved, mode) => {
-          if (mode === "create") {
+        onSaved={(saved, m) => {
+          if (m === "create") {
             setRows((rs) => [saved, ...rs]);
             setToast({ kind: "ok", msg: "Task created" });
           } else {
@@ -461,12 +451,9 @@ export function TasksClient({
           closeModal();
           router.refresh();
         }}
-        onError={(msg) => setToast({ kind: "error", msg })}
+        onError={showError}
         onDelete={remove}
-        onBusyChange={setBusy}
       />
-
-      {busy ? <BusyOverlay label={busy} /> : null}
 
       {toast ? (
         <div
@@ -480,21 +467,6 @@ export function TasksClient({
           {toast.msg}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function BusyOverlay({ label }: { label: string }) {
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/30 backdrop-blur-[1px]"
-      role="status"
-      aria-live="polite"
-    >
-      <div className="flex items-center gap-3 rounded-lg bg-white px-4 py-3 shadow-xl">
-        <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600" />
-        <span className="text-xs font-medium text-slate-700">{label}</span>
-      </div>
     </div>
   );
 }
@@ -575,7 +547,7 @@ function TaskCard({
   onStatusChange: (t: TaskRecord, next: TaskStatus) => void;
   onToggleSubtask: (t: TaskRecord, subtaskId: string) => void;
 }) {
-  const personal = !t.projectRecordId;
+  const personal = t.visibility === "Personal";
   const project = t.projectRecordId ? projectsById.get(t.projectRecordId) : null;
   const isMine = t.createdByRecordId === currentMemberId;
   const isAssigned = t.assigneeRecordIds.includes(currentMemberId);
@@ -600,17 +572,18 @@ function TaskCard({
               </span>
             ) : null}
             {personal ? (
-              <span className="inline-flex items-center rounded-full bg-indigo-50 text-indigo-700 px-1.5 py-0.5 font-medium">
+              <span className="inline-flex items-center rounded-full bg-brand-50 text-brand-700 px-1.5 py-0.5 font-medium">
                 Personal
               </span>
-            ) : (
+            ) : null}
+            {project ? (
               <span
-                className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-1.5 py-0.5 font-medium font-mono"
+                className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-1.5 py-0.5 font-medium font-mono"
                 title={project?.name ?? t.projectName}
               >
                 {project?.code || t.projectCode}
               </span>
-            )}
+            ) : null}
             {t.dueDate ? (
               <span className={`tabular-nums ${dueClass}`}>Due {t.dueDate}</span>
             ) : null}
@@ -624,7 +597,7 @@ function TaskCard({
               </span>
             ) : null}
           </div>
-          {!compact ? (
+          {!compact && !personal ? (
             <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
               {isMine ? (
                 <span title="You created this">Created by you</span>
@@ -659,9 +632,9 @@ function TaskCard({
           ))}
         </select>
       </div>
-      {!compact && subtasks.length > 0 ? (
+      {subtasks.length > 0 ? (
         <ul className="mt-1.5 space-y-0.5 pl-0.5">
-          {subtasks.slice(0, 4).map((s) => (
+          {subtasks.slice(0, compact ? 2 : 4).map((s) => (
             <li key={s.id} className="flex items-center gap-1.5 text-[11px]">
               <input
                 type="checkbox"
@@ -675,9 +648,9 @@ function TaskCard({
               </span>
             </li>
           ))}
-          {subtasks.length > 4 ? (
+          {subtasks.length > (compact ? 2 : 4) ? (
             <li className="text-[10px] text-slate-400">
-              +{subtasks.length - 4} more…
+              +{subtasks.length - (compact ? 2 : 4)} more…
             </li>
           ) : null}
         </ul>
@@ -693,6 +666,7 @@ function TaskList({
   membersById,
   onOpen,
   onStatusChange,
+  onToggleSubtask,
 }: {
   tasks: TaskRecord[];
   currentMemberId: string;
@@ -700,6 +674,7 @@ function TaskList({
   membersById: Map<string, MemberOpt>;
   onOpen: (t: TaskRecord) => void;
   onStatusChange: (t: TaskRecord, next: TaskStatus) => void;
+  onToggleSubtask: (t: TaskRecord, subtaskId: string) => void;
 }) {
   if (tasks.length === 0) {
     return (
@@ -708,8 +683,6 @@ function TaskList({
       </div>
     );
   }
-  // Sort by status order then priority then due — gives a useful prioritised
-  // global queue when looking across statuses.
   const prioRank: Record<TaskPriority | "", number> = {
     Urgent: 0,
     High: 1,
@@ -743,12 +716,13 @@ function TaskList({
         </thead>
         <tbody className="divide-y divide-slate-100">
           {sorted.map((t) => {
-            const personal = !t.projectRecordId;
+            const personal = t.visibility === "Personal";
             const project = t.projectRecordId ? projectsById.get(t.projectRecordId) : null;
-            const progress = subtaskProgress(t.description);
+            const subtasks = parseSubtasks(t.description);
+            const progress = { done: subtasks.filter((s) => s.done).length, total: subtasks.length };
             const isAssigned = t.assigneeRecordIds.includes(currentMemberId);
             return (
-              <tr key={t.id} className="hover:bg-slate-50">
+              <tr key={t.id} className="align-top hover:bg-slate-50">
                 <td className="px-3 py-2">
                   <button
                     type="button"
@@ -757,19 +731,24 @@ function TaskList({
                   >
                     {t.title}
                   </button>
+                  {personal ? (
+                    <div className="mt-0.5">
+                      <span className="inline-flex items-center rounded-full bg-brand-50 text-brand-700 px-1.5 py-0.5 text-[10px] font-medium">
+                        Personal
+                      </span>
+                    </div>
+                  ) : null}
                 </td>
                 <td className="px-3 py-2">
-                  {personal ? (
-                    <span className="inline-flex items-center rounded-full bg-indigo-50 text-indigo-700 px-1.5 py-0.5 text-[10px] font-medium">
-                      Personal
-                    </span>
-                  ) : (
+                  {project ? (
                     <span
-                      className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-1.5 py-0.5 text-[10px] font-medium font-mono"
+                      className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px] font-medium font-mono"
                       title={project?.name ?? t.projectName}
                     >
                       {project?.code || t.projectCode}
                     </span>
+                  ) : (
+                    <span className="text-slate-400">—</span>
                   )}
                 </td>
                 <td className="px-3 py-2">
@@ -801,7 +780,9 @@ function TaskList({
                   {t.dueDate || <span className="text-slate-400">—</span>}
                 </td>
                 <td className="px-3 py-2 text-slate-600">
-                  {t.assigneeRecordIds.length === 0 ? (
+                  {personal ? (
+                    <span className="text-slate-400">—</span>
+                  ) : t.assigneeRecordIds.length === 0 ? (
                     <span className="text-slate-400">—</span>
                   ) : t.assigneeRecordIds.length === 1 ? (
                     <span>
@@ -818,10 +799,27 @@ function TaskList({
                   {progress.total === 0 ? (
                     <span className="text-slate-400">—</span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium">
-                      <CheckListIcon />
-                      {progress.done}/{progress.total}
-                    </span>
+                    <details>
+                      <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium hover:bg-slate-200">
+                        <CheckListIcon />
+                        {progress.done}/{progress.total}
+                      </summary>
+                      <ul className="mt-1.5 space-y-0.5">
+                        {subtasks.map((s) => (
+                          <li key={s.id} className="flex items-center gap-1.5 text-[11px]">
+                            <input
+                              type="checkbox"
+                              checked={s.done}
+                              onChange={() => onToggleSubtask(t, s.id)}
+                              className="rounded border-slate-300"
+                            />
+                            <span className={s.done ? "text-slate-400 line-through" : "text-slate-700"}>
+                              {s.title}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
                   )}
                 </td>
               </tr>
@@ -836,6 +834,7 @@ function TaskList({
 function TaskModal({
   open,
   editing,
+  defaultVisibility,
   projects,
   members,
   currentMemberId,
@@ -844,10 +843,10 @@ function TaskModal({
   onSaved,
   onError,
   onDelete,
-  onBusyChange,
 }: {
   open: boolean;
   editing: TaskRecord | null;
+  defaultVisibility: TaskVisibility;
   projects: ProjectOpt[];
   members: MemberOpt[];
   currentMemberId: string;
@@ -856,7 +855,6 @@ function TaskModal({
   onSaved: (t: TaskRecord, mode: "create" | "edit") => void;
   onError: (msg: string) => void;
   onDelete: (t: TaskRecord) => void;
-  onBusyChange: (label: string | null) => void;
 }) {
   const [title, setTitle] = useState("");
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
@@ -867,10 +865,9 @@ function TaskModal({
   const [effort, setEffort] = useState("");
   const [projectId, setProjectId] = useState("");
   const [assignees, setAssignees] = useState<string[]>([]);
+  const [visibility, setVisibility] = useState<TaskVisibility>("Personal");
   const [submitting, setSubmitting] = useState(false);
 
-  // Reload form values whenever a different task is opened. Personal tasks
-  // (no project) default the creator to themselves as the sole assignee.
   useEffect(() => {
     if (!open) return;
     if (editing) {
@@ -882,6 +879,7 @@ function TaskModal({
       setEffort(editing.effortHours != null ? String(editing.effortHours) : "");
       setProjectId(editing.projectRecordId);
       setAssignees(editing.assigneeRecordIds);
+      setVisibility(editing.visibility);
     } else {
       setTitle("");
       setSubtasks([]);
@@ -890,10 +888,13 @@ function TaskModal({
       setDueDate("");
       setEffort("");
       setProjectId("");
-      setAssignees([currentMemberId]);
+      // Personal tasks default to no assignees (the section is hidden anyway);
+      // shared tasks default to the creator as a single assignee.
+      setAssignees(defaultVisibility === "Shared" ? [currentMemberId] : []);
+      setVisibility(defaultVisibility);
     }
     setNewSubtask("");
-  }, [open, editing, currentMemberId]);
+  }, [open, editing, currentMemberId, defaultVisibility]);
 
   useEffect(() => {
     if (!open) return;
@@ -911,6 +912,7 @@ function TaskModal({
   if (!open) return null;
 
   const isOwner = !editing || editing.createdByRecordId === currentMemberId;
+  const isPersonal = visibility === "Personal";
 
   function addSubtask() {
     const t = newSubtask.trim();
@@ -927,8 +929,10 @@ function TaskModal({
 
   async function submit() {
     if (!title.trim()) return onError("Title is required.");
+    if (visibility === "Shared" && !projectId) {
+      return onError("Shared tasks must be linked to a project.");
+    }
     setSubmitting(true);
-    onBusyChange(editing ? "Saving task…" : "Creating task…");
     try {
       const cleanedSubtasks = subtasks.filter((s) => s.title.trim().length > 0);
       const body = {
@@ -939,7 +943,9 @@ function TaskModal({
         dueDate: dueDate || null,
         effortHours: effort === "" ? null : Number(effort),
         projectRecordId: projectId,
-        assigneeRecordIds: assignees,
+        // Personal tasks ignore the assignees array; force it to empty.
+        assigneeRecordIds: isPersonal ? [] : assignees,
+        visibility,
       };
       const url = editing ? `/api/tasks/${encodeURIComponent(editing.id)}` : "/api/tasks";
       const method = editing ? "PATCH" : "POST";
@@ -953,7 +959,7 @@ function TaskModal({
         task?: TaskRecord;
         id?: string;
       };
-      if (!res.ok) throw new Error(data.error ?? "Save failed");
+      if (!res.ok) throw new Error(data.error ?? "Backend error");
       const saved = data.task ?? null;
       if (saved) {
         onSaved(saved, editing ? "edit" : "create");
@@ -982,15 +988,15 @@ function TaskModal({
             createdByName: "",
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
+            visibility: body.visibility,
           },
           "create",
         );
       }
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Save failed");
+      onError(e instanceof Error ? e.message : "Backend error");
     } finally {
       setSubmitting(false);
-      onBusyChange(null);
     }
   }
 
@@ -1012,9 +1018,24 @@ function TaskModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
-          <h2 className="text-sm font-semibold text-slate-900">
-            {editing ? "Edit task" : "New task"}
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-slate-900">
+              {editing ? "Edit task" : "New task"}
+            </h2>
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                isPersonal
+                  ? "bg-brand-50 text-brand-700"
+                  : "bg-slate-100 text-slate-700"
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${isPersonal ? "bg-brand-500" : "bg-slate-400"}`}
+                aria-hidden
+              />
+              {isPersonal ? "Personal" : "Shared"}
+            </span>
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -1028,6 +1049,38 @@ function TaskModal({
           </button>
         </div>
         <div className="space-y-3 px-5 py-4">
+          {isOwner ? (
+            <div>
+              <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+                Visibility
+              </span>
+              <div className="mt-1 inline-flex items-center rounded-md border border-slate-200 bg-white p-0.5">
+                {(["Personal", "Shared"] as const).map((opt) => {
+                  const active = visibility === opt;
+                  const cls = opt === "Personal" ? "bg-brand-600" : "bg-slate-500";
+                  return (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => setVisibility(opt)}
+                      aria-pressed={active}
+                      className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                        active ? `${cls} text-white shadow-sm` : "text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="ml-2 text-[10px] text-slate-500">
+                {isPersonal
+                  ? "Only you can see this task, even if linked to a project."
+                  : "Visible to everyone staffed on the linked project."}
+              </span>
+            </div>
+          ) : null}
+
           <label className="block">
             <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
               Title <span className="text-red-500">*</span>
@@ -1188,7 +1241,7 @@ function TaskModal({
 
           <label className="block">
             <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-              Project
+              Project {visibility === "Shared" ? <span className="text-red-500">*</span> : null}
             </span>
             <select
               value={projectId}
@@ -1196,7 +1249,7 @@ function TaskModal({
               className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs disabled:bg-slate-50"
               disabled={!isOwner}
             >
-              <option value="">Personal (no project)</option>
+              <option value="">{isPersonal ? "No project" : "Pick a project…"}</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.code}
@@ -1204,58 +1257,55 @@ function TaskModal({
                 </option>
               ))}
             </select>
-            <span className="mt-1 block text-[10px] text-slate-500">
-              {projectId
-                ? "Task will be visible to everyone staffed on this project."
-                : "Personal tasks are only visible to you and anyone you assign."}
-            </span>
           </label>
 
-          <div>
-            <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-              Assignees
-              <span className="ml-1 text-slate-400 normal-case">
-                {isAdmin ? "(admin: anyone in the network)" : "(your teammates)"}
+          {isPersonal ? null : (
+            <div>
+              <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+                Assignees
+                <span className="ml-1 text-slate-400 normal-case">
+                  {isAdmin ? "(admin: anyone in the network)" : "(your teammates)"}
+                </span>
               </span>
-            </span>
-            <div className="mt-1 max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2 text-xs">
-              {members.length === 0 ? (
-                <div className="text-slate-400">
-                  No teammates yet — you're not on any shared projects.
-                </div>
-              ) : (
-                members.map((m) => {
-                  const checked = assignees.includes(m.id);
-                  return (
-                    <label
-                      key={m.id}
-                      className={`flex items-center gap-2 rounded px-1.5 py-1 hover:bg-white ${
-                        !isOwner ? "opacity-60" : ""
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleAssignee(m.id)}
-                        disabled={!isOwner}
-                        className="rounded border-slate-300"
-                      />
-                      <span className="font-mono text-[10px] text-slate-500">{m.code}</span>
-                      <span className="truncate">{m.name}</span>
-                      {m.id === currentMemberId ? (
-                        <span className="ml-auto text-[10px] text-slate-400">(you)</span>
-                      ) : null}
-                    </label>
-                  );
-                })
-              )}
+              <div className="mt-1 max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2 text-xs">
+                {members.length === 0 ? (
+                  <div className="text-slate-400">
+                    No teammates yet — you're not on any shared projects.
+                  </div>
+                ) : (
+                  members.map((m) => {
+                    const checked = assignees.includes(m.id);
+                    return (
+                      <label
+                        key={m.id}
+                        className={`flex items-center gap-2 rounded px-1.5 py-1 hover:bg-white ${
+                          !isOwner ? "opacity-60" : ""
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleAssignee(m.id)}
+                          disabled={!isOwner}
+                          className="rounded border-slate-300"
+                        />
+                        <span className="font-mono text-[10px] text-slate-500">{m.code}</span>
+                        <span className="truncate">{m.name}</span>
+                        {m.id === currentMemberId ? (
+                          <span className="ml-auto text-[10px] text-slate-400">(you)</span>
+                        ) : null}
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              {!isOwner ? (
+                <span className="mt-1 block text-[10px] text-slate-500">
+                  Only the creator can change the assignees.
+                </span>
+              ) : null}
             </div>
-            {!isOwner ? (
-              <span className="mt-1 block text-[10px] text-slate-500">
-                Only the creator can change the assignees.
-              </span>
-            ) : null}
-          </div>
+          )}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
           {editing && isOwner ? (

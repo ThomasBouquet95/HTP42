@@ -8,9 +8,11 @@ import {
   getTaskById,
   TASK_PRIORITIES,
   TASK_STATUSES,
+  TASK_VISIBILITIES,
   updateTask,
   type TaskPriority,
   type TaskStatus,
+  type TaskVisibility,
 } from "@/lib/airtable";
 
 export const runtime = "nodejs";
@@ -26,6 +28,7 @@ const patchSchema = z.object({
   effortHours: z.union([z.number().nonnegative(), z.null()]).optional(),
   projectRecordId: z.string().trim().optional(),
   assigneeRecordIds: z.array(z.string()).max(50).optional(),
+  visibility: z.enum(TASK_VISIBILITIES as [string, ...string[]]).optional(),
 });
 
 async function canAccess(taskId: string, sub: string, memberCode: string, admin: boolean) {
@@ -34,7 +37,8 @@ async function canAccess(taskId: string, sub: string, memberCode: string, admin:
   if (admin) return { task, allowed: true };
   if (task.createdByRecordId === sub) return { task, allowed: true };
   if (task.assigneeRecordIds.includes(sub)) return { task, allowed: true };
-  if (task.projectCode) {
+  // Personal tasks NEVER leak via the project, even to teammates staffed on it.
+  if (task.visibility === "Shared" && task.projectCode) {
     const myStaffings = await getStaffingsForMember(memberCode);
     if (myStaffings.some((s) => s.projectCode === task.projectCode)) {
       return { task, allowed: true };
@@ -74,13 +78,26 @@ export async function PATCH(
       d.title !== undefined ||
       d.description !== undefined ||
       d.projectRecordId !== undefined ||
-      d.assigneeRecordIds !== undefined
+      d.assigneeRecordIds !== undefined ||
+      d.visibility !== undefined
     ) {
       return NextResponse.json(
-        { error: "Only the creator can change the task's title, description, project, or assignees." },
+        { error: "Only the creator can change the task's title, description, project, assignees, or visibility." },
         { status: 403 },
       );
     }
+  }
+
+  // Sanity-check visibility transitions: shared tasks must keep (or set) a
+  // project; otherwise they have no team to share with.
+  const nextVisibility = (d.visibility as TaskVisibility | undefined) ?? task.visibility;
+  const nextProject =
+    d.projectRecordId !== undefined ? d.projectRecordId : task.projectRecordId;
+  if (nextVisibility === "Shared" && !nextProject) {
+    return NextResponse.json(
+      { error: "Shared tasks must be linked to a project." },
+      { status: 400 },
+    );
   }
 
   await updateTask(id, {
@@ -92,6 +109,7 @@ export async function PATCH(
     effortHours: d.effortHours as number | null | undefined,
     projectRecordId: d.projectRecordId,
     assigneeRecordIds: d.assigneeRecordIds,
+    visibility: d.visibility as TaskVisibility | undefined,
   });
   const updated = await getTaskById(id);
   return NextResponse.json({ ok: true, task: updated });

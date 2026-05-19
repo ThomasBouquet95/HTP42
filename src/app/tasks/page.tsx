@@ -48,9 +48,6 @@ export default async function TasksPage() {
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <div className="mb-4">
         <h1 className="text-base sm:text-lg font-semibold">Tasks</h1>
-        <p className="mt-0.5 text-xs text-slate-500">
-          Track personal to-dos or share tasks with a project team.
-        </p>
       </div>
       <TasksClient
         tasks={tasks}

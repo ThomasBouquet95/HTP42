@@ -6,9 +6,11 @@ import {
   listTasksVisibleTo,
   TASK_PRIORITIES,
   TASK_STATUSES,
+  TASK_VISIBILITIES,
   getStaffingsForMember,
   type TaskPriority,
   type TaskStatus,
+  type TaskVisibility,
 } from "@/lib/airtable";
 
 export const runtime = "nodejs";
@@ -24,6 +26,7 @@ const createSchema = z.object({
   effortHours: z.union([z.number().nonnegative(), z.null()]).optional(),
   projectRecordId: z.string().trim().default(""),
   assigneeRecordIds: z.array(z.string()).max(50).default([]),
+  visibility: z.enum(TASK_VISIBILITIES as [string, ...string[]]).default("Personal"),
 });
 
 export async function GET() {
@@ -65,6 +68,18 @@ export async function POST(request: Request) {
     }
   }
 
+  // Shared tasks require a project — the whole point of sharing is to scope
+  // visibility to that project's team. Personal tasks may optionally link to
+  // a project (the user wants the context) without making it visible to the
+  // team.
+  const visibility = d.visibility as TaskVisibility;
+  if (visibility === "Shared" && !d.projectRecordId) {
+    return NextResponse.json(
+      { error: "Shared tasks must be linked to a project." },
+      { status: 400 },
+    );
+  }
+
   const id = await createTask({
     title: d.title,
     description: d.description,
@@ -75,6 +90,7 @@ export async function POST(request: Request) {
     projectRecordId: d.projectRecordId,
     assigneeRecordIds: d.assigneeRecordIds,
     createdByRecordId: session.sub,
+    visibility,
   });
   return NextResponse.json({ id });
 }

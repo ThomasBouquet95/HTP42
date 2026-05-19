@@ -154,6 +154,7 @@ export const FIELDS = {
     createdBy: "Created By",
     createdAt: "Created At",
     updatedAt: "Updated At",
+    visibility: "Visibility",
   },
 } as const;
 
@@ -2468,6 +2469,9 @@ export const TASK_STATUSES: TaskStatus[] = ["To do", "In Progress", "Done", "Can
 export type TaskPriority = "Low" | "Medium" | "High" | "Urgent";
 export const TASK_PRIORITIES: TaskPriority[] = ["Low", "Medium", "High", "Urgent"];
 
+export type TaskVisibility = "Personal" | "Shared";
+export const TASK_VISIBILITIES: TaskVisibility[] = ["Personal", "Shared"];
+
 export type TaskRecord = {
   id: string;
   title: string;
@@ -2487,6 +2491,10 @@ export type TaskRecord = {
   createdByName: string;
   createdAt: string | null;
   updatedAt: string | null;
+  // Personal = visible only to the creator (and assignees, if any), even when
+  // linked to a Project. Shared = visible to everyone staffed on the linked
+  // Project. Stored on the Tasks table as a single-select.
+  visibility: TaskVisibility;
 };
 
 function taskFromRecord(
@@ -2499,6 +2507,15 @@ function taskFromRecord(
   const projectIds = linkedIds(r, FIELDS.tasks.project);
   const p = projectIds[0] ? projectById.get(projectIds[0]) : undefined;
   const creator = createdByIds[0] ? memberById.get(createdByIds[0]) : undefined;
+  // Default older rows without an explicit Visibility to "Shared" when a
+  // project is set (matches the legacy behavior) and "Personal" otherwise.
+  const visRaw = str(r, FIELDS.tasks.visibility);
+  const visibility: TaskVisibility =
+    visRaw === "Personal" || visRaw === "Shared"
+      ? visRaw
+      : projectIds[0]
+        ? "Shared"
+        : "Personal";
   return {
     id: r.id,
     title: str(r, FIELDS.tasks.title),
@@ -2518,6 +2535,7 @@ function taskFromRecord(
     createdByName: creator?.name ?? "",
     createdAt: (r.get(FIELDS.tasks.createdAt) as string | undefined) ?? null,
     updatedAt: (r.get(FIELDS.tasks.updatedAt) as string | undefined) ?? null,
+    visibility,
   };
 }
 
@@ -2541,6 +2559,16 @@ export async function listTasksVisibleTo(
   return records
     .map((r) => taskFromRecord(r, memberById, projectById))
     .filter((t) => {
+      // Personal tasks are always private to creator (and explicit assignees),
+      // even when linked to a project — being staffed on the project doesn't
+      // grant visibility.
+      if (t.visibility === "Personal") {
+        if (t.createdByRecordId === memberRecordId) return true;
+        if (t.assigneeRecordIds.includes(memberRecordId)) return true;
+        return false;
+      }
+      // Shared tasks: creator, explicit assignees, and anyone staffed on the
+      // linked project can see them.
       if (t.createdByRecordId === memberRecordId) return true;
       if (t.assigneeRecordIds.includes(memberRecordId)) return true;
       if (t.projectCode && myProjectCodes.has(t.projectCode)) return true;
@@ -2582,6 +2610,7 @@ export type TaskCreateInput = {
   projectRecordId: string;
   assigneeRecordIds: string[];
   createdByRecordId: string;
+  visibility: TaskVisibility;
 };
 
 export async function createTask(input: TaskCreateInput): Promise<string> {
@@ -2598,6 +2627,7 @@ export async function createTask(input: TaskCreateInput): Promise<string> {
     [FIELDS.tasks.createdBy]: [input.createdByRecordId],
     [FIELDS.tasks.createdAt]: now,
     [FIELDS.tasks.updatedAt]: now,
+    [FIELDS.tasks.visibility]: input.visibility,
   };
   const [created] = await base(TABLES.tasks).create([{ fields: fields as FieldSet }]);
   return created.id;
@@ -2612,6 +2642,7 @@ export type TaskUpdateInput = Partial<{
   effortHours: number | null;
   projectRecordId: string;
   assigneeRecordIds: string[];
+  visibility: TaskVisibility;
 }>;
 
 export async function updateTask(recordId: string, input: TaskUpdateInput): Promise<void> {
@@ -2630,6 +2661,7 @@ export async function updateTask(recordId: string, input: TaskUpdateInput): Prom
   if (input.assigneeRecordIds !== undefined) {
     fields[FIELDS.tasks.assignees] = input.assigneeRecordIds;
   }
+  if (input.visibility !== undefined) fields[FIELDS.tasks.visibility] = input.visibility;
   fields[FIELDS.tasks.updatedAt] = new Date().toISOString();
   await base(TABLES.tasks).update([{ id: recordId, fields: fields as FieldSet }]);
 }
