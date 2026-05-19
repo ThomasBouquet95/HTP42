@@ -21,10 +21,11 @@ export function ProjectSelector({ projects, activeCode }: Props) {
         }}
         className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
       >
-        <option value="">— Select a project —</option>
+        <option value="">Select a project</option>
         {projects.map((p) => (
           <option key={p.projectCode} value={p.projectCode}>
-            {p.projectCode} — {p.projectName || "—"}
+            {p.projectCode}
+            {p.projectName ? ` — ${p.projectName}` : ""}
           </option>
         ))}
       </select>

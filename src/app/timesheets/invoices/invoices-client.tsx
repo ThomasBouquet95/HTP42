@@ -211,7 +211,7 @@ function NewInvoiceModal({
 }) {
   const [staffingId, setStaffingId] = useState("");
   const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState<"EUR" | "USD" | "CHF" | "">("EUR");
+  const [currency, setCurrency] = useState<"EUR" | "USD" | "CHF" | "">("");
   const [comment, setComment] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -221,7 +221,7 @@ function NewInvoiceModal({
     if (!open) return;
     setStaffingId("");
     setAmount("");
-    setCurrency("EUR");
+    setCurrency("");
     setComment("");
     setFile(null);
     if (fileRef.current) fileRef.current.value = "";
@@ -250,6 +250,7 @@ function NewInvoiceModal({
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
       return onError("Amount must be a positive number.");
     }
+    if (!currency) return onError("Currency is required.");
     if (!comment.trim()) return onError("Comment is required.");
     if (!file) return onError("Attach a PDF.");
     if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
@@ -312,7 +313,7 @@ function NewInvoiceModal({
               onChange={(e) => setStaffingId(e.target.value)}
               className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
             >
-              <option value="">— pick a staffing —</option>
+              <option value="">Pick a staffing</option>
               {staffings.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.staffingCode || s.projectCode}
@@ -339,13 +340,14 @@ function NewInvoiceModal({
             </label>
             <label className="block">
               <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-                Currency
+                Currency <span className="text-red-500">*</span>
               </span>
               <select
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value as "EUR" | "USD" | "CHF" | "")}
                 className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
               >
+                <option value="">Currency</option>
                 <option value="EUR">EUR</option>
                 <option value="USD">USD</option>
                 <option value="CHF">CHF</option>
@@ -399,7 +401,14 @@ function NewInvoiceModal({
           <button
             type="button"
             onClick={submit}
-            disabled={submitting || !staffingId || !file || !amount.trim() || !comment.trim()}
+            disabled={
+              submitting ||
+              !staffingId ||
+              !file ||
+              !amount.trim() ||
+              !currency ||
+              !comment.trim()
+            }
             className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
           >
             {submitting ? "Submitting…" : "Submit invoice"}

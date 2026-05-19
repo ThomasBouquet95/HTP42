@@ -38,6 +38,9 @@ export async function POST(request: Request) {
 
   if (!staffingId) return NextResponse.json({ error: "Staffing is required." }, { status: 400 });
   if (!amountStr) return NextResponse.json({ error: "Amount is required." }, { status: 400 });
+  if (!["EUR", "USD", "CHF"].includes(currency)) {
+    return NextResponse.json({ error: "Currency is required." }, { status: 400 });
+  }
   if (!comment) return NextResponse.json({ error: "Comment is required." }, { status: 400 });
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "A PDF file is required." }, { status: 400 });

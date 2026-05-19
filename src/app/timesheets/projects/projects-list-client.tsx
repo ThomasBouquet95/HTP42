@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import {
   type MyProjectRecord,
   type MyProjectTeamMember,
-  type ProjectStatus,
   type ProjectRole,
 } from "@/lib/airtable";
 import { SubmitTimesheetButton } from "@/components/submit-timesheet-modal";
@@ -14,54 +13,61 @@ import { MemberInfoModal } from "@/components/member-info-modal";
 
 const HOURS_PER_DAY = 8;
 
-type StatusFilter = "All" | ProjectStatus;
+type GroupKey = "inProgress" | "notStarted" | "completed";
 
-const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: "All", label: "All" },
-  { value: "In Progress", label: "In Progress" },
-  { value: "Not Started", label: "Not Started" },
-  { value: "On Hold", label: "On Hold" },
-  { value: "Completed", label: "Completed" },
-];
+const GROUP_LABEL: Record<GroupKey, string> = {
+  inProgress: "In Progress",
+  notStarted: "Not Started",
+  completed: "Completed",
+};
+
+// Buckets the underlying project statuses into the three user-visible groups.
+// "On Hold" and "Planned" are folded in alongside their closest neighbours so
+// nothing is silently hidden.
+function bucket(status: MyProjectRecord["status"]): GroupKey {
+  if (status === "Completed") return "completed";
+  if (status === "Not Started" || status === "Planned") return "notStarted";
+  // In Progress + On Hold + anything unset land here.
+  return "inProgress";
+}
 
 export function ProjectsListClient({ projects }: { projects: MyProjectRecord[] }) {
-  const [filter, setFilter] = useState<StatusFilter>("All");
   const [memberOpen, setMemberOpen] = useState<MyProjectTeamMember | null>(null);
-  const visible = useMemo(() => {
-    if (filter === "All") return projects;
-    if (filter === "Not Started") {
-      return projects.filter((p) => p.status === "Not Started" || p.status === "Planned");
-    }
-    return projects.filter((p) => p.status === filter);
-  }, [projects, filter]);
+  const [expanded, setExpanded] = useState<Record<GroupKey, boolean>>({
+    inProgress: true,
+    notStarted: false,
+    completed: false,
+  });
+
+  const grouped: Record<GroupKey, MyProjectRecord[]> = {
+    inProgress: [],
+    notStarted: [],
+    completed: [],
+  };
+  for (const p of projects) {
+    grouped[bucket(p.status)].push(p);
+  }
 
   if (projects.length === 0) {
     return <EmptyState />;
   }
+
+  function toggle(g: GroupKey) {
+    setExpanded((prev) => ({ ...prev, [g]: !prev[g] }));
+  }
+
   return (
-    <div className="space-y-2">
-      <StatusFilterBar value={filter} onChange={setFilter} counts={countByFilter(projects)} />
-      {visible.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-xs text-slate-500">
-          No projects match this filter.
-        </div>
-      ) : (
-        <div className="rounded-lg border border-slate-200 bg-white">
-          {/* No divide-y here: it sets `border-color` on every sibling row,
-              which overrides each <li>'s border-l-* status colour and made
-              the coloured bar visible only on the first row. */}
-          <ul>
-            {visible.map((p, i) => (
-              <ProjectRow
-                key={p.projectCode}
-                project={p}
-                isFirst={i === 0}
-                onSelectMember={setMemberOpen}
-              />
-            ))}
-          </ul>
-        </div>
-      )}
+    <div className="space-y-3">
+      {(["inProgress", "notStarted", "completed"] as const).map((g) => (
+        <GroupSection
+          key={g}
+          label={GROUP_LABEL[g]}
+          items={grouped[g]}
+          expanded={expanded[g]}
+          onToggle={() => toggle(g)}
+          onSelectMember={setMemberOpen}
+        />
+      ))}
       <MemberInfoModal
         memberId={memberOpen?.memberRecordId ?? null}
         preview={
@@ -79,56 +85,69 @@ export function ProjectsListClient({ projects }: { projects: MyProjectRecord[] }
   );
 }
 
-function countByFilter(projects: MyProjectRecord[]): Record<StatusFilter, number> {
-  const out: Record<StatusFilter, number> = {
-    All: projects.length,
-    "In Progress": 0,
-    "Not Started": 0,
-    "On Hold": 0,
-    Completed: 0,
-    Planned: 0,
-  };
-  for (const p of projects) {
-    if (p.status === "Planned") out["Not Started"] += 1;
-    if (p.status && Object.prototype.hasOwnProperty.call(out, p.status)) {
-      out[p.status as StatusFilter] += 1;
-    }
-  }
-  return out;
-}
-
-function StatusFilterBar({
-  value,
-  onChange,
-  counts,
+function GroupSection({
+  label,
+  items,
+  expanded,
+  onToggle,
+  onSelectMember,
 }: {
-  value: StatusFilter;
-  onChange: (v: StatusFilter) => void;
-  counts: Record<StatusFilter, number>;
+  label: string;
+  items: MyProjectRecord[];
+  expanded: boolean;
+  onToggle: () => void;
+  onSelectMember: (m: MyProjectTeamMember) => void;
 }) {
   return (
-    <div className="inline-flex flex-wrap items-center gap-0.5 rounded-full bg-slate-100 p-0.5">
-      {STATUS_FILTERS.map((f) => {
-        const active = value === f.value;
-        const count = counts[f.value] ?? 0;
-        return (
-          <button
-            key={f.value}
-            type="button"
-            onClick={() => onChange(f.value)}
-            aria-pressed={active}
-            className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            {f.label}
-            <span className={`text-[10px] tabular-nums ${active ? "text-slate-500" : "text-slate-400"}`}>
-              {count}
-            </span>
-          </button>
-        );
-      })}
-    </div>
+    <section className="rounded-lg border border-slate-200 bg-white">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-slate-50"
+      >
+        <span className="flex items-center gap-2">
+          <Chevron open={expanded} />
+          <span className="text-sm font-semibold text-slate-900">{label}</span>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium tabular-nums text-slate-600">
+            {items.length}
+          </span>
+        </span>
+      </button>
+      {expanded ? (
+        items.length === 0 ? (
+          <div className="border-t border-slate-100 px-4 py-6 text-center text-xs text-slate-500">
+            Nothing in this group.
+          </div>
+        ) : (
+          <ul className="border-t border-slate-100">
+            {items.map((p, i) => (
+              <ProjectRow
+                key={p.projectCode}
+                project={p}
+                isFirst={i === 0}
+                onSelectMember={onSelectMember}
+              />
+            ))}
+          </ul>
+        )
+      ) : null}
+    </section>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={`h-3.5 w-3.5 text-slate-500 transition-transform ${open ? "rotate-90" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden
+    >
+      <path d="m6 4 4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -169,20 +188,19 @@ function ProjectRow({
       : p.clientCodes.length > 0
       ? p.clientCodes.join(", ")
       : "";
-  const frame = statusFrame(p.status);
   const role = strongestRole(p);
   return (
     <li
-      className={`grid grid-cols-12 items-center gap-x-4 gap-y-2 px-4 py-3 border-l-[6px] ${
+      className={`grid grid-cols-12 items-center gap-x-4 gap-y-2 px-4 py-3 hover:bg-slate-50 ${
         isFirst ? "" : "border-t border-t-slate-100"
-      } ${frame.border} ${frame.row}`}
+      }`}
     >
       {/* Title block */}
       <div className="col-span-12 lg:col-span-4 min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="font-mono text-[11px] text-slate-500">{p.projectCode}</span>
           {p.status ? (
-            <span className={`text-[10px] font-semibold uppercase tracking-wide ${frame.label}`}>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
               {p.status}
             </span>
           ) : null}
@@ -393,54 +411,6 @@ function initials(name: string): string {
   const first = parts[0][0] ?? "";
   const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
   return `${first}${last}`.toUpperCase();
-}
-
-type FrameStyle = { row: string; border: string; label: string };
-const STATUS_FRAMES: Record<ProjectStatus, FrameStyle> = {
-  "In Progress": {
-    row: "bg-emerald-50/50 hover:bg-emerald-50",
-    border: "border-l-emerald-500",
-    label: "text-emerald-700",
-  },
-  Planned: {
-    row: "bg-sky-50/60 hover:bg-sky-100/60",
-    border: "border-l-sky-500",
-    label: "text-sky-700",
-  },
-  "Not Started": {
-    row: "bg-sky-50/60 hover:bg-sky-100/60",
-    border: "border-l-sky-500",
-    label: "text-sky-700",
-  },
-  "On Hold": {
-    row: "bg-red-50/50 hover:bg-red-50",
-    border: "border-l-red-500",
-    label: "text-red-700",
-  },
-  Completed: {
-    row: "bg-slate-50 hover:bg-slate-100",
-    border: "border-l-slate-400",
-    label: "text-slate-600",
-  },
-};
-
-function statusFrame(status: ProjectStatus | ""): FrameStyle {
-  if (!status) {
-    return {
-      row: "hover:bg-slate-50",
-      // Make the "no status" bar visible — slate-300 was too faint and looked
-      // like the bar was missing on rows whose status hadn't been set.
-      border: "border-l-slate-400",
-      label: "text-slate-500",
-    };
-  }
-  return (
-    STATUS_FRAMES[status] ?? {
-      row: "hover:bg-slate-50",
-      border: "border-l-slate-400",
-      label: "text-slate-500",
-    }
-  );
 }
 
 function EmptyState() {

@@ -16,10 +16,7 @@ export function HeroInfinity({ name }: { name: string }) {
           className="h-16 w-auto sm:h-20 shrink-0"
         />
         <div className="min-w-0">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-700/70">
-            HealthTech Partners 42
-          </div>
-          <h1 className="mt-1 text-2xl sm:text-3xl font-semibold text-slate-900">
+          <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900">
             Welcome back, <span className="text-brand-600">{name || "team"}</span>.
           </h1>
           <p className="mt-2 text-sm text-slate-600">

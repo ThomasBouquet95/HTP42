@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getTimesheetsForMember, listMyProjects, type MyProjectRecord } from "@/lib/airtable";
+import {
+  getTimesheetsForMember,
+  listInvoicesForMember,
+  listMyProjects,
+  type MyProjectRecord,
+} from "@/lib/airtable";
 import { thisMondayIso } from "@/lib/dates";
 import { HeroInfinity } from "./hero-infinity";
 
@@ -20,10 +25,25 @@ export default async function DashboardHomePage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const [projects, timesheets] = await Promise.all([
+  const [projects, timesheets, invoices] = await Promise.all([
     listMyProjects(session.sub, session.memberCode),
     getTimesheetsForMember(session.memberCode),
+    listInvoicesForMember(session.sub),
   ]);
+
+  // Roll up the member's invoices by status × currency so the dashboard can
+  // show "you've been paid X EUR / Y is still pending" at a glance.
+  const paidByCurrency = new Map<string, number>();
+  const pendingByCurrency = new Map<string, number>();
+  for (const inv of invoices) {
+    if (inv.amount == null) continue;
+    const key = inv.currency || "EUR";
+    if (inv.status === "Paid") {
+      paidByCurrency.set(key, (paidByCurrency.get(key) ?? 0) + inv.amount);
+    } else if (inv.status === "To be paid") {
+      pendingByCurrency.set(key, (pendingByCurrency.get(key) ?? 0) + inv.amount);
+    }
+  }
 
   // ----- KPIs ---------------------------------------------------------------
   const monday = thisMondayIso();
@@ -70,7 +90,7 @@ export default async function DashboardHomePage() {
       <HeroInfinity name={firstName} />
 
       {/* KPI row */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Kpi
           label="This week"
           value={`${hoursThisWeek.toFixed(1)} h`}
@@ -93,11 +113,17 @@ export default async function DashboardHomePage() {
           value={String(activeProjects.length)}
           sub={`${projects.length} total in your portfolio`}
         />
-        <Kpi
-          label="Sign-ins"
-          value="∞"
-          sub="Welcome back"
-          accent
+        <MoneyKpi
+          label="Paid to you"
+          totals={paidByCurrency}
+          subEmpty="No invoices paid yet"
+          tone="ok"
+        />
+        <MoneyKpi
+          label="Pending"
+          totals={pendingByCurrency}
+          subEmpty="Nothing waiting on finance"
+          tone={pendingByCurrency.size > 0 ? "warn" : undefined}
         />
       </div>
 
@@ -192,6 +218,41 @@ export default async function DashboardHomePage() {
         </div>
       </div>
     </main>
+  );
+}
+
+function MoneyKpi({
+  label,
+  totals,
+  subEmpty,
+  tone,
+}: {
+  label: string;
+  totals: Map<string, number>;
+  subEmpty: string;
+  tone?: "ok" | "warn";
+}) {
+  const entries = [...totals.entries()].sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) {
+    return <Kpi label={label} value="—" sub={subEmpty} />;
+  }
+  const [[primaryCcy, primaryAmount], ...rest] = entries;
+  const sub =
+    rest.length > 0
+      ? rest
+          .map(
+            ([c, v]) =>
+              `${v.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${c}`,
+          )
+          .join(" · ")
+      : `${primaryCcy} invoices`;
+  return (
+    <Kpi
+      label={label}
+      value={`${primaryAmount.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${primaryCcy}`}
+      sub={sub}
+      tone={tone}
+    />
   );
 }
 
