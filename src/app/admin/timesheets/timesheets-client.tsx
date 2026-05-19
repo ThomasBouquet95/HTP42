@@ -230,7 +230,10 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
             onChange={(v) => update("projectCode", v)}
             options={[
               { value: "All", label: "All projects" },
-              ...projectOptions.map(([code, name]) => ({ value: code, label: name })),
+              ...projectOptions.map(([code, name]) => ({
+                value: code,
+                label: name && name !== code ? `${code} — ${name}` : code,
+              })),
             ]}
           />
           <Select

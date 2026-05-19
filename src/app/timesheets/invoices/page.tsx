@@ -31,9 +31,6 @@ export default async function InvoicesPage() {
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-base sm:text-lg font-semibold">Invoices</h1>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Upload your invoice PDF and submit it to HTP42 finance.
-          </p>
         </div>
       </div>
       <InvoicesClient invoices={invoices} staffings={pickerStaffings} />

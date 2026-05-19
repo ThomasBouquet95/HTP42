@@ -83,6 +83,13 @@ const GROUPS: Group[] = [
         Icon: CashIcon,
         tone: "finance",
       },
+      {
+        href: "/admin/invoices",
+        title: "Member Invoices",
+        description: "Every member invoice with PDF, filters, bulk PDF download and CSV export.",
+        Icon: InvoiceIcon,
+        tone: "finance",
+      },
     ],
   },
 ];
@@ -188,6 +195,16 @@ function CashIcon() {
       <rect x="3" y="6" width="18" height="12" rx="2" />
       <circle cx="12" cy="12" r="2.5" />
       <path d="M6 9.5h.01M18 14.5h.01" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function InvoiceIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M6 3h9l4 4v12.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19.5v-15A1.5 1.5 0 0 1 6.5 3Z" strokeLinejoin="round" />
+      <path d="M14 3v5h5" strokeLinejoin="round" />
+      <path d="M8.5 12h7M8.5 15.5h7M8.5 19h4" strokeLinecap="round" />
     </svg>
   );
 }

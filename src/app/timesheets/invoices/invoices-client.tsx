@@ -244,6 +244,13 @@ function NewInvoiceModal({
 
   async function submit() {
     if (!staffingId) return onError("Pick a staffing.");
+    const trimmedAmount = amount.trim();
+    if (!trimmedAmount) return onError("Amount is required.");
+    const amountNum = Number(trimmedAmount);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      return onError("Amount must be a positive number.");
+    }
+    if (!comment.trim()) return onError("Comment is required.");
     if (!file) return onError("Attach a PDF.");
     if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
       return onError("Only PDF files are accepted.");
@@ -318,7 +325,7 @@ function NewInvoiceModal({
           <div className="grid grid-cols-[1fr,7rem] gap-3">
             <label className="block">
               <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-                Amount (optional)
+                Amount <span className="text-red-500">*</span>
               </span>
               <input
                 type="number"
@@ -348,14 +355,14 @@ function NewInvoiceModal({
 
           <label className="block">
             <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-              Comment (optional)
+              Comment <span className="text-red-500">*</span>
             </span>
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               rows={2}
               className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs"
-              placeholder="Anything finance should know"
+              placeholder="Period covered, invoice ref, any context for finance"
             />
           </label>
 
@@ -392,7 +399,7 @@ function NewInvoiceModal({
           <button
             type="button"
             onClick={submit}
-            disabled={submitting || !staffingId || !file}
+            disabled={submitting || !staffingId || !file || !amount.trim() || !comment.trim()}
             className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
           >
             {submitting ? "Submitting…" : "Submit invoice"}

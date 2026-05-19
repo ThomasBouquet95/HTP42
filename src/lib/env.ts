@@ -35,6 +35,10 @@ export const env = {
   // permission granted to send as this user). Defaults to the recipient so
   // submissions self-archive when not explicitly configured.
   get invoiceSender() {
-    return process.env.INVOICE_SENDER_UPN ?? process.env.INVOICE_RECIPIENT_EMAIL ?? "";
+    return (
+      process.env.INVOICE_SENDER_UPN ??
+      process.env.INVOICE_RECIPIENT_EMAIL ??
+      "invoices@htp42.com"
+    );
   },
 };

@@ -37,6 +37,8 @@ export async function POST(request: Request) {
   const file = form.get("pdf");
 
   if (!staffingId) return NextResponse.json({ error: "Staffing is required." }, { status: 400 });
+  if (!amountStr) return NextResponse.json({ error: "Amount is required." }, { status: 400 });
+  if (!comment) return NextResponse.json({ error: "Comment is required." }, { status: 400 });
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "A PDF file is required." }, { status: 400 });
   }
@@ -72,8 +74,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const amount = amountStr === "" ? null : Number(amountStr);
-  if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+  const amount = Number(amountStr);
+  if (!Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json({ error: "Amount must be a positive number." }, { status: 400 });
   }
 
