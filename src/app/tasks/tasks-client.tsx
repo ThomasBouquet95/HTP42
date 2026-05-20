@@ -38,6 +38,12 @@ const STATUS_ORDER: TaskStatus[] = ["To do", "In Progress", "Done", "Cancelled"]
 // no schema migration. Anything that doesn't look like a checklist line is
 // preserved as a plain (unchecked) subtask on read, and re-serialized cleanly
 // on save.
+//
+// On display the subtask `id` is the line's index in the serialized form, so
+// re-parsing the same description produces the same id list — that's what
+// lets the inline tick handler find the right line to flip. The modal-only
+// editor still uses random ids while the user is reordering / deleting, then
+// they're discarded at save time.
 function parseSubtasks(raw: string | null | undefined): Subtask[] {
   if (!raw) return [];
   const lines = raw.split(/\r?\n/);
@@ -49,9 +55,9 @@ function parseSubtasks(raw: string | null | undefined): Subtask[] {
     if (m) {
       const title = m[2].trim();
       if (!title) continue;
-      out.push({ id: crypto.randomUUID(), title, done: m[1].toLowerCase() === "x" });
+      out.push({ id: String(out.length), title, done: m[1].toLowerCase() === "x" });
     } else {
-      out.push({ id: crypto.randomUUID(), title: trimmed, done: false });
+      out.push({ id: String(out.length), title: trimmed, done: false });
     }
   }
   return out;
@@ -1377,23 +1383,21 @@ function PrioritySelect({
   task: TaskRecord;
   onChange: (t: TaskRecord, next: TaskPriority | "") => void;
 }) {
-  const value = task.priority || "";
+  const value = task.priority || "Medium";
   const cls = priorityCls(value);
-  const label = value || "—";
   return (
     <label
       onClick={(e) => e.stopPropagation()}
       className={`relative inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
       title="Change priority"
     >
-      <span>{label}</span>
+      <span>{value}</span>
       <select
         value={value}
-        onChange={(e) => onChange(task, e.target.value as TaskPriority | "")}
+        onChange={(e) => onChange(task, e.target.value as TaskPriority)}
         aria-label="Change priority"
         className="absolute inset-0 cursor-pointer opacity-0"
       >
-        <option value="">— (none)</option>
         {TASK_PRIORITIES.map((p) => (
           <option key={p} value={p}>
             {p}
