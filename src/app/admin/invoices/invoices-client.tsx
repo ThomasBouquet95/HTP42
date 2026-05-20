@@ -286,7 +286,7 @@ export function AdminInvoicesClient({
             onChange={(v) => update("status", v as Filters["status"])}
             options={[
               { value: "All", label: "All statuses" },
-              { value: "Unset", label: "— Unset" },
+              { value: "Unset", label: "Unset" },
               ...INVOICE_STATUSES.map((s) => ({ value: s, label: s })),
             ]}
           />
@@ -298,7 +298,7 @@ export function AdminInvoicesClient({
               { value: "All", label: "All members" },
               ...memberOptions.map(([code, name]) => ({
                 value: code,
-                label: `${code} — ${name}`,
+                label: `${code} · ${name}`,
               })),
             ]}
           />
@@ -310,7 +310,7 @@ export function AdminInvoicesClient({
               { value: "All", label: "All projects" },
               ...projectOptions.map(([code, name]) => ({
                 value: code,
-                label: name && name !== code ? `${code} — ${name}` : code,
+                label: name && name !== code ? `${code} · ${name}` : code,
               })),
             ]}
           />
@@ -322,7 +322,7 @@ export function AdminInvoicesClient({
               { value: "All", label: "All staffings" },
               ...staffingOptions.map(([id, v]) => ({
                 value: id,
-                label: `${v.code} — ${v.projectName || v.projectCode}`,
+                label: `${v.code} · ${v.projectName || v.projectCode}`,
               })),
             ]}
           />

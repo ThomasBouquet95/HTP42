@@ -15,40 +15,6 @@ export function toEur(
   return amount * fx;
 }
 
-// Lifetime tier ladder. Thresholds in EUR. Tuned so a typical first-year
-// consultant reaches Silver, a steady performer hits Gold by year 2-3, and
-// Platinum / Diamond stay genuinely aspirational.
-export type Tier = {
-  name: string;
-  // Tailwind classes for badge / accent.
-  badge: string;
-  ring: string;
-  // Inclusive lower bound, in EUR (paid + pending lifetime).
-  min: number;
-};
-export const TIERS: Tier[] = [
-  { name: "Newcomer", min: 0, badge: "bg-slate-100 text-slate-700", ring: "ring-slate-200" },
-  { name: "Bronze", min: 10_000, badge: "bg-amber-100 text-amber-800", ring: "ring-amber-200" },
-  { name: "Silver", min: 50_000, badge: "bg-slate-200 text-slate-800", ring: "ring-slate-300" },
-  { name: "Gold", min: 150_000, badge: "bg-yellow-100 text-yellow-800", ring: "ring-yellow-300" },
-  { name: "Platinum", min: 500_000, badge: "bg-cyan-100 text-cyan-800", ring: "ring-cyan-200" },
-  { name: "Diamond", min: 1_000_000, badge: "bg-violet-100 text-violet-800", ring: "ring-violet-200" },
-];
-
-export function tierFor(lifetimeEur: number): {
-  current: Tier;
-  next: Tier | null;
-  progress: number; // 0..1 toward `next`; 1 if at top tier
-} {
-  let current = TIERS[0];
-  for (const t of TIERS) if (lifetimeEur >= t.min) current = t;
-  const next = TIERS[TIERS.indexOf(current) + 1] ?? null;
-  if (!next) return { current, next: null, progress: 1 };
-  const span = next.min - current.min;
-  const progress = span <= 0 ? 1 : Math.max(0, Math.min(1, (lifetimeEur - current.min) / span));
-  return { current, next, progress };
-}
-
 export type MonthBucket = {
   // YYYY-MM
   key: string;

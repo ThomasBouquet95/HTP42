@@ -280,7 +280,7 @@ export function SummaryClient({
               { value: "All", label: "All staffings" },
               ...staffingOptions.map(([id, v]) => ({
                 value: id,
-                label: `${v.code} — ${v.project}`,
+                label: `${v.code} · ${v.project}`,
               })),
             ]}
           />

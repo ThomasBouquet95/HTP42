@@ -10,7 +10,7 @@ import {
   type MyProjectRecord,
 } from "@/lib/airtable";
 import { thisMondayIso } from "@/lib/dates";
-import { rollupEarnings, tierFor, TIERS, type Tier } from "@/lib/earnings";
+import { rollupEarnings } from "@/lib/earnings";
 import { EarningsChart } from "./earnings-chart";
 
 export const dynamic = "force-dynamic";
@@ -35,8 +35,6 @@ export default async function DashboardHomePage() {
     listProjects(),
   ]);
 
-  // Activity rollup (this week / this month) — unchanged from before but
-  // demoted to a sidebar.
   const monday = thisMondayIso();
   const monthPrefix = new Date().toISOString().slice(0, 7);
   let hoursThisWeek = 0;
@@ -72,9 +70,8 @@ export default async function DashboardHomePage() {
     })
     .slice(0, 3);
 
-  // Earnings rollup — uses the full Projects table for accurate FX rates.
+  // Earnings rollup, EUR-converted via each invoice's project FX rate.
   const earnings = rollupEarnings({ invoices, projects: allProjects, timesheets });
-  const tier = tierFor(earnings.lifetimeEur);
   const currentMonthKey = new Date().toISOString().slice(0, 7);
   const thisMonthBucket = earnings.months[earnings.months.length - 1];
   const prevMonthBucket = earnings.months[earnings.months.length - 2];
@@ -85,7 +82,7 @@ export default async function DashboardHomePage() {
   const firstName = (session.fullName || "").trim().split(/\s+/)[0] || "team";
 
   return (
-    <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-5">
       <EarningsHero
         name={firstName}
         lifetimeEur={earnings.lifetimeEur}
@@ -93,29 +90,26 @@ export default async function DashboardHomePage() {
         pendingEur={earnings.pendingLifetimeEur}
         thisMonthEur={thisMonthEur}
         monthDelta={monthDelta}
-        tier={tier}
         paidByCurrency={earnings.paidByCurrency}
         pendingByCurrency={earnings.pendingByCurrency}
       />
 
-      {/* Earnings chart */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+      {/* Earnings chart, kept tight vertically. */}
+      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 sm:px-5 sm:py-4">
         <div className="flex items-baseline justify-between gap-4">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">
-              Earnings — last 12 months
-            </h2>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Paid invoices + invoices still awaiting payment, in EUR equivalent.
-            </p>
-          </div>
+          <h2 className="text-sm font-semibold text-slate-900">
+            Earnings, last 12 months
+          </h2>
+          <span className="text-[11px] text-slate-500">
+            Paid + pending, EUR equivalent
+          </span>
         </div>
-        <div className="mt-4">
+        <div className="mt-1.5">
           <EarningsChart months={earnings.months} current={currentMonthKey} />
         </div>
       </section>
 
-      {/* Stats / streak strip */}
+      {/* Stats strip */}
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           icon={<FlameIcon />}
@@ -155,7 +149,7 @@ export default async function DashboardHomePage() {
         />
       </section>
 
-      {/* Active projects + this-week / quick actions */}
+      {/* Projects + quick actions */}
       <div className="grid gap-4 lg:grid-cols-3">
         <section className="rounded-2xl border border-slate-200 bg-white p-4 lg:col-span-2">
           <div className="flex items-baseline justify-between">
@@ -222,13 +216,9 @@ export default async function DashboardHomePage() {
             <span className="font-medium text-slate-700">{hoursThisWeek.toFixed(1)} h</span> logged
             this week
             {submittedThisWeek > 0 ? (
-              <span className="ml-1 text-emerald-600">
-                · {submittedThisWeek} submitted
-              </span>
+              <span className="ml-1 text-emerald-600">· {submittedThisWeek} submitted</span>
             ) : draftThisWeek > 0 ? (
-              <span className="ml-1 text-amber-600">
-                · {draftThisWeek} still draft
-              </span>
+              <span className="ml-1 text-amber-600">· {draftThisWeek} still draft</span>
             ) : (
               <span className="ml-1 text-slate-400">· nothing logged yet</span>
             )}
@@ -243,8 +233,8 @@ export default async function DashboardHomePage() {
               title="Submit a timesheet"
               caption={
                 submittedThisWeek > 0
-                  ? "This week's done — log next week's hours"
-                  : "Don't break the streak — submit this week"
+                  ? "This week's done, log next week's hours"
+                  : "Don't break the streak, submit this week"
               }
               tone="brand"
               Icon={ClockIcon}
@@ -279,7 +269,6 @@ function EarningsHero({
   pendingEur,
   thisMonthEur,
   monthDelta,
-  tier,
   paidByCurrency,
   pendingByCurrency,
 }: {
@@ -289,59 +278,38 @@ function EarningsHero({
   pendingEur: number;
   thisMonthEur: number;
   monthDelta: number | null;
-  tier: { current: Tier; next: Tier | null; progress: number };
   paidByCurrency: Map<string, number>;
   pendingByCurrency: Map<string, number>;
 }) {
-  // Combined currency breakdown for the small chip row below the headline
-  // figure. Shows raw per-currency totals so multi-currency members see the
-  // unconverted truth alongside the EUR equivalent.
+  // Raw per-currency totals for multi-currency consultants. Sum paid +
+  // pending per currency so the chip row is one figure per currency.
   const ccyTotals = new Map<string, number>();
   for (const [c, v] of paidByCurrency) ccyTotals.set(c, (ccyTotals.get(c) ?? 0) + v);
   for (const [c, v] of pendingByCurrency) ccyTotals.set(c, (ccyTotals.get(c) ?? 0) + v);
   const ccyEntries = [...ccyTotals.entries()].sort((a, b) => b[1] - a[1]);
 
-  // Progress to next tier — explicit "X to next tier" wording, with a thin
-  // bar so the visual cue matches.
-  const remaining = tier.next ? Math.max(0, tier.next.min - lifetimeEur) : 0;
-
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-sky-50/40 to-brand-50/40 px-5 py-6 sm:px-8 sm:py-7">
+    <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-sky-50/40 to-brand-50/40 px-5 py-5 sm:px-7 sm:py-6">
       <DotGrid />
-      <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-10">
-        {/* Brand mark + greeting */}
-        <div className="flex items-center gap-4 sm:gap-6">
-          <Image
-            src="/htp42-mark.png"
-            alt="HealthTech Partners 42"
-            width={580}
-            height={326}
-            priority
-            className="h-12 w-auto sm:h-16 shrink-0"
-          />
-          <div>
-            <h1 className="text-xl sm:text-2xl font-semibold text-slate-900">
-              Welcome back, <span className="text-brand-600">{name}</span>.
-            </h1>
-            <p className="mt-1 text-xs text-slate-500">Here's how you're doing with HTP42.</p>
-          </div>
-        </div>
-
-        {/* Earnings + tier — pushed to the right on wide screens */}
-        <div className="lg:ml-auto lg:max-w-md">
-          <div className="text-[11px] uppercase tracking-wide text-slate-500">
+      <div className="relative grid items-center gap-5 lg:grid-cols-[auto_1fr_minmax(0,auto)] lg:gap-8">
+        <Image
+          src="/htp42-mark.png"
+          alt="HealthTech Partners 42"
+          width={580}
+          height={326}
+          priority
+          className="h-12 w-auto sm:h-14 shrink-0"
+        />
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-semibold text-slate-900">
+            Welcome back, <span className="text-brand-600">{name}</span>.
+          </h1>
+          <div className="mt-2 text-[11px] uppercase tracking-wide text-slate-500">
             Total earned with HTP42
           </div>
           <div className="mt-0.5 flex flex-wrap items-baseline gap-2">
             <span className="text-3xl sm:text-4xl font-semibold tabular-nums text-slate-900">
               {formatEur(lifetimeEur)}
-            </span>
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${tier.current.badge} ${tier.current.ring}`}
-              title={`Lifetime tier (resets never)`}
-            >
-              <StarIcon />
-              {tier.current.name}
             </span>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
@@ -355,7 +323,8 @@ function EarningsHero({
             </span>
             {ccyEntries.length > 1 ? (
               <span className="text-slate-400">
-                · {ccyEntries
+                ·{" "}
+                {ccyEntries
                   .map(
                     ([c, v]) =>
                       `${v.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${c}`,
@@ -364,59 +333,27 @@ function EarningsHero({
               </span>
             ) : null}
           </div>
+        </div>
 
-          {/* Tier progress bar */}
-          {tier.next ? (
-            <div className="mt-3">
-              <div className="flex items-center justify-between text-[10px] text-slate-500">
-                <span className="font-medium text-slate-700">{tier.current.name}</span>
-                <span>
-                  {formatEur(remaining)} to{" "}
-                  <span className="font-medium text-slate-700">{tier.next.name}</span>
-                </span>
-              </div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-brand-400 to-brand-600"
-                  style={{ width: `${Math.max(2, tier.progress * 100)}%` }}
-                />
-              </div>
-              <div className="mt-1 flex justify-between text-[9px] text-slate-400">
-                {TIERS.map((t) => (
-                  <span
-                    key={t.name}
-                    className={t.name === tier.current.name ? "font-semibold text-slate-600" : ""}
-                  >
-                    {t.name}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <p className="mt-3 text-[11px] text-amber-700">
-              Top tier reached — you're a Diamond legend. 💎
-            </p>
-          )}
-
-          {/* This month's snapshot */}
-          <div className="mt-3 rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
-            <div className="flex items-baseline justify-between">
-              <span className="text-[11px] uppercase tracking-wide text-slate-500">
-                This month
+        {/* This-month panel. Lands to the right on wide screens, drops below
+            on narrow ones so the title never gets squished. */}
+        <div className="rounded-lg border border-slate-200 bg-white/70 px-4 py-3 sm:min-w-[10rem]">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-[11px] uppercase tracking-wide text-slate-500">
+              This month
+            </span>
+            {monthDelta != null ? (
+              <span
+                className={`text-[11px] font-medium ${
+                  monthDelta >= 0 ? "text-emerald-600" : "text-red-600"
+                }`}
+              >
+                {monthDelta >= 0 ? "▲" : "▼"} {Math.abs(monthDelta * 100).toFixed(0)}% vs last
               </span>
-              {monthDelta != null ? (
-                <span
-                  className={`text-[11px] font-medium ${
-                    monthDelta >= 0 ? "text-emerald-600" : "text-red-600"
-                  }`}
-                >
-                  {monthDelta >= 0 ? "▲" : "▼"} {Math.abs(monthDelta * 100).toFixed(0)}% vs last
-                </span>
-              ) : null}
-            </div>
-            <div className="mt-0.5 text-xl font-semibold tabular-nums text-slate-900">
-              {formatEur(thisMonthEur)}
-            </div>
+            ) : null}
+          </div>
+          <div className="mt-0.5 text-2xl font-semibold tabular-nums text-slate-900">
+            {formatEur(thisMonthEur)}
           </div>
         </div>
       </div>
@@ -573,13 +510,6 @@ function RocketIcon() {
       <path d="M14 4c4 1 6 3 6 6-3 0-5 2-6 6-1-4-3-6-6-6 1-3 3-5 6-6Z" strokeLinejoin="round" />
       <circle cx="15" cy="9" r="1.5" />
       <path d="M9 15c-2 1-3 3-3 5 2 0 4-1 5-3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function StarIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor" aria-hidden>
-      <path d="M12 2l2.6 6.3 6.7.6-5 4.5 1.5 6.6L12 16.8 6.2 20l1.5-6.6-5-4.5 6.7-.6L12 2Z" />
     </svg>
   );
 }

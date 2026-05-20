@@ -120,7 +120,7 @@ export function TimesheetDetailModal({ timesheetId, onClose, onSaved }: Props) {
             </div>
             <h2 className="text-sm font-semibold text-slate-900 mt-0.5 truncate">
               {ts
-                ? `${ts.staffingCode} — ${ts.projectName || ts.projectCode}`
+                ? `${ts.staffingCode} · ${ts.projectName || ts.projectCode}`
                 : loading
                 ? "Loading…"
                 : "Timesheet"}

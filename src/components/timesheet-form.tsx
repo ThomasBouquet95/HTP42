@@ -213,7 +213,7 @@ export function TimesheetForm({
             ) : (
               staffings.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.staffingCode} — {s.projectName || s.projectCode}
+                  {s.staffingCode} · {s.projectName || s.projectCode}
                 </option>
               ))
             )}

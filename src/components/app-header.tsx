@@ -54,7 +54,7 @@ export function AppHeader({
         <div className="flex items-center gap-4">
           <Link
             href="/dashboard"
-            aria-label="HealthTech Partners 42 — home"
+            aria-label="HealthTech Partners 42, home"
             className="flex items-center py-3"
           >
             <Image

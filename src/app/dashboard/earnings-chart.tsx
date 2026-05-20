@@ -25,12 +25,14 @@ export function EarningsChart({
   const max = niceCeiling(maxRaw);
 
   // SVG layout. Scales to its container via viewBox.
+  // Tight aspect ratio so the card doesn't dominate the page height —
+  // height matches roughly one stat-card row.
   const W = 720;
-  const H = 220;
-  const padLeft = 48;
-  const padRight = 12;
-  const padTop = 18;
-  const padBottom = 30;
+  const H = 150;
+  const padLeft = 42;
+  const padRight = 8;
+  const padTop = 10;
+  const padBottom = 22;
   const innerW = W - padLeft - padRight;
   const innerH = H - padTop - padBottom;
   const slot = innerW / months.length;
@@ -158,9 +160,9 @@ export function EarningsChart({
               ) : null}
               <text
                 x={x + barW / 2}
-                y={H - 10}
+                y={H - 6}
                 textAnchor="middle"
-                fontSize="10"
+                fontSize="9"
                 className={`fill-slate-${isCurrent ? "700" : "500"}`}
                 fontWeight={isCurrent ? 600 : 400}
               >
@@ -223,18 +225,18 @@ export function EarningsChart({
         </div>
       ) : null}
 
-      {/* Legend row below the chart. */}
-      <div className="mt-2 flex items-center gap-4 text-[11px] text-slate-500">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-brand-600" />
+      {/* Legend row below the chart, kept tight. */}
+      <div className="mt-1 flex items-center gap-3 text-[10px] text-slate-500">
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-sm bg-brand-600" />
           Paid
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-blue-200 ring-1 ring-blue-300" />
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-sm bg-blue-200 ring-1 ring-blue-300" />
           Pending
         </span>
         <span className="ml-auto text-[10px] text-slate-400">
-          Hover a bar for the project breakdown
+          Hover a bar for project breakdown
         </span>
       </div>
     </div>

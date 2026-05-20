@@ -365,7 +365,7 @@ export function TasksClient({
               { value: "All", label: "All projects" },
               ...projects.map((p) => ({
                 value: p.id,
-                label: p.name ? `${p.code} — ${p.name}` : p.code,
+                label: p.name ? `${p.code} · ${p.name}` : p.code,
               })),
             ]}
           />
@@ -1276,7 +1276,7 @@ function TaskModal({
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.code}
-                  {p.name ? ` — ${p.name}` : ""}
+                  {p.name ? ` · ${p.name}` : ""}
                 </option>
               ))}
             </select>

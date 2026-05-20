@@ -118,7 +118,7 @@ function roleHint(role: string): string | null {
     return "Can view team timesheets on this project (Project Staffing Summary).";
   }
   if (role === "Engagement Lead") {
-    return "Owns the client relationship — sees the full project team's timesheets and project P&L.";
+    return "Owns the client relationship, sees the full project team's timesheets and project P&L.";
   }
   if (role === "Consultant") {
     return "Logs their own timesheets only.";
@@ -373,7 +373,7 @@ export function StaffingsAdminClient({
                               type="button"
                               onClick={() => setMemberOpen(m)}
                               className="font-mono text-xs text-brand-700 hover:text-brand-800 hover:underline"
-                              title={`${m.name || m.code} — show details`}
+                              title={`${m.name || m.code} · show details`}
                             >
                               {code}
                             </button>
@@ -477,10 +477,10 @@ export function StaffingsAdminClient({
             onChange={(v) => updateField("projectCode", v)}
             required
           >
-            <option value="">— Select project —</option>
+            <option value="">Select project…</option>
             {projects.map((p) => (
               <option key={p.code} value={p.code}>
-                {p.code} — {p.name}
+                {p.code} · {p.name}
               </option>
             ))}
           </FormSelect>
@@ -490,10 +490,10 @@ export function StaffingsAdminClient({
             onChange={(v) => updateField("memberId", v)}
             required
           >
-            <option value="">— Select member —</option>
+            <option value="">Select member…</option>
             {members.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.code} — {m.name}
+                {m.code} · {m.name}
               </option>
             ))}
           </FormSelect>

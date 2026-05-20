@@ -67,7 +67,7 @@ export function InvoicesClient({
           className="inline-flex items-center gap-1 rounded-full bg-brand-600 px-3 h-8 text-xs font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
           title={
             staffings.length === 0
-              ? "No project staffing yet — an admin must staff you first"
+              ? "No project staffing yet, an admin must staff you first"
               : undefined
           }
         >
@@ -128,7 +128,7 @@ export function InvoicesClient({
                         className="mt-0.5 text-[9px] uppercase tracking-wide text-amber-700"
                         title={inv.emailError}
                       >
-                        Email failed — admin notified
+                        Email failed, admin notified
                       </div>
                     ) : !inv.emailSent && inv.status !== "Cancelled" ? (
                       <div className="mt-0.5 text-[9px] uppercase tracking-wide text-slate-400">
@@ -317,7 +317,7 @@ function NewInvoiceModal({
               {staffings.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.staffingCode || s.projectCode}
-                  {s.projectName ? ` — ${s.projectName}` : ""}
+                  {s.projectName ? ` · ${s.projectName}` : ""}
                 </option>
               ))}
             </select>
