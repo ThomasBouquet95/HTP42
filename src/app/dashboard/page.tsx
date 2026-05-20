@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
@@ -5,10 +6,12 @@ import {
   getTimesheetsForMember,
   listInvoicesForMember,
   listMyProjects,
+  listProjects,
   type MyProjectRecord,
 } from "@/lib/airtable";
 import { thisMondayIso } from "@/lib/dates";
-import { HeroInfinity } from "./hero-infinity";
+import { rollupEarnings, tierFor, TIERS, type Tier } from "@/lib/earnings";
+import { EarningsChart } from "./earnings-chart";
 
 export const dynamic = "force-dynamic";
 
@@ -25,30 +28,17 @@ export default async function DashboardHomePage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const [projects, timesheets, invoices] = await Promise.all([
+  const [projects, timesheets, invoices, allProjects] = await Promise.all([
     listMyProjects(session.sub, session.memberCode),
     getTimesheetsForMember(session.memberCode),
     listInvoicesForMember(session.sub),
+    listProjects(),
   ]);
 
-  // Roll up the member's invoices by status × currency so the dashboard can
-  // show "you've been paid X EUR / Y is still pending" at a glance.
-  const paidByCurrency = new Map<string, number>();
-  const pendingByCurrency = new Map<string, number>();
-  for (const inv of invoices) {
-    if (inv.amount == null) continue;
-    const key = inv.currency || "EUR";
-    if (inv.status === "Paid") {
-      paidByCurrency.set(key, (paidByCurrency.get(key) ?? 0) + inv.amount);
-    } else if (inv.status === "To be paid") {
-      pendingByCurrency.set(key, (pendingByCurrency.get(key) ?? 0) + inv.amount);
-    }
-  }
-
-  // ----- KPIs ---------------------------------------------------------------
+  // Activity rollup (this week / this month) — unchanged from before but
+  // demoted to a sidebar.
   const monday = thisMondayIso();
   const monthPrefix = new Date().toISOString().slice(0, 7);
-
   let hoursThisWeek = 0;
   let submittedThisWeek = 0;
   let draftThisWeek = 0;
@@ -69,7 +59,6 @@ export default async function DashboardHomePage() {
   const activeProjects = projects.filter(
     (p) => p.status === "In Progress" || p.status === "Planned" || p.status === "Not Started",
   );
-
   const recent: MyProjectRecord[] = [...projects]
     .sort((a, b) => {
       const order: Record<string, number> = {
@@ -83,53 +72,92 @@ export default async function DashboardHomePage() {
     })
     .slice(0, 3);
 
+  // Earnings rollup — uses the full Projects table for accurate FX rates.
+  const earnings = rollupEarnings({ invoices, projects: allProjects, timesheets });
+  const tier = tierFor(earnings.lifetimeEur);
+  const currentMonthKey = new Date().toISOString().slice(0, 7);
+  const thisMonthBucket = earnings.months[earnings.months.length - 1];
+  const prevMonthBucket = earnings.months[earnings.months.length - 2];
+  const thisMonthEur = thisMonthBucket ? thisMonthBucket.paidEur + thisMonthBucket.pendingEur : 0;
+  const prevMonthEur = prevMonthBucket ? prevMonthBucket.paidEur + prevMonthBucket.pendingEur : 0;
+  const monthDelta = prevMonthEur > 0 ? (thisMonthEur - prevMonthEur) / prevMonthEur : null;
+
   const firstName = (session.fullName || "").trim().split(/\s+/)[0] || "team";
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
-      <HeroInfinity name={firstName} />
+      <EarningsHero
+        name={firstName}
+        lifetimeEur={earnings.lifetimeEur}
+        paidEur={earnings.paidLifetimeEur}
+        pendingEur={earnings.pendingLifetimeEur}
+        thisMonthEur={thisMonthEur}
+        monthDelta={monthDelta}
+        tier={tier}
+        paidByCurrency={earnings.paidByCurrency}
+        pendingByCurrency={earnings.pendingByCurrency}
+      />
 
-      {/* KPI row */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Kpi
-          label="This week"
-          value={`${hoursThisWeek.toFixed(1)} h`}
-          sub={
-            submittedThisWeek > 0
-              ? `${submittedThisWeek} submitted${draftThisWeek ? ` · ${draftThisWeek} draft` : ""}`
-              : draftThisWeek > 0
-              ? `${draftThisWeek} draft — submit when ready`
-              : "Nothing logged yet"
+      {/* Earnings chart */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+        <div className="flex items-baseline justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">
+              Earnings — last 12 months
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Paid invoices + invoices still awaiting payment, in EUR equivalent.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4">
+          <EarningsChart months={earnings.months} current={currentMonthKey} />
+        </div>
+      </section>
+
+      {/* Stats / streak strip */}
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          icon={<FlameIcon />}
+          tone={earnings.submissionStreakWeeks >= 4 ? "amber" : "slate"}
+          label="Submission streak"
+          value={
+            earnings.submissionStreakWeeks > 0
+              ? `${earnings.submissionStreakWeeks} ${earnings.submissionStreakWeeks === 1 ? "week" : "weeks"}`
+              : "Start one"
           }
-          tone={submittedThisWeek > 0 ? "ok" : draftThisWeek > 0 ? "warn" : undefined}
+          sub={
+            earnings.submissionStreakWeeks > 0
+              ? "Keep submitting weekly to grow it"
+              : "Submit this week's timesheet"
+          }
         />
-        <Kpi
-          label="This month"
-          value={`${daysThisMonth.toFixed(1)} d`}
-          sub={`${hoursThisMonth.toFixed(0)} h logged`}
+        <StatCard
+          icon={<TrophyIcon />}
+          tone="yellow"
+          label="Best month"
+          value={earnings.best ? formatEur(earnings.best.eur) : "—"}
+          sub={earnings.best ? earnings.best.label : "First invoice incoming"}
         />
-        <Kpi
-          label="Active projects"
-          value={String(activeProjects.length)}
-          sub={`${projects.length} total in your portfolio`}
+        <StatCard
+          icon={<CalendarIcon />}
+          tone="brand"
+          label="Days billed YTD"
+          value={earnings.daysBilledYtd.toFixed(1)}
+          sub={`${daysThisMonth.toFixed(1)} d this month`}
         />
-        <MoneyKpi
-          label="Paid to you"
-          totals={paidByCurrency}
-          subEmpty="No invoices paid yet"
-          tone="ok"
+        <StatCard
+          icon={<RocketIcon />}
+          tone="emerald"
+          label="Months active"
+          value={String(earnings.monthsActive)}
+          sub={`${projects.length} project${projects.length === 1 ? "" : "s"} touched`}
         />
-        <MoneyKpi
-          label="Pending"
-          totals={pendingByCurrency}
-          subEmpty="Nothing waiting on finance"
-          tone={pendingByCurrency.size > 0 ? "warn" : undefined}
-        />
-      </div>
+      </section>
 
-      {/* Quick actions + Recent projects */}
+      {/* Active projects + this-week / quick actions */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 lg:col-span-2">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 lg:col-span-2">
           <div className="flex items-baseline justify-between">
             <h2 className="text-sm font-semibold text-slate-900">Your projects</h2>
             <Link
@@ -148,7 +176,8 @@ export default async function DashboardHomePage() {
             <ul className="mt-3 space-y-2">
               {recent.map((p) => {
                 const allocHours = p.daysAllocatedTotal * HOURS_PER_DAY;
-                const pct = allocHours > 0 ? Math.min(100, (p.hoursActualTotal / allocHours) * 100) : 0;
+                const pct =
+                  allocHours > 0 ? Math.min(100, (p.hoursActualTotal / allocHours) * 100) : 0;
                 const over = p.hoursActualTotal > allocHours && allocHours > 0;
                 return (
                   <li
@@ -188,24 +217,44 @@ export default async function DashboardHomePage() {
               })}
             </ul>
           )}
-        </div>
+          <div className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+            <span className="font-medium text-slate-700">{activeProjects.length}</span> active ·{" "}
+            <span className="font-medium text-slate-700">{hoursThisWeek.toFixed(1)} h</span> logged
+            this week
+            {submittedThisWeek > 0 ? (
+              <span className="ml-1 text-emerald-600">
+                · {submittedThisWeek} submitted
+              </span>
+            ) : draftThisWeek > 0 ? (
+              <span className="ml-1 text-amber-600">
+                · {draftThisWeek} still draft
+              </span>
+            ) : (
+              <span className="ml-1 text-slate-400">· nothing logged yet</span>
+            )}
+          </div>
+        </section>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4">
           <h2 className="text-sm font-semibold text-slate-900">Quick actions</h2>
           <div className="mt-3 grid gap-2">
+            <ActionLink
+              href="/timesheets/mine"
+              title="Submit a timesheet"
+              caption={
+                submittedThisWeek > 0
+                  ? "This week's done — log next week's hours"
+                  : "Don't break the streak — submit this week"
+              }
+              tone="brand"
+              Icon={ClockIcon}
+            />
             <ActionLink
               href="/timesheets/projects"
               title="My projects"
               caption="See where you're staffed and team progress"
               tone="emerald"
               Icon={FolderIcon}
-            />
-            <ActionLink
-              href="/timesheets/mine"
-              title="My timesheets"
-              caption="Submit, edit, and review weekly timesheets"
-              tone="brand"
-              Icon={ClockIcon}
             />
             <ActionLink
               href="/profile"
@@ -215,83 +264,222 @@ export default async function DashboardHomePage() {
               Icon={UserIcon}
             />
           </div>
-        </div>
+        </section>
       </div>
     </main>
   );
 }
 
-function MoneyKpi({
-  label,
-  totals,
-  subEmpty,
-  tone,
+// ----- Hero ------------------------------------------------------------------
+
+function EarningsHero({
+  name,
+  lifetimeEur,
+  paidEur,
+  pendingEur,
+  thisMonthEur,
+  monthDelta,
+  tier,
+  paidByCurrency,
+  pendingByCurrency,
 }: {
-  label: string;
-  totals: Map<string, number>;
-  subEmpty: string;
-  tone?: "ok" | "warn";
+  name: string;
+  lifetimeEur: number;
+  paidEur: number;
+  pendingEur: number;
+  thisMonthEur: number;
+  monthDelta: number | null;
+  tier: { current: Tier; next: Tier | null; progress: number };
+  paidByCurrency: Map<string, number>;
+  pendingByCurrency: Map<string, number>;
 }) {
-  const entries = [...totals.entries()].sort((a, b) => b[1] - a[1]);
-  if (entries.length === 0) {
-    return <Kpi label={label} value="—" sub={subEmpty} />;
-  }
-  const [[primaryCcy, primaryAmount], ...rest] = entries;
-  const sub =
-    rest.length > 0
-      ? rest
-          .map(
-            ([c, v]) =>
-              `${v.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${c}`,
-          )
-          .join(" · ")
-      : `${primaryCcy} invoices`;
+  // Combined currency breakdown for the small chip row below the headline
+  // figure. Shows raw per-currency totals so multi-currency members see the
+  // unconverted truth alongside the EUR equivalent.
+  const ccyTotals = new Map<string, number>();
+  for (const [c, v] of paidByCurrency) ccyTotals.set(c, (ccyTotals.get(c) ?? 0) + v);
+  for (const [c, v] of pendingByCurrency) ccyTotals.set(c, (ccyTotals.get(c) ?? 0) + v);
+  const ccyEntries = [...ccyTotals.entries()].sort((a, b) => b[1] - a[1]);
+
+  // Progress to next tier — explicit "X to next tier" wording, with a thin
+  // bar so the visual cue matches.
+  const remaining = tier.next ? Math.max(0, tier.next.min - lifetimeEur) : 0;
+
   return (
-    <Kpi
-      label={label}
-      value={`${primaryAmount.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${primaryCcy}`}
-      sub={sub}
-      tone={tone}
-    />
+    <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-sky-50/40 to-brand-50/40 px-5 py-6 sm:px-8 sm:py-7">
+      <DotGrid />
+      <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-10">
+        {/* Brand mark + greeting */}
+        <div className="flex items-center gap-4 sm:gap-6">
+          <Image
+            src="/htp42-mark.png"
+            alt="HealthTech Partners 42"
+            width={580}
+            height={326}
+            priority
+            className="h-12 w-auto sm:h-16 shrink-0"
+          />
+          <div>
+            <h1 className="text-xl sm:text-2xl font-semibold text-slate-900">
+              Welcome back, <span className="text-brand-600">{name}</span>.
+            </h1>
+            <p className="mt-1 text-xs text-slate-500">Here's how you're doing with HTP42.</p>
+          </div>
+        </div>
+
+        {/* Earnings + tier — pushed to the right on wide screens */}
+        <div className="lg:ml-auto lg:max-w-md">
+          <div className="text-[11px] uppercase tracking-wide text-slate-500">
+            Total earned with HTP42
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-baseline gap-2">
+            <span className="text-3xl sm:text-4xl font-semibold tabular-nums text-slate-900">
+              {formatEur(lifetimeEur)}
+            </span>
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${tier.current.badge} ${tier.current.ring}`}
+              title={`Lifetime tier (resets never)`}
+            >
+              <StarIcon />
+              {tier.current.name}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+            <span>
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-600 mr-1 align-middle" />
+              {formatEur(paidEur)} paid
+            </span>
+            <span>
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-300 mr-1 align-middle" />
+              {formatEur(pendingEur)} pending
+            </span>
+            {ccyEntries.length > 1 ? (
+              <span className="text-slate-400">
+                · {ccyEntries
+                  .map(
+                    ([c, v]) =>
+                      `${v.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${c}`,
+                  )
+                  .join(" · ")}
+              </span>
+            ) : null}
+          </div>
+
+          {/* Tier progress bar */}
+          {tier.next ? (
+            <div className="mt-3">
+              <div className="flex items-center justify-between text-[10px] text-slate-500">
+                <span className="font-medium text-slate-700">{tier.current.name}</span>
+                <span>
+                  {formatEur(remaining)} to{" "}
+                  <span className="font-medium text-slate-700">{tier.next.name}</span>
+                </span>
+              </div>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-brand-400 to-brand-600"
+                  style={{ width: `${Math.max(2, tier.progress * 100)}%` }}
+                />
+              </div>
+              <div className="mt-1 flex justify-between text-[9px] text-slate-400">
+                {TIERS.map((t) => (
+                  <span
+                    key={t.name}
+                    className={t.name === tier.current.name ? "font-semibold text-slate-600" : ""}
+                  >
+                    {t.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="mt-3 text-[11px] text-amber-700">
+              Top tier reached — you're a Diamond legend. 💎
+            </p>
+          )}
+
+          {/* This month's snapshot */}
+          <div className="mt-3 rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500">
+                This month
+              </span>
+              {monthDelta != null ? (
+                <span
+                  className={`text-[11px] font-medium ${
+                    monthDelta >= 0 ? "text-emerald-600" : "text-red-600"
+                  }`}
+                >
+                  {monthDelta >= 0 ? "▲" : "▼"} {Math.abs(monthDelta * 100).toFixed(0)}% vs last
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-0.5 text-xl font-semibold tabular-nums text-slate-900">
+              {formatEur(thisMonthEur)}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
-function Kpi({
-  label,
-  value,
-  sub,
-  tone,
-  accent,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  tone?: "ok" | "warn";
-  accent?: boolean;
-}) {
-  const valueCls =
-    tone === "ok"
-      ? "text-emerald-700"
-      : tone === "warn"
-      ? "text-amber-700"
-      : accent
-      ? "text-brand-700"
-      : "text-slate-900";
-  const wrapCls = accent ? "border-brand-200 bg-brand-50/40" : "border-slate-200 bg-white";
+function DotGrid() {
+  const css = `
+    .htp42-dotgrid {
+      background-image: radial-gradient(circle, rgba(30,145,249,0.10) 1px, transparent 1px);
+      background-size: 18px 18px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent 70%);
+      -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent 70%);
+    }
+  `;
   return (
-    <div className={`rounded-xl border ${wrapCls} px-4 py-3`}>
-      <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`mt-1 text-2xl font-semibold tabular-nums ${valueCls}`}>{value}</div>
-      {sub ? <div className="mt-0.5 text-xs text-slate-500">{sub}</div> : null}
-    </div>
+    <>
+      <style>{css}</style>
+      <div className="htp42-dotgrid absolute inset-0 pointer-events-none" aria-hidden />
+    </>
   );
 }
 
-const TONE_BG: Record<string, string> = {
+// ----- Small UI bits ---------------------------------------------------------
+
+const TONE_ACCENT: Record<string, string> = {
   brand: "bg-brand-50 text-brand-700 ring-brand-100",
   emerald: "bg-emerald-50 text-emerald-700 ring-emerald-100",
   violet: "bg-violet-50 text-violet-700 ring-violet-100",
+  amber: "bg-amber-50 text-amber-700 ring-amber-100",
+  yellow: "bg-yellow-50 text-yellow-700 ring-yellow-100",
+  slate: "bg-slate-50 text-slate-700 ring-slate-200",
 };
+
+function StatCard({
+  icon,
+  tone,
+  label,
+  value,
+  sub,
+}: {
+  icon: React.ReactNode;
+  tone: keyof typeof TONE_ACCENT;
+  label: string;
+  value: string;
+  sub: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <div className="flex items-center gap-2">
+        <span
+          className={`inline-flex h-7 w-7 items-center justify-center rounded-md ring-1 ${TONE_ACCENT[tone]}`}
+        >
+          {icon}
+        </span>
+        <span className="text-[11px] uppercase tracking-wide text-slate-500">{label}</span>
+      </div>
+      <div className="mt-2 text-xl font-semibold tabular-nums text-slate-900">{value}</div>
+      <div className="mt-0.5 text-[11px] text-slate-500">{sub}</div>
+    </div>
+  );
+}
 
 function ActionLink({
   href,
@@ -303,7 +491,7 @@ function ActionLink({
   href: string;
   title: string;
   caption: string;
-  tone: keyof typeof TONE_BG;
+  tone: keyof typeof TONE_ACCENT;
   Icon: () => React.ReactNode;
 }) {
   return (
@@ -311,7 +499,9 @@ function ActionLink({
       href={href}
       className="group flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 transition hover:border-brand-300 hover:shadow-sm"
     >
-      <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md ring-1 ${TONE_BG[tone]}`}>
+      <span
+        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md ring-1 ${TONE_ACCENT[tone]}`}
+      >
         <Icon />
       </span>
       <span className="min-w-0">
@@ -324,6 +514,12 @@ function ActionLink({
   );
 }
 
+function formatEur(v: number): string {
+  return `${Math.round(v).toLocaleString("en-US")} €`;
+}
+
+// Icons --------------------------------------------------------------------
+
 function ClockIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
@@ -335,10 +531,7 @@ function ClockIcon() {
 function FolderIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-      <path
-        d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"
-        strokeLinejoin="round"
-      />
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -347,6 +540,46 @@ function UserIcon() {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
       <circle cx="12" cy="9" r="3.5" />
       <path d="M4 20c1-4 5-6 8-6s7 2 8 6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function FlameIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M12 3s4 4 4 8a4 4 0 1 1-8 0c0-1.5.6-3 1.5-4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 17a3 3 0 1 0 6 0c0-1.5-1-2.5-2-3.5-1 1-2 2-2 3.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function TrophyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M8 4h8v4a4 4 0 0 1-8 0V4Z" />
+      <path d="M16 6h3a3 3 0 0 1-3 3M8 6H5a3 3 0 0 0 3 3M12 12v5M9 19h6" strokeLinecap="round" />
+    </svg>
+  );
+}
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <rect x="3.5" y="5" width="17" height="15" rx="2" />
+      <path d="M3.5 9h17M8 3v4M16 3v4" strokeLinecap="round" />
+    </svg>
+  );
+}
+function RocketIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M14 4c4 1 6 3 6 6-3 0-5 2-6 6-1-4-3-6-6-6 1-3 3-5 6-6Z" strokeLinejoin="round" />
+      <circle cx="15" cy="9" r="1.5" />
+      <path d="M9 15c-2 1-3 3-3 5 2 0 4-1 5-3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function StarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor" aria-hidden>
+      <path d="M12 2l2.6 6.3 6.7.6-5 4.5 1.5 6.6L12 16.8 6.2 20l1.5-6.6-5-4.5 6.7-.6L12 2Z" />
     </svg>
   );
 }
