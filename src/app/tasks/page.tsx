@@ -56,6 +56,7 @@ export default async function TasksPage() {
           id: m.id,
           code: m.memberCode,
           name: m.fullName,
+          photoUrl: m.photo?.url ?? null,
         }))}
         currentMemberId={session.sub}
         isAdmin={admin}

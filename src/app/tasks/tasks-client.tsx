@@ -6,7 +6,7 @@ import type { TaskPriority, TaskRecord, TaskStatus, TaskVisibility } from "@/lib
 import { TASK_PRIORITIES, TASK_STATUSES } from "@/lib/airtable";
 
 type ProjectOpt = { id: string; code: string; name: string };
-type MemberOpt = { id: string; code: string; name: string };
+type MemberOpt = { id: string; code: string; name: string; photoUrl: string | null };
 
 // Tabs map directly onto the Visibility field on Airtable: tasks created from
 // the Personal tab are private (only the creator sees them, even when linked
@@ -208,6 +208,29 @@ export function TasksClient({
       router.refresh();
     } catch (e) {
       setRows((rs) => rs.map((r) => (r.id === t.id ? { ...r, status: previous } : r)));
+      showError(e instanceof Error ? e.message : "Backend error");
+    }
+  }
+
+  // Same shape as quickStatus — inline priority change from card / list row,
+  // optimistic with rollback.
+  async function quickPriority(t: TaskRecord, next: TaskPriority | "") {
+    if (t.priority === next) return;
+    const previous = t.priority;
+    setRows((rs) => rs.map((r) => (r.id === t.id ? { ...r, priority: next } : r)));
+    try {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(t.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ priority: next }),
+      });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? "Backend error");
+      }
+      router.refresh();
+    } catch (e) {
+      setRows((rs) => rs.map((r) => (r.id === t.id ? { ...r, priority: previous } : r)));
       showError(e instanceof Error ? e.message : "Backend error");
     }
   }
@@ -415,6 +438,7 @@ export function TasksClient({
               membersById={membersById}
               onOpen={openEdit}
               onStatusChange={quickStatus}
+              onPriorityChange={quickPriority}
               onToggleSubtask={toggleSubtaskOnCard}
             />
           ))}
@@ -427,6 +451,7 @@ export function TasksClient({
           membersById={membersById}
           onOpen={openEdit}
           onStatusChange={quickStatus}
+          onPriorityChange={quickPriority}
           onToggleSubtask={toggleSubtaskOnCard}
         />
       )}
@@ -480,6 +505,7 @@ function Column({
   membersById,
   onOpen,
   onStatusChange,
+  onPriorityChange,
   onToggleSubtask,
 }: {
   status: TaskStatus;
@@ -490,6 +516,7 @@ function Column({
   membersById: Map<string, MemberOpt>;
   onOpen: (t: TaskRecord) => void;
   onStatusChange: (t: TaskRecord, next: TaskStatus) => void;
+  onPriorityChange: (t: TaskRecord, next: TaskPriority | "") => void;
   onToggleSubtask: (t: TaskRecord, subtaskId: string) => void;
 }) {
   return (
@@ -519,6 +546,7 @@ function Column({
               membersById={membersById}
               onOpen={onOpen}
               onStatusChange={onStatusChange}
+              onPriorityChange={onPriorityChange}
               onToggleSubtask={onToggleSubtask}
             />
           ))
@@ -536,6 +564,7 @@ function TaskCard({
   membersById,
   onOpen,
   onStatusChange,
+  onPriorityChange,
   onToggleSubtask,
 }: {
   task: TaskRecord;
@@ -545,32 +574,30 @@ function TaskCard({
   membersById: Map<string, MemberOpt>;
   onOpen: (t: TaskRecord) => void;
   onStatusChange: (t: TaskRecord, next: TaskStatus) => void;
+  onPriorityChange: (t: TaskRecord, next: TaskPriority | "") => void;
   onToggleSubtask: (t: TaskRecord, subtaskId: string) => void;
 }) {
   const personal = t.visibility === "Personal";
   const project = t.projectRecordId ? projectsById.get(t.projectRecordId) : null;
-  const isMine = t.createdByRecordId === currentMemberId;
   const isAssigned = t.assigneeRecordIds.includes(currentMemberId);
   const dueClass = dueDateClass(t.dueDate, t.status);
-  const progress = subtaskProgress(t.description);
   const subtasks = parseSubtasks(t.description);
+  // Urgent open tasks get a faint red wash to draw the eye. Done/Cancelled
+  // suppress it so the column doesn't stay alarming after the work is over.
+  const urgent =
+    t.priority === "Urgent" && t.status !== "Done" && t.status !== "Cancelled";
   return (
-    <li className="px-3 py-2 hover:bg-slate-50">
+    <li
+      onClick={() => onOpen(t)}
+      className={`cursor-pointer px-3 py-2 transition-colors ${
+        urgent ? "bg-red-50 hover:bg-red-100/70" : "hover:bg-slate-50"
+      }`}
+    >
       <div className="flex items-start gap-2">
-        <button
-          type="button"
-          onClick={() => onOpen(t)}
-          className="flex-1 min-w-0 text-left"
-        >
+        <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-slate-900 truncate">{t.title}</div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
-            {t.priority ? (
-              <span
-                className={`inline-flex items-center rounded-full border px-1.5 py-0.5 font-medium ${priorityCls(t.priority)}`}
-              >
-                {t.priority}
-              </span>
-            ) : null}
+            <PrioritySelect task={t} onChange={onPriorityChange} />
             {personal ? (
               <span className="inline-flex items-center rounded-full bg-brand-50 text-brand-700 px-1.5 py-0.5 font-medium">
                 Personal
@@ -590,34 +617,18 @@ function TaskCard({
             {t.effortHours != null ? (
               <span className="text-slate-500">{t.effortHours}h</span>
             ) : null}
-            {progress.total > 0 ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
-                <CheckListIcon />
-                {progress.done}/{progress.total}
-              </span>
+            {!personal && t.assigneeRecordIds.length > 0 ? (
+              <AssigneeAvatars
+                memberIds={t.assigneeRecordIds}
+                names={t.assigneeNames}
+                membersById={membersById}
+                size={16}
+                highlightSelf={currentMemberId}
+                isAssigned={isAssigned}
+              />
             ) : null}
           </div>
-          {!compact && !personal ? (
-            <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
-              {isMine ? (
-                <span title="You created this">Created by you</span>
-              ) : (
-                <span>By {t.createdByName || "—"}</span>
-              )}
-              {t.assigneeRecordIds.length > 0 ? (
-                <>
-                  <span>·</span>
-                  <span>
-                    {t.assigneeRecordIds.length === 1
-                      ? membersById.get(t.assigneeRecordIds[0])?.name ?? t.assigneeNames[0]
-                      : `${t.assigneeRecordIds.length} assignees`}
-                    {isAssigned ? " (incl. you)" : ""}
-                  </span>
-                </>
-              ) : null}
-            </div>
-          ) : null}
-        </button>
+        </div>
         <select
           value={t.status}
           onChange={(e) => onStatusChange(t, e.target.value as TaskStatus)}
@@ -634,7 +645,7 @@ function TaskCard({
       </div>
       {subtasks.length > 0 ? (
         <ul className="mt-1.5 space-y-0.5 pl-0.5">
-          {subtasks.slice(0, compact ? 2 : 4).map((s) => (
+          {subtasks.slice(0, compact ? 2 : 6).map((s) => (
             <li key={s.id} className="flex items-center gap-1.5 text-[11px]">
               <input
                 type="checkbox"
@@ -648,9 +659,9 @@ function TaskCard({
               </span>
             </li>
           ))}
-          {subtasks.length > (compact ? 2 : 4) ? (
+          {subtasks.length > (compact ? 2 : 6) ? (
             <li className="text-[10px] text-slate-400">
-              +{subtasks.length - (compact ? 2 : 4)} more…
+              +{subtasks.length - (compact ? 2 : 6)} more…
             </li>
           ) : null}
         </ul>
@@ -666,6 +677,7 @@ function TaskList({
   membersById,
   onOpen,
   onStatusChange,
+  onPriorityChange,
   onToggleSubtask,
 }: {
   tasks: TaskRecord[];
@@ -674,6 +686,7 @@ function TaskList({
   membersById: Map<string, MemberOpt>;
   onOpen: (t: TaskRecord) => void;
   onStatusChange: (t: TaskRecord, next: TaskStatus) => void;
+  onPriorityChange: (t: TaskRecord, next: TaskPriority | "") => void;
   onToggleSubtask: (t: TaskRecord, subtaskId: string) => void;
 }) {
   if (tasks.length === 0) {
@@ -721,16 +734,29 @@ function TaskList({
             const subtasks = parseSubtasks(t.description);
             const progress = { done: subtasks.filter((s) => s.done).length, total: subtasks.length };
             const isAssigned = t.assigneeRecordIds.includes(currentMemberId);
+            // Urgent + still open → faint red wash so the row pops without
+            // shouting once the task is done/cancelled.
+            const urgent =
+              t.priority === "Urgent" && t.status !== "Done" && t.status !== "Cancelled";
+            // Make the entire row clickable to open the modal — but only when
+            // the click originates outside an interactive control (select,
+            // checkbox, button). Otherwise inline editing would always pop
+            // the modal too.
+            const rowClick = (e: React.MouseEvent<HTMLTableRowElement>) => {
+              const target = e.target as HTMLElement;
+              if (target.closest("input, select, button, label, summary, a")) return;
+              onOpen(t);
+            };
             return (
-              <tr key={t.id} className="align-top hover:bg-slate-50">
+              <tr
+                key={t.id}
+                onClick={rowClick}
+                className={`cursor-pointer align-top transition-colors ${
+                  urgent ? "bg-red-50 hover:bg-red-100/70" : "hover:bg-slate-50"
+                }`}
+              >
                 <td className="px-3 py-2">
-                  <button
-                    type="button"
-                    onClick={() => onOpen(t)}
-                    className="text-left font-medium text-slate-900 hover:text-brand-700"
-                  >
-                    {t.title}
-                  </button>
+                  <div className="font-medium text-slate-900">{t.title}</div>
                   {personal ? (
                     <div className="mt-0.5">
                       <span className="inline-flex items-center rounded-full bg-brand-50 text-brand-700 px-1.5 py-0.5 text-[10px] font-medium">
@@ -766,15 +792,7 @@ function TaskList({
                   </select>
                 </td>
                 <td className="px-3 py-2">
-                  {t.priority ? (
-                    <span
-                      className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${priorityCls(t.priority)}`}
-                    >
-                      {t.priority}
-                    </span>
-                  ) : (
-                    <span className="text-slate-400">—</span>
-                  )}
+                  <PrioritySelect task={t} onChange={onPriorityChange} />
                 </td>
                 <td className={`px-3 py-2 tabular-nums ${dueDateClass(t.dueDate, t.status)}`}>
                   {t.dueDate || <span className="text-slate-400">—</span>}
@@ -784,42 +802,41 @@ function TaskList({
                     <span className="text-slate-400">—</span>
                   ) : t.assigneeRecordIds.length === 0 ? (
                     <span className="text-slate-400">—</span>
-                  ) : t.assigneeRecordIds.length === 1 ? (
-                    <span>
-                      {membersById.get(t.assigneeRecordIds[0])?.name ?? t.assigneeNames[0]}
-                      {isAssigned ? " (you)" : ""}
-                    </span>
                   ) : (
-                    <span>
-                      {t.assigneeRecordIds.length} people{isAssigned ? " (incl. you)" : ""}
-                    </span>
+                    <AssigneeAvatars
+                      memberIds={t.assigneeRecordIds}
+                      names={t.assigneeNames}
+                      membersById={membersById}
+                      size={20}
+                      highlightSelf={currentMemberId}
+                      isAssigned={isAssigned}
+                    />
                   )}
                 </td>
                 <td className="px-3 py-2 text-slate-600">
                   {progress.total === 0 ? (
                     <span className="text-slate-400">—</span>
                   ) : (
-                    <details>
-                      <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium hover:bg-slate-200">
-                        <CheckListIcon />
-                        {progress.done}/{progress.total}
-                      </summary>
-                      <ul className="mt-1.5 space-y-0.5">
-                        {subtasks.map((s) => (
-                          <li key={s.id} className="flex items-center gap-1.5 text-[11px]">
-                            <input
-                              type="checkbox"
-                              checked={s.done}
-                              onChange={() => onToggleSubtask(t, s.id)}
-                              className="rounded border-slate-300"
-                            />
-                            <span className={s.done ? "text-slate-400 line-through" : "text-slate-700"}>
-                              {s.title}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
+                    <ul className="space-y-0.5">
+                      {subtasks.slice(0, 4).map((s) => (
+                        <li key={s.id} className="flex items-center gap-1.5 text-[11px]">
+                          <input
+                            type="checkbox"
+                            checked={s.done}
+                            onChange={() => onToggleSubtask(t, s.id)}
+                            className="rounded border-slate-300"
+                          />
+                          <span className={s.done ? "text-slate-400 line-through" : "text-slate-700"}>
+                            {s.title}
+                          </span>
+                        </li>
+                      ))}
+                      {subtasks.length > 4 ? (
+                        <li className="text-[10px] text-slate-400">
+                          +{subtasks.length - 4} more…
+                        </li>
+                      ) : null}
+                    </ul>
                   )}
                 </td>
               </tr>
@@ -1346,6 +1363,153 @@ function TaskModal({
         </div>
       </div>
     </div>
+  );
+}
+
+// Inline priority editor — looks like the badge it replaces but is actually a
+// transparent <select> so a single click changes priority without opening the
+// modal. Stops click propagation so the parent row's "open modal" handler
+// doesn't fire when interacting with it.
+function PrioritySelect({
+  task,
+  onChange,
+}: {
+  task: TaskRecord;
+  onChange: (t: TaskRecord, next: TaskPriority | "") => void;
+}) {
+  const value = task.priority || "";
+  const cls = priorityCls(value);
+  const label = value || "—";
+  return (
+    <label
+      onClick={(e) => e.stopPropagation()}
+      className={`relative inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
+      title="Change priority"
+    >
+      <span>{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(task, e.target.value as TaskPriority | "")}
+        aria-label="Change priority"
+        className="absolute inset-0 cursor-pointer opacity-0"
+      >
+        <option value="">— (none)</option>
+        {TASK_PRIORITIES.map((p) => (
+          <option key={p} value={p}>
+            {p}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+// Small stack of circular avatars (photo if available, initials otherwise).
+// The current user, when assigned, is bordered in brand colour and pinned to
+// the front so it's obvious you're on the task.
+function AssigneeAvatars({
+  memberIds,
+  names,
+  membersById,
+  size,
+  highlightSelf,
+  isAssigned,
+}: {
+  memberIds: string[];
+  names: string[];
+  membersById: Map<string, MemberOpt>;
+  size: number;
+  highlightSelf: string;
+  isAssigned: boolean;
+}) {
+  // Pin "you" first so it's instantly visible when assigned.
+  const ordered = [...memberIds].sort((a, b) => {
+    if (a === highlightSelf) return -1;
+    if (b === highlightSelf) return 1;
+    return 0;
+  });
+  const shown = ordered.slice(0, 4);
+  const overflow = ordered.length - shown.length;
+  return (
+    <div className="inline-flex items-center -space-x-1.5">
+      {shown.map((id, i) => {
+        const m = membersById.get(id);
+        const name = m?.name ?? names[memberIds.indexOf(id)] ?? "?";
+        const self = id === highlightSelf;
+        return (
+          <Avatar
+            key={id}
+            size={size}
+            name={name}
+            photoUrl={m?.photoUrl ?? null}
+            ringClass={self ? "ring-2 ring-brand-500" : "ring-1 ring-white"}
+            title={self ? `${name} (you)` : name}
+            zIndex={shown.length - i}
+          />
+        );
+      })}
+      {overflow > 0 ? (
+        <span
+          className="relative inline-flex items-center justify-center rounded-full bg-slate-200 text-[10px] font-medium text-slate-600 ring-1 ring-white"
+          style={{ width: size, height: size }}
+          title={`+${overflow} more`}
+        >
+          +{overflow}
+        </span>
+      ) : null}
+      {isAssigned && size <= 18 ? (
+        <span className="ml-1 text-[10px] text-slate-500">(you)</span>
+      ) : null}
+    </div>
+  );
+}
+
+function Avatar({
+  size,
+  name,
+  photoUrl,
+  ringClass,
+  title,
+  zIndex,
+}: {
+  size: number;
+  name: string;
+  photoUrl: string | null;
+  ringClass: string;
+  title: string;
+  zIndex: number;
+}) {
+  const initials = (name || "?")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
+  // Cheap stable color per name so two members don't share a fill.
+  const hue = Array.from(name).reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) % 360, 0);
+  const bg = `hsl(${hue}, 60%, 85%)`;
+  const fg = `hsl(${hue}, 40%, 30%)`;
+  return (
+    <span
+      className={`relative inline-flex items-center justify-center overflow-hidden rounded-full font-semibold ${ringClass}`}
+      style={{
+        width: size,
+        height: size,
+        fontSize: Math.max(8, size * 0.42),
+        backgroundColor: bg,
+        color: fg,
+        zIndex,
+      }}
+      title={title}
+      aria-label={title}
+    >
+      {photoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={photoUrl} alt="" className="h-full w-full object-cover" />
+      ) : (
+        initials || "?"
+      )}
+    </span>
   );
 }
 
