@@ -56,120 +56,120 @@ export function ProjectSummaryView({ summary }: Props) {
     allocatedHours > 0 ? Math.min(100, (totals.actualHours / allocatedHours) * 100) : 0;
   const overall = totals.actualHours > allocatedHours && allocatedHours > 0;
 
-  const frame = statusFrame(project.status);
   return (
     <div className="space-y-4">
-      {/* Compact project header */}
-      <div className={`rounded-lg border-l-4 border-y border-r ${frame.frame}`}>
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <div className="min-w-0">
+      {/* Header card: name, status, dates on the left; KPI tiles on the right;
+          progress bar across the bottom. */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
+          <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-mono uppercase tracking-wide text-slate-500">
-                {project.projectCode}
-              </span>
-              {project.status ? (
-                <span className={`text-[10px] font-semibold uppercase tracking-wide ${frame.label}`}>
-                  {project.status}
-                </span>
-              ) : null}
+              <StatusPill status={project.status} />
               <DateRangeChip startIso={project.startDate} endIso={project.endDate} size="sm" />
             </div>
-            <div className="mt-0.5 text-base font-semibold text-slate-900 truncate">
-              {project.projectName || "—"}
-            </div>
+            <h3 className="mt-1.5 text-lg font-semibold text-slate-900 truncate">
+              {project.projectName || project.projectCode}
+            </h3>
           </div>
-          <div className="flex items-center gap-3">
-            {/* Inline KPIs */}
-            <div className="hidden sm:flex items-center gap-4 text-[11px] text-slate-500">
-              <KpiInline label="Team" value={String(members.length)} />
-              <KpiInline
-                label="Allocated"
-                value={totals.allocatedDays > 0 ? `${totals.allocatedDays.toFixed(1)} d` : "N/A"}
-              />
-              <KpiInline label="Logged" value={`${totals.actualDays.toFixed(1)} d`} tone={overall ? "warn" : undefined} />
-              {allocatedHours > 0 ? (
-                <KpiInline label="Progress" value={`${progressPct.toFixed(0)}%`} tone={overall ? "warn" : "ok"} />
-              ) : null}
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => exportCsv(summary)}
-                className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
-              >
-                Export CSV
-              </button>
-              <a
-                href={`/timesheets/team/print?project=${encodeURIComponent(project.projectCode)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-2.5 py-1 text-xs font-medium"
-              >
-                Export PDF
-              </a>
-            </div>
+          <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4 lg:w-auto">
+            <KpiTile label="Team" value={String(members.length)} />
+            <KpiTile
+              label="Allocated"
+              value={totals.allocatedDays > 0 ? `${totals.allocatedDays.toFixed(1)} d` : "N/A"}
+            />
+            <KpiTile
+              label="Logged"
+              value={`${totals.actualDays.toFixed(1)} d`}
+              tone={overall ? "warn" : undefined}
+            />
+            <KpiTile
+              label="Progress"
+              value={allocatedHours > 0 ? `${progressPct.toFixed(0)}%` : "N/A"}
+              tone={overall ? "warn" : allocatedHours > 0 ? "ok" : undefined}
+            />
           </div>
         </div>
         {allocatedHours > 0 ? (
-          <div className="px-4 pb-3">
-            <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-              <div
-                className={`h-full ${overall ? "bg-amber-500" : "bg-brand-600"}`}
-                style={{ width: `${Math.max(2, progressPct)}%` }}
-              />
-            </div>
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className={`h-full ${overall ? "bg-amber-500" : "bg-brand-600"}`}
+              style={{ width: `${Math.max(2, progressPct)}%` }}
+            />
           </div>
         ) : null}
-      </div>
-
-      {/* Team bubble row */}
-      {orderedMembers.length > 0 ? (
-        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">
-            Team
-          </div>
-          <TeamBubbleRow members={orderedMembers} onSelect={setMemberOpen} />
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => exportCsv(summary)}
+            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
+          >
+            Export CSV
+          </button>
+          <a
+            href={`/timesheets/team/print?project=${encodeURIComponent(project.projectCode)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-md bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700"
+          >
+            Export PDF
+          </a>
         </div>
+      </section>
+
+      {/* Team strip */}
+      {orderedMembers.length > 0 ? (
+        <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 sm:px-5">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Team
+            </h4>
+            <span className="text-[11px] text-slate-400">
+              {orderedMembers.length} {orderedMembers.length === 1 ? "person" : "people"}
+            </span>
+          </div>
+          <div className="mt-2">
+            <TeamBubbleRow members={orderedMembers} onSelect={setMemberOpen} />
+          </div>
+        </section>
       ) : null}
 
-      {/* Tab toggle */}
-      <div className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5">
-        {(
-          [
-            { v: "members", label: "By member" },
-            { v: "weeks", label: "By week" },
-          ] as const
-        ).map((t) => {
-          const active = tab === t.v;
-          return (
-            <button
-              key={t.v}
-              type="button"
-              onClick={() => setTab(t.v)}
-              aria-pressed={active}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              {t.label}
-            </button>
-          );
-        })}
+      {/* Tab toggle, segmented-control style consistent with Tasks. */}
+      <div className="flex items-center">
+        <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-0.5 shadow-sm">
+          {(
+            [
+              { v: "members", label: "By member" },
+              { v: "weeks", label: "By week" },
+            ] as const
+          ).map((t) => {
+            const active = tab === t.v;
+            return (
+              <button
+                key={t.v}
+                type="button"
+                onClick={() => setTab(t.v)}
+                aria-pressed={active}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {tab === "members" ? (
-        <div className="rounded-lg border border-slate-200 bg-white">
+        <div className="rounded-2xl border border-slate-200 bg-white">
           {orderedMembers.length === 0 ? (
             <div className="text-center text-sm text-slate-500 py-10">
               No one is staffed on this project yet.
             </div>
           ) : (
-            <ul>
-              {orderedMembers.map((m, i) => (
-                <li
-                  key={m.memberRecordId}
-                  className={i === 0 ? "" : "border-t border-slate-100"}
-                >
+            <ul className="divide-y divide-slate-100">
+              {orderedMembers.map((m) => (
+                <li key={m.memberRecordId}>
                   <MemberRow
                     member={m}
                     expanded={expanded === m.memberRecordId}
@@ -209,7 +209,9 @@ export function ProjectSummaryView({ summary }: Props) {
   );
 }
 
-function KpiInline({
+// Compact KPI tile used in the header. Mirrors the dashboard's StatCard but
+// smaller, since this card already has the project header on its left.
+function KpiTile({
   label,
   value,
   tone,
@@ -218,11 +220,42 @@ function KpiInline({
   value: string;
   tone?: "ok" | "warn";
 }) {
-  const v = tone === "warn" ? "text-amber-700" : tone === "ok" ? "text-brand-700" : "text-slate-900";
+  const v =
+    tone === "warn" ? "text-amber-700" : tone === "ok" ? "text-brand-700" : "text-slate-900";
   return (
-    <span className="inline-flex items-baseline gap-1">
-      <span className="text-[10px] uppercase tracking-wide text-slate-500">{label}</span>
-      <span className={`text-sm font-semibold tabular-nums ${v}`}>{value}</span>
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+        {label}
+      </div>
+      <div className={`mt-0.5 text-base font-semibold tabular-nums ${v}`}>{value}</div>
+    </div>
+  );
+}
+
+function StatusPill({ status }: { status: ProjectStatus | "" }) {
+  if (!status) return null;
+  const tone =
+    status === "In Progress"
+      ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
+      : status === "Completed"
+        ? "bg-blue-50 text-blue-700 ring-blue-100"
+        : status === "On Hold"
+          ? "bg-amber-50 text-amber-700 ring-amber-100"
+          : "bg-slate-50 text-slate-700 ring-slate-200";
+  const dot =
+    status === "In Progress"
+      ? "bg-emerald-500"
+      : status === "Completed"
+        ? "bg-blue-500"
+        : status === "On Hold"
+          ? "bg-amber-500"
+          : "bg-slate-400";
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${tone}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden />
+      {status}
     </span>
   );
 }
@@ -360,7 +393,7 @@ function ProjectWeeksTab({
 
   if (members.length === 0) {
     return (
-      <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
         No team members yet.
       </div>
     );
@@ -370,7 +403,7 @@ function ProjectWeeksTab({
 
   return (
     <div className="space-y-2">
-      <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
+      <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto">
         <table className="w-full text-xs border-collapse">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
@@ -489,7 +522,7 @@ function MemberRow({
             onToggle();
           }
         }}
-        className="grid grid-cols-[auto,1fr,auto] items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 cursor-pointer"
+        className="grid grid-cols-[auto,1fr,auto,auto] items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 cursor-pointer"
         aria-expanded={expanded}
       >
         <button
@@ -498,9 +531,9 @@ function MemberRow({
             e.stopPropagation();
             onOpenMember();
           }}
-          aria-label={`${member.memberName || member.memberCode} — show profile`}
+          aria-label={`${member.memberName || member.memberCode}, show profile`}
           title="Show profile"
-          className="flex h-8 w-8 items-center justify-center rounded-full overflow-hidden bg-brand-50 text-brand-700 text-xs font-semibold ring-2 ring-transparent transition hover:ring-brand-200"
+          className="flex h-10 w-10 items-center justify-center rounded-full overflow-hidden bg-brand-50 text-brand-700 text-xs font-semibold ring-2 ring-transparent transition hover:ring-brand-300"
         >
           {member.photoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -510,28 +543,46 @@ function MemberRow({
           )}
         </button>
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="font-medium text-slate-900 truncate">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+            <span className="font-semibold text-slate-900 truncate">
               {member.memberName || member.memberCode}
             </span>
-            <span className="font-mono text-xs text-slate-500">{member.memberCode}</span>
+            <span className="font-mono text-[10px] text-slate-400">{member.memberCode}</span>
             {role ? <RolePill role={role} /> : null}
           </div>
-          <div className="text-xs text-slate-500 mt-0.5">
+          <div className="mt-0.5 text-[11px] text-slate-500">
             {member.timesheets.length} timesheet{member.timesheets.length === 1 ? "" : "s"}
+            {allocHours > 0 ? (
+              <span className={`ml-2 ${over ? "text-amber-700" : "text-slate-500"}`}>
+                · {pct.toFixed(0)}% of allocation
+              </span>
+            ) : null}
           </div>
         </div>
         <div className="text-right shrink-0">
-          <div className="text-xs text-slate-500">Logged / Allocated</div>
           <div className={`text-sm font-semibold tabular-nums ${over ? "text-amber-700" : "text-slate-900"}`}>
-            {member.daysActualTotal.toFixed(1)} /{" "}
-            {member.daysAllocatedTotal > 0 ? `${member.daysAllocatedTotal.toFixed(1)} d` : "N/A"}
+            {member.daysActualTotal.toFixed(1)}
+            <span className="text-slate-400">
+              {" "}/{" "}
+              {member.daysAllocatedTotal > 0 ? `${member.daysAllocatedTotal.toFixed(1)}` : "N/A"}
+            </span>
           </div>
+          <div className="text-[10px] uppercase tracking-wide text-slate-400">Days</div>
         </div>
+        <span
+          className={`shrink-0 rounded-full p-1 text-slate-400 transition-transform ${
+            expanded ? "rotate-180 bg-slate-100 text-slate-700" : ""
+          }`}
+          aria-hidden
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
       </div>
       {allocHours > 0 ? (
-        <div className="px-4 pb-2">
-          <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+        <div className="px-4 pb-2.5">
+          <div className="h-1 overflow-hidden rounded-full bg-slate-100">
             <div
               className={`h-full ${over ? "bg-amber-500" : "bg-brand-600"}`}
               style={{ width: `${Math.max(2, pct)}%` }}
@@ -644,43 +695,6 @@ function MemberRow({
   );
 }
 
-type FrameStyle = { frame: string; label: string };
-const STATUS_FRAMES: Record<ProjectStatus, FrameStyle> = {
-  "In Progress": {
-    frame: "bg-emerald-50/40 border-emerald-200 border-l-emerald-500",
-    label: "text-emerald-700",
-  },
-  "Planned": {
-    frame: "bg-slate-50 border-slate-200 border-l-slate-400",
-    label: "text-slate-600",
-  },
-  "Not Started": {
-    frame: "bg-slate-50 border-slate-200 border-l-slate-400",
-    label: "text-slate-600",
-  },
-  "On Hold": {
-    frame: "bg-amber-50/50 border-amber-200 border-l-amber-500",
-    label: "text-amber-700",
-  },
-  "Completed": {
-    frame: "bg-blue-50/40 border-blue-200 border-l-blue-500",
-    label: "text-blue-700",
-  },
-};
-
-function statusFrame(status: ProjectStatus | ""): FrameStyle {
-  if (!status) {
-    return {
-      frame: "bg-white border-slate-200 border-l-slate-300",
-      label: "text-slate-500",
-    };
-  }
-  return STATUS_FRAMES[status] ?? {
-    frame: "bg-white border-slate-200 border-l-slate-300",
-    label: "text-slate-500",
-  };
-}
-
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
@@ -791,23 +805,29 @@ function TimesheetReadModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-3 py-6 sm:items-center sm:py-10"
+      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-slate-900/60 backdrop-blur-[2px] px-3 py-6 sm:items-center sm:py-10"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-2xl rounded-lg bg-white shadow-xl"
+        className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between border-b border-slate-200 px-4 py-3">
-          <div>
-            <div className="text-[11px] font-mono text-slate-500">{t.timesheetCode}</div>
-            <h2 className="text-sm font-semibold text-slate-900 mt-0.5">
-              {member.memberName || member.memberCode} · {formatWeekRange(t.startDate, t.endDate)}
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              Timesheet
+            </div>
+            <h2 className="mt-0.5 truncate text-base font-semibold text-slate-900">
+              {member.memberName || member.memberCode}
             </h2>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-              <span className="font-mono">{t.staffingCode}</span>
+              <span className="rounded-md bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] text-white">
+                {t.timesheetCode}
+              </span>
+              <span>{formatWeekRange(t.startDate, t.endDate)}</span>
+              <span className="font-mono text-slate-400">{t.staffingCode}</span>
               <StatusBadge status={t.status} />
               {t.submissionDate ? <span>· Submitted {t.submissionDate}</span> : null}
             </div>
@@ -816,7 +836,7 @@ function TimesheetReadModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
