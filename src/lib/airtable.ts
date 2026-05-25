@@ -210,11 +210,27 @@ export function leadRank(m: { staffings: Array<{ projectRole: ProjectRole | "" }
 export type SowStatus = "Signed" | "In Progress" | "Draft" | "Not Started";
 export const SOW_STATUSES: SowStatus[] = ["Not Started", "Draft", "In Progress", "Signed"];
 
-export type TimesheetStatus = "Draft" | "Submitted" | "Deleted";
+// One status spans the whole lifecycle of a timesheet:
+//   Draft → Submitted → Invoiced → Paid (Deleted is a terminal opt-out).
+// Members own the Draft → Submitted transition; admins own the Invoiced and
+// Paid steps. The legacy "Billing Status" field is no longer written by the
+// portal; it stays on Airtable for historical records but is ignored on read.
+export type TimesheetStatus =
+  | "Draft"
+  | "Submitted"
+  | "Invoiced"
+  | "Paid"
+  | "Deleted";
+export const TIMESHEET_STATUSES: TimesheetStatus[] = [
+  "Draft",
+  "Submitted",
+  "Invoiced",
+  "Paid",
+  "Deleted",
+];
 
-// Billing lifecycle for a timesheet. Defaults to "To invoice" on submission;
-// admin flips to "Invoiced" once a client invoice is raised and "Paid" once
-// the client has paid. Empty string = unset (e.g. drafts).
+// Kept only so legacy imports compile while we tear out the dual-status UI.
+// Do not use in new code.
 export type BillingStatus = "To invoice" | "Invoiced" | "Paid";
 export const BILLING_STATUSES: BillingStatus[] = ["To invoice", "Invoiced", "Paid"];
 
@@ -376,8 +392,6 @@ export type TimesheetRecord = {
   endDate: string | null;
   submissionDate: string | null;
   status: TimesheetStatus;
-  // Empty until an admin sets it; defaults to "To invoice" on submission.
-  billingStatus: BillingStatus | "";
   monday: { hours: number; task: string };
   tuesday: { hours: number; task: string };
   wednesday: { hours: number; task: string };
@@ -1522,6 +1536,16 @@ function toTimesheet(r: AirtableRecord<FieldSet>, staffings: Map<string, Staffin
   const wednesday = { hours: num(r, FIELDS.timesheets.wednesdayHours), task: str(r, FIELDS.timesheets.wednesdayTask) };
   const thursday = { hours: num(r, FIELDS.timesheets.thursdayHours), task: str(r, FIELDS.timesheets.thursdayTask) };
   const friday = { hours: num(r, FIELDS.timesheets.fridayHours), task: str(r, FIELDS.timesheets.fridayTask) };
+  // Legacy fold: a few rows still carry "Invoiced"/"Paid" on the old Billing
+  // Status field while their main Status is still "Submitted". Treat the
+  // billing value as the source of truth in that case so the admin UI shows
+  // the right state without a one-shot migration script.
+  const rawStatus = (str(r, FIELDS.timesheets.status) as TimesheetStatus) || "Draft";
+  const billing = str(r, FIELDS.timesheets.billingStatus);
+  let status: TimesheetStatus = rawStatus;
+  if (rawStatus === "Submitted" && (billing === "Invoiced" || billing === "Paid")) {
+    status = billing;
+  }
   return {
     id: r.id,
     timesheetCode: str(r, FIELDS.timesheets.timesheetCode),
@@ -1533,8 +1557,7 @@ function toTimesheet(r: AirtableRecord<FieldSet>, staffings: Map<string, Staffin
     startDate: (r.get(FIELDS.timesheets.startDate) as string | undefined) ?? null,
     endDate: (r.get(FIELDS.timesheets.endDate) as string | undefined) ?? null,
     submissionDate: (r.get(FIELDS.timesheets.submissionDate) as string | undefined) ?? null,
-    status: (str(r, FIELDS.timesheets.status) as TimesheetStatus) || "Draft",
-    billingStatus: (str(r, FIELDS.timesheets.billingStatus) as BillingStatus) || "",
+    status,
     monday,
     tuesday,
     wednesday,
@@ -1688,30 +1711,21 @@ export async function updateTimesheetStatus(
 ): Promise<void> {
   const fields: Record<string, unknown> = { [FIELDS.timesheets.status]: status };
   if (submissionDate !== undefined) fields[FIELDS.timesheets.submissionDate] = submissionDate;
-  // When a timesheet transitions to Submitted, seed Billing Status to
-  // "To invoice" if it hasn't been set yet, so admins see a clear queue.
-  if (status === "Submitted") {
-    try {
-      const r = await base(TABLES.timesheets).find(recordId);
-      const existing = str(r, FIELDS.timesheets.billingStatus);
-      if (!existing) fields[FIELDS.timesheets.billingStatus] = "To invoice";
-    } catch {
-      // ignore — worst case the admin sets it manually
-    }
-  }
   await base(TABLES.timesheets).update([{ id: recordId, fields: fields as FieldSet }]);
 }
 
-export async function updateTimesheetBilling(
+// Admin-side timesheet status edit. Allows transitions to any status the
+// admin should be able to set, including the new Invoiced / Paid options.
+// Member-driven transitions (Draft ↔ Submitted) still go through the
+// member endpoints.
+export async function adminUpdateTimesheetStatus(
   recordId: string,
-  billingStatus: BillingStatus | "",
+  status: TimesheetStatus,
 ): Promise<void> {
   await base(TABLES.timesheets).update([
     {
       id: recordId,
-      fields: {
-        [FIELDS.timesheets.billingStatus]: billingStatus === "" ? null : billingStatus,
-      } as FieldSet,
+      fields: { [FIELDS.timesheets.status]: status } as FieldSet,
     },
   ]);
 }

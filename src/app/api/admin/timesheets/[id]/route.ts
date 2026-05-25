@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
-import { BILLING_STATUSES, updateTimesheetBilling, type BillingStatus } from "@/lib/airtable";
+import {
+  TIMESHEET_STATUSES,
+  adminUpdateTimesheetStatus,
+  type TimesheetStatus,
+} from "@/lib/airtable";
 
 const patchSchema = z.object({
-  billingStatus: z.union([
-    z.enum(BILLING_STATUSES as [string, ...string[]]),
-    z.literal(""),
-  ]),
+  status: z.enum(TIMESHEET_STATUSES as [string, ...string[]]),
 });
 
 export async function PATCH(
@@ -25,6 +26,6 @@ export async function PATCH(
       { status: 400 },
     );
   }
-  await updateTimesheetBilling(id, parsed.data.billingStatus as BillingStatus | "");
+  await adminUpdateTimesheetStatus(id, parsed.data.status as TimesheetStatus);
   return NextResponse.json({ ok: true });
 }
