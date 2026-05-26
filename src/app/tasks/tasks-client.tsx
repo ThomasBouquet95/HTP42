@@ -588,10 +588,16 @@ function TaskCard({
   const isAssigned = t.assigneeRecordIds.includes(currentMemberId);
   const dueClass = dueDateClass(t.dueDate, t.status);
   const subtasks = parseSubtasks(t.description);
+  const [expanded, setExpanded] = useState(false);
   // Urgent open tasks get a faint red wash to draw the eye. Done/Cancelled
   // suppress it so the column doesn't stay alarming after the work is over.
   const urgent =
     t.priority === "Urgent" && t.status !== "Done" && t.status !== "Cancelled";
+  // Cards have less horizontal room than the list, and the Done/Cancelled
+  // columns are even narrower, so the cap is lower there.
+  const cap = compact ? 2 : 4;
+  const overflow = subtasks.length > cap;
+  const visibleSubtasks = !overflow || expanded ? subtasks : subtasks.slice(0, cap);
   return (
     <li
       onClick={() => onOpen(t)}
@@ -651,7 +657,7 @@ function TaskCard({
       </div>
       {subtasks.length > 0 ? (
         <ul className="mt-1.5 space-y-0.5 pl-0.5">
-          {subtasks.slice(0, compact ? 2 : 6).map((s) => (
+          {visibleSubtasks.map((s) => (
             <li key={s.id} className="flex items-center gap-1.5 text-[11px]">
               <input
                 type="checkbox"
@@ -665,9 +671,29 @@ function TaskCard({
               </span>
             </li>
           ))}
-          {subtasks.length > (compact ? 2 : 6) ? (
-            <li className="text-[10px] text-slate-400">
-              +{subtasks.length - (compact ? 2 : 6)} more…
+          {overflow ? (
+            <li>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpanded((p) => !p);
+                }}
+                aria-expanded={expanded}
+                className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[10px] font-medium text-brand-700 hover:bg-brand-50"
+              >
+                <svg
+                  viewBox="0 0 16 16"
+                  className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  aria-hidden
+                >
+                  <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                {expanded ? "Show less" : `Show ${subtasks.length - cap} more`}
+              </button>
             </li>
           ) : null}
         </ul>
@@ -675,6 +701,11 @@ function TaskCard({
     </li>
   );
 }
+
+// How many subtasks the list view shows before the row needs to be expanded
+// to see the rest. Picked so a task with a few items reads at a glance, but
+// the row doesn't grow tall as soon as someone adds 5+ subtasks.
+const SUBTASK_COLLAPSE_THRESHOLD = 4;
 
 function TaskList({
   tasks,
@@ -695,6 +726,17 @@ function TaskList({
   onPriorityChange: (t: TaskRecord, next: TaskPriority | "") => void;
   onToggleSubtask: (t: TaskRecord, subtaskId: string) => void;
 }) {
+  // Which tasks have their subtask list expanded. Local to the list view —
+  // a fresh page render starts everyone collapsed.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   if (tasks.length === 0) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white py-12 text-center text-xs text-slate-400">
@@ -823,26 +865,70 @@ function TaskList({
                   {progress.total === 0 ? (
                     <span className="text-slate-400">—</span>
                   ) : (
-                    <ul className="space-y-0.5">
-                      {subtasks.slice(0, 4).map((s) => (
-                        <li key={s.id} className="flex items-center gap-1.5 text-[11px]">
-                          <input
-                            type="checkbox"
-                            checked={s.done}
-                            onChange={() => onToggleSubtask(t, s.id)}
-                            className="rounded border-slate-300"
-                          />
-                          <span className={s.done ? "text-slate-400 line-through" : "text-slate-700"}>
-                            {s.title}
-                          </span>
-                        </li>
-                      ))}
-                      {subtasks.length > 4 ? (
-                        <li className="text-[10px] text-slate-400">
-                          +{subtasks.length - 4} more…
-                        </li>
-                      ) : null}
-                    </ul>
+                    (() => {
+                      const isExpanded = expanded.has(t.id);
+                      const overflow = subtasks.length > SUBTASK_COLLAPSE_THRESHOLD;
+                      const visible =
+                        !overflow || isExpanded
+                          ? subtasks
+                          : subtasks.slice(0, SUBTASK_COLLAPSE_THRESHOLD);
+                      return (
+                        <ul className="space-y-0.5">
+                          {visible.map((s) => (
+                            <li
+                              key={s.id}
+                              className="flex items-center gap-1.5 text-[11px]"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={s.done}
+                                onChange={() => onToggleSubtask(t, s.id)}
+                                className="rounded border-slate-300"
+                              />
+                              <span
+                                className={
+                                  s.done
+                                    ? "text-slate-400 line-through"
+                                    : "text-slate-700"
+                                }
+                              >
+                                {s.title}
+                              </span>
+                            </li>
+                          ))}
+                          {overflow ? (
+                            <li>
+                              <button
+                                type="button"
+                                onClick={() => toggleExpanded(t.id)}
+                                className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[10px] font-medium text-brand-700 hover:bg-brand-50"
+                                aria-expanded={isExpanded}
+                              >
+                                <svg
+                                  viewBox="0 0 16 16"
+                                  className={`h-3 w-3 transition-transform ${
+                                    isExpanded ? "rotate-180" : ""
+                                  }`}
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  aria-hidden
+                                >
+                                  <path
+                                    d="M4 6l4 4 4-4"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                </svg>
+                                {isExpanded
+                                  ? "Show less"
+                                  : `Show ${subtasks.length - SUBTASK_COLLAPSE_THRESHOLD} more`}
+                              </button>
+                            </li>
+                          ) : null}
+                        </ul>
+                      );
+                    })()
                   )}
                 </td>
               </tr>
