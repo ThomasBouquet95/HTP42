@@ -611,7 +611,7 @@ function TaskCard({
             ) : null}
             {project ? (
               <span
-                className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-1.5 py-0.5 font-medium font-mono"
+                className="inline-flex items-center whitespace-nowrap rounded-full bg-slate-100 text-slate-700 px-1.5 py-0.5 font-medium font-mono"
                 title={project?.name ?? t.projectName}
               >
                 {project?.code || t.projectCode}
@@ -721,15 +721,15 @@ function TaskList({
   });
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-      <table className="min-w-full text-xs">
+      <table className="w-full text-xs">
         <thead className="bg-slate-50 text-slate-500">
           <tr>
-            <th className="px-3 py-2 text-left font-medium">Task</th>
-            <th className="px-3 py-2 text-left font-medium">Project</th>
-            <th className="px-3 py-2 text-left font-medium">Status</th>
-            <th className="px-3 py-2 text-left font-medium">Priority</th>
-            <th className="px-3 py-2 text-left font-medium">Due</th>
-            <th className="px-3 py-2 text-left font-medium">Assignees</th>
+            <th className="px-3 py-2 text-left font-medium" style={{ width: "30%" }}>Task</th>
+            <th className="px-3 py-2 text-left font-medium whitespace-nowrap w-px">Project</th>
+            <th className="px-3 py-2 text-left font-medium whitespace-nowrap w-px">Status</th>
+            <th className="px-3 py-2 text-left font-medium whitespace-nowrap w-px">Priority</th>
+            <th className="px-3 py-2 text-left font-medium whitespace-nowrap w-px">Due</th>
+            <th className="px-3 py-2 text-left font-medium whitespace-nowrap w-px">Assignees</th>
             <th className="px-3 py-2 text-left font-medium">Subtasks</th>
           </tr>
         </thead>
@@ -774,7 +774,7 @@ function TaskList({
                 <td className="px-3 py-2">
                   {project ? (
                     <span
-                      className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px] font-medium font-mono"
+                      className="inline-flex items-center whitespace-nowrap rounded-full bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px] font-medium font-mono"
                       title={project?.name ?? t.projectName}
                     >
                       {project?.code || t.projectCode}
