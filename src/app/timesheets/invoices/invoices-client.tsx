@@ -13,12 +13,24 @@ type StaffingOpt = {
   projectName: string;
 };
 
+type TimesheetOpt = {
+  id: string;
+  staffingRecordId: string;
+  staffingCode: string;
+  startDate: string | null;
+  endDate: string | null;
+  totalHours: number;
+  timesheetCode: string;
+};
+
 export function InvoicesClient({
   invoices,
   staffings,
+  timesheets,
 }: {
   invoices: MemberInvoiceRecord[];
   staffings: StaffingOpt[];
+  timesheets: TimesheetOpt[];
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(invoices);
@@ -172,6 +184,7 @@ export function InvoicesClient({
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         staffings={staffings}
+        timesheets={timesheets}
         onSubmitted={() => {
           setModalOpen(false);
           setToast({ kind: "ok", msg: "Invoice submitted" });
@@ -200,12 +213,14 @@ function NewInvoiceModal({
   open,
   onClose,
   staffings,
+  timesheets,
   onSubmitted,
   onError,
 }: {
   open: boolean;
   onClose: () => void;
   staffings: StaffingOpt[];
+  timesheets: TimesheetOpt[];
   onSubmitted: () => void;
   onError: (msg: string) => void;
 }) {
@@ -214,6 +229,7 @@ function NewInvoiceModal({
   const [currency, setCurrency] = useState<"EUR" | "USD" | "CHF" | "">("");
   const [comment, setComment] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [selectedTimesheetIds, setSelectedTimesheetIds] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -224,8 +240,20 @@ function NewInvoiceModal({
     setCurrency("");
     setComment("");
     setFile(null);
+    setSelectedTimesheetIds(new Set());
     if (fileRef.current) fileRef.current.value = "";
   }, [open]);
+
+  // Reset the timesheet selection when the staffing changes, since the list
+  // below depends on it.
+  useEffect(() => {
+    setSelectedTimesheetIds(new Set());
+  }, [staffingId]);
+
+  // Timesheets that live under the picked staffing, sorted newest first.
+  const eligible = timesheets
+    .filter((t) => t.staffingRecordId === staffingId)
+    .sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
 
   useEffect(() => {
     if (!open) return;
@@ -267,6 +295,7 @@ function NewInvoiceModal({
       fd.set("currency", currency);
       fd.set("comment", comment);
       fd.set("pdf", file);
+      for (const id of selectedTimesheetIds) fd.append("timesheetIds", id);
       const res = await fetch("/api/invoices", { method: "POST", body: fd });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Submission failed");
@@ -322,6 +351,80 @@ function NewInvoiceModal({
               ))}
             </select>
           </label>
+
+          {/* Timesheet picker. Appears once a staffing is chosen and shows
+              only Submitted timesheets on that staffing (Draft / Invoiced /
+              Paid are filtered out server-side already). Selected ones get
+              flipped to Invoiced when the invoice is created. */}
+          {staffingId ? (
+            <div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+                  Timesheets covered{" "}
+                  <span className="ml-1 normal-case text-slate-400">
+                    (optional, flips to Invoiced when you submit)
+                  </span>
+                </span>
+                {eligible.length > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedTimesheetIds.size === eligible.length) {
+                        setSelectedTimesheetIds(new Set());
+                      } else {
+                        setSelectedTimesheetIds(new Set(eligible.map((t) => t.id)));
+                      }
+                    }}
+                    className="text-[10px] font-medium text-brand-700 hover:underline"
+                  >
+                    {selectedTimesheetIds.size === eligible.length
+                      ? "Clear all"
+                      : "Select all"}
+                  </button>
+                ) : null}
+              </div>
+              <div className="mt-1 max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2 text-xs">
+                {eligible.length === 0 ? (
+                  <div className="text-slate-400">
+                    No submitted timesheets on this staffing yet.
+                  </div>
+                ) : (
+                  eligible.map((t) => {
+                    const checked = selectedTimesheetIds.has(t.id);
+                    return (
+                      <label
+                        key={t.id}
+                        className="flex items-center gap-2 rounded px-1.5 py-1 hover:bg-white"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            setSelectedTimesheetIds((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(t.id);
+                              else next.delete(t.id);
+                              return next;
+                            });
+                          }}
+                          className="rounded border-slate-300"
+                        />
+                        <span className="font-mono text-[10px] text-slate-500">
+                          {t.timesheetCode}
+                        </span>
+                        <span>
+                          Week of {t.startDate ?? "—"}
+                        </span>
+                        <span className="ml-auto tabular-nums text-slate-500">
+                          {t.totalHours.toFixed(1)} h
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-[1fr,7rem] gap-3">
             <label className="block">

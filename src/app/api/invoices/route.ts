@@ -5,9 +5,11 @@ import {
   createMemberInvoice,
   getInvoiceById,
   getStaffingsForMember,
+  getTimesheetsForMember,
   listInvoicesForMember,
   listProjects,
   markInvoiceEmail,
+  updateTimesheetStatus,
   type Currency,
 } from "@/lib/airtable";
 import { env } from "@/lib/env";
@@ -35,6 +37,13 @@ export async function POST(request: Request) {
   const currency = String(form.get("currency") ?? "").trim();
   const comment = String(form.get("comment") ?? "").trim().slice(0, 5000);
   const file = form.get("pdf");
+  // Member-selected timesheets covered by this invoice. Optional, but if
+  // present they get flipped to Invoiced as soon as the record is created so
+  // the admin doesn't have to chase the status update manually.
+  const timesheetIds = form
+    .getAll("timesheetIds")
+    .map((v) => String(v).trim())
+    .filter(Boolean);
 
   if (!staffingId) return NextResponse.json({ error: "Staffing is required." }, { status: 400 });
   if (!amountStr) return NextResponse.json({ error: "Amount is required." }, { status: 400 });
@@ -82,6 +91,38 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Amount must be a positive number." }, { status: 400 });
   }
 
+  // Validate the timesheet selection before any writes: each id must be one
+  // of the member's own timesheets, be on the picked staffing, and be in a
+  // status we can legitimately flip to Invoiced (only Submitted; Draft
+  // shouldn't be invoiced, Invoiced/Paid can't be re-invoiced).
+  let timesheetsToInvoice: string[] = [];
+  if (timesheetIds.length > 0) {
+    const myTimesheets = await getTimesheetsForMember(session.memberCode);
+    const byId = new Map(myTimesheets.map((t) => [t.id, t]));
+    for (const id of timesheetIds) {
+      const t = byId.get(id);
+      if (!t) {
+        return NextResponse.json(
+          { error: "One of the selected timesheets isn't yours." },
+          { status: 400 },
+        );
+      }
+      if (t.staffingRecordId !== staffing.id) {
+        return NextResponse.json(
+          { error: `Timesheet ${t.timesheetCode} isn't on the picked staffing.` },
+          { status: 400 },
+        );
+      }
+      if (t.status !== "Submitted") {
+        return NextResponse.json(
+          { error: `Timesheet ${t.timesheetCode} is ${t.status}, can't be invoiced.` },
+          { status: 400 },
+        );
+      }
+    }
+    timesheetsToInvoice = timesheetIds;
+  }
+
   // 1) Create the invoice record (no PDF yet).
   const invoiceId = await createMemberInvoice({
     memberRecordId: session.sub,
@@ -92,6 +133,28 @@ export async function POST(request: Request) {
     comment,
     pdfAttachment: null,
   });
+
+  // 1b) Mark each covered timesheet as Invoiced. Best-effort: if one of the
+  // updates fails (network blip, etc.) we don't unwind the invoice itself,
+  // since the record + PDF are already preserved on Airtable and the admin
+  // can recover the status manually. Failures are surfaced to the user.
+  if (timesheetsToInvoice.length > 0) {
+    const failures: string[] = [];
+    await Promise.all(
+      timesheetsToInvoice.map(async (id) => {
+        try {
+          await updateTimesheetStatus(id, "Invoiced");
+        } catch (e) {
+          failures.push(`${id}: ${e instanceof Error ? e.message : "update failed"}`);
+        }
+      }),
+    );
+    if (failures.length > 0) {
+      // Continue the rest of the flow so the email still goes out, but tag
+      // the response so the UI can surface it.
+      console.error("Failed to flip some timesheets to Invoiced:", failures.join("; "));
+    }
+  }
 
   // 2) Upload the PDF directly to the new record's PDF field.
   try {
