@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TaskPriority, TaskRecord, TaskStatus, TaskVisibility } from "@/lib/airtable";
 import { TASK_PRIORITIES, TASK_STATUSES } from "@/lib/airtable";
+import { ConfirmDialog } from "@/components/modal";
 
 type ProjectOpt = { id: string; code: string; name: string };
 type MemberOpt = { id: string; code: string; name: string; photoUrl: string | null };
@@ -21,6 +22,8 @@ type Filters = {
   status: "All" | TaskStatus;
   priority: "All" | TaskPriority;
   project: "All" | string;
+  // Member record id of an assignee to filter by, or "All".
+  assignee: "All" | string;
   search: string;
 };
 
@@ -28,6 +31,7 @@ const DEFAULT_FILTERS: Filters = {
   status: "All",
   priority: "All",
   project: "All",
+  assignee: "All",
   search: "",
 };
 
@@ -94,6 +98,10 @@ export function TasksClient({
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<TaskRecord | null>(null);
+  // Custom delete confirmation lives outside the edit modal so the dialog
+  // animates over it and we can close them in sequence on confirm.
+  const [confirmDelete, setConfirmDelete] = useState<TaskRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -120,6 +128,12 @@ export function TasksClient({
       if (filters.status !== "All" && t.status !== filters.status) return false;
       if (filters.priority !== "All" && t.priority !== filters.priority) return false;
       if (filters.project !== "All" && t.projectRecordId !== filters.project) return false;
+      if (
+        filters.assignee !== "All" &&
+        !t.assigneeRecordIds.includes(filters.assignee)
+      ) {
+        return false;
+      }
       if (q) {
         const blob = [
           t.title,
@@ -241,11 +255,18 @@ export function TasksClient({
     }
   }
 
-  async function remove(t: TaskRecord) {
-    if (!confirm(`Delete task "${t.title}"? This can't be undone.`)) return;
+  // Delete flow: the modal's Delete button calls `requestDelete` which only
+  // opens our own confirm dialog. The actual API call happens on confirm and
+  // closes both the dialog and the edit modal in one go.
+  function requestDelete(t: TaskRecord) {
+    setConfirmDelete(t);
+  }
+  async function confirmDeleteNow() {
+    const t = confirmDelete;
+    if (!t) return;
+    setDeleting(true);
     const snapshot = rows;
     setRows((rs) => rs.filter((r) => r.id !== t.id));
-    setToast({ kind: "ok", msg: "Task deleted" });
     try {
       const res = await fetch(`/api/tasks/${encodeURIComponent(t.id)}`, {
         method: "DELETE",
@@ -254,10 +275,15 @@ export function TasksClient({
         const d = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(d.error ?? "Backend error");
       }
+      setToast({ kind: "ok", msg: "Task deleted" });
+      setConfirmDelete(null);
+      closeModal();
       router.refresh();
     } catch (e) {
       setRows(snapshot);
       showError(e instanceof Error ? e.message : "Backend error");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -338,7 +364,7 @@ export function TasksClient({
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <Select
             label="Status"
             value={filters.status}
@@ -367,6 +393,21 @@ export function TasksClient({
                 value: p.id,
                 label: p.name ? `${p.code} · ${p.name}` : p.code,
               })),
+            ]}
+          />
+          <Select
+            label="Assignee"
+            value={filters.assignee}
+            onChange={(v) => update("assignee", v as Filters["assignee"])}
+            options={[
+              { value: "All", label: "All assignees" },
+              { value: currentMemberId, label: "Me" },
+              ...members
+                .filter((m) => m.id !== currentMemberId)
+                .map((m) => ({
+                  value: m.id,
+                  label: m.name ? `${m.code} · ${m.name}` : m.code,
+                })),
             ]}
           />
           <label className="block lg:col-span-2">
@@ -483,7 +524,30 @@ export function TasksClient({
           router.refresh();
         }}
         onError={showError}
-        onDelete={remove}
+        onDelete={requestDelete}
+      />
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        title="Delete task?"
+        message={
+          confirmDelete ? (
+            <>
+              You're about to delete{" "}
+              <span className="font-semibold text-slate-900">
+                "{confirmDelete.title}"
+              </span>
+              . This can't be undone.
+            </>
+          ) : (
+            ""
+          )
+        }
+        confirmLabel="Delete task"
+        confirmTone="danger"
+        busy={deleting}
+        onCancel={() => (deleting ? null : setConfirmDelete(null))}
+        onConfirm={confirmDeleteNow}
       />
 
       {toast ? (
