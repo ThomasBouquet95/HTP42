@@ -134,7 +134,9 @@ export default async function ProjectSummaryPrintPage({
             </thead>
             <tbody>
               {members.map((m) => {
-                const submitted = m.timesheets.filter((t) => t.status === "Submitted").length;
+                const submitted = m.timesheets.filter(
+                  (t) => t.status === "Submitted" || t.status === "Invoiced" || t.status === "Paid",
+                ).length;
                 const draft = m.timesheets.filter((t) => t.status === "Draft").length;
                 const over = m.hoursActualTotal > m.daysAllocatedTotal * HOURS_PER_DAY && m.daysAllocatedTotal > 0;
                 const roles = m.staffings
@@ -183,9 +185,12 @@ export default async function ProjectSummaryPrintPage({
 }
 
 function MemberSection({ member: m }: { member: ProjectTeamMember }) {
-  // Reports only include the official record — drafts and deleted rows are
-  // filtered out before counting and rendering.
-  const submittedTimesheets = m.timesheets.filter((t) => t.status === "Submitted");
+  // Reports cover the full submitted lifecycle: Submitted, Invoiced, Paid.
+  // Drafts and Deleted are filtered out before counting and rendering. The
+  // internal status isn't surfaced in the printed PDF.
+  const submittedTimesheets = m.timesheets.filter(
+    (t) => t.status === "Submitted" || t.status === "Invoiced" || t.status === "Paid",
+  );
   if (submittedTimesheets.length === 0) return null;
   return (
     <div className="member-section">
@@ -201,7 +206,6 @@ function MemberSection({ member: m }: { member: ProjectTeamMember }) {
               <span className="ts-title">{formatWeekRange(t.startDate, t.endDate)}</span>
               <span className="ts-sub"> · {t.staffingCode || "—"} · {t.timesheetCode}</span>
             </div>
-            <div className={`status status-${t.status.toLowerCase()}`}>{t.status}</div>
           </div>
           <table className="ts-table">
             <thead>

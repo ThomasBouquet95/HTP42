@@ -170,10 +170,15 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
   }
 
   function exportCsv() {
-    // Exports only contain the official record of work — drafts and deleted
-    // timesheets are excluded everywhere so the file always matches what the
-    // organisation considers actually submitted.
-    const rows = toCsvRows(filtered.filter((t) => t.status === "Submitted"));
+    // Exports cover the whole "officially logged" lifecycle: Submitted,
+    // Invoiced, Paid. Drafts and Deleted are always excluded. The internal
+    // status column itself is omitted from the file (see toCsvRows).
+    const rows = toCsvRows(
+      filtered.filter(
+        (t) =>
+          t.status === "Submitted" || t.status === "Invoiced" || t.status === "Paid",
+      ),
+    );
     const csv = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -520,11 +525,12 @@ function BreakdownCard({
 }
 
 function toCsvRows(rows: AdminTimesheetRecord[]): string[][] {
+  // Status omitted on purpose — exports are shared outside finance and
+  // shouldn't leak the Submitted / Invoiced / Paid billing lifecycle.
   const header = [
     "Timesheet Code",
     "Member Code",
     "Member Name",
-    "Status",
     "Project Code",
     "Project Name",
     "Staffing Code",
@@ -545,7 +551,6 @@ function toCsvRows(rows: AdminTimesheetRecord[]): string[][] {
       t.timesheetCode,
       t.memberCode,
       t.memberName,
-      t.status,
       t.projectCode,
       t.projectName,
       t.staffingCode,

@@ -23,6 +23,7 @@ type FormState = {
   memberCode: string;
   fullName: string;
   email: string;
+  personalEmail: string;
   role: string;
   status: string;
   title: string;
@@ -39,6 +40,7 @@ const EMPTY: FormState = {
   memberCode: "",
   fullName: "",
   email: "",
+  personalEmail: "",
   role: "",
   status: "Active",
   title: "",
@@ -56,6 +58,7 @@ function fromRecord(m: MemberAdminRecord): FormState {
     memberCode: m.memberCode,
     fullName: m.fullName,
     email: m.email,
+    personalEmail: m.personalEmail,
     role: m.role,
     status: m.status || "Active",
     title: m.title,
@@ -227,6 +230,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
         memberCode: form.memberCode.trim(),
         fullName: form.fullName.trim(),
         email: form.email.trim(),
+        personalEmail: form.personalEmail.trim(),
         status: form.status,
         role: form.role || undefined,
         title: form.title,
@@ -422,11 +426,19 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
             required
           />
           <FormField
-            label="Email"
+            label="Login email"
             value={form.email}
             onChange={(v) => updateField("email", v)}
             type="email"
             required
+            hint="Used to sign in. Should be the @htp42.com address."
+          />
+          <FormField
+            label="Personal email"
+            value={form.personalEmail}
+            onChange={(v) => updateField("personalEmail", v)}
+            type="email"
+            hint="Optional. Not used for login, kept for communication."
           />
           <FormField
             label="Member code"

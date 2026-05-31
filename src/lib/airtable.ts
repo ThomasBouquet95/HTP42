@@ -27,6 +27,7 @@ export const FIELDS = {
     memberCode: "Member Code",
     fullName: "Full Name",
     email: "Email",
+    personalEmail: "Personal Email",
     status: "Status",
     role: "Role",
     introduction: "Introduction",
@@ -42,6 +43,9 @@ export const FIELDS = {
     cv: "CV",
     lastSignIn: "Last Sign In",
     signInCount: "Sign In Count",
+    bankAccountName: "Bank Account Name",
+    bankAccountAddress: "Bank Account Address",
+    iban: "IBAN",
   },
   projects: {
     projectCode: "Project Code",
@@ -271,6 +275,9 @@ export type MemberRecord = {
   memberCode: string;
   fullName: string;
   email: string;
+  // Personal mailbox the member opts to share (Gmail, etc.). Display only;
+  // login still uses the official `email` field.
+  personalEmail: string;
   status: MemberStatus;
   role: MemberRole | "";
   introduction: string;
@@ -280,6 +287,11 @@ export type MemberRecord = {
   title: string;
   photo: AttachmentRef | null;
   cv: AttachmentRef | null;
+  // Bank details used to pay this member. All optional. Captured via the
+  // profile page "Bank account" modal, persisted on Network Members.
+  bankAccountName: string;
+  bankAccountAddress: string;
+  iban: string;
 };
 
 export type MemberAdminRecord = MemberRecord & {
@@ -474,6 +486,7 @@ function memberFromRecord(r: AirtableRecord<FieldSet>): MemberRecord {
     memberCode: str(r, FIELDS.networkMembers.memberCode),
     fullName: str(r, FIELDS.networkMembers.fullName),
     email: str(r, FIELDS.networkMembers.email),
+    personalEmail: str(r, FIELDS.networkMembers.personalEmail),
     status: str(r, FIELDS.networkMembers.status) as MemberStatus,
     role: str(r, FIELDS.networkMembers.role) as MemberRole | "",
     introduction: str(r, FIELDS.networkMembers.introduction),
@@ -483,6 +496,9 @@ function memberFromRecord(r: AirtableRecord<FieldSet>): MemberRecord {
     title: str(r, FIELDS.networkMembers.title),
     photo: firstAttachment(r, FIELDS.networkMembers.photo),
     cv: firstAttachment(r, FIELDS.networkMembers.cv),
+    bankAccountName: str(r, FIELDS.networkMembers.bankAccountName),
+    bankAccountAddress: str(r, FIELDS.networkMembers.bankAccountAddress),
+    iban: str(r, FIELDS.networkMembers.iban),
   };
 }
 
@@ -516,6 +532,10 @@ export type MemberProfileUpdate = {
   country?: string;
   phone?: string;
   legalEntity?: string;
+  personalEmail?: string;
+  bankAccountName?: string;
+  bankAccountAddress?: string;
+  iban?: string;
 };
 
 export async function updateMemberProfile(
@@ -528,6 +548,16 @@ export async function updateMemberProfile(
   if (input.country !== undefined) fields[FIELDS.networkMembers.country] = input.country;
   if (input.phone !== undefined) fields[FIELDS.networkMembers.phone] = input.phone;
   if (input.legalEntity !== undefined) fields[FIELDS.networkMembers.legalEntity] = input.legalEntity;
+  if (input.personalEmail !== undefined) {
+    fields[FIELDS.networkMembers.personalEmail] = input.personalEmail || null;
+  }
+  if (input.bankAccountName !== undefined) {
+    fields[FIELDS.networkMembers.bankAccountName] = input.bankAccountName;
+  }
+  if (input.bankAccountAddress !== undefined) {
+    fields[FIELDS.networkMembers.bankAccountAddress] = input.bankAccountAddress;
+  }
+  if (input.iban !== undefined) fields[FIELDS.networkMembers.iban] = input.iban;
   if (Object.keys(fields).length === 0) return getMemberById(recordId);
   const [updated] = await base(TABLES.networkMembers).update([
     { id: recordId, fields: fields as FieldSet },
@@ -689,6 +719,9 @@ export async function adminCreateMember(input: MemberCreateInput): Promise<Membe
   if (input.legalEntity !== undefined) fields[FIELDS.networkMembers.legalEntity] = input.legalEntity;
   if (input.title !== undefined) fields[FIELDS.networkMembers.title] = input.title;
   if (input.role !== undefined) fields[FIELDS.networkMembers.role] = input.role;
+  if (input.personalEmail !== undefined) {
+    fields[FIELDS.networkMembers.personalEmail] = input.personalEmail || null;
+  }
   if (input.dailyRate !== undefined) fields[FIELDS.networkMembers.dailyRate] = input.dailyRate;
   if (input.htp42DailyRate !== undefined) {
     fields[FIELDS.networkMembers.htp42DailyRate] = input.htp42DailyRate;
@@ -743,6 +776,9 @@ export async function adminUpdateMember(
   if (input.memberCode !== undefined) fields[FIELDS.networkMembers.memberCode] = input.memberCode;
   if (input.fullName !== undefined) fields[FIELDS.networkMembers.fullName] = input.fullName;
   if (input.email !== undefined) fields[FIELDS.networkMembers.email] = input.email;
+  if (input.personalEmail !== undefined) {
+    fields[FIELDS.networkMembers.personalEmail] = input.personalEmail || null;
+  }
   if (input.introduction !== undefined) fields[FIELDS.networkMembers.introduction] = input.introduction;
   if (input.country !== undefined) fields[FIELDS.networkMembers.country] = input.country;
   if (input.phone !== undefined) fields[FIELDS.networkMembers.phone] = input.phone;

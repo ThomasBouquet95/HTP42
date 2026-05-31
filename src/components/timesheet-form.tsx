@@ -138,12 +138,21 @@ export function TimesheetForm({
       setError("Please pick a Project Staffing.");
       return;
     }
+    let totalHours = 0;
     for (const k of DAY_KEYS) {
       const h = Number(days[k].hours);
       if (Number.isNaN(h) || h < 0 || h > 24) {
         setError(`${DAY_LABELS[k]} hours must be between 0 and 24.`);
         return;
       }
+      totalHours += h;
+    }
+    // Drafts can be empty (the user is just saving progress), but a Submit
+    // with no hours at all is almost certainly an accidental click. Block it
+    // with a clear message instead of letting it through silently.
+    if (status === "Submitted" && totalHours === 0) {
+      setError("Add at least one hour before submitting.");
+      return;
     }
     setSubmitting(true);
     try {

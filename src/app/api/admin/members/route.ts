@@ -19,6 +19,9 @@ const schema = z.object({
   memberCode: z.string().trim().min(1).max(60),
   fullName: z.string().trim().min(1).max(200),
   email: z.string().trim().email().max(200),
+  personalEmail: z
+    .union([z.string().trim().email().max(200), z.literal("")])
+    .optional(),
   status: z.enum(MEMBER_STATUSES as [string, ...string[]]),
   role: z.enum(MEMBER_ROLES as [string, ...string[]]).optional(),
   title: z.string().max(200).optional(),
@@ -67,6 +70,7 @@ export async function POST(request: Request) {
     memberCode: d.memberCode,
     fullName: d.fullName,
     email: d.email,
+    personalEmail: d.personalEmail,
     status: d.status as MemberStatus,
     role: d.role as MemberRole | undefined,
     title: d.title,

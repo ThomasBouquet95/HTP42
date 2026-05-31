@@ -44,6 +44,9 @@ const schema = z.object({
   memberCode: z.string().trim().min(1).max(40).optional(),
   fullName: z.string().trim().min(1).max(200).optional(),
   email: z.string().trim().email().max(200).optional(),
+  personalEmail: z
+    .union([z.string().trim().email().max(200), z.literal("")])
+    .optional(),
   introduction: z.string().max(5000).optional(),
   country: z.string().max(120).optional(),
   phone: z.string().max(60).optional(),
@@ -96,6 +99,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     memberCode: d.memberCode,
     fullName: d.fullName,
     email: d.email,
+    personalEmail: d.personalEmail,
     introduction: d.introduction,
     country: d.country,
     phone: d.phone,

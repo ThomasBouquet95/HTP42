@@ -223,9 +223,15 @@ export function SummaryClient({
   }
 
   function exportCsv() {
-    // Exports always represent the official record — only Submitted
-    // timesheets, never drafts or deleted ones.
-    const rows = toCsvRows(filtered.filter((t) => t.status === "Submitted"));
+    // Exports always represent the official record: anything that's been
+    // submitted, regardless of where it sits in the billing lifecycle
+    // (Submitted, Invoiced, Paid). Drafts and Deleted are excluded.
+    const rows = toCsvRows(
+      filtered.filter(
+        (t) =>
+          t.status === "Submitted" || t.status === "Invoiced" || t.status === "Paid",
+      ),
+    );
     const csv = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -687,9 +693,10 @@ function BreakdownCard({
 }
 
 function toCsvRows(rows: TimesheetRecord[]): string[][] {
+  // Status is intentionally omitted from exports — recipients (clients,
+  // finance, etc.) shouldn't see the internal billing lifecycle.
   const header = [
     "Timesheet Code",
-    "Status",
     "Project Code",
     "Project Name",
     "Staffing Code",
@@ -708,7 +715,6 @@ function toCsvRows(rows: TimesheetRecord[]): string[][] {
     const d = dayIsos(t.startDate);
     out.push([
       t.timesheetCode,
-      t.status,
       t.projectCode,
       t.projectName,
       t.staffingCode,

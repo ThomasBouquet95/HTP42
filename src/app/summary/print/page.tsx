@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getTimesheetsForMember, type TimesheetRecord, type TimesheetStatus } from "@/lib/airtable";
+import { getTimesheetsForMember, type TimesheetRecord } from "@/lib/airtable";
 import { formatWeekRange, parseIsoDate, toIsoDate } from "@/lib/dates";
 import { PrintTrigger } from "./print-trigger";
 
@@ -161,7 +161,6 @@ export default async function SummaryPrintPage({
                       {t.submissionDate ? ` · Submitted ${t.submissionDate}` : ""}
                     </div>
                   </div>
-                  <div className={`status status-${t.status.toLowerCase()}`}>{t.status}</div>
                 </div>
                 <table className="ts-table">
                   <thead>
@@ -210,10 +209,20 @@ function applyFilters(
   sp: { status?: string; project?: string; staffing?: string; from?: string; to?: string },
 ): TimesheetRecord[] {
   return rows.filter((t) => {
-    // Reports always show only Submitted timesheets — drafts and deleted
-    // rows are excluded regardless of the requested status filter.
-    if (t.status !== "Submitted") return false;
-    if (sp.status && (sp.status as TimesheetStatus) !== "Submitted") return false;
+    // Reports include the full submitted lifecycle (Submitted, Invoiced,
+    // Paid). Draft and Deleted are always excluded; the internal status
+    // itself isn't rendered to keep the billing lifecycle private.
+    if (t.status !== "Submitted" && t.status !== "Invoiced" && t.status !== "Paid") {
+      return false;
+    }
+    if (
+      sp.status &&
+      sp.status !== "Submitted" &&
+      sp.status !== "Invoiced" &&
+      sp.status !== "Paid"
+    ) {
+      return false;
+    }
     if (sp.project && t.projectCode !== sp.project) return false;
     if (sp.staffing && t.staffingRecordId !== sp.staffing) return false;
     if (sp.from && (t.startDate ?? "") < sp.from) return false;
@@ -264,7 +273,6 @@ function describeFilters(sp: {
   to?: string;
 }): string {
   const parts: string[] = [];
-  parts.push(sp.status ? `Status = ${sp.status}` : "All statuses");
   if (sp.project) parts.push(`Project = ${sp.project}`);
   if (sp.staffing) parts.push(`Staffing id = ${sp.staffing}`);
   if (sp.from) parts.push(`From ${sp.from}`);
