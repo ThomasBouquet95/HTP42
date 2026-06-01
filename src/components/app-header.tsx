@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { isAdmin, type SessionPayload } from "@/lib/session";
+import { Heartbeat } from "@/components/heartbeat";
 
 type NavItem = { href: string; label: string; match: (p: string) => boolean };
 
@@ -26,6 +27,11 @@ const NAV: NavItem[] = [
     href: "/tasks",
     label: "Tasks",
     match: (p) => p === "/tasks" || p.startsWith("/tasks/"),
+  },
+  {
+    href: "/chat",
+    label: "Chat",
+    match: (p) => p === "/chat" || p.startsWith("/chat/"),
   },
   { href: "/profile", label: "Profile", match: (p) => p === "/profile" || p.startsWith("/profile/") },
 ];
@@ -50,6 +56,9 @@ export function AppHeader({
 
   return (
     <header className="bg-white border-b border-slate-200">
+      {/* Mounted globally on every authenticated page (the header itself is)
+          so we get presence pings as soon as someone opens any route. */}
+      <Heartbeat />
       <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link

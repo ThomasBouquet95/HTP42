@@ -20,6 +20,8 @@ export const TABLES = {
   payments: "Payments",
   memberInvoices: "Member Invoices",
   tasks: "Tasks",
+  chatConversations: "Chat Conversations",
+  chatMessages: "Chat Messages",
 } as const;
 
 export const FIELDS = {
@@ -43,6 +45,7 @@ export const FIELDS = {
     cv: "CV",
     lastSignIn: "Last Sign In",
     signInCount: "Sign In Count",
+    lastActivity: "Last Activity",
     bankAccountName: "Bank Account Name",
     bankAccountAddress: "Bank Account Address",
     iban: "IBAN",
@@ -159,6 +162,21 @@ export const FIELDS = {
     createdAt: "Created At",
     updatedAt: "Updated At",
     visibility: "Visibility",
+  },
+  chatConversations: {
+    title: "Title",
+    kind: "Kind",
+    members: "Members",
+    createdBy: "Created By",
+    createdAt: "Created At",
+    lastMessageAt: "Last Message At",
+    lastMessagePreview: "Last Message Preview",
+  },
+  chatMessages: {
+    body: "Body",
+    conversation: "Conversation",
+    sender: "Sender",
+    sentAt: "Sent At",
   },
 } as const;
 
@@ -635,6 +653,10 @@ export type SignInActivity = {
   photoUrl: string | null;
   lastSignIn: string | null; // ISO datetime string
   signInCount: number;
+  // Updated by the portal heartbeat (~ every 60s while the user has the
+  // app open). Null = the member has never opened the portal since the
+  // heartbeat shipped.
+  lastActivity: string | null;
 };
 
 // Admin: list every member with their sign-in activity. Members who have
@@ -651,6 +673,7 @@ export async function listSignInActivity(): Promise<SignInActivity[]> {
         FIELDS.networkMembers.photo,
         FIELDS.networkMembers.lastSignIn,
         FIELDS.networkMembers.signInCount,
+        FIELDS.networkMembers.lastActivity,
       ],
     })
     .all();
@@ -664,6 +687,7 @@ export async function listSignInActivity(): Promise<SignInActivity[]> {
     photoUrl: firstAttachment(r, FIELDS.networkMembers.photo)?.url ?? null,
     lastSignIn: (r.get(FIELDS.networkMembers.lastSignIn) as string | undefined) ?? null,
     signInCount: num(r, FIELDS.networkMembers.signInCount),
+    lastActivity: (r.get(FIELDS.networkMembers.lastActivity) as string | undefined) ?? null,
   }));
 }
 
@@ -674,17 +698,48 @@ export async function recordSignIn(memberRecordId: string): Promise<void> {
   try {
     const r = await base(TABLES.networkMembers).find(memberRecordId);
     const current = num(r, FIELDS.networkMembers.signInCount);
+    const now = new Date().toISOString();
     await base(TABLES.networkMembers).update([
       {
         id: memberRecordId,
         fields: {
-          [FIELDS.networkMembers.lastSignIn]: new Date().toISOString(),
+          [FIELDS.networkMembers.lastSignIn]: now,
           [FIELDS.networkMembers.signInCount]: current + 1,
+          [FIELDS.networkMembers.lastActivity]: now,
         },
       },
     ]);
   } catch {
     // ignore
+  }
+}
+
+// Bumped by a client-side heartbeat (~ once a minute while the portal tab is
+// open + visible). Throttled in-process: if the member's most recent value
+// is within `minIntervalMs`, we skip the Airtable write to spare the rate
+// limit. Failures are swallowed since presence is non-critical UX.
+const lastActivityMemoryCache = new Map<string, number>();
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 45_000;
+export async function recordHeartbeat(
+  memberRecordId: string,
+  minIntervalMs: number = DEFAULT_HEARTBEAT_INTERVAL_MS,
+): Promise<void> {
+  const prev = lastActivityMemoryCache.get(memberRecordId);
+  const now = Date.now();
+  if (prev !== undefined && now - prev < minIntervalMs) return;
+  lastActivityMemoryCache.set(memberRecordId, now);
+  try {
+    await base(TABLES.networkMembers).update([
+      {
+        id: memberRecordId,
+        fields: {
+          [FIELDS.networkMembers.lastActivity]: new Date(now).toISOString(),
+        },
+      },
+    ]);
+  } catch {
+    // On failure forget the cache entry so the next heartbeat retries.
+    lastActivityMemoryCache.delete(memberRecordId);
   }
 }
 
@@ -2718,4 +2773,223 @@ export async function updateTask(recordId: string, input: TaskUpdateInput): Prom
 
 export async function deleteTask(recordId: string): Promise<void> {
   await base(TABLES.tasks).destroy([recordId]);
+}
+
+// ---------------------------------------------------------------------------
+// Chat
+// ---------------------------------------------------------------------------
+
+export type ChatKind = "Direct" | "Group";
+
+export type ChatConversation = {
+  id: string;
+  title: string;
+  kind: ChatKind;
+  memberRecordIds: string[];
+  createdByRecordId: string;
+  createdAt: string | null;
+  lastMessageAt: string | null;
+  lastMessagePreview: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  body: string;
+  conversationId: string;
+  senderRecordId: string;
+  senderName: string;
+  senderPhotoUrl: string | null;
+  sentAt: string | null;
+};
+
+function conversationFromRecord(r: AirtableRecord<FieldSet>): ChatConversation {
+  return {
+    id: r.id,
+    title: str(r, FIELDS.chatConversations.title),
+    kind: (str(r, FIELDS.chatConversations.kind) as ChatKind) || "Direct",
+    memberRecordIds: linkedIds(r, FIELDS.chatConversations.members),
+    createdByRecordId: linkedIds(r, FIELDS.chatConversations.createdBy)[0] ?? "",
+    createdAt: (r.get(FIELDS.chatConversations.createdAt) as string | undefined) ?? null,
+    lastMessageAt: (r.get(FIELDS.chatConversations.lastMessageAt) as string | undefined) ?? null,
+    lastMessagePreview: str(r, FIELDS.chatConversations.lastMessagePreview),
+  };
+}
+
+// Lists conversations the caller is a participant of, sorted most-recently-
+// active first. Members are stored as linked-record IDs; we filter using a
+// filterByFormula that checks the linked Member Code primary field via
+// ARRAYJOIN — the cheapest reliable way to filter linked records.
+export async function listConversationsFor(
+  memberRecordId: string,
+  memberCode: string,
+): Promise<ChatConversation[]> {
+  const safeCode = escape(memberCode);
+  const records = await base(TABLES.chatConversations)
+    .select({
+      // Match conversations where the caller's member code shows up in the
+      // ARRAY of linked Member Codes. The "," buffer guards against false
+      // positives on codes that share a prefix.
+      filterByFormula: `FIND("," & "${safeCode}" & ",", "," & ARRAYJOIN({${FIELDS.chatConversations.members}}, ",") & ",") > 0`,
+      sort: [{ field: FIELDS.chatConversations.lastMessageAt, direction: "desc" }],
+    })
+    .all();
+  // Belt-and-braces: keep only conversations whose Members field actually
+  // contains the caller's record id (defensive against odd filterByFormula
+  // behaviour with multi-word member codes).
+  return records
+    .map(conversationFromRecord)
+    .filter((c) => c.memberRecordIds.includes(memberRecordId));
+}
+
+export async function getConversation(
+  recordId: string,
+): Promise<ChatConversation | null> {
+  try {
+    const r = await base(TABLES.chatConversations).find(recordId);
+    return conversationFromRecord(r);
+  } catch {
+    return null;
+  }
+}
+
+// Direct conversations are deduped by participant set: if a DM already exists
+// between exactly the two members, we reuse it instead of creating a new row.
+// Group conversations are always new (the same set of people can have
+// multiple distinct group rooms).
+export async function ensureDirectConversation(
+  callerRecordId: string,
+  callerCode: string,
+  otherRecordId: string,
+): Promise<ChatConversation> {
+  const existing = await listConversationsFor(callerRecordId, callerCode);
+  const match = existing.find(
+    (c) =>
+      c.kind === "Direct" &&
+      c.memberRecordIds.length === 2 &&
+      c.memberRecordIds.includes(callerRecordId) &&
+      c.memberRecordIds.includes(otherRecordId),
+  );
+  if (match) return match;
+  const now = new Date().toISOString();
+  const [created] = await base(TABLES.chatConversations).create([
+    {
+      fields: {
+        [FIELDS.chatConversations.kind]: "Direct",
+        [FIELDS.chatConversations.members]: [callerRecordId, otherRecordId],
+        [FIELDS.chatConversations.createdBy]: [callerRecordId],
+        [FIELDS.chatConversations.createdAt]: now,
+      } as FieldSet,
+    },
+  ]);
+  return conversationFromRecord(created);
+}
+
+export async function createGroupConversation(
+  callerRecordId: string,
+  title: string,
+  memberRecordIds: string[],
+): Promise<ChatConversation> {
+  const all = Array.from(new Set([callerRecordId, ...memberRecordIds])).filter(Boolean);
+  const now = new Date().toISOString();
+  const [created] = await base(TABLES.chatConversations).create([
+    {
+      fields: {
+        [FIELDS.chatConversations.title]: title,
+        [FIELDS.chatConversations.kind]: "Group",
+        [FIELDS.chatConversations.members]: all,
+        [FIELDS.chatConversations.createdBy]: [callerRecordId],
+        [FIELDS.chatConversations.createdAt]: now,
+      } as FieldSet,
+    },
+  ]);
+  return conversationFromRecord(created);
+}
+
+function messageFromRecord(
+  r: AirtableRecord<FieldSet>,
+  memberById: Map<string, { fullName: string; photoUrl: string | null }>,
+): ChatMessage {
+  const senderIds = linkedIds(r, FIELDS.chatMessages.sender);
+  const senderId = senderIds[0] ?? "";
+  const sender = senderId ? memberById.get(senderId) : null;
+  return {
+    id: r.id,
+    body: str(r, FIELDS.chatMessages.body),
+    conversationId: linkedIds(r, FIELDS.chatMessages.conversation)[0] ?? "",
+    senderRecordId: senderId,
+    senderName: sender?.fullName ?? "",
+    senderPhotoUrl: sender?.photoUrl ?? null,
+    sentAt: (r.get(FIELDS.chatMessages.sentAt) as string | undefined) ?? null,
+  };
+}
+
+// Loads the last `limit` messages for a conversation in chronological order.
+// We need a member lookup to attach sender names + photos for rendering.
+export async function listMessages(
+  conversationId: string,
+  limit: number = 200,
+): Promise<ChatMessage[]> {
+  const [records, members] = await Promise.all([
+    base(TABLES.chatMessages)
+      .select({
+        filterByFormula: `FIND("${escape(conversationId)}", ARRAYJOIN({${FIELDS.chatMessages.conversation}}))`,
+        sort: [{ field: FIELDS.chatMessages.sentAt, direction: "desc" }],
+        maxRecords: limit,
+      })
+      .all(),
+    listAllMembers(),
+  ]);
+  const memberById = new Map(
+    members.map((m) => [
+      m.id,
+      { fullName: m.fullName || m.memberCode, photoUrl: m.photo?.url ?? null },
+    ]),
+  );
+  return records
+    .map((r) => messageFromRecord(r, memberById))
+    .filter((m) => m.conversationId === conversationId)
+    .reverse();
+}
+
+// Posts a new message and bumps the conversation's lastMessage{At,Preview}
+// in the same flow so the conversation list orders correctly without a
+// follow-up read.
+export async function sendChatMessage(
+  conversationId: string,
+  senderRecordId: string,
+  body: string,
+): Promise<ChatMessage> {
+  const now = new Date().toISOString();
+  const preview = body.replace(/\s+/g, " ").trim().slice(0, 140);
+  const [created] = await base(TABLES.chatMessages).create([
+    {
+      fields: {
+        [FIELDS.chatMessages.body]: body,
+        [FIELDS.chatMessages.conversation]: [conversationId],
+        [FIELDS.chatMessages.sender]: [senderRecordId],
+        [FIELDS.chatMessages.sentAt]: now,
+      } as FieldSet,
+    },
+  ]);
+  // Best-effort metadata bump. A failure here doesn't undo the message.
+  try {
+    await base(TABLES.chatConversations).update([
+      {
+        id: conversationId,
+        fields: {
+          [FIELDS.chatConversations.lastMessageAt]: now,
+          [FIELDS.chatConversations.lastMessagePreview]: preview,
+        } as FieldSet,
+      },
+    ]);
+  } catch {
+    // ignore
+  }
+  const memberById = new Map(
+    (await listAllMembers()).map((m) => [
+      m.id,
+      { fullName: m.fullName || m.memberCode, photoUrl: m.photo?.url ?? null },
+    ]),
+  );
+  return messageFromRecord(created, memberById);
 }
