@@ -1,20 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
-import { getConversation, listMessages, sendChatMessage } from "@/lib/airtable";
+import {
+  getConversation,
+  getConversationMemberIdsCached,
+  listMessages,
+  sendChatMessage,
+} from "@/lib/airtable";
 
 export const runtime = "nodejs";
-
-// Auth helper: pulls the conversation and verifies the caller is a member.
-// Returns the conversation, or a NextResponse to short-circuit the handler.
-async function authorize(id: string, memberRecordId: string) {
-  const conv = await getConversation(id);
-  if (!conv) return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
-  if (!conv.memberRecordIds.includes(memberRecordId)) {
-    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
-  }
-  return { conv };
-}
 
 export async function GET(
   _request: Request,
@@ -23,8 +17,14 @@ export async function GET(
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
   const { id } = await params;
-  const result = await authorize(id, session.sub);
-  if ("error" in result) return result.error;
+  // Read path uses a short-lived membership cache: with a 3 s message poll
+  // and the cache TTL at 10 s, we collapse 3-4 reads into one without
+  // making slow stale auth a real problem.
+  const memberIds = await getConversationMemberIdsCached(id);
+  if (!memberIds) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!memberIds.includes(session.sub)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const messages = await listMessages(id);
   return NextResponse.json({ messages });
 }
@@ -40,8 +40,13 @@ export async function POST(
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
   const { id } = await params;
-  const result = await authorize(id, session.sub);
-  if ("error" in result) return result.error;
+  // Writes always re-read the conversation membership uncached, so a member
+  // removed seconds ago can't slip in one final message.
+  const conv = await getConversation(id);
+  if (!conv) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!conv.memberRecordIds.includes(session.sub)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const body = await request.json().catch(() => null);
   const parsed = sendSchema.safeParse(body);
   if (!parsed.success) {

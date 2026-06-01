@@ -2860,6 +2860,29 @@ export async function getConversation(
   }
 }
 
+// Short-lived membership cache for chat authorization. Every messages
+// GET/POST has to verify the caller is in the conversation's Members; with
+// a 3 s message poll that doubles every user's Airtable read budget. The
+// cache holds the participant list for ~10 s, which is short enough that
+// removing someone takes effect quickly while still collapsing the rapid
+// poll traffic into one read per conversation per window.
+const conversationAuthCache = new Map<string, { ts: number; memberIds: string[] }>();
+const CONV_AUTH_TTL_MS = 10_000;
+export async function getConversationMemberIdsCached(
+  recordId: string,
+): Promise<string[] | null> {
+  const cached = conversationAuthCache.get(recordId);
+  const now = Date.now();
+  if (cached && now - cached.ts < CONV_AUTH_TTL_MS) return cached.memberIds;
+  const conv = await getConversation(recordId);
+  if (!conv) {
+    conversationAuthCache.delete(recordId);
+    return null;
+  }
+  conversationAuthCache.set(recordId, { ts: now, memberIds: conv.memberRecordIds });
+  return conv.memberRecordIds;
+}
+
 // Direct conversations are deduped by participant set: if a DM already exists
 // between exactly the two members, we reuse it instead of creating a new row.
 // Group conversations are always new (the same set of people can have

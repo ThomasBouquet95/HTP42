@@ -55,6 +55,80 @@ export function ChatClient({
     return () => clearInterval(id);
   }, []);
 
+  // Per-conversation "last seen" timestamps, kept client-side in
+  // localStorage. We compare these against each conversation's
+  // lastMessageAt to drive the unread badge on the sidebar and on the
+  // browser tab title.
+  const [lastSeen, setLastSeen] = useState<Record<string, string>>(() => {
+    if (typeof window === "undefined") return {};
+    try {
+      const raw = window.localStorage.getItem("htp42-chat-lastSeen");
+      return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
+  });
+  const persistLastSeen = useCallback((next: Record<string, string>) => {
+    setLastSeen(next);
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("htp42-chat-lastSeen", JSON.stringify(next));
+    } catch {
+      // ignore — unread state is non-critical, falls back to "all read"
+    }
+  }, []);
+
+  // Mark the active conversation as seen on every messages refresh and on
+  // every conversation switch.
+  useEffect(() => {
+    if (!activeId) return;
+    const stamp = new Date().toISOString();
+    persistLastSeen({ ...lastSeen, [activeId]: stamp });
+    // We intentionally omit `lastSeen` from the deps array — including it
+    // would loop every time we updated it. The active conversation's
+    // last-seen is updated whenever activeId or messages change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId, messages.length]);
+
+  // Tally per-conversation unread counts: a row is unread if its
+  // lastMessageAt is more recent than our stored lastSeen for it, and the
+  // most recent message isn't ours. Cheap, runs each render from the
+  // already-loaded conversation list.
+  const unreadByConv = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const c of conversations) {
+      if (!c.lastMessageAt) {
+        map.set(c.id, false);
+        continue;
+      }
+      // If we're currently looking at this conversation, treat as read.
+      if (c.id === activeId) {
+        map.set(c.id, false);
+        continue;
+      }
+      const seen = lastSeen[c.id];
+      map.set(c.id, !seen || Date.parse(c.lastMessageAt) > Date.parse(seen));
+    }
+    return map;
+  }, [conversations, activeId, lastSeen]);
+
+  const totalUnread = useMemo(() => {
+    let n = 0;
+    for (const v of unreadByConv.values()) if (v) n += 1;
+    return n;
+  }, [unreadByConv]);
+
+  // Surface unread total in the browser tab title when the user is on
+  // another tab so they notice new messages without polling the chat.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const base = "Chat — HTP42";
+    document.title = totalUnread > 0 ? `(${totalUnread}) ${base}` : base;
+    return () => {
+      document.title = base;
+    };
+  }, [totalUnread]);
+
   const membersById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
 
   // Resolve a display name + avatar for any conversation. DMs show the
@@ -83,24 +157,40 @@ export function ChatClient({
     [currentMemberId, membersById],
   );
 
-  // Background refresh: conversations list (handle: new DMs from others, new
-  // messages bumping the order).
+  // Background refresh: conversations list (new DMs from others, new
+  // messages bumping the order). Uses the same monotonic-id guard the
+  // messages poll has so a slow response can't clobber a fresher one.
+  const convReqIdRef = useRef(0);
   useEffect(() => {
     let cancelled = false;
     async function refresh() {
+      // Pause polling when the tab is hidden — the user can't see the
+      // result, and a backgrounded tab still consumes Airtable rate-limit
+      // budget on every tick.
+      if (typeof document !== "undefined" && document.hidden) return;
+      const reqId = ++convReqIdRef.current;
       try {
         const res = await fetch("/api/chat/conversations", { cache: "no-store" });
         if (!res.ok) return;
         const data = (await res.json()) as { conversations: ChatConversation[] };
-        if (!cancelled) setConversations(data.conversations);
+        if (cancelled) return;
+        if (reqId !== convReqIdRef.current) return;
+        setConversations(data.conversations);
       } catch {
         // swallow — next poll will retry
       }
     }
     const id = setInterval(refresh, CONVERSATIONS_POLL_MS);
+    // Re-fetch on tab focus so the list catches up the moment the user
+    // comes back.
+    const onVis = () => {
+      if (!document.hidden) refresh();
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       cancelled = true;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, []);
 
@@ -115,6 +205,7 @@ export function ChatClient({
     }
     let cancelled = false;
     async function load() {
+      if (typeof document !== "undefined" && document.hidden) return;
       const reqId = ++reqIdRef.current;
       try {
         const res = await fetch(
@@ -128,18 +219,24 @@ export function ChatClient({
         if (reqId !== reqIdRef.current) return;
         // Merge the canonical list with any still-pending optimistic
         // bubbles so the user's just-sent message doesn't briefly vanish
-        // between the POST response and the next poll.
+        // between the POST response and the next poll. We track which
+        // canonical rows have already been "claimed" by an optimistic
+        // bubble so two back-to-back identical messages don't both match
+        // the same canonical and collapse into one.
         setMessages((prev) => {
           const optimistic = prev.filter((m) => m.id.startsWith("optim-"));
           const merged = [...data.messages];
+          const claimed = new Set<string>();
           for (const o of optimistic) {
-            const dupe = merged.some(
+            const match = merged.find(
               (m) =>
+                !claimed.has(m.id) &&
                 m.senderRecordId === o.senderRecordId &&
                 m.body === o.body &&
                 Math.abs(Date.parse(m.sentAt ?? "0") - Date.parse(o.sentAt ?? "0")) < 30_000,
             );
-            if (!dupe) merged.push(o);
+            if (match) claimed.add(match.id);
+            else merged.push(o);
           }
           return merged;
         });
@@ -149,9 +246,14 @@ export function ChatClient({
     }
     load();
     const id = setInterval(load, MESSAGES_POLL_MS);
+    const onVis = () => {
+      if (!document.hidden) load();
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       cancelled = true;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, [activeId]);
 
@@ -190,7 +292,12 @@ export function ChatClient({
   function openConversation(id: string) {
     const sp = new URLSearchParams(searchParams.toString());
     sp.set("c", id);
-    router.replace(`/chat?${sp.toString()}`);
+    // First time we open a conversation (no `c` in URL yet), push so the
+    // browser back-button takes the user back to the empty list state.
+    // Subsequent conversation switches just replace, so the back button
+    // skips past the chain of hops and returns cleanly.
+    if (activeId == null) router.push(`/chat?${sp.toString()}`);
+    else router.replace(`/chat?${sp.toString()}`);
   }
 
   async function send() {
@@ -225,11 +332,17 @@ export function ChatClient({
       if (!res.ok) throw new Error("Send failed");
       const data = (await res.json().catch(() => ({}))) as { message?: ChatMessage };
       if (data.message) {
-        // Replace the optimistic placeholder with the canonical message so
-        // the bubble settles in place without a flash.
-        setMessages((prev) =>
-          prev.map((m) => (m.id === optimisticId ? (data.message as ChatMessage) : m)),
-        );
+        const canonical = data.message;
+        // Replace the optimistic placeholder with the canonical message AND
+        // drop any pre-existing canonical row with the same id (the poll
+        // may have merged it in already if the POST race-lost). Belt-and-
+        // braces against rendering two React keys with the same value.
+        setMessages((prev) => {
+          const withoutDupes = prev.filter(
+            (m) => m.id !== optimisticId && m.id !== canonical.id,
+          );
+          return [...withoutDupes, canonical];
+        });
       }
     } catch {
       // Roll back the optimistic message and restore the input so the user
@@ -300,6 +413,7 @@ export function ChatClient({
             conversations.map((c) => {
               const d = describe(c);
               const active = c.id === activeId;
+              const unread = unreadByConv.get(c.id) ?? false;
               return (
                 <li key={c.id}>
                   <button
@@ -318,16 +432,29 @@ export function ChatClient({
                       <div className="flex items-baseline justify-between gap-2">
                         <span
                           className={`truncate text-sm ${
-                            active ? "font-semibold text-brand-700" : "font-medium text-slate-900"
+                            active
+                              ? "font-semibold text-brand-700"
+                              : unread
+                                ? "font-semibold text-slate-900"
+                                : "font-medium text-slate-900"
                           }`}
                         >
                           {d.label}
                         </span>
-                        <span className="text-[10px] text-slate-400 tabular-nums shrink-0">
-                          {c.lastMessageAt ? formatAgo(nowTick - Date.parse(c.lastMessageAt)) : ""}
+                        <span className="flex items-center gap-1 shrink-0">
+                          {unread ? (
+                            <span className="inline-block h-2 w-2 rounded-full bg-brand-600" />
+                          ) : null}
+                          <span className="text-[10px] text-slate-400 tabular-nums">
+                            {c.lastMessageAt ? formatAgo(nowTick - Date.parse(c.lastMessageAt)) : ""}
+                          </span>
                         </span>
                       </div>
-                      <div className="mt-0.5 truncate text-[11px] text-slate-500">
+                      <div
+                        className={`mt-0.5 truncate text-[11px] ${
+                          unread ? "text-slate-700 font-medium" : "text-slate-500"
+                        }`}
+                      >
                         {c.lastMessagePreview || (
                           <span className="italic text-slate-400">No messages yet</span>
                         )}
@@ -380,13 +507,23 @@ export function ChatClient({
                     !!prev.sentAt &&
                     !!m.sentAt &&
                     Date.parse(m.sentAt) - Date.parse(prev.sentAt) < 5 * MIN;
+                  // Render a "Today" / "Yesterday" / explicit date separator
+                  // whenever the calendar day rolls over between two
+                  // adjacent messages, so long histories are scannable.
+                  const showDayDivider =
+                    !!m.sentAt &&
+                    (!prev || (!!prev.sentAt && !sameDay(m.sentAt, prev.sentAt)));
                   return (
-                    <MessageBubble
-                      key={m.id}
-                      message={m}
-                      own={own}
-                      groupedWithPrev={grouped}
-                    />
+                    <div key={m.id}>
+                      {showDayDivider ? (
+                        <DayDivider iso={m.sentAt!} />
+                      ) : null}
+                      <MessageBubble
+                        message={m}
+                        own={own}
+                        groupedWithPrev={!showDayDivider && grouped}
+                      />
+                    </div>
                   );
                 })
               )}
@@ -497,6 +634,76 @@ function ActiveConversationHeader({
   );
 }
 
+function DayDivider({ iso }: { iso: string }) {
+  const d = new Date(iso);
+  const now = new Date();
+  const sameYear = d.getFullYear() === now.getFullYear();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const diff = midnight - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  let label: string;
+  if (diff === 0) label = "Today";
+  else if (diff === dayMs) label = "Yesterday";
+  else
+    label = d.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      ...(sameYear ? {} : { year: "numeric" }),
+    });
+  return (
+    <div className="my-3 flex items-center gap-2 text-[10px] uppercase tracking-wide text-slate-400">
+      <span className="h-px flex-1 bg-slate-200" />
+      <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium">{label}</span>
+      <span className="h-px flex-1 bg-slate-200" />
+    </div>
+  );
+}
+
+function sameDay(aIso: string, bIso: string): boolean {
+  const a = new Date(aIso);
+  const b = new Date(bIso);
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+// Splits a body into text + autolinked URL segments. We don't render any
+// markdown beyond this — plain text is plenty for an internal chat MVP.
+function linkify(body: string): React.ReactNode[] {
+  const rx = /\bhttps?:\/\/[^\s<>"']+/gi;
+  const out: React.ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let i = 0;
+  while ((m = rx.exec(body)) !== null) {
+    if (m.index > last) out.push(body.slice(last, m.index));
+    // Strip trailing punctuation that probably isn't part of the URL.
+    let url = m[0];
+    let trail = "";
+    while (/[.,!?)\]]$/.test(url)) {
+      trail = url.slice(-1) + trail;
+      url = url.slice(0, -1);
+    }
+    out.push(
+      <a
+        key={`u${i++}`}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline decoration-current/40 underline-offset-2 hover:decoration-current"
+      >
+        {url}
+      </a>,
+    );
+    if (trail) out.push(trail);
+    last = m.index + m[0].length;
+  }
+  if (last < body.length) out.push(body.slice(last));
+  return out;
+}
+
 function MessageBubble({
   message,
   own,
@@ -537,7 +744,7 @@ function MessageBubble({
               : "bg-white text-slate-800 ring-1 ring-slate-200 rounded-bl-md"
           } ${pending ? "opacity-70" : ""}`}
         >
-          {message.body}
+          {linkify(message.body)}
         </div>
         {message.sentAt ? (
           <div
@@ -724,7 +931,7 @@ function NewChatModal({
     payload:
       | { kind: "Direct"; memberRecordId: string }
       | { kind: "Group"; title: string; memberRecordIds: string[] },
-  ) => void;
+  ) => Promise<void>;
 }) {
   const [kind, setKind] = useState<ChatKind>("Direct");
   const [search, setSearch] = useState("");
@@ -769,11 +976,11 @@ function NewChatModal({
       if (kind === "Direct") {
         const id = [...selected][0];
         if (!id) return;
-        onCreate({ kind: "Direct", memberRecordId: id });
+        await onCreate({ kind: "Direct", memberRecordId: id });
       } else {
         const ids = [...selected];
-        if (ids.length < 1 || !groupTitle.trim()) return;
-        onCreate({ kind: "Group", title: groupTitle.trim(), memberRecordIds: ids });
+        if (ids.length < 2 || !groupTitle.trim()) return;
+        await onCreate({ kind: "Group", title: groupTitle.trim(), memberRecordIds: ids });
       }
     } finally {
       setBusy(false);
