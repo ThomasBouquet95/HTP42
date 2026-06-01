@@ -177,6 +177,12 @@ export const FIELDS = {
     conversation: "Conversation",
     sender: "Sender",
     sentAt: "Sent At",
+    // Denormalized record id of the linked Conversation. Filtering by the
+    // linked field directly is broken because Airtable's ARRAYJOIN on a
+    // multipleRecordLinks projects the linked records' primary field, which
+    // for DM conversations is the empty Title — so the formula matches
+    // nothing. Storing the id as plain text sidesteps it.
+    conversationId: "Conversation Id",
   },
 } as const;
 
@@ -2981,7 +2987,11 @@ export async function listMessages(
   const [records, members] = await Promise.all([
     base(TABLES.chatMessages)
       .select({
-        filterByFormula: `FIND("${escape(conversationId)}", ARRAYJOIN({${FIELDS.chatMessages.conversation}}))`,
+        // Filter by the denormalized text id. The previous approach
+        // (FIND on ARRAYJOIN of the linked field) silently matched zero
+        // rows for DMs because the conversation's primary field (Title)
+        // is empty.
+        filterByFormula: `{${FIELDS.chatMessages.conversationId}} = "${escape(conversationId)}"`,
         sort: [{ field: FIELDS.chatMessages.sentAt, direction: "desc" }],
         maxRecords: limit,
       })
@@ -3015,6 +3025,7 @@ export async function sendChatMessage(
       fields: {
         [FIELDS.chatMessages.body]: body,
         [FIELDS.chatMessages.conversation]: [conversationId],
+        [FIELDS.chatMessages.conversationId]: conversationId,
         [FIELDS.chatMessages.sender]: [senderRecordId],
         [FIELDS.chatMessages.sentAt]: now,
       } as FieldSet,
