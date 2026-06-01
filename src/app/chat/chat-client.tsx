@@ -217,27 +217,48 @@ export function ChatClient({
         if (cancelled) return;
         // Only the latest in-flight request gets to write state.
         if (reqId !== reqIdRef.current) return;
-        // Merge the canonical list with any still-pending optimistic
-        // bubbles so the user's just-sent message doesn't briefly vanish
-        // between the POST response and the next poll. We track which
-        // canonical rows have already been "claimed" by an optimistic
-        // bubble so two back-to-back identical messages don't both match
-        // the same canonical and collapse into one.
+        // Merge the canonical list with two kinds of local state Airtable
+        // may not yet reflect:
+        //   1. Optimistic bubbles still waiting for the POST response.
+        //   2. Recently-confirmed canonical messages (sent within ~15s)
+        //      that Airtable's index might not have surfaced yet — without
+        //      this they briefly disappear from the UI between the POST
+        //      return and the index catching up.
+        // We track claimed canonical rows so two back-to-back identical
+        // messages don't both match the same row and collapse into one.
         setMessages((prev) => {
-          const optimistic = prev.filter((m) => m.id.startsWith("optim-"));
+          const RECENT_WINDOW_MS = 15_000;
+          const now = Date.now();
+          const keep = prev.filter((m) => {
+            if (m.id.startsWith("optim-")) return true;
+            if (!m.sentAt) return false;
+            return now - Date.parse(m.sentAt) < RECENT_WINDOW_MS;
+          });
           const merged = [...data.messages];
+          const presentIds = new Set(merged.map((m) => m.id));
           const claimed = new Set<string>();
-          for (const o of optimistic) {
+          for (const k of keep) {
+            // Same id is already in the canonical list — nothing to do.
+            if (presentIds.has(k.id)) continue;
+            // Otherwise look for the same content+sender+timestamp window
+            // (covers both optimistic→canonical match and a duplicate of
+            // a row we already received from a previous poll).
             const match = merged.find(
               (m) =>
                 !claimed.has(m.id) &&
-                m.senderRecordId === o.senderRecordId &&
-                m.body === o.body &&
-                Math.abs(Date.parse(m.sentAt ?? "0") - Date.parse(o.sentAt ?? "0")) < 30_000,
+                m.senderRecordId === k.senderRecordId &&
+                m.body === k.body &&
+                Math.abs(Date.parse(m.sentAt ?? "0") - Date.parse(k.sentAt ?? "0")) < 30_000,
             );
             if (match) claimed.add(match.id);
-            else merged.push(o);
+            else merged.push(k);
           }
+          // Keep messages in chronological order so a late-arriving local
+          // entry doesn't land at the end visually when its timestamp is
+          // older than the last canonical row.
+          merged.sort(
+            (a, b) => Date.parse(a.sentAt ?? "0") - Date.parse(b.sentAt ?? "0"),
+          );
           return merged;
         });
       } catch {
