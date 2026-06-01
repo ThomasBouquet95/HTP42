@@ -43,13 +43,14 @@ type Filters = {
   to: string;
 };
 
-// Defaults: this week so the user lands on what they're working on right now,
-// status=All so they don't miss their own drafts at first glance.
+// Defaults: this month so the user lands on the broader picture of recent
+// work (multiple weeks visible by default). Status=All so they don't miss
+// their own drafts at first glance.
 const DEFAULT_FILTERS: Filters = {
   status: "All",
   projectCode: "All",
   staffingId: "All",
-  period: "thisWeek",
+  period: "thisMonth",
   from: "",
   to: "",
 };
