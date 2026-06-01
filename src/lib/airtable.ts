@@ -3010,6 +3010,100 @@ export async function listMessages(
     .reverse();
 }
 
+// Returns a single message by id (or null if it's gone). Used by the
+// edit/delete API to enforce sender-only authorization before mutating.
+export async function getChatMessage(recordId: string): Promise<ChatMessage | null> {
+  try {
+    const r = await base(TABLES.chatMessages).find(recordId);
+    const senderIds = linkedIds(r, FIELDS.chatMessages.sender);
+    const senderId = senderIds[0] ?? "";
+    const member = senderId ? await getMemberById(senderId) : null;
+    const memberById = new Map(
+      member
+        ? [[
+            member.id,
+            { fullName: member.fullName || member.memberCode, photoUrl: member.photo?.url ?? null },
+          ] as const]
+        : [],
+    );
+    return messageFromRecord(r, memberById);
+  } catch {
+    return null;
+  }
+}
+
+// Refreshes the conversation's Last Message At / Preview based on the
+// current most-recent message. Called after edit/delete so the
+// conversations list stays accurate. Safe no-op if the conversation now
+// has zero messages.
+async function refreshConversationPreview(conversationId: string): Promise<void> {
+  try {
+    const recent = await base(TABLES.chatMessages)
+      .select({
+        filterByFormula: `{${FIELDS.chatMessages.conversationId}} = "${escape(conversationId)}"`,
+        sort: [{ field: FIELDS.chatMessages.sentAt, direction: "desc" }],
+        maxRecords: 1,
+      })
+      .firstPage();
+    if (recent.length === 0) {
+      // Use `unknown` cast so we can write `null` to clear the datetime
+      // field — Airtable's FieldSet type doesn't include null directly.
+      await base(TABLES.chatConversations).update([
+        {
+          id: conversationId,
+          fields: {
+            [FIELDS.chatConversations.lastMessageAt]: null,
+            [FIELDS.chatConversations.lastMessagePreview]: "",
+          } as unknown as FieldSet,
+        },
+      ]);
+      return;
+    }
+    const latest = recent[0];
+    const body = str(latest, FIELDS.chatMessages.body);
+    const preview = body.replace(/\s+/g, " ").trim().slice(0, 140);
+    const sentAt = (latest.get(FIELDS.chatMessages.sentAt) as string | undefined) ?? null;
+    await base(TABLES.chatConversations).update([
+      {
+        id: conversationId,
+        fields: {
+          [FIELDS.chatConversations.lastMessageAt]: sentAt,
+          [FIELDS.chatConversations.lastMessagePreview]: preview,
+        } as FieldSet,
+      },
+    ]);
+  } catch {
+    // Non-fatal — the next message will fix the preview anyway.
+  }
+}
+
+export async function updateChatMessage(
+  recordId: string,
+  body: string,
+): Promise<ChatMessage | null> {
+  await base(TABLES.chatMessages).update([
+    {
+      id: recordId,
+      fields: { [FIELDS.chatMessages.body]: body } as FieldSet,
+    },
+  ]);
+  const updated = await getChatMessage(recordId);
+  if (updated?.conversationId) {
+    await refreshConversationPreview(updated.conversationId);
+  }
+  return updated;
+}
+
+export async function deleteChatMessage(recordId: string): Promise<void> {
+  // Capture the conversation id before deletion so we can refresh its
+  // preview after the row is gone.
+  const existing = await getChatMessage(recordId);
+  await base(TABLES.chatMessages).destroy([recordId]);
+  if (existing?.conversationId) {
+    await refreshConversationPreview(existing.conversationId);
+  }
+}
+
 // Posts a new message and bumps the conversation's lastMessage{At,Preview}
 // in the same flow so the conversation list orders correctly without a
 // follow-up read.

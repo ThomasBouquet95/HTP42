@@ -39,18 +39,23 @@ const RECENT_MS = 15 * MIN;
 
 // Cadence of background polling. Chosen so a small network (50ish) sits
 // comfortably under Airtable's 5 req/s/base limit even with multiple users
-// connected.
-const MESSAGES_POLL_MS = 3_000;
-const CONVERSATIONS_POLL_MS = 10_000;
+// connected. The active-conversation poll is the snappier of the two
+// because it drives perceived latency.
+const MESSAGES_POLL_MS = 2_000;
+const CONVERSATIONS_POLL_MS = 8_000;
 
 export function ChatClient({
   currentMemberId,
   initialConversations,
+  initialActiveId,
+  initialMessages,
   members,
   projects,
 }: {
   currentMemberId: string;
   initialConversations: ChatConversation[];
+  initialActiveId: string | null;
+  initialMessages: ChatMessage[];
   members: MemberOpt[];
   projects: ProjectOpt[];
 }) {
@@ -60,7 +65,13 @@ export function ChatClient({
 
   const [conversations, setConversations] =
     useState<ChatConversation[]>(initialConversations);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Seed with the server-rendered messages when the URL points at the same
+  // conversation we preloaded. Lets the first paint already show the
+  // thread instead of flashing the empty state for ~200ms while the
+  // client poll resolves.
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    initialActiveId && initialActiveId === activeId ? initialMessages : [],
+  );
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
   const [newChatOpen, setNewChatOpen] = useState(false);
@@ -390,6 +401,51 @@ export function ChatClient({
     }
   }
 
+  // Edit / delete handlers. Both are optimistic: the bubble updates or
+  // disappears immediately, with a rollback path if the server rejects.
+  async function editMessage(msg: ChatMessage, nextBody: string): Promise<boolean> {
+    const trimmed = nextBody.trim();
+    if (!trimmed || trimmed === msg.body) return false;
+    const previous = msg.body;
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msg.id ? { ...m, body: trimmed } : m)),
+    );
+    try {
+      const res = await fetch(
+        `/api/chat/conversations/${encodeURIComponent(msg.conversationId)}/messages/${encodeURIComponent(msg.id)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ body: trimmed }),
+        },
+      );
+      if (!res.ok) throw new Error("Edit failed");
+      return true;
+    } catch {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === msg.id ? { ...m, body: previous } : m)),
+      );
+      return false;
+    }
+  }
+
+  async function deleteMessage(msg: ChatMessage): Promise<boolean> {
+    if (!confirm("Delete this message? It can't be undone.")) return false;
+    const snapshot = messages;
+    setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+    try {
+      const res = await fetch(
+        `/api/chat/conversations/${encodeURIComponent(msg.conversationId)}/messages/${encodeURIComponent(msg.id)}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) throw new Error("Delete failed");
+      return true;
+    } catch {
+      setMessages(snapshot);
+      return false;
+    }
+  }
+
   async function createConversation(payload:
     | { kind: "Direct"; memberRecordId: string }
     | { kind: "Group"; title: string; memberRecordIds: string[] },
@@ -558,6 +614,8 @@ export function ChatClient({
                         message={m}
                         own={own}
                         groupedWithPrev={!showDayDivider && grouped}
+                        onEdit={editMessage}
+                        onDelete={deleteMessage}
                       />
                     </div>
                   );
@@ -745,17 +803,39 @@ function MessageBubble({
   message,
   own,
   groupedWithPrev,
+  onEdit,
+  onDelete,
 }: {
   message: ChatMessage;
   own: boolean;
   groupedWithPrev: boolean;
+  onEdit: (m: ChatMessage, body: string) => Promise<boolean>;
+  onDelete: (m: ChatMessage) => Promise<boolean>;
 }) {
   // Optimistic bubbles use a synthetic id prefix until the server confirms.
   // Dim them slightly + label the timestamp "Sending…" so the user can see
-  // their message is in flight, not just posted.
+  // their message is in flight, not just posted. Edit/delete are disabled
+  // while pending — the canonical id doesn't exist yet.
   const pending = message.id.startsWith("optim-");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(message.body);
+  const [saving, setSaving] = useState(false);
+  // Sync the draft if the message body changes outside of edit mode (e.g.
+  // the poll merged a fresher canonical row).
+  useEffect(() => {
+    if (!editing) setDraft(message.body);
+  }, [message.body, editing]);
+
+  async function saveEdit() {
+    if (saving) return;
+    setSaving(true);
+    const ok = await onEdit(message, draft);
+    setSaving(false);
+    if (ok) setEditing(false);
+  }
+
   return (
-    <div className={`flex items-end gap-2 ${own ? "justify-end" : ""}`}>
+    <div className={`group flex items-end gap-2 ${own ? "justify-end" : ""}`}>
       {!own ? (
         <div className="w-6 shrink-0">
           {!groupedWithPrev ? (
@@ -768,22 +848,95 @@ function MessageBubble({
           ) : null}
         </div>
       ) : null}
-      <div className={`max-w-[78%] ${own ? "items-end" : ""}`}>
+      <div className={`relative max-w-[78%] ${own ? "items-end" : ""}`}>
         {!groupedWithPrev && !own ? (
           <div className="mb-0.5 text-[10px] font-medium text-slate-500">
             {message.senderName}
           </div>
         ) : null}
-        <div
-          className={`whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-xs leading-relaxed transition-opacity ${
-            own
-              ? "bg-brand-600 text-white rounded-br-md"
-              : "bg-white text-slate-800 ring-1 ring-slate-200 rounded-bl-md"
-          } ${pending ? "opacity-70" : ""}`}
-        >
-          {linkify(message.body)}
-        </div>
-        {message.sentAt ? (
+        {editing ? (
+          <div
+            className={`rounded-2xl px-2 py-1.5 text-xs ${
+              own ? "bg-brand-50 ring-1 ring-brand-200" : "bg-white ring-1 ring-slate-200"
+            }`}
+          >
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void saveEdit();
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setEditing(false);
+                  setDraft(message.body);
+                }
+              }}
+              rows={Math.max(1, Math.min(5, draft.split("\n").length))}
+              className="block w-full resize-none rounded-md border border-slate-300 bg-white px-2 py-1 text-xs leading-relaxed text-slate-900 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              autoFocus
+            />
+            <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[10px]">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing(false);
+                  setDraft(message.body);
+                }}
+                disabled={saving}
+                className="rounded-md px-2 py-0.5 font-medium text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveEdit}
+                disabled={saving || draft.trim().length === 0 || draft.trim() === message.body}
+                className="rounded-md bg-brand-600 px-2 py-0.5 font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className={`whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-xs leading-relaxed transition-opacity ${
+              own
+                ? "bg-brand-600 text-white rounded-br-md"
+                : "bg-white text-slate-800 ring-1 ring-slate-200 rounded-bl-md"
+            } ${pending ? "opacity-70" : ""}`}
+          >
+            {linkify(message.body)}
+          </div>
+        )}
+        {/* Hover action menu for own messages, anchored above the bubble.
+            Only mounts for own + non-pending + non-edit so it doesn't get
+            in the way during send or during an in-progress edit. */}
+        {own && !pending && !editing ? (
+          <div
+            className="pointer-events-none absolute -top-2 right-0 flex translate-y-[-100%] opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100"
+          >
+            <div className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-600 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="rounded px-1.5 py-0.5 hover:bg-slate-100"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelete(message)}
+                className="rounded px-1.5 py-0.5 hover:bg-red-50 hover:text-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {message.sentAt && !editing ? (
           <div
             className={`mt-0.5 text-[9px] tabular-nums ${
               own ? "text-right text-slate-400" : "text-slate-400"
