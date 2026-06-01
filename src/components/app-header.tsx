@@ -5,6 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { isAdmin, type SessionPayload } from "@/lib/session";
 import { Heartbeat } from "@/components/heartbeat";
+import { useChatUnreadCount } from "@/components/use-chat-unread";
 
 type NavItem = { href: string; label: string; match: (p: string) => boolean };
 
@@ -53,6 +54,7 @@ export function AppHeader({
   const pathname = usePathname() ?? "";
   const items = admin ? [...NAV, ADMIN_NAV] : NAV;
   const effectivePhoto = photoUrl ?? session.photoUrl ?? null;
+  const chatUnread = useChatUnreadCount();
 
   return (
     <header className="bg-white border-b border-slate-200">
@@ -78,6 +80,9 @@ export function AppHeader({
           <nav className="flex items-center gap-1 text-sm">
             {items.map((item) => {
               const active = item.match(pathname);
+              // Only the Chat tab carries an unread badge today. Capped at
+              // "9+" so the bubble never overflows the surrounding text.
+              const badge = item.href === "/chat" && chatUnread > 0 ? chatUnread : 0;
               return (
                 <Link
                   key={item.href}
@@ -89,7 +94,17 @@ export function AppHeader({
                   }`}
                   aria-current={active ? "page" : undefined}
                 >
-                  {item.label}
+                  <span className="inline-flex items-center gap-1.5">
+                    {item.label}
+                    {badge > 0 ? (
+                      <span
+                        aria-label={`${badge} unread message${badge === 1 ? "" : "s"}`}
+                        className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white tabular-nums shadow-sm"
+                      >
+                        {badge > 9 ? "9+" : badge}
+                      </span>
+                    ) : null}
+                  </span>
                   <span
                     className={`pointer-events-none absolute left-2 right-2 -bottom-px h-0.5 rounded-full transition-colors ${
                       active ? "bg-brand-600" : "bg-transparent"

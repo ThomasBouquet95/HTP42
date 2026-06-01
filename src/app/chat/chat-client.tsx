@@ -18,6 +18,19 @@ type MemberOpt = {
   status: MemberStatus;
 };
 
+type ProjectOpt = {
+  code: string;
+  name: string;
+  status: string;
+  memberIds: string[];
+  memberNames: string[];
+};
+
+// The "kind" surfaced in the New Chat modal. Behind the scenes a Project
+// chat is just a Group conversation pre-populated with the project's team
+// and a default title — no new server type needed.
+type ModalKind = "Direct" | "Group" | "Project";
+
 // Presence thresholds. Same logic as the admin sign-in dashboard so the
 // "online" badge is consistent everywhere.
 const MIN = 60 * 1000;
@@ -34,10 +47,12 @@ export function ChatClient({
   currentMemberId,
   initialConversations,
   members,
+  projects,
 }: {
   currentMemberId: string;
   initialConversations: ChatConversation[];
   members: MemberOpt[];
+  projects: ProjectOpt[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -567,6 +582,7 @@ export function ChatClient({
         open={newChatOpen}
         onClose={() => setNewChatOpen(false)}
         members={members.filter((m) => m.id !== currentMemberId && m.status !== "Inactive")}
+        projects={projects.filter((p) => p.memberIds.length > 0)}
         currentMemberId={currentMemberId}
         now={nowTick}
         onCreate={async (payload) => {
@@ -939,6 +955,7 @@ function NewChatModal({
   open,
   onClose,
   members,
+  projects,
   currentMemberId,
   now,
   onCreate,
@@ -946,6 +963,7 @@ function NewChatModal({
   open: boolean;
   onClose: () => void;
   members: MemberOpt[];
+  projects: ProjectOpt[];
   currentMemberId: string;
   now: number;
   onCreate: (
@@ -954,10 +972,13 @@ function NewChatModal({
       | { kind: "Group"; title: string; memberRecordIds: string[] },
   ) => Promise<void>;
 }) {
-  const [kind, setKind] = useState<ChatKind>("Direct");
+  const [kind, setKind] = useState<ModalKind>("Direct");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [groupTitle, setGroupTitle] = useState("");
+  // Project picker: which project did the user pick to spin up a chat with.
+  // We keep the title editable in case they want to rename "Project XYZ".
+  const [projectCode, setProjectCode] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -966,6 +987,7 @@ function NewChatModal({
     setSearch("");
     setSelected(new Set());
     setGroupTitle("");
+    setProjectCode("");
     setBusy(false);
   }, [open]);
 
@@ -991,6 +1013,13 @@ function NewChatModal({
     return `${m.name} ${m.code}`.toLowerCase().includes(q);
   });
 
+  const pickedProject = projects.find((p) => p.code === projectCode) ?? null;
+  // Project chats are Group conversations under the hood, pre-populated
+  // with the project's team minus the caller (who is added by the server).
+  const projectTeammateIds = pickedProject
+    ? pickedProject.memberIds.filter((id) => id !== currentMemberId)
+    : [];
+
   async function go() {
     setBusy(true);
     try {
@@ -998,10 +1027,19 @@ function NewChatModal({
         const id = [...selected][0];
         if (!id) return;
         await onCreate({ kind: "Direct", memberRecordId: id });
-      } else {
+      } else if (kind === "Group") {
         const ids = [...selected];
         if (ids.length < 2 || !groupTitle.trim()) return;
         await onCreate({ kind: "Group", title: groupTitle.trim(), memberRecordIds: ids });
+      } else {
+        // Project
+        if (!pickedProject || projectTeammateIds.length < 1) return;
+        const title = groupTitle.trim() || `Project · ${pickedProject.name || pickedProject.code}`;
+        await onCreate({
+          kind: "Group",
+          title,
+          memberRecordIds: projectTeammateIds,
+        });
       }
     } finally {
       setBusy(false);
@@ -1011,7 +1049,9 @@ function NewChatModal({
   const canCreate =
     kind === "Direct"
       ? selected.size === 1
-      : selected.size >= 2 && groupTitle.trim().length > 0;
+      : kind === "Group"
+        ? selected.size >= 2 && groupTitle.trim().length > 0
+        : !!pickedProject && projectTeammateIds.length >= 1;
 
   return (
     <div
@@ -1038,11 +1078,12 @@ function NewChatModal({
           </button>
         </header>
         <div className="px-4 py-3 space-y-3">
-          <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-0.5">
+          <div className="inline-flex flex-wrap items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5">
             {(
               [
-                { v: "Direct" as const, label: "Direct message" },
+                { v: "Direct" as const, label: "Direct" },
                 { v: "Group" as const, label: "Group" },
+                { v: "Project" as const, label: "Project" },
               ]
             ).map((opt) => {
               const active = kind === opt.v;
@@ -1053,6 +1094,7 @@ function NewChatModal({
                   onClick={() => {
                     setKind(opt.v);
                     setSelected(new Set());
+                    setProjectCode("");
                   }}
                   className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                     active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
@@ -1080,6 +1122,69 @@ function NewChatModal({
             </label>
           ) : null}
 
+          {kind === "Project" ? (
+            <div className="space-y-2">
+              <label className="block">
+                <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+                  Project
+                </span>
+                <select
+                  value={projectCode}
+                  onChange={(e) => {
+                    setProjectCode(e.target.value);
+                    // Reset the editable title whenever the project flips so
+                    // the auto-default ("Project · …") follows the picker.
+                    setGroupTitle("");
+                  }}
+                  className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+                  autoFocus
+                >
+                  <option value="">Pick a project you're staffed on…</option>
+                  {projects.length === 0 ? (
+                    <option value="" disabled>
+                      You're not on any projects yet.
+                    </option>
+                  ) : (
+                    projects.map((p) => (
+                      <option key={p.code} value={p.code}>
+                        {p.code} · {p.name || p.code} ({p.memberIds.length} member
+                        {p.memberIds.length === 1 ? "" : "s"})
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+              {pickedProject ? (
+                <>
+                  <label className="block">
+                    <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+                      Chat title
+                      <span className="ml-1 normal-case font-normal text-slate-400">
+                        (optional)
+                      </span>
+                    </span>
+                    <input
+                      type="text"
+                      value={groupTitle}
+                      onChange={(e) => setGroupTitle(e.target.value)}
+                      placeholder={`Project · ${pickedProject.name || pickedProject.code}`}
+                      className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+                    />
+                  </label>
+                  <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600">
+                    <div className="text-[10px] uppercase tracking-wide text-slate-500">
+                      Members ({projectTeammateIds.length + 1} including you)
+                    </div>
+                    <p className="mt-0.5 line-clamp-3">
+                      {pickedProject.memberNames.join(", ") || "—"}
+                    </p>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+
+          {kind !== "Project" ? (
           <div>
             <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
               {kind === "Direct" ? "Pick a person" : "Pick members"}
@@ -1134,6 +1239,7 @@ function NewChatModal({
               )}
             </ul>
           </div>
+          ) : null}
         </div>
         <footer className="flex items-center justify-end gap-2 border-t border-slate-100 px-4 py-3">
           <button
@@ -1150,7 +1256,15 @@ function NewChatModal({
             disabled={busy || !canCreate}
             className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
           >
-            {busy ? "Opening…" : kind === "Direct" ? "Open chat" : "Create group"}
+            {busy
+              ? kind === "Direct"
+                ? "Opening…"
+                : "Creating…"
+              : kind === "Direct"
+                ? "Open chat"
+                : kind === "Project"
+                  ? "Create project chat"
+                  : "Create group"}
           </button>
         </footer>
       </div>

@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { listConversationsFor, listSignInActivity } from "@/lib/airtable";
+import {
+  listConversationsFor,
+  listMyProjects,
+  listSignInActivity,
+} from "@/lib/airtable";
 import { ChatClient } from "./chat-client";
 
 export const dynamic = "force-dynamic";
@@ -10,11 +14,13 @@ export default async function ChatPage() {
   if (!session) redirect("/login");
 
   // Initial payload: the caller's conversations + the network roster (for the
-  // "new chat" picker and for presence dots on avatars). The client then
-  // polls for fresh state without a server round-trip on navigation.
-  const [conversations, members] = await Promise.all([
+  // "new chat" picker and for presence dots on avatars) + the caller's
+  // projects + their teams (so the "Project chat" tab can pre-fill the
+  // member list without another round-trip).
+  const [conversations, members, myProjects] = await Promise.all([
     listConversationsFor(session.sub, session.memberCode),
     listSignInActivity(),
+    listMyProjects(session.sub, session.memberCode),
   ]);
 
   return (
@@ -29,6 +35,13 @@ export default async function ChatPage() {
           photoUrl: m.photoUrl,
           lastActivity: m.lastActivity,
           status: m.status,
+        }))}
+        projects={myProjects.map((p) => ({
+          code: p.projectCode,
+          name: p.projectName,
+          status: p.status,
+          memberIds: p.team.map((t) => t.memberRecordId),
+          memberNames: p.team.map((t) => t.fullName || t.memberCode),
         }))}
       />
     </main>
