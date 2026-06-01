@@ -104,7 +104,10 @@ export function ChatClient({
     };
   }, []);
 
-  // Active conversation messages: load on switch + poll while open.
+  // Active conversation messages: load on switch + poll while open. A
+  // monotonic request id guards against the older-response-clobbers-newer
+  // race when the network reorders parallel polls.
+  const reqIdRef = useRef(0);
   useEffect(() => {
     if (!activeId) {
       setMessages([]);
@@ -112,6 +115,7 @@ export function ChatClient({
     }
     let cancelled = false;
     async function load() {
+      const reqId = ++reqIdRef.current;
       try {
         const res = await fetch(
           `/api/chat/conversations/${encodeURIComponent(activeId!)}/messages`,
@@ -119,9 +123,28 @@ export function ChatClient({
         );
         if (!res.ok) return;
         const data = (await res.json()) as { messages: ChatMessage[] };
-        if (!cancelled) setMessages(data.messages);
+        if (cancelled) return;
+        // Only the latest in-flight request gets to write state.
+        if (reqId !== reqIdRef.current) return;
+        // Merge the canonical list with any still-pending optimistic
+        // bubbles so the user's just-sent message doesn't briefly vanish
+        // between the POST response and the next poll.
+        setMessages((prev) => {
+          const optimistic = prev.filter((m) => m.id.startsWith("optim-"));
+          const merged = [...data.messages];
+          for (const o of optimistic) {
+            const dupe = merged.some(
+              (m) =>
+                m.senderRecordId === o.senderRecordId &&
+                m.body === o.body &&
+                Math.abs(Date.parse(m.sentAt ?? "0") - Date.parse(o.sentAt ?? "0")) < 30_000,
+            );
+            if (!dupe) merged.push(o);
+          }
+          return merged;
+        });
       } catch {
-        // swallow
+        // swallow — next poll will retry
       }
     }
     load();
@@ -132,14 +155,32 @@ export function ChatClient({
     };
   }, [activeId]);
 
-  // Auto-scroll the messages pane to the bottom when new messages land or we
-  // switch conversations.
+  // Smart auto-scroll: only follow the bottom when the user is already
+  // pinned there. If they've scrolled up to read history, we leave the
+  // viewport alone (otherwise every poll yanks them back).
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const pinnedRef = useRef(true);
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    if (pinnedRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages]);
+  // Always jump to the bottom on conversation switch — there's no
+  // "previous scroll position" to preserve.
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [messages, activeId]);
+    pinnedRef.current = true;
+  }, [activeId]);
+  function onScrollerScroll() {
+    const el = scrollerRef.current;
+    if (!el) return;
+    // ~40px of slack so the smallest scroll up doesn't unpin.
+    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  }
 
   const activeConversation = useMemo(
     () => conversations.find((c) => c.id === activeId) ?? null,
@@ -157,9 +198,12 @@ export function ChatClient({
     const body = composer.trim();
     if (!body || sending) return;
     setSending(true);
-    // Optimistic insert. The poll will overwrite with the canonical record.
+    pinnedRef.current = true; // sending always pins to the bottom
+    // Optimistic insert. The POST response (or the next poll) replaces it
+    // with the canonical record so the bubble doesn't flash twice.
+    const optimisticId = `optim-${Date.now()}`;
     const optimistic: ChatMessage = {
-      id: `optim-${Date.now()}`,
+      id: optimisticId,
       body,
       conversationId: activeConversation.id,
       senderRecordId: currentMemberId,
@@ -179,10 +223,18 @@ export function ChatClient({
         },
       );
       if (!res.ok) throw new Error("Send failed");
+      const data = (await res.json().catch(() => ({}))) as { message?: ChatMessage };
+      if (data.message) {
+        // Replace the optimistic placeholder with the canonical message so
+        // the bubble settles in place without a flash.
+        setMessages((prev) =>
+          prev.map((m) => (m.id === optimisticId ? (data.message as ChatMessage) : m)),
+        );
+      }
     } catch {
       // Roll back the optimistic message and restore the input so the user
       // can retry without retyping.
-      setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
       setComposer(body);
     } finally {
       setSending(false);
@@ -214,9 +266,19 @@ export function ChatClient({
   }
 
   return (
-    <div className="grid gap-3 h-[calc(100vh-9rem)] grid-cols-1 sm:grid-cols-[260px_1fr]">
+    // Use 100dvh so the layout adapts to the mobile address-bar collapse
+    // instead of being permanently cut off. On phones we show one pane at
+    // a time: list when no conversation is selected, conversation otherwise.
+    <div
+      className="grid gap-3 grid-cols-1 sm:grid-cols-[260px_1fr]"
+      style={{ height: "calc(100dvh - 9rem)" }}
+    >
       {/* Conversations list */}
-      <aside className="flex flex-col rounded-lg border border-slate-200 bg-white overflow-hidden">
+      <aside
+        className={`flex-col rounded-lg border border-slate-200 bg-white overflow-hidden ${
+          activeId ? "hidden sm:flex" : "flex"
+        }`}
+      >
         <header className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Conversations
@@ -280,7 +342,11 @@ export function ChatClient({
       </aside>
 
       {/* Active conversation */}
-      <section className="flex flex-col rounded-lg border border-slate-200 bg-white overflow-hidden min-h-0">
+      <section
+        className={`flex-col rounded-lg border border-slate-200 bg-white overflow-hidden min-h-0 ${
+          activeId ? "flex" : "hidden sm:flex"
+        }`}
+      >
         {activeConversation ? (
           <>
             <ActiveConversationHeader
@@ -289,9 +355,15 @@ export function ChatClient({
               membersById={membersById}
               currentMemberId={currentMemberId}
               now={nowTick}
+              onBack={() => {
+                const sp = new URLSearchParams(searchParams.toString());
+                sp.delete("c");
+                router.replace(`/chat${sp.toString() ? `?${sp.toString()}` : ""}`);
+              }}
             />
             <div
               ref={scrollerRef}
+              onScroll={onScrollerScroll}
               className="flex-1 overflow-y-auto px-4 py-3 space-y-2 bg-slate-50/40"
             >
               {messages.length === 0 ? (
@@ -359,17 +431,31 @@ function ActiveConversationHeader({
   membersById,
   currentMemberId,
   now,
+  onBack,
 }: {
   conversation: ChatConversation;
   describe: { label: string; subtitle: string; avatar: MemberOpt | null };
   membersById: Map<string, MemberOpt>;
   currentMemberId: string;
   now: number;
+  onBack: () => void;
 }) {
   const others = conversation.memberRecordIds.filter((id) => id !== currentMemberId);
   return (
-    <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2.5">
+    <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2.5 sm:px-4">
       <div className="min-w-0 flex items-center gap-2">
+        {/* Back chevron is only visible on mobile, where the panes don't
+            sit side-by-side. */}
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back to conversations"
+          className="sm:hidden rounded-md p-1 text-slate-500 hover:bg-slate-100"
+        >
+          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 5l-5 5 5 5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
         <ConversationAvatar
           conversation={conversation}
           describe={describe}
@@ -420,6 +506,10 @@ function MessageBubble({
   own: boolean;
   groupedWithPrev: boolean;
 }) {
+  // Optimistic bubbles use a synthetic id prefix until the server confirms.
+  // Dim them slightly + label the timestamp "Sending…" so the user can see
+  // their message is in flight, not just posted.
+  const pending = message.id.startsWith("optim-");
   return (
     <div className={`flex items-end gap-2 ${own ? "justify-end" : ""}`}>
       {!own ? (
@@ -441,11 +531,11 @@ function MessageBubble({
           </div>
         ) : null}
         <div
-          className={`whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-xs leading-relaxed ${
+          className={`whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-xs leading-relaxed transition-opacity ${
             own
               ? "bg-brand-600 text-white rounded-br-md"
               : "bg-white text-slate-800 ring-1 ring-slate-200 rounded-bl-md"
-          }`}
+          } ${pending ? "opacity-70" : ""}`}
         >
           {message.body}
         </div>
@@ -456,10 +546,12 @@ function MessageBubble({
             }`}
             title={new Date(message.sentAt).toLocaleString()}
           >
-            {new Date(message.sentAt).toLocaleTimeString("en-GB", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+            {pending
+              ? "Sending…"
+              : new Date(message.sentAt).toLocaleTimeString("en-GB", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
           </div>
         ) : null}
       </div>
@@ -478,10 +570,21 @@ function Composer({
   onSend: () => void;
   disabled: boolean;
 }) {
+  // Auto-grow as the user types, capped so a runaway paragraph doesn't
+  // push the messages pane offscreen. The cap is enforced via maxHeight +
+  // overflow-y so additional lines just scroll inside the textarea.
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [value]);
   return (
     <div className="border-t border-slate-100 px-3 py-2">
       <div className="flex items-end gap-2">
         <textarea
+          ref={taRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
@@ -492,7 +595,8 @@ function Composer({
           }}
           rows={1}
           placeholder="Write a message… (Enter to send, Shift+Enter for a new line)"
-          className="flex-1 resize-none rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+          className="flex-1 resize-none overflow-y-auto rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+          style={{ maxHeight: 160 }}
         />
         <button
           type="button"
@@ -679,7 +783,7 @@ function NewChatModal({
   const canCreate =
     kind === "Direct"
       ? selected.size === 1
-      : selected.size >= 1 && groupTitle.trim().length > 0;
+      : selected.size >= 2 && groupTitle.trim().length > 0;
 
   return (
     <div
@@ -829,9 +933,11 @@ function NewChatModal({
 // ----- utils ----------------------------------------------------------------
 
 function formatAgo(diffMs: number): string {
-  if (!Number.isFinite(diffMs) || diffMs < 0) return "";
-  if (diffMs < MIN) return "now";
-  const min = Math.floor(diffMs / MIN);
+  // Floor negative diffs to 0 so very recently-sent messages don't render an
+  // empty timestamp when the client clock is slightly behind the server.
+  const ms = Number.isFinite(diffMs) ? Math.max(0, diffMs) : 0;
+  if (ms < MIN) return "now";
+  const min = Math.floor(ms / MIN);
   if (min < 60) return `${min}m`;
   const hr = Math.floor(min / 60);
   if (hr < 24) return `${hr}h`;

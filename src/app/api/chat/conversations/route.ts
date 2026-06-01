@@ -27,9 +27,11 @@ const schema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("Group"),
     title: z.string().trim().min(1).max(120),
+    // A group with one other member is functionally a DM; force the
+    // explicit DM flow there to keep dedupe working.
     memberRecordIds: z
       .array(z.string().trim().regex(/^rec[A-Za-z0-9]{14}$/))
-      .min(1)
+      .min(2, "Pick at least 2 other members for a group, or use a direct message.")
       .max(50),
   }),
 ]);

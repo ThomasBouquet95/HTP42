@@ -2823,6 +2823,9 @@ export async function listConversationsFor(
   memberRecordId: string,
   memberCode: string,
 ): Promise<ChatConversation[]> {
+  // Empty code would degenerate the filterByFormula into matching every
+  // row. Bail out immediately.
+  if (!memberCode) return [];
   const safeCode = escape(memberCode);
   const records = await base(TABLES.chatConversations)
     .select({
@@ -2830,12 +2833,17 @@ export async function listConversationsFor(
       // ARRAY of linked Member Codes. The "," buffer guards against false
       // positives on codes that share a prefix.
       filterByFormula: `FIND("," & "${safeCode}" & ",", "," & ARRAYJOIN({${FIELDS.chatConversations.members}}, ",") & ",") > 0`,
-      sort: [{ field: FIELDS.chatConversations.lastMessageAt, direction: "desc" }],
+      // Sort by Last Message At first; brand-new conversations with no
+      // messages yet fall back to Created At so they surface near the top
+      // of the list instead of sinking until the first message lands.
+      sort: [
+        { field: FIELDS.chatConversations.lastMessageAt, direction: "desc" },
+        { field: FIELDS.chatConversations.createdAt, direction: "desc" },
+      ],
     })
     .all();
-  // Belt-and-braces: keep only conversations whose Members field actually
-  // contains the caller's record id (defensive against odd filterByFormula
-  // behaviour with multi-word member codes).
+  // Belt-and-braces: the filterByFormula above is only a coarse pre-filter;
+  // the linked-record membership check is authoritative.
   return records
     .map(conversationFromRecord)
     .filter((c) => c.memberRecordIds.includes(memberRecordId));
@@ -2917,10 +2925,28 @@ function messageFromRecord(
     body: str(r, FIELDS.chatMessages.body),
     conversationId: linkedIds(r, FIELDS.chatMessages.conversation)[0] ?? "",
     senderRecordId: senderId,
-    senderName: sender?.fullName ?? "",
+    // Fall back to a placeholder rather than an empty string so the bubble
+    // header still renders something readable when the sender's member row
+    // has been deleted.
+    senderName: sender?.fullName ?? (senderId ? "Removed member" : "Unknown"),
     senderPhotoUrl: sender?.photoUrl ?? null,
     sentAt: (r.get(FIELDS.chatMessages.sentAt) as string | undefined) ?? null,
   };
+}
+
+// Cache the member roster for ~60s so the chat poll doesn't re-fetch every
+// 3s just to attach sender names. Member metadata changes rarely; a minute
+// of staleness is fine for an avatar + display name.
+let cachedMembers: { ts: number; list: MemberAdminRecord[] } | null = null;
+const MEMBERS_CACHE_TTL_MS = 60_000;
+async function cachedListAllMembers(): Promise<MemberAdminRecord[]> {
+  const now = Date.now();
+  if (cachedMembers && now - cachedMembers.ts < MEMBERS_CACHE_TTL_MS) {
+    return cachedMembers.list;
+  }
+  const list = await listAllMembers();
+  cachedMembers = { ts: now, list };
+  return list;
 }
 
 // Loads the last `limit` messages for a conversation in chronological order.
@@ -2937,7 +2963,7 @@ export async function listMessages(
         maxRecords: limit,
       })
       .all(),
-    listAllMembers(),
+    cachedListAllMembers(),
   ]);
   const memberById = new Map(
     members.map((m) => [
@@ -2985,11 +3011,16 @@ export async function sendChatMessage(
   } catch {
     // ignore
   }
+  // Only the sender's info is needed to enrich the freshly created message
+  // for the response, so we skip the full roster fetch.
+  const sender = await getMemberById(senderRecordId);
   const memberById = new Map(
-    (await listAllMembers()).map((m) => [
-      m.id,
-      { fullName: m.fullName || m.memberCode, photoUrl: m.photo?.url ?? null },
-    ]),
+    sender
+      ? [[
+          sender.id,
+          { fullName: sender.fullName || sender.memberCode, photoUrl: sender.photo?.url ?? null },
+        ] as const]
+      : [],
   );
   return messageFromRecord(created, memberById);
 }
