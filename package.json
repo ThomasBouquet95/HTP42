@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.100.1",
     "@types/pdfkit": "^0.17.6",
     "airtable": "^0.12.2",
     "jose": "^5.9.6",

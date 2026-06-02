@@ -41,4 +41,10 @@ export const env = {
       "invoices@htp42.com"
     );
   },
+  // Anthropic API key, used by the chat message "Rewrite" button to
+  // grammar-correct a message via Claude. Optional: if absent, the
+  // /api/chat/rewrite endpoint returns 503 and the UI hides the action.
+  get anthropicApiKey() {
+    return process.env.ANTHROPIC_API_KEY ?? "";
+  },
 };

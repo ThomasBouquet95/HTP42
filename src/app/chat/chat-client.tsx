@@ -480,6 +480,32 @@ export function ChatClient({
     }
   }
 
+  // Grammar / spelling rewrite via Claude. Fetches the corrected text from
+  // /api/chat/rewrite, then reuses editMessage so the optimistic update +
+  // PATCH path is identical to a manual edit. Returns false (and surfaces
+  // the toast) on any failure so the popover can show the error inline.
+  async function rewriteMessage(msg: ChatMessage): Promise<boolean> {
+    try {
+      const res = await fetch("/api/chat/rewrite", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ body: msg.body }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        rewritten?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.rewritten) {
+        throw new Error(data.error ?? "Rewrite failed");
+      }
+      // Identical body → nothing to do; the popover treats this as success.
+      if (data.rewritten.trim() === msg.body.trim()) return true;
+      return await editMessage(msg, data.rewritten);
+    } catch {
+      return false;
+    }
+  }
+
   async function createConversation(payload:
     | { kind: "Direct"; memberRecordId: string }
     | { kind: "Group"; title: string; memberRecordIds: string[] },
@@ -646,6 +672,7 @@ export function ChatClient({
                         groupedWithPrev={!showDayDivider && grouped}
                         onEdit={editMessage}
                         onDelete={deleteMessage}
+                        onRewrite={rewriteMessage}
                       />
                     </div>
                   );
@@ -794,6 +821,19 @@ function sameDay(aIso: string, bIso: string): boolean {
   );
 }
 
+function SparkleIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="h-3 w-3"
+      fill="currentColor"
+      aria-hidden
+    >
+      <path d="M8 1l1.3 3.7L13 6l-3.7 1.3L8 11 6.7 7.3 3 6l3.7-1.3L8 1zm5 8l.7 2L16 12l-2.3.7L13 15l-.7-2.3L10 12l2.3-.7L13 9z" />
+    </svg>
+  );
+}
+
 // Splits a body into text + autolinked URL segments. We don't render any
 // markdown beyond this — plain text is plenty for an internal chat MVP.
 function linkify(body: string): React.ReactNode[] {
@@ -835,12 +875,14 @@ function MessageBubble({
   groupedWithPrev,
   onEdit,
   onDelete,
+  onRewrite,
 }: {
   message: ChatMessage;
   own: boolean;
   groupedWithPrev: boolean;
   onEdit: (m: ChatMessage, body: string) => Promise<boolean>;
   onDelete: (m: ChatMessage) => Promise<boolean>;
+  onRewrite: (m: ChatMessage) => Promise<boolean>;
 }) {
   // Optimistic bubbles use a synthetic id prefix until the server confirms.
   // Dim them slightly + label the timestamp "Sending…" so the user can see
@@ -952,6 +994,7 @@ function MessageBubble({
             onDelete={async () => {
               await onDelete(message);
             }}
+            onRewrite={() => onRewrite(message)}
           />
         ) : null}
         {message.sentAt && !editing ? (
@@ -987,13 +1030,22 @@ function MessageBubble({
 function MessageActions({
   onEdit,
   onDelete,
+  onRewrite,
 }: {
   onEdit: () => void;
   onDelete: () => Promise<void> | void;
+  // Triggers a grammar / spelling rewrite of the message body via Claude
+  // and replaces the bubble in place. Returns true on success so the
+  // popover can close cleanly.
+  onRewrite: () => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [working, setWorking] = useState(false);
+  // Separate "rewriting" state so the Edit/Delete buttons stay enabled
+  // and the row shows a clear in-flight indicator on Rewrite only.
+  const [rewriting, setRewriting] = useState(false);
+  const [rewriteError, setRewriteError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1051,14 +1103,50 @@ function MessageActions({
                   setOpen(false);
                   onEdit();
                 }}
-                className="block w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50"
+                disabled={rewriting}
+                className="block w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 disabled:opacity-50"
               >
                 Edit
               </button>
               <button
                 type="button"
+                onClick={async () => {
+                  if (rewriting) return;
+                  setRewriting(true);
+                  setRewriteError(null);
+                  try {
+                    const ok = await onRewrite();
+                    if (ok) {
+                      setOpen(false);
+                    } else {
+                      setRewriteError("Rewrite failed.");
+                    }
+                  } finally {
+                    setRewriting(false);
+                  }
+                }}
+                disabled={rewriting}
+                className="flex w-full items-center justify-between gap-2 border-t border-slate-100 px-3 py-1.5 text-left text-violet-700 hover:bg-violet-50 disabled:opacity-60"
+                title="Fix grammar and spelling with AI, changing as few words as possible"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <SparkleIcon />
+                  {rewriting ? "Rewriting…" : "Fix grammar (AI)"}
+                </span>
+                {rewriting ? (
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-violet-300 border-t-violet-700" />
+                ) : null}
+              </button>
+              {rewriteError ? (
+                <div className="border-t border-slate-100 px-3 py-1.5 text-[10px] text-red-700">
+                  {rewriteError}
+                </div>
+              ) : null}
+              <button
+                type="button"
                 onClick={() => setConfirming(true)}
-                className="block w-full border-t border-slate-100 px-3 py-1.5 text-left text-red-700 hover:bg-red-50"
+                disabled={rewriting}
+                className="block w-full border-t border-slate-100 px-3 py-1.5 text-left text-red-700 hover:bg-red-50 disabled:opacity-50"
               >
                 Delete…
               </button>
