@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import type {
   ChatConversation,
   ChatKind,
@@ -59,9 +59,17 @@ export function ChatClient({
   members: MemberOpt[];
   projects: ProjectOpt[];
 }) {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const activeId = searchParams.get("c") ?? null;
+  // Active conversation lives in local state, not the URL. We sync the
+  // URL via window.history.replaceState whenever it changes so deep links
+  // still work, but we deliberately avoid router.push/replace because in
+  // a force-dynamic page that triggers a full server re-render of every
+  // initial fetch (conversations + members + projects + messages) just
+  // to switch conversation. Local state lets the active conversation
+  // change without leaving the React tree.
+  const [activeId, setActiveId] = useState<string | null>(
+    () => initialActiveId ?? searchParams.get("c") ?? null,
+  );
 
   const [conversations, setConversations] =
     useState<ChatConversation[]>(initialConversations);
@@ -337,15 +345,39 @@ export function ChatClient({
   );
 
   function openConversation(id: string) {
-    const sp = new URLSearchParams(searchParams.toString());
+    // Local state + URL sync only. Avoids the full server re-render that
+    // router.push/replace would trigger on this force-dynamic page.
+    setActiveId(id);
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
     sp.set("c", id);
-    // First time we open a conversation (no `c` in URL yet), push so the
-    // browser back-button takes the user back to the empty list state.
-    // Subsequent conversation switches just replace, so the back button
-    // skips past the chain of hops and returns cleanly.
-    if (activeId == null) router.push(`/chat?${sp.toString()}`);
-    else router.replace(`/chat?${sp.toString()}`);
+    // pushState the first time so browser back returns to the list view;
+    // replaceState on subsequent switches so back doesn't walk through
+    // every conversation we ever opened.
+    const url = `/chat?${sp.toString()}`;
+    if (activeId == null) window.history.pushState(null, "", url);
+    else window.history.replaceState(null, "", url);
   }
+
+  function closeConversation() {
+    setActiveId(null);
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    sp.delete("c");
+    const tail = sp.toString();
+    window.history.replaceState(null, "", `/chat${tail ? `?${tail}` : ""}`);
+  }
+
+  // Browser back / forward integration: when the user navigates with the
+  // back arrow, sync activeId back from the URL so the panes follow.
+  useEffect(() => {
+    const onPop = () => {
+      const sp = new URLSearchParams(window.location.search);
+      setActiveId(sp.get("c"));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   async function send() {
     if (!activeConversation) return;
@@ -430,7 +462,9 @@ export function ChatClient({
   }
 
   async function deleteMessage(msg: ChatMessage): Promise<boolean> {
-    if (!confirm("Delete this message? It can't be undone.")) return false;
+    // Confirmation is handled by the bubble UI (a "Delete?" / "Yes / No"
+    // inline strip) rather than the browser's confirm() dialog, which is
+    // jarring inside an otherwise calm chat surface.
     const snapshot = messages;
     setMessages((prev) => prev.filter((m) => m.id !== msg.id));
     try {
@@ -574,11 +608,7 @@ export function ChatClient({
               membersById={membersById}
               currentMemberId={currentMemberId}
               now={nowTick}
-              onBack={() => {
-                const sp = new URLSearchParams(searchParams.toString());
-                sp.delete("c");
-                router.replace(`/chat${sp.toString() ? `?${sp.toString()}` : ""}`);
-              }}
+              onBack={closeConversation}
             />
             <div
               ref={scrollerRef}
@@ -848,31 +878,7 @@ function MessageBubble({
           ) : null}
         </div>
       ) : null}
-      {/* Inline action menu for own messages. Sits on the same flex row
-          as the bubble (to the left of it since the row is justify-end),
-          so the cursor never has to cross an empty gap to reach it. We
-          fade it in on hover/focus of the surrounding group. */}
-      {own && !pending && !editing ? (
-        <div className="flex items-center self-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-          <div className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-600 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="rounded px-1.5 py-0.5 hover:bg-slate-100"
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              onClick={() => onDelete(message)}
-              className="rounded px-1.5 py-0.5 hover:bg-red-50 hover:text-red-700"
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      ) : null}
-      <div className={`max-w-[78%] ${own ? "items-end" : ""}`}>
+      <div className={`relative max-w-[78%] ${own ? "items-end" : ""}`}>
         {!groupedWithPrev && !own ? (
           <div className="mb-0.5 text-[10px] font-medium text-slate-500">
             {message.senderName}
@@ -935,6 +941,19 @@ function MessageBubble({
             {linkify(message.body)}
           </div>
         )}
+        {/* Edit / delete affordance for own messages. The "⋯" trigger
+            overlays the bubble (top-right for own, justify-end rows), so
+            hover-to-reveal doesn't reflow anything and the menu can't
+            disappear when the cursor moves toward it. The popover stays
+            open until the user picks an action or clicks elsewhere. */}
+        {own && !pending && !editing ? (
+          <MessageActions
+            onEdit={() => setEditing(true)}
+            onDelete={async () => {
+              await onDelete(message);
+            }}
+          />
+        ) : null}
         {message.sentAt && !editing ? (
           <div
             className={`mt-0.5 text-[9px] tabular-nums ${
@@ -951,6 +970,133 @@ function MessageBubble({
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+// Edit / delete affordance for own messages.
+// - The trigger ("⋯") is always rendered but at low opacity; it bumps to
+//   full opacity on hover/focus of the parent bubble group OR when the
+//   popover is open. This is robust on touch devices (always tappable)
+//   without being noisy on desktop.
+// - Clicking opens a small popover anchored to the bubble's top-right.
+//   Delete asks for inline confirmation ("Delete?" with Yes/No), so we
+//   never trigger the browser's confirm() dialog.
+// - The popover closes when the user picks an action, clicks outside, or
+//   presses Escape.
+function MessageActions({
+  onEdit,
+  onDelete,
+}: {
+  onEdit: () => void;
+  onDelete: () => Promise<void> | void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [working, setWorking] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (!wrapRef.current) return;
+      if (!wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setConfirming(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setOpen(false);
+        setConfirming(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div
+      ref={wrapRef}
+      className="pointer-events-none absolute -top-1 -right-1 flex"
+    >
+      <button
+        type="button"
+        aria-label="Message actions"
+        onClick={() => {
+          setOpen((p) => !p);
+          setConfirming(false);
+        }}
+        className={`pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm ring-1 ring-slate-200 transition-opacity hover:text-slate-800 ${
+          open ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+        }`}
+      >
+        <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="currentColor" aria-hidden>
+          <circle cx="3" cy="8" r="1.4" />
+          <circle cx="8" cy="8" r="1.4" />
+          <circle cx="13" cy="8" r="1.4" />
+        </svg>
+      </button>
+      {open ? (
+        <div className="pointer-events-auto absolute right-0 top-full z-10 mt-1 min-w-[9rem] overflow-hidden rounded-md border border-slate-200 bg-white text-xs shadow-lg">
+          {!confirming ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onEdit();
+                }}
+                className="block w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirming(true)}
+                className="block w-full border-t border-slate-100 px-3 py-1.5 text-left text-red-700 hover:bg-red-50"
+              >
+                Delete…
+              </button>
+            </>
+          ) : (
+            <div className="px-3 py-2 text-slate-700">
+              <div className="text-[11px]">Delete this message?</div>
+              <div className="mt-1.5 flex items-center justify-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setConfirming(false)}
+                  disabled={working}
+                  className="rounded px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setWorking(true);
+                    try {
+                      await onDelete();
+                    } finally {
+                      setWorking(false);
+                      setOpen(false);
+                      setConfirming(false);
+                    }
+                  }}
+                  disabled={working}
+                  className="rounded bg-red-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-red-700 disabled:opacity-60"
+                >
+                  {working ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
