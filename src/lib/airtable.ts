@@ -171,6 +171,11 @@ export const FIELDS = {
     createdAt: "Created At",
     lastMessageAt: "Last Message At",
     lastMessagePreview: "Last Message Preview",
+    // Direct chats only. Sorted "recA|recB" of the two participant record
+    // IDs. Used by ensureDirectConversation for exact-match dedupe — the
+    // previous "list my conversations then filter in JS" approach is racy
+    // and occasionally misses an existing DM, creating a duplicate.
+    directKey: "Direct Key",
   },
   chatMessages: {
     body: "Body",
@@ -2889,24 +2894,43 @@ export async function getConversationMemberIdsCached(
   return conv.memberRecordIds;
 }
 
+// Stable participant key for a DM. Sorting the two record IDs makes the key
+// order-independent: ensureDirectConversation(A, B) and ensureDirectConversation(B, A)
+// must hit the same row.
+function directKeyFor(a: string, b: string): string {
+  return [a, b].sort().join("|");
+}
+
 // Direct conversations are deduped by participant set: if a DM already exists
 // between exactly the two members, we reuse it instead of creating a new row.
 // Group conversations are always new (the same set of people can have
 // multiple distinct group rooms).
+//
+// Dedupe strategy: a `Direct Key` text field on the conversation row carries
+// the sorted "recA|recB" pair, and we filter by that. The previous approach
+// (listConversationsFor + JS .find on member record IDs) was both expensive
+// and occasionally raced — between two rapid clicks, or in some empty-result
+// edge cases — creating duplicate DMs. The text-key filter is exact and
+// race-free.
 export async function ensureDirectConversation(
   callerRecordId: string,
-  callerCode: string,
+  _callerCode: string,
   otherRecordId: string,
 ): Promise<ChatConversation> {
-  const existing = await listConversationsFor(callerRecordId, callerCode);
-  const match = existing.find(
-    (c) =>
-      c.kind === "Direct" &&
-      c.memberRecordIds.length === 2 &&
-      c.memberRecordIds.includes(callerRecordId) &&
-      c.memberRecordIds.includes(otherRecordId),
-  );
-  if (match) return match;
+  void _callerCode;
+  if (!callerRecordId || !otherRecordId) {
+    throw new Error("Both participants must have record ids.");
+  }
+  const key = directKeyFor(callerRecordId, otherRecordId);
+  const records = await base(TABLES.chatConversations)
+    .select({
+      filterByFormula: `{${FIELDS.chatConversations.directKey}} = "${escape(key)}"`,
+      maxRecords: 1,
+    })
+    .firstPage();
+  if (records.length > 0) {
+    return conversationFromRecord(records[0]);
+  }
   const now = new Date().toISOString();
   const [created] = await base(TABLES.chatConversations).create([
     {
@@ -2915,6 +2939,7 @@ export async function ensureDirectConversation(
         [FIELDS.chatConversations.members]: [callerRecordId, otherRecordId],
         [FIELDS.chatConversations.createdBy]: [callerRecordId],
         [FIELDS.chatConversations.createdAt]: now,
+        [FIELDS.chatConversations.directKey]: key,
       } as FieldSet,
     },
   ]);
