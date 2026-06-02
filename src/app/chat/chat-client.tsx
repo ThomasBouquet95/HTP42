@@ -848,7 +848,31 @@ function MessageBubble({
           ) : null}
         </div>
       ) : null}
-      <div className={`relative max-w-[78%] ${own ? "items-end" : ""}`}>
+      {/* Inline action menu for own messages. Sits on the same flex row
+          as the bubble (to the left of it since the row is justify-end),
+          so the cursor never has to cross an empty gap to reach it. We
+          fade it in on hover/focus of the surrounding group. */}
+      {own && !pending && !editing ? (
+        <div className="flex items-center self-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <div className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-600 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="rounded px-1.5 py-0.5 hover:bg-slate-100"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(message)}
+              className="rounded px-1.5 py-0.5 hover:bg-red-50 hover:text-red-700"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      ) : null}
+      <div className={`max-w-[78%] ${own ? "items-end" : ""}`}>
         {!groupedWithPrev && !own ? (
           <div className="mb-0.5 text-[10px] font-medium text-slate-500">
             {message.senderName}
@@ -911,31 +935,6 @@ function MessageBubble({
             {linkify(message.body)}
           </div>
         )}
-        {/* Hover action menu for own messages, anchored above the bubble.
-            Only mounts for own + non-pending + non-edit so it doesn't get
-            in the way during send or during an in-progress edit. */}
-        {own && !pending && !editing ? (
-          <div
-            className="pointer-events-none absolute -top-2 right-0 flex translate-y-[-100%] opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100"
-          >
-            <div className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-600 shadow-sm">
-              <button
-                type="button"
-                onClick={() => setEditing(true)}
-                className="rounded px-1.5 py-0.5 hover:bg-slate-100"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => onDelete(message)}
-                className="rounded px-1.5 py-0.5 hover:bg-red-50 hover:text-red-700"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        ) : null}
         {message.sentAt && !editing ? (
           <div
             className={`mt-0.5 text-[9px] tabular-nums ${

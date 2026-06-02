@@ -14,6 +14,7 @@ import {
 } from "@/lib/airtable";
 import { env } from "@/lib/env";
 import { sendMailViaGraph } from "@/lib/email";
+import { generateTimesheetSummaryPdf } from "@/lib/timesheet-pdf";
 
 export const runtime = "nodejs";
 const MAX_BYTES = 1 * 1024 * 1024; // 1 MB
@@ -96,6 +97,10 @@ export async function POST(request: Request) {
   // status we can legitimately flip to Invoiced (only Submitted; Draft
   // shouldn't be invoiced, Invoiced/Paid can't be re-invoiced).
   let timesheetsToInvoice: string[] = [];
+  // We keep the resolved records so we can both bake them into a PDF
+  // attachment and list them in the email body without re-fetching.
+  type ChosenTs = Awaited<ReturnType<typeof getTimesheetsForMember>>[number];
+  let chosenTimesheets: ChosenTs[] = [];
   if (timesheetIds.length > 0) {
     const myTimesheets = await getTimesheetsForMember(session.memberCode);
     const byId = new Map(myTimesheets.map((t) => [t.id, t]));
@@ -119,8 +124,13 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
+      chosenTimesheets.push(t);
     }
     timesheetsToInvoice = timesheetIds;
+    // Sort chronologically so the PDF + email body read top-to-bottom by week.
+    chosenTimesheets.sort((a, b) =>
+      (a.startDate ?? "").localeCompare(b.startDate ?? ""),
+    );
   }
 
   // 1) Create the invoice record (no PDF yet).
@@ -163,18 +173,43 @@ export async function POST(request: Request) {
     const filename = file.name || `invoice-${invoiceId}.pdf`;
     await attachInvoicePdf(invoiceId, filename, base64);
 
-    // 3) Send notification email (best-effort). The PDF goes along as an
-    // attachment so the recipient gets it without clicking back into the
-    // portal. Records the outcome on the invoice.
+    // 3) Send notification email (best-effort). The user's invoice PDF
+    // always goes as an attachment. When timesheets were selected we also
+    // build a clean PDF summary of them (week-by-week breakdown) and ship
+    // it alongside so finance has the supporting detail next to the bill.
     const member = session.fullName || session.email || session.memberCode;
     const subject = `Invoice from ${member} — ${staffing.staffingCode || project.projectCode}`;
+
+    const totalCoveredHours = chosenTimesheets.reduce((s, t) => s + t.totalHours, 0);
+    // Plain-text + HTML listings of the covered timesheets, used in both
+    // the body and the supporting PDF.
+    const tsTextLines = chosenTimesheets.map((t) => {
+      const range = t.endDate
+        ? `Week of ${t.startDate} → ${t.endDate}`
+        : `Week of ${t.startDate ?? "—"}`;
+      return `- ${range} · ${t.timesheetCode} · ${t.totalHours.toFixed(2)} h`;
+    });
+    const tsHtmlList = chosenTimesheets
+      .map((t) => {
+        const range = t.endDate
+          ? `Week of ${t.startDate} → ${t.endDate}`
+          : `Week of ${t.startDate ?? "—"}`;
+        return `<li><strong>${range}</strong> · ${t.timesheetCode} · <code>${t.totalHours.toFixed(
+          2,
+        )} h</code></li>`;
+      })
+      .join("");
+
     const text = [
       `New invoice submitted by ${member} (${session.email}).`,
       `Staffing: ${staffing.staffingCode}`,
       `Project: ${project.projectCode} — ${project.projectName}`,
       amount != null ? `Amount: ${amount.toLocaleString("en-US")} ${currency || ""}`.trim() : null,
       comment ? `Comment: ${comment}` : null,
-      `Open in portal: ${env.appUrl}/admin/payments`,
+      chosenTimesheets.length > 0
+        ? `\nCovered timesheets (${chosenTimesheets.length}, total ${totalCoveredHours.toFixed(2)} h):\n${tsTextLines.join("\n")}`
+        : null,
+      `\nOpen in portal: ${env.appUrl}/admin/payments`,
     ]
       .filter(Boolean)
       .join("\n");
@@ -186,14 +221,68 @@ export async function POST(request: Request) {
         ${amount != null ? `<li><strong>Amount:</strong> ${amount.toLocaleString("en-US")} ${currency || ""}</li>` : ""}
         ${comment ? `<li><strong>Comment:</strong> ${comment.replace(/</g, "&lt;").replace(/\n/g, "<br/>")}</li>` : ""}
       </ul>
-      <p>The PDF is attached. <a href="${env.appUrl}/admin/payments">Open in portal</a>.</p>
+      ${
+        chosenTimesheets.length > 0
+          ? `<p><strong>Covered timesheets</strong> (${chosenTimesheets.length}, total <code>${totalCoveredHours.toFixed(2)} h</code>):</p><ul>${tsHtmlList}</ul><p>A detailed week-by-week breakdown is attached as a separate PDF.</p>`
+          : ""
+      }
+      <p>The invoice PDF is attached. <a href="${env.appUrl}/admin/payments">Open in portal</a>.</p>
     `;
+
+    // Build the attachments array. The user's own invoice PDF always
+    // ships; the generated timesheet summary only when timesheets were
+    // selected.
+    const attachments: { filename: string; contentType: string; base64: string }[] = [
+      { filename, contentType: "application/pdf", base64 },
+    ];
+    if (chosenTimesheets.length > 0) {
+      try {
+        const tsPdf = await generateTimesheetSummaryPdf(
+          {
+            memberName: session.fullName || session.email || session.memberCode,
+            memberCode: session.memberCode,
+            amount,
+            currency,
+            comment,
+            staffingCode: staffing.staffingCode,
+            projectCode: project.projectCode,
+            projectName: project.projectName,
+          },
+          chosenTimesheets.map((t) => ({
+            timesheetCode: t.timesheetCode,
+            staffingCode: t.staffingCode,
+            projectCode: t.projectCode,
+            projectName: t.projectName,
+            startDate: t.startDate,
+            endDate: t.endDate,
+            submissionDate: t.submissionDate,
+            totalHours: t.totalHours,
+            monday: t.monday,
+            tuesday: t.tuesday,
+            wednesday: t.wednesday,
+            thursday: t.thursday,
+            friday: t.friday,
+          })),
+        );
+        attachments.push({
+          filename: `timesheets-${staffing.staffingCode || project.projectCode}.pdf`,
+          contentType: "application/pdf",
+          base64: tsPdf.toString("base64"),
+        });
+      } catch (e) {
+        // Don't block the invoice email if the PDF generator throws —
+        // surface it in the server log; the email still goes out with the
+        // member's own PDF and the inline timesheet listing.
+        console.error("Timesheet summary PDF generation failed:", e);
+      }
+    }
+
     const sendResult = await sendMailViaGraph({
       to: env.invoiceRecipient,
       subject,
       textBody: text,
       htmlBody: html,
-      attachments: [{ filename, contentType: "application/pdf", base64 }],
+      attachments,
     });
     if (sendResult.ok) {
       await markInvoiceEmail(invoiceId, { ok: true, sentAt: new Date().toISOString() });
