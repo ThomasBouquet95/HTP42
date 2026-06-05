@@ -107,16 +107,29 @@ export function ChatClient({
     if (typeof window === "undefined") return;
     try {
       window.localStorage.setItem("htp42-chat-lastSeen", JSON.stringify(next));
+      // localStorage's "storage" event only fires in OTHER tabs, so the
+      // global header badge in the same tab would otherwise lag a poll
+      // cycle (≤15s) behind reality. Dispatch a custom event so the badge
+      // refreshes the moment we mark something as read locally — including
+      // right after the user sent a message into the active conversation.
+      window.dispatchEvent(new CustomEvent("htp42-chat-lastseen-changed"));
     } catch {
       // ignore — unread state is non-critical, falls back to "all read"
     }
   }, []);
 
   // Mark the active conversation as seen on every messages refresh and on
-  // every conversation switch.
+  // every conversation switch. We anchor lastSeen to the timestamp of the
+  // newest message in view (not Date.now()) so that any clock skew between
+  // the client and the Airtable server can't make the user's own freshly-
+  // sent message look "newer than last seen" → unread.
   useEffect(() => {
     if (!activeId) return;
-    const stamp = new Date().toISOString();
+    let stamp = new Date().toISOString();
+    if (messages.length > 0) {
+      const newest = messages[messages.length - 1].sentAt;
+      if (newest && newest > stamp) stamp = newest;
+    }
     persistLastSeen({ ...lastSeen, [activeId]: stamp });
     // We intentionally omit `lastSeen` from the deps array — including it
     // would loop every time we updated it. The active conversation's
@@ -422,6 +435,17 @@ export function ChatClient({
           );
           return [...withoutDupes, canonical];
         });
+        // Bump lastSeen with the server-issued timestamp so our own
+        // message can't show up as "unread" anywhere (in-app sidebar or
+        // global header badge). The useEffect above only fires when
+        // messages.length changes — swapping optimistic→canonical keeps
+        // the length the same, so we mirror the update here too.
+        if (canonical.sentAt) {
+          persistLastSeen({
+            ...lastSeen,
+            [activeConversation.id]: canonical.sentAt,
+          });
+        }
       }
     } catch {
       // Roll back the optimistic message and restore the input so the user

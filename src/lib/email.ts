@@ -15,7 +15,9 @@ type Attachment = {
 };
 
 type SendArgs = {
-  to: string;
+  // Either a single address or a list — single mail, multiple recipients all
+  // visible to each other (use sparingly: this is To:, not Bcc:).
+  to: string | string[];
   subject: string;
   textBody: string;
   htmlBody?: string;
@@ -58,6 +60,12 @@ export async function sendMailViaGraph({
       return { ok: false, error: "INVOICE_SENDER_UPN is not configured" };
     }
     const token = await getAppToken();
+    const recipients = (Array.isArray(to) ? to : [to])
+      .map((addr) => addr.trim())
+      .filter(Boolean);
+    if (recipients.length === 0) {
+      return { ok: false, error: "No recipients" };
+    }
     const body = {
       message: {
         subject,
@@ -65,7 +73,9 @@ export async function sendMailViaGraph({
           contentType: htmlBody ? "HTML" : "Text",
           content: htmlBody ?? textBody,
         },
-        toRecipients: [{ emailAddress: { address: to } }],
+        toRecipients: recipients.map((address) => ({
+          emailAddress: { address },
+        })),
         attachments: (attachments ?? []).map((a) => ({
           "@odata.type": "#microsoft.graph.fileAttachment",
           name: a.filename,

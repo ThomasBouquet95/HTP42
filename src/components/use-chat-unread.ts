@@ -66,11 +66,20 @@ export function useChatUnreadCount(): number {
       if (e.key === LAST_SEEN_KEY) refresh();
     };
     window.addEventListener("storage", onStorage);
+    // localStorage "storage" events don't fire in the SAME tab that wrote
+    // them, so the chat client dispatches this custom event after every
+    // last-seen update. Without it the header badge would lag up to a full
+    // poll cycle behind the user marking a message as read in the same tab
+    // (notably right after they sent a message and want the badge to
+    // clear immediately).
+    const onLastSeenChanged = () => refresh();
+    window.addEventListener("htp42-chat-lastseen-changed", onLastSeenChanged);
     return () => {
       cancelled = true;
       clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener("htp42-chat-lastseen-changed", onLastSeenChanged);
     };
   }, []);
 
