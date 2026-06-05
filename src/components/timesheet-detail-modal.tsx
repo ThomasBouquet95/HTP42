@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { StaffingRecord, TimesheetRecord } from "@/lib/airtable";
 import { TimesheetForm } from "@/components/timesheet-form";
 import { ReadOnlyTimesheet } from "@/app/timesheets/[id]/read-only";
@@ -26,13 +26,34 @@ export function TimesheetDetailModal({ timesheetId, onClose, onSaved }: Props) {
   const [data, setData] = useState<LoadedData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Track unsaved changes from the embedded form so we can warn before
+  // closing on Escape or backdrop click — pasting from Excel often involves
+  // a reflexive Escape (to clear the spreadsheet's marching-ants selection),
+  // and a stray release outside the modal during a drag-select shouldn't
+  // throw away in-progress edits either.
+  const [dirty, setDirty] = useState(false);
+  // mousedown target so a drag-select that started inside the modal doesn't
+  // count as a backdrop click when the mouse releases outside.
+  const backdropMouseDownRef = useRef<EventTarget | null>(null);
+
+  const requestClose = useCallback(() => {
+    if (dirty) {
+      const ok = window.confirm(
+        "You have unsaved changes in this timesheet. Close without saving?",
+      );
+      if (!ok) return;
+    }
+    onClose();
+  }, [dirty, onClose]);
 
   useEffect(() => {
     if (!timesheetId) {
       setData(null);
       setError(null);
+      setDirty(false);
       return;
     }
+    setDirty(false);
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -89,7 +110,7 @@ export function TimesheetDetailModal({ timesheetId, onClose, onSaved }: Props) {
   useEffect(() => {
     if (!timesheetId) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") requestClose();
     };
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKey);
@@ -97,7 +118,7 @@ export function TimesheetDetailModal({ timesheetId, onClose, onSaved }: Props) {
       document.body.style.overflow = "";
       window.removeEventListener("keydown", onKey);
     };
-  }, [timesheetId, onClose]);
+  }, [timesheetId, requestClose]);
 
   if (!timesheetId) return null;
   const ts = data?.timesheet;
@@ -106,10 +127,23 @@ export function TimesheetDetailModal({ timesheetId, onClose, onSaved }: Props) {
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-3 py-6 sm:items-center sm:py-10"
       role="dialog"
       aria-modal="true"
-      onClick={onClose}
+      onMouseDown={(e) => {
+        backdropMouseDownRef.current = e.target;
+      }}
+      onClick={(e) => {
+        // Only treat a backdrop click as a close if both the mousedown AND
+        // the mouseup happened on the backdrop itself. Otherwise a drag that
+        // started inside an input and released over the dim layer (common
+        // when selecting text or pasting) would discard the timesheet.
+        if (e.target === e.currentTarget && backdropMouseDownRef.current === e.currentTarget) {
+          requestClose();
+        }
+        backdropMouseDownRef.current = null;
+      }}
     >
       <div
         className="relative w-full max-w-3xl rounded-xl bg-white shadow-xl"
+        onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between border-b border-slate-100 px-5 py-3">
@@ -133,7 +167,7 @@ export function TimesheetDetailModal({ timesheetId, onClose, onSaved }: Props) {
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             aria-label="Close"
             className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
           >
@@ -151,8 +185,12 @@ export function TimesheetDetailModal({ timesheetId, onClose, onSaved }: Props) {
                 mode="edit"
                 existing={ts}
                 initialStaffings={data?.eligibleStaffings}
-                onCancel={onClose}
+                onCancel={requestClose}
+                onDirtyChange={setDirty}
                 onSaved={() => {
+                  // Save flushes the dirty state inside the form already;
+                  // clear our mirror too so the parent doesn't re-prompt.
+                  setDirty(false);
                   onSaved?.();
                   onClose();
                 }}

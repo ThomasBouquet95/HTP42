@@ -178,14 +178,23 @@ export function SummaryClient({
       });
   }, [timesheets, filters]);
 
-  const total = useMemo(
-    () => filtered.reduce((sum, t) => sum + t.totalHours, 0),
+  // Aggregations always exclude Deleted timesheets — a tombstoned row is not
+  // "logged effort" and shouldn't inflate any project / staffing total. The
+  // table below still shows Deleted rows for reference when the status filter
+  // is "All" or "Deleted".
+  const countable = useMemo(
+    () => filtered.filter((t) => t.status !== "Deleted"),
     [filtered],
+  );
+
+  const total = useMemo(
+    () => countable.reduce((sum, t) => sum + t.totalHours, 0),
+    [countable],
   );
 
   const byProject = useMemo(() => {
     const map = new Map<string, { name: string; hours: number; weeks: number }>();
-    for (const t of filtered) {
+    for (const t of countable) {
       const key = t.projectCode || "—";
       const name = t.projectName || t.projectCode || "—";
       const cur = map.get(key) ?? { name, hours: 0, weeks: 0 };
@@ -194,11 +203,11 @@ export function SummaryClient({
       map.set(key, cur);
     }
     return [...map.values()].sort((a, b) => b.hours - a.hours);
-  }, [filtered]);
+  }, [countable]);
 
   const byStaffing = useMemo(() => {
     const map = new Map<string, { code: string; project: string; hours: number; weeks: number }>();
-    for (const t of filtered) {
+    for (const t of countable) {
       const cur = map.get(t.staffingRecordId) ?? {
         code: t.staffingCode,
         project: t.projectName || t.projectCode || "—",
@@ -210,7 +219,7 @@ export function SummaryClient({
       map.set(t.staffingRecordId, cur);
     }
     return [...map.values()].sort((a, b) => b.hours - a.hours);
-  }, [filtered]);
+  }, [countable]);
 
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((prev) => {
@@ -333,7 +342,7 @@ export function SummaryClient({
         ) : null}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
           <div className="text-xs text-slate-600">
-            {filtered.length} timesheet{filtered.length === 1 ? "" : "s"} ·{" "}
+            {countable.length} timesheet{countable.length === 1 ? "" : "s"} ·{" "}
             <span className="font-semibold text-slate-900">{total.toFixed(2)} h</span>
           </div>
           <div className="flex gap-1.5">
@@ -375,10 +384,10 @@ export function SummaryClient({
         <>
           <div className="grid gap-4 md:grid-cols-3">
             <StatCard label="Total hours" value={total.toFixed(2)} accent />
-            <StatCard label="Timesheets" value={String(filtered.length)} />
+            <StatCard label="Timesheets" value={String(countable.length)} />
             <StatCard
               label="Avg hours / week"
-              value={filtered.length === 0 ? "0.00" : (total / filtered.length).toFixed(2)}
+              value={countable.length === 0 ? "0.00" : (total / countable.length).toFixed(2)}
             />
           </div>
 

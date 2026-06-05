@@ -130,11 +130,18 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
     });
   }, [rows, filters]);
 
-  const total = useMemo(() => filtered.reduce((s, t) => s + t.totalHours, 0), [filtered]);
+  // Aggregations always exclude Deleted timesheets so totals reflect real
+  // logged effort. Deleted rows still render in the table for context.
+  const countable = useMemo(
+    () => filtered.filter((t) => t.status !== "Deleted"),
+    [filtered],
+  );
+
+  const total = useMemo(() => countable.reduce((s, t) => s + t.totalHours, 0), [countable]);
 
   const byMember = useMemo(() => {
     const map = new Map<string, { code: string; name: string; hours: number; weeks: number }>();
-    for (const t of filtered) {
+    for (const t of countable) {
       const cur = map.get(t.memberCode) ?? {
         code: t.memberCode,
         name: t.memberName || t.memberCode,
@@ -146,11 +153,11 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
       map.set(t.memberCode, cur);
     }
     return [...map.values()].sort((a, b) => b.hours - a.hours);
-  }, [filtered]);
+  }, [countable]);
 
   const byProject = useMemo(() => {
     const map = new Map<string, { name: string; hours: number; weeks: number }>();
-    for (const t of filtered) {
+    for (const t of countable) {
       const key = t.projectCode || "—";
       const name = t.projectName || t.projectCode || "—";
       const cur = map.get(key) ?? { name, hours: 0, weeks: 0 };
@@ -159,7 +166,7 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
       map.set(key, cur);
     }
     return [...map.values()].sort((a, b) => b.hours - a.hours);
-  }, [filtered]);
+  }, [countable]);
 
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((prev) => {
@@ -245,7 +252,7 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
           <div className="text-sm text-slate-600">
-            {filtered.length} timesheet{filtered.length === 1 ? "" : "s"} ·{" "}
+            {countable.length} timesheet{countable.length === 1 ? "" : "s"} ·{" "}
             <span className="font-semibold text-slate-900">{total.toFixed(2)} hours</span>
           </div>
           <div className="flex gap-2">
@@ -270,7 +277,7 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
 
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard label="Total hours" value={total.toFixed(2)} accent />
-        <StatCard label="Timesheets" value={String(filtered.length)} />
+        <StatCard label="Timesheets" value={String(countable.length)} />
         <StatCard label="Members" value={String(byMember.length)} />
       </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { StaffingRecord, TimesheetRecord } from "@/lib/airtable";
 import { formatWeekRange, fridayOfWeek, mondayOf, thisMondayIso } from "@/lib/dates";
@@ -28,6 +28,10 @@ type Props = {
   // uses these as the staffings for the current week. Used by the edit page
   // to render the form fully on the server.
   initialStaffings?: StaffingRecord[];
+  // Fired whenever the user makes/undoes a change vs. the loaded values.
+  // Lets a wrapping modal warn before closing on unsaved edits — important
+  // when pasting from Excel where a stray Escape would otherwise lose work.
+  onDirtyChange?: (dirty: boolean) => void;
 };
 
 function blankDay(): DayState {
@@ -51,6 +55,7 @@ export function TimesheetForm({
   onCancel,
   onSaved,
   initialStaffings,
+  onDirtyChange,
 }: Props) {
   const router = useRouter();
   const [weekStart, setWeekStart] = useState<string>(
@@ -76,6 +81,41 @@ export function TimesheetForm({
 
   const weekMonday = useMemo(() => mondayOf(weekStart), [weekStart]);
   const weekFriday = useMemo(() => fridayOfWeek(weekMonday), [weekMonday]);
+
+  // Snapshot of the values on mount so dirty-detection compares against the
+  // state the user actually started with. We update it on a successful save
+  // so the form goes back to "clean" until the next edit.
+  const initialSnapshotRef = useRef({
+    weekStart: existing?.startDate ?? thisMondayIso(),
+    staffingId: existing?.staffingRecordId ?? "",
+    days: existing
+      ? initialFromExisting(existing)
+      : ({
+          monday: blankDay(),
+          tuesday: blankDay(),
+          wednesday: blankDay(),
+          thursday: blankDay(),
+          friday: blankDay(),
+        } as FormState),
+  });
+  const dirty = useMemo(() => {
+    const snap = initialSnapshotRef.current;
+    if (weekStart !== snap.weekStart) return true;
+    // staffingId starts empty in create mode and gets defaulted to list[0]
+    // once staffings load; treat that auto-fill as "still clean" by only
+    // flagging dirty if the user picked a value AND it differs from the snap.
+    if (staffingId && staffingId !== snap.staffingId && snap.staffingId !== "") {
+      return true;
+    }
+    for (const k of DAY_KEYS) {
+      if (days[k].hours !== snap.days[k].hours) return true;
+      if (days[k].task !== snap.days[k].task) return true;
+    }
+    return false;
+  }, [weekStart, staffingId, days]);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   useEffect(() => {
     // Skip the round-trip if the parent already passed the right list.
@@ -174,6 +214,19 @@ export function TimesheetForm({
         body: JSON.stringify(body),
       });
       if (res.ok) {
+        // Save succeeded — reset the dirty baseline so subsequent close
+        // attempts don't warn unless the user edits something new.
+        initialSnapshotRef.current = {
+          weekStart,
+          staffingId,
+          days: {
+            monday: { ...days.monday },
+            tuesday: { ...days.tuesday },
+            wednesday: { ...days.wednesday },
+            thursday: { ...days.thursday },
+            friday: { ...days.friday },
+          },
+        };
         if (onSaved) {
           onSaved();
         } else {
