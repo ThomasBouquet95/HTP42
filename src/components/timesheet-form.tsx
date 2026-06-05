@@ -142,11 +142,30 @@ export function TimesheetForm({
           });
         }
         setStaffings(list);
-        if (!staffingId && list.length > 0) {
-          const preferred = presetProjectCode
-            ? list.find((s) => s.projectCode === presetProjectCode)
-            : undefined;
-          setStaffingId((preferred ?? list[0]).id);
+        // Re-evaluate the staffing pick on every fetch — initial load AND
+        // every week change. Two scenarios silently mis-assigned projects
+        // before this:
+        //   (a) Add-from-project: presetProjectCode set, but its staffing
+        //       isn't active this week → we used to default to list[0]
+        //       (a different project).
+        //   (b) Week change: the user's current staffingId belongs to a
+        //       staffing that isn't active in the new week. The <select>
+        //       visually fell back to the first option, but state still
+        //       held the old (now off-week) id — Save then wrote to a
+        //       different project than what was on screen.
+        // Now: if the held staffingId is still in the list, keep it.
+        // Otherwise pick the preset project's staffing when set, else the
+        // first option, else clear.
+        const stillValid = staffingId && list.some((s) => s.id === staffingId);
+        if (!stillValid) {
+          if (presetProjectCode) {
+            const preferred = list.find(
+              (s) => s.projectCode === presetProjectCode,
+            );
+            setStaffingId(preferred ? preferred.id : "");
+          } else {
+            setStaffingId(list[0]?.id ?? "");
+          }
         }
       })
       .catch(() => {
@@ -161,7 +180,18 @@ export function TimesheetForm({
     return () => {
       cancelled = true;
     };
-  }, [weekMonday, existing, staffingId, hasFetchedFor]);
+  }, [weekMonday, existing, staffingId, hasFetchedFor, presetProjectCode]);
+
+  // True when the caller asked us to preset a project but the current week
+  // has no staffing matching it. Drives the inline warning below so the user
+  // notices and either changes the week or picks a different staffing
+  // explicitly — instead of silently saving under the wrong project.
+  const presetMismatch = useMemo(() => {
+    if (!presetProjectCode) return false;
+    if (loadingStaffings) return false;
+    if (staffings.length === 0) return false;
+    return !staffings.some((s) => s.projectCode === presetProjectCode);
+  }, [presetProjectCode, staffings, loadingStaffings]);
 
   const total = useMemo(
     () => DAY_KEYS.reduce((sum, k) => sum + (Number(days[k].hours) || 0), 0),
@@ -273,13 +303,27 @@ export function TimesheetForm({
                 {loadingStaffings ? "Loading…" : "No eligible staffings for this week"}
               </option>
             ) : (
-              staffings.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.staffingCode} · {s.projectName || s.projectCode}
-                </option>
-              ))
+              <>
+                {!staffingId ? (
+                  <option value="" disabled>
+                    Pick a staffing…
+                  </option>
+                ) : null}
+                {staffings.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.staffingCode} · {s.projectName || s.projectCode}
+                  </option>
+                ))}
+              </>
             )}
           </select>
+          {presetMismatch ? (
+            <span className="mt-1 block rounded-md bg-amber-50 px-2 py-1 text-[11px] text-amber-800 ring-1 ring-amber-200">
+              No staffing for {presetProjectCode} this week. Pick a week where
+              you were staffed on this project, or choose a different staffing
+              from the list.
+            </span>
+          ) : null}
         </label>
       </div>
 
