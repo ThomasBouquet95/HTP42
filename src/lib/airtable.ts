@@ -1994,7 +1994,19 @@ function staffingFields(input: StaffingInput): Record<string, unknown> {
   };
 }
 
+// Hard invariant: every Project Staffing record must link to a Network
+// Member. The Zod schema in the route handlers enforces this at the API
+// boundary, but we re-check here so a future direct caller (a script, a
+// migration helper, a new endpoint someone wires up) can't accidentally
+// reintroduce the ghost-row bug from a different code path.
+function assertHasMember(input: StaffingInput): void {
+  if (!input.memberRecordIds || input.memberRecordIds.length === 0) {
+    throw new Error("A staffing must be linked to a network member.");
+  }
+}
+
 export async function createStaffing(input: StaffingInput): Promise<string> {
+  assertHasMember(input);
   const [created] = await base(TABLES.projectStaffing).create([
     { fields: staffingFields(input) as FieldSet },
   ]);
@@ -2002,6 +2014,7 @@ export async function createStaffing(input: StaffingInput): Promise<string> {
 }
 
 export async function updateStaffing(recordId: string, input: StaffingInput): Promise<void> {
+  assertHasMember(input);
   await base(TABLES.projectStaffing).update([
     { id: recordId, fields: staffingFields(input) as FieldSet },
   ]);

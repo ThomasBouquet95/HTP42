@@ -18,7 +18,14 @@ const nullableDate = z.union([z.string().trim().min(1), z.null()]).optional();
 
 const schema = z.object({
   projectCode: z.string().trim().min(1).max(80),
-  memberRecordIds: z.array(z.string()).min(1).max(1),
+  // Every staffing must be tied to exactly one Network Member. Without this
+  // link the Staffing Code formula in Airtable falls back to "{Project}_"
+  // and the row visually looks like a project sitting in the staffing
+  // table — a real bug a user reported in the wild.
+  memberRecordIds: z
+    .array(z.string())
+    .min(1, "A staffing must be linked to a network member.")
+    .max(1, "A staffing must be linked to exactly one network member."),
   roleInProject: z.string().trim().max(200).default(""),
   projectRole: z.union([z.enum(PROJECT_ROLES as [string, ...string[]]), z.literal("")]).default(""),
   ratePerDay: nullableNumber,

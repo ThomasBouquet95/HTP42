@@ -44,7 +44,13 @@ const nullableDate = z.union([z.string().trim().min(1), z.null()]).optional();
 
 const schema = z.object({
   projectCode: z.string().trim().min(1).max(80),
-  memberRecordIds: z.array(z.string()).min(1).max(1),
+  // Mirror the create schema: every staffing keeps exactly one linked
+  // Network Member through its lifetime. An edit that tries to clear the
+  // member is treated as a fresh validation failure, not a silent update.
+  memberRecordIds: z
+    .array(z.string())
+    .min(1, "A staffing must be linked to a network member.")
+    .max(1, "A staffing must be linked to exactly one network member."),
   roleInProject: z.string().trim().max(200).default(""),
   projectRole: z.union([z.enum(PROJECT_ROLES as [string, ...string[]]), z.literal("")]).default(""),
   ratePerDay: nullableNumber,
