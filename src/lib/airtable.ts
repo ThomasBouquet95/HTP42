@@ -1933,6 +1933,14 @@ export async function listAllStaffings(): Promise<StaffingAdminRecord[]> {
   ]);
   return records
     .map((r) => staffingAdminFromRecord(r, projectNames, memberCodeById, daysUsedByStaffingId))
+    // Hide memberless rows from the admin listing. Our API enforces a
+    // non-empty Member link at create/update, but Airtable's own UI lets a
+    // user "+ Add row" without filling the link — and the auto-generated
+    // Staffing Code formula then falls back to "{Project Code}_" which
+    // visually looks like a project record sitting in the staffing table.
+    // Surface real assignments only; orphans should be cleaned up in
+    // Airtable, not displayed as ghost entries.
+    .filter((s) => s.memberRecordIds.length > 0)
     .sort((a, b) => a.staffingCode.localeCompare(b.staffingCode));
 }
 
