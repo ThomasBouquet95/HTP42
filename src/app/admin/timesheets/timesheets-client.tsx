@@ -2,13 +2,20 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { AdminTimesheetRecord, TimesheetStatus } from "@/lib/airtable";
+import type { AdminTimesheetRecord, MemberInvoiceRecord, TimesheetStatus } from "@/lib/airtable";
 import { TIMESHEET_STATUSES } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
-import { parseIsoDate, toIsoDate } from "@/lib/dates";
+import { formatWeekRange, parseIsoDate, toIsoDate } from "@/lib/dates";
 import { WeekChip } from "@/components/week-chip";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
+const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
+  monday: "Monday",
+  tuesday: "Tuesday",
+  wednesday: "Wednesday",
+  thursday: "Thursday",
+  friday: "Friday",
+};
 
 // Statuses the admin can pick from the inline row dropdown. We exclude
 // "Deleted" so admins don't accidentally tombstone a row from the listing —
@@ -20,6 +27,9 @@ const ADMIN_EDITABLE_STATUSES: TimesheetStatus[] = [
   "Paid",
 ];
 
+// How many rows each breakdown card shows before "Show all".
+const BREAKDOWN_PREVIEW_ROWS = 6;
+
 type Filters = {
   status: "All" | TimesheetStatus;
   memberCode: string;
@@ -29,8 +39,10 @@ type Filters = {
   to: string;
 };
 
+// Admins land on Submitted: that's the actionable pile (review → invoice).
+// Drafts are members' work-in-progress and noise at triage time.
 const DEFAULT_FILTERS: Filters = {
-  status: "All",
+  status: "Submitted",
   memberCode: "All",
   projectCode: "All",
   staffingId: "All",
@@ -40,9 +52,10 @@ const DEFAULT_FILTERS: Filters = {
 
 type Props = {
   timesheets: AdminTimesheetRecord[];
+  invoices: MemberInvoiceRecord[];
 };
 
-export function AdminTimesheetsClient({ timesheets }: Props) {
+export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
   const router = useRouter();
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   // Local mirror so an inline Status change feels instant even before the
@@ -50,6 +63,7 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
   const [rows, setRows] = useState<AdminTimesheetRecord[]>(timesheets);
   useEffect(() => setRows(timesheets), [timesheets]);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  const [openId, setOpenId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -156,11 +170,11 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
   }, [countable]);
 
   const byProject = useMemo(() => {
-    const map = new Map<string, { name: string; hours: number; weeks: number }>();
+    const map = new Map<string, { code: string; name: string; hours: number; weeks: number }>();
     for (const t of countable) {
       const key = t.projectCode || "—";
       const name = t.projectName || t.projectCode || "—";
-      const cur = map.get(key) ?? { name, hours: 0, weeks: 0 };
+      const cur = map.get(key) ?? { code: key, name, hours: 0, weeks: 0 };
       cur.hours += t.totalHours;
       cur.weeks += 1;
       map.set(key, cur);
@@ -198,8 +212,11 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
     URL.revokeObjectURL(url);
   }
 
+  const openTimesheet = openId ? rows.find((r) => r.id === openId) ?? null : null;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* Filter bar */}
       <div className="bg-white rounded-lg border border-slate-200 p-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <Select
@@ -251,9 +268,14 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
           <DateInput label="To" value={filters.to} onChange={(v) => update("to", v)} />
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
-          <div className="text-sm text-slate-600">
-            {countable.length} timesheet{countable.length === 1 ? "" : "s"} ·{" "}
-            <span className="font-semibold text-slate-900">{total.toFixed(2)} hours</span>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+            <span>
+              {countable.length} timesheet{countable.length === 1 ? "" : "s"} ·{" "}
+              <span className="font-semibold text-slate-900">{total.toFixed(2)} h</span>
+              {" · "}
+              {byMember.length} member{byMember.length === 1 ? "" : "s"}
+            </span>
+            <ActiveFilterChips filters={filters} onClear={update} />
           </div>
           <div className="flex gap-2">
             <button
@@ -275,31 +297,39 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard label="Total hours" value={total.toFixed(2)} accent />
-        <StatCard label="Timesheets" value={String(countable.length)} />
-        <StatCard label="Members" value={String(byMember.length)} />
-      </div>
-
+      {/* Breakdowns: click a row to filter the table below; click again to clear. */}
       <div className="grid gap-4 md:grid-cols-2">
         <BreakdownCard
           title="By member"
           rows={byMember.map((m) => ({
-            label: `${m.code} · ${m.name}`,
-            right: `${m.hours.toFixed(2)} h`,
-            sub: `${m.weeks} week${m.weeks === 1 ? "" : "s"}`,
+            key: m.code,
+            label: m.name,
+            mono: m.code,
+            sub: `${m.weeks} timesheet${m.weeks === 1 ? "" : "s"}`,
+            hours: m.hours,
           }))}
+          selectedKey={filters.memberCode === "All" ? null : filters.memberCode}
+          onSelect={(key) =>
+            update("memberCode", filters.memberCode === key ? "All" : key)
+          }
         />
         <BreakdownCard
           title="By project"
           rows={byProject.map((p) => ({
+            key: p.code,
             label: p.name,
-            right: `${p.hours.toFixed(2)} h`,
-            sub: `${p.weeks} week${p.weeks === 1 ? "" : "s"}`,
+            mono: p.code !== p.name ? p.code : undefined,
+            sub: `${p.weeks} timesheet${p.weeks === 1 ? "" : "s"}`,
+            hours: p.hours,
           }))}
+          selectedKey={filters.projectCode === "All" ? null : filters.projectCode}
+          onSelect={(key) =>
+            update("projectCode", filters.projectCode === key ? "All" : key)
+          }
         />
       </div>
 
+      {/* Main table. Rows open the detail modal; the status chip stays inline. */}
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
@@ -325,7 +355,12 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
               </tr>
             ) : (
               filtered.map((t) => (
-                <tr key={t.id} className="border-t border-slate-100 align-top">
+                <tr
+                  key={t.id}
+                  onClick={() => setOpenId(t.id)}
+                  className="border-t border-slate-100 align-top cursor-pointer hover:bg-slate-50"
+                  title="Click for the full timesheet"
+                >
                   <td className="px-2 py-1.5 whitespace-nowrap">
                     <WeekChip startIso={t.startDate} endIso={t.endDate} />
                   </td>
@@ -337,7 +372,7 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
                     <div className="font-mono text-[10px] text-slate-500">{t.staffingCode}</div>
                     <div className="truncate max-w-[16rem]">{t.projectName || t.projectCode || "—"}</div>
                   </td>
-                  <td className="px-2 py-1.5 whitespace-nowrap">
+                  <td className="px-2 py-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     <AdminStatusSelect
                       value={t.status}
                       disabled={savingIds.has(t.id) || t.status === "Deleted"}
@@ -359,10 +394,28 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
         </table>
       </div>
 
+      {openTimesheet ? (
+        <TimesheetAdminModal
+          timesheet={openTimesheet}
+          invoices={invoices}
+          saving={savingIds.has(openTimesheet.id)}
+          onStatusChange={(v) => updateStatus(openTimesheet.id, v)}
+          onClose={() => setOpenId(null)}
+          onShowMember={() => {
+            update("memberCode", openTimesheet.memberCode);
+            setOpenId(null);
+          }}
+          onShowProject={() => {
+            update("projectCode", openTimesheet.projectCode);
+            setOpenId(null);
+          }}
+        />
+      ) : null}
+
       {toast ? (
         <div
           role="status"
-          className={`pointer-events-none fixed bottom-4 right-4 z-50 rounded-lg border px-3 py-2 text-xs shadow-lg ${
+          className={`pointer-events-none fixed bottom-4 right-4 z-[70] rounded-lg border px-3 py-2 text-xs shadow-lg ${
             toast.kind === "error"
               ? "border-red-300 bg-red-50 text-red-800"
               : "border-emerald-300 bg-emerald-50 text-emerald-800"
@@ -371,6 +424,251 @@ export function AdminTimesheetsClient({ timesheets }: Props) {
           {toast.msg}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// Small dismissable chips that surface non-default filters so the admin can
+// see (and undo) what's narrowing the table without scanning six dropdowns.
+function ActiveFilterChips({
+  filters,
+  onClear,
+}: {
+  filters: Filters;
+  onClear: <K extends keyof Filters>(key: K, value: Filters[K]) => void;
+}) {
+  const chips: { label: string; clear: () => void }[] = [];
+  if (filters.memberCode !== "All") {
+    chips.push({ label: filters.memberCode, clear: () => onClear("memberCode", "All") });
+  }
+  if (filters.projectCode !== "All") {
+    chips.push({ label: filters.projectCode, clear: () => onClear("projectCode", "All") });
+  }
+  if (chips.length === 0) return null;
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {chips.map((c) => (
+        <button
+          key={c.label}
+          type="button"
+          onClick={c.clear}
+          className="inline-flex items-center gap-1 rounded-full bg-brand-50 border border-brand-200 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-100"
+          title="Clear this filter"
+        >
+          {c.label}
+          <span aria-hidden>×</span>
+        </button>
+      ))}
+    </span>
+  );
+}
+
+// Full-timesheet modal for admins: day-by-day hours + task comments, status
+// editor, related invoices on the same staffing, and one-click pivots to
+// "all timesheets from this member / this project".
+function TimesheetAdminModal({
+  timesheet: t,
+  invoices,
+  saving,
+  onStatusChange,
+  onClose,
+  onShowMember,
+  onShowProject,
+}: {
+  timesheet: AdminTimesheetRecord;
+  invoices: MemberInvoiceRecord[];
+  saving: boolean;
+  onStatusChange: (v: TimesheetStatus) => void;
+  onClose: () => void;
+  onShowMember: () => void;
+  onShowProject: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  // Related invoices: tightest match first (same staffing), then fall back
+  // to the same member + project for invoices created before the staffing
+  // link existed.
+  const related = useMemo(() => {
+    const byStaffing = invoices.filter(
+      (i) => i.staffingRecordId && i.staffingRecordId === t.staffingRecordId,
+    );
+    if (byStaffing.length > 0) return byStaffing;
+    return invoices.filter(
+      (i) =>
+        i.memberRecordId === t.memberRecordId &&
+        i.projectCode &&
+        i.projectCode === t.projectCode,
+    );
+  }, [invoices, t]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-slate-900/60 px-3 py-6 sm:items-center sm:py-10"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+              <span className="rounded-md bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] text-white">
+                {t.timesheetCode}
+              </span>
+              <span>{formatWeekRange(t.startDate, t.endDate)}</span>
+              {t.submissionDate ? <span>· Submitted {t.submissionDate}</span> : null}
+            </div>
+            <h2 className="mt-1 truncate text-base font-semibold text-slate-900">
+              {t.memberName || t.memberCode}
+            </h2>
+            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+              <span className="font-mono">{t.memberCode}</span>
+              <span>·</span>
+              <span className="font-mono">{t.staffingCode}</span>
+              <span className="truncate">{t.projectName || t.projectCode}</span>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <AdminStatusSelect
+              value={t.status}
+              disabled={saving || t.status === "Deleted"}
+              onChange={onStatusChange}
+            />
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Day-by-day with comments */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="text-left px-4 py-1.5 font-medium w-28">Day</th>
+                <th className="text-right px-3 py-1.5 font-medium w-16">Hours</th>
+                <th className="text-left px-3 py-1.5 font-medium">Comment</th>
+              </tr>
+            </thead>
+            <tbody>
+              {DAY_KEYS.map((k) => (
+                <tr key={k} className="border-t border-slate-100">
+                  <td className="px-4 py-1.5 font-medium text-slate-700">{DAY_LABELS[k]}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">
+                    {t[k].hours ? t[k].hours.toFixed(2) : <span className="text-slate-300">—</span>}
+                  </td>
+                  <td className="px-3 py-1.5 text-slate-700">
+                    {t[k].task || <span className="text-slate-300">—</span>}
+                  </td>
+                </tr>
+              ))}
+              <tr className="border-t border-slate-200 bg-slate-50">
+                <td className="px-4 py-1.5 font-semibold text-slate-700">Total</td>
+                <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-900">
+                  {t.totalHours.toFixed(2)}
+                </td>
+                <td />
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Related invoices */}
+        <div className="border-t border-slate-200 px-5 py-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Related invoices
+          </div>
+          {related.length === 0 ? (
+            <p className="mt-1.5 text-xs text-slate-500">
+              No invoices yet on this staffing.
+            </p>
+          ) : (
+            <ul className="mt-1.5 divide-y divide-slate-100">
+              {related.slice(0, 5).map((inv) => (
+                <li key={inv.id} className="flex items-center justify-between gap-3 py-1.5 text-xs">
+                  <div className="min-w-0">
+                    <span className="font-mono text-[11px] text-slate-700">{inv.invoiceCode || "—"}</span>
+                    {inv.submissionDate ? (
+                      <span className="ml-2 text-slate-500">
+                        {inv.submissionDate.slice(0, 10)}
+                      </span>
+                    ) : null}
+                    {inv.status ? (
+                      <span className="ml-2 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                        {inv.status}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <span className="font-semibold tabular-nums text-slate-900">
+                      {inv.amount != null
+                        ? `${inv.amount.toLocaleString("en-US")} ${inv.currency || ""}`.trim()
+                        : "—"}
+                    </span>
+                    {inv.pdf?.url ? (
+                      <a
+                        href={inv.pdf.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-brand-600 hover:text-brand-700 font-medium"
+                      >
+                        PDF
+                      </a>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Footer pivots */}
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-b-2xl border-t border-slate-200 bg-slate-50 px-5 py-3">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onShowMember}
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-100"
+            >
+              All timesheets · {t.memberCode}
+            </button>
+            <button
+              type="button"
+              onClick={onShowProject}
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-100"
+            >
+              All timesheets · {t.projectCode || "project"}
+            </button>
+          </div>
+          <a
+            href="/admin/payments"
+            className="text-xs font-medium text-brand-600 hover:text-brand-700"
+          >
+            Open payments →
+          </a>
+        </div>
+      </div>
     </div>
   );
 }
@@ -481,51 +779,105 @@ function DateInput({
   );
 }
 
-function StatCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
-  return (
-    <div
-      className={`rounded-lg border p-4 ${
-        accent ? "bg-brand-50 border-brand-200" : "bg-white border-slate-200"
-      }`}
-    >
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div
-        className={`mt-1 text-2xl font-semibold tabular-nums ${
-          accent ? "text-brand-700" : "text-slate-900"
-        }`}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
+type BreakdownRow = {
+  key: string;
+  label: string;
+  mono?: string;
+  sub?: string;
+  hours: number;
+};
 
+// Interactive breakdown: each row doubles as a filter toggle for the main
+// table, with a proportional bar so the distribution reads at a glance.
+// Collapsed to the top rows by default with a "Show all" expander.
 function BreakdownCard({
   title,
   rows,
+  selectedKey,
+  onSelect,
 }: {
   title: string;
-  rows: { label: string; sub?: string; right: string }[];
+  rows: BreakdownRow[];
+  selectedKey: string | null;
+  onSelect: (key: string) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const maxHours = rows.length > 0 ? rows[0].hours : 0;
+  const visible = expanded ? rows : rows.slice(0, BREAKDOWN_PREVIEW_ROWS);
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
-      <div className="border-b border-slate-100 px-4 py-2 text-sm font-semibold text-slate-800">
-        {title}
+      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2">
+        <span className="text-sm font-semibold text-slate-800">{title}</span>
+        <span className="text-[11px] text-slate-400">
+          Click a row to filter
+        </span>
       </div>
       {rows.length === 0 ? (
         <div className="px-4 py-6 text-center text-sm text-slate-500">No data.</div>
       ) : (
-        <ul className="divide-y divide-slate-100">
-          {rows.map((r, i) => (
-            <li key={i} className="flex items-center justify-between px-4 py-2 text-sm">
-              <div>
-                <div className="font-medium text-slate-800">{r.label}</div>
-                {r.sub ? <div className="text-xs text-slate-500">{r.sub}</div> : null}
-              </div>
-              <div className="font-semibold tabular-nums text-slate-900">{r.right}</div>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="divide-y divide-slate-100">
+            {visible.map((r) => {
+              const active = selectedKey === r.key;
+              const pct = maxHours > 0 ? (r.hours / maxHours) * 100 : 0;
+              return (
+                <li key={r.key}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(r.key)}
+                    aria-pressed={active}
+                    className={`relative block w-full px-4 py-2 text-left text-sm transition-colors ${
+                      active ? "bg-brand-50" : "hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className="relative z-10 flex items-center justify-between gap-3">
+                      <span className="min-w-0">
+                        <span className={`font-medium ${active ? "text-brand-800" : "text-slate-800"}`}>
+                          {r.label}
+                        </span>
+                        {r.mono ? (
+                          <span className="ml-2 font-mono text-[10px] text-slate-400">{r.mono}</span>
+                        ) : null}
+                        {r.sub ? (
+                          <span className="block text-xs text-slate-500">{r.sub}</span>
+                        ) : null}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className="font-semibold tabular-nums text-slate-900">
+                          {r.hours.toFixed(2)} h
+                        </span>
+                        {active ? (
+                          <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white">
+                            Filtered
+                          </span>
+                        ) : null}
+                      </span>
+                    </span>
+                    {/* Proportional bar under the row content */}
+                    <span
+                      aria-hidden
+                      className="absolute inset-x-4 bottom-1 z-0 block h-0.5 rounded-full bg-slate-100"
+                    >
+                      <span
+                        className={`block h-full rounded-full ${active ? "bg-brand-500" : "bg-brand-300"}`}
+                        style={{ width: `${Math.max(2, pct)}%` }}
+                      />
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {rows.length > BREAKDOWN_PREVIEW_ROWS ? (
+            <button
+              type="button"
+              onClick={() => setExpanded((e) => !e)}
+              className="block w-full border-t border-slate-100 px-4 py-1.5 text-center text-xs font-medium text-brand-600 hover:bg-slate-50"
+            >
+              {expanded ? "Show less" : `Show all (${rows.length})`}
+            </button>
+          ) : null}
+        </>
       )}
     </div>
   );
