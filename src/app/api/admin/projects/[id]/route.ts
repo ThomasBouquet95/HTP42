@@ -42,6 +42,22 @@ export async function PATCH(
 const nullableNumber = z.union([z.number(), z.null()]).optional();
 const nullableDate = z.union([z.string().trim().min(1), z.null()]).optional();
 
+const milestoneEntry = z.object({
+  kind: z.literal("milestone"),
+  milestone: z.string().max(200).default(""),
+  percent: z.number().min(0).max(100),
+  date: z.union([z.string().trim().min(1), z.null()]).optional(),
+});
+const monthEntry = z.object({
+  kind: z.literal("month"),
+  month: z.string().regex(/^\d{4}-\d{2}$/, "Month must be YYYY-MM."),
+  percent: z.number().min(0).max(100),
+});
+const paymentScheduleSchema = z
+  .array(z.union([milestoneEntry, monthEntry]))
+  .max(120)
+  .default([]);
+
 const schema = z.object({
   projectCode: z.string().trim().min(1).max(80),
   projectName: z.string().trim().min(1).max(300),
@@ -57,6 +73,7 @@ const schema = z.object({
   status: z.union([z.enum(PROJECT_STATUSES as [string, ...string[]]), z.literal("")]).default(""),
   sowSigned: z.union([z.enum(SOW_SIGNED_OPTIONS as [string, ...string[]]), z.literal("")]).default(""),
   sowValidityDate: nullableDate,
+  paymentSchedule: paymentScheduleSchema,
 });
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -92,6 +109,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     status: d.status as ProjectStatus | "",
     sowSigned: d.sowSigned as SowSigned | "",
     sowValidityDate: d.sowValidityDate ?? null,
+    paymentSchedule: d.paymentSchedule.map((e) =>
+      e.kind === "milestone"
+        ? { kind: "milestone" as const, milestone: e.milestone, percent: e.percent, date: e.date ?? null }
+        : { kind: "month" as const, month: e.month, percent: e.percent },
+    ),
   });
   return NextResponse.json({ ok: true });
 }

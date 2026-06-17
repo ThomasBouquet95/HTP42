@@ -66,6 +66,7 @@ export const FIELDS = {
     status: "Status",
     sowSigned: "SOW Signed",
     sowValidityDate: "SOW Validity Date",
+    paymentSchedule: "Payment Schedule",
   },
   clients: {
     clientCode: "Client Code",
@@ -339,6 +340,28 @@ export type ClientRecord = {
   notes: string;
 };
 
+// Payment-schedule entries. Discriminated by project type:
+//   - Fixed Price projects bill against named milestones with a target date.
+//   - Time & Material projects bill monthly against a planned % of the
+//     total budget.
+// We persist the whole array as JSON in the "Payment Schedule" multiline
+// text field on the Projects row so adding a new entry doesn't need a
+// schema migration.
+export type FixedPriceScheduleEntry = {
+  kind: "milestone";
+  milestone: string;
+  percent: number; // 0..100
+  date: string | null; // ISO yyyy-mm-dd
+};
+
+export type TimeMaterialScheduleEntry = {
+  kind: "month";
+  month: string; // ISO yyyy-mm
+  percent: number; // 0..100
+};
+
+export type PaymentScheduleEntry = FixedPriceScheduleEntry | TimeMaterialScheduleEntry;
+
 export type ProjectRecord = {
   id: string;
   projectCode: string;
@@ -358,6 +381,7 @@ export type ProjectRecord = {
   status: ProjectStatus | "";
   sowSigned: SowSigned | "";
   sowValidityDate: string | null;
+  paymentSchedule: PaymentScheduleEntry[];
 };
 
 export type PaymentRecord = {
@@ -970,6 +994,47 @@ export async function findClientByCode(
 // Admin: Projects
 // ---------------------------------------------------------------------------
 
+function parsePaymentSchedule(raw: string): PaymentScheduleEntry[] {
+  // Stored as JSON in a multilineText field. Treat any parse / shape issue
+  // as "no schedule yet" so a hand-edit in Airtable can't crash reads.
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const out: PaymentScheduleEntry[] = [];
+    for (const e of parsed) {
+      if (!e || typeof e !== "object") continue;
+      const kind = (e as { kind?: unknown }).kind;
+      const percent = Number((e as { percent?: unknown }).percent);
+      if (!Number.isFinite(percent)) continue;
+      if (kind === "milestone") {
+        out.push({
+          kind: "milestone",
+          milestone: typeof (e as { milestone?: unknown }).milestone === "string"
+            ? (e as { milestone: string }).milestone
+            : "",
+          percent,
+          date:
+            typeof (e as { date?: unknown }).date === "string" && (e as { date: string }).date
+              ? (e as { date: string }).date
+              : null,
+        });
+      } else if (kind === "month") {
+        out.push({
+          kind: "month",
+          month: typeof (e as { month?: unknown }).month === "string"
+            ? (e as { month: string }).month
+            : "",
+          percent,
+        });
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 function projectFromRecord(r: AirtableRecord<FieldSet>): ProjectRecord {
   return {
     id: r.id,
@@ -990,6 +1055,7 @@ function projectFromRecord(r: AirtableRecord<FieldSet>): ProjectRecord {
     status: str(r, FIELDS.projects.status) as ProjectStatus | "",
     sowSigned: str(r, FIELDS.projects.sowSigned) as SowSigned | "",
     sowValidityDate: dateOrNull(r, FIELDS.projects.sowValidityDate),
+    paymentSchedule: parsePaymentSchedule(str(r, FIELDS.projects.paymentSchedule)),
   };
 }
 
@@ -1024,7 +1090,14 @@ export type ProjectInput = {
   status: ProjectStatus | "";
   sowSigned: SowSigned | "";
   sowValidityDate: string | null;
+  paymentSchedule: PaymentScheduleEntry[];
 };
+
+function serialisePaymentSchedule(entries: PaymentScheduleEntry[]): string | null {
+  // Empty array → null so Airtable shows a clean empty cell instead of "[]".
+  if (!entries || entries.length === 0) return null;
+  return JSON.stringify(entries);
+}
 
 function projectFields(input: ProjectInput): Record<string, unknown> {
   return {
@@ -1042,6 +1115,7 @@ function projectFields(input: ProjectInput): Record<string, unknown> {
     [FIELDS.projects.status]: input.status === "" ? null : input.status,
     [FIELDS.projects.sowSigned]: input.sowSigned === "" ? null : input.sowSigned,
     [FIELDS.projects.sowValidityDate]: input.sowValidityDate,
+    [FIELDS.projects.paymentSchedule]: serialisePaymentSchedule(input.paymentSchedule),
   };
 }
 

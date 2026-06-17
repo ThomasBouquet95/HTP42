@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
-import { EditIcon, IconButton, ListIcon } from "@/components/admin-icons";
+import { ListIcon } from "@/components/admin-icons";
 import { DateRangeChip } from "@/components/date-range-chip";
 import type {
   ClientRecord,
   Currency,
+  PaymentScheduleEntry,
   ProjectRecord,
   ProjectStatus,
   ProjectType,
@@ -43,6 +44,7 @@ type FormState = {
   status: string;
   sowSigned: string;
   sowValidityDate: string;
+  paymentSchedule: PaymentScheduleEntry[];
 };
 
 function emptyForm(defaultYear: number): FormState {
@@ -61,6 +63,7 @@ function emptyForm(defaultYear: number): FormState {
     status: "",
     sowSigned: "",
     sowValidityDate: "",
+    paymentSchedule: [],
   };
 }
 
@@ -86,6 +89,14 @@ function validateProjectForm(f: FormState): string | null {
   if (f.sowSigned === "Yes" && !f.sowValidityDate) {
     return "If the SOW is signed, fill in its validity date.";
   }
+  for (const e of f.paymentSchedule) {
+    if (!Number.isFinite(e.percent) || e.percent < 0 || e.percent > 100) {
+      return "Each schedule entry needs a percentage between 0 and 100.";
+    }
+    if (e.kind === "month" && !/^\d{4}-\d{2}$/.test(e.month)) {
+      return "Each monthly schedule row needs a month (YYYY-MM).";
+    }
+  }
   return null;
 }
 
@@ -105,8 +116,15 @@ function fromRecord(p: ProjectRecord): FormState {
     status: p.status,
     sowSigned: p.sowSigned,
     sowValidityDate: p.sowValidityDate ?? "",
+    paymentSchedule: p.paymentSchedule.slice(),
   };
 }
+
+type StatusFilter = "All" | ProjectStatus;
+
+// Default to "In Progress": that's the actionable pile for admin work.
+// Same pattern as the redesigned /admin/timesheets page.
+const DEFAULT_STATUS_FILTER: StatusFilter = "In Progress";
 
 export function ProjectsAdminClient({
   projects,
@@ -120,6 +138,8 @@ export function ProjectsAdminClient({
   const router = useRouter();
   const currentYear = new Date().getUTCFullYear();
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(DEFAULT_STATUS_FILTER);
+  const [typeFilter, setTypeFilter] = useState<"All" | ProjectType>("All");
   const [editing, setEditing] = useState<ProjectRecord | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm(currentYear));
@@ -128,18 +148,47 @@ export function ProjectsAdminClient({
   const [codeLoading, setCodeLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ProjectRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter((p) =>
-      [p.projectCode, p.projectName, p.status, ...p.clientCodes].some(
+    return projects.filter((p) => {
+      if (statusFilter !== "All" && p.status !== statusFilter) return false;
+      if (typeFilter !== "All" && p.type !== typeFilter) return false;
+      if (!q) return true;
+      return [p.projectCode, p.projectName, p.status, p.type, ...p.clientCodes].some(
         (v) => v && v.toLowerCase().includes(q),
-      ),
-    );
-  }, [projects, search]);
+      );
+    });
+  }, [projects, search, statusFilter, typeFilter]);
+
+  const totalsByCurrency = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of filtered) {
+      if (p.totalAmount == null) continue;
+      const key = p.currency || "—";
+      map.set(key, (map.get(key) ?? 0) + p.totalAmount);
+    }
+    return [...map.entries()];
+  }, [filtered]);
+
+  // Status pill counts — show in the filter row so admins can see the
+  // shape of the pipeline at a glance.
+  const statusCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of projects) {
+      const key = p.status || "—";
+      map.set(key, (map.get(key) ?? 0) + 1);
+    }
+    return map;
+  }, [projects]);
 
   function openCreate() {
     setEditing(null);
@@ -197,7 +246,7 @@ export function ProjectsAdminClient({
       if (!res.ok) throw new Error();
       router.refresh();
     } catch {
-      // Silent on transient error.
+      setToast({ kind: "error", msg: "Could not update status — try again." });
     }
   }
 
@@ -238,8 +287,6 @@ export function ProjectsAdminClient({
     }
   }
 
-  // When creating and the user has selected a client + start date but not
-  // manually typed a code yet, auto-suggest.
   async function onClientChange(id: string) {
     updateField("clientId", id);
     if (creating && id && !form.projectCode) {
@@ -285,6 +332,7 @@ export function ProjectsAdminClient({
         status: form.status,
         sowSigned: form.sowSigned,
         sowValidityDate: form.sowValidityDate || null,
+        paymentSchedule: form.paymentSchedule,
       };
       const url = creating ? "/api/admin/projects" : `/api/admin/projects/${editing!.id}`;
       const method = creating ? "POST" : "PUT";
@@ -298,6 +346,7 @@ export function ProjectsAdminClient({
         throw new Error(d.error ?? "Save failed.");
       }
       closeModalNow();
+      setToast({ kind: "ok", msg: creating ? "Project created" : "Project saved" });
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed.");
@@ -318,6 +367,7 @@ export function ProjectsAdminClient({
       const wasEditing = editing?.id === deleteTarget.id;
       setDeleteTarget(null);
       if (wasEditing) closeModalNow();
+      setToast({ kind: "ok", msg: "Project deleted" });
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed.");
@@ -327,18 +377,91 @@ export function ProjectsAdminClient({
   }
 
   const modalOpen = creating || !!editing;
+  const showPaymentSchedule = form.sowSigned === "Yes" && (form.type === "Fixed Price" || form.type === "Time & Material");
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by code, name, client, status…"
-          className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
-        />
-        <Button tone="primary" onClick={openCreate}>+ New project</Button>
+      {/* Filter / action bar — mirrors the look of /admin/timesheets so the
+          admin gets a consistent landing experience across tables. */}
+      <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_12rem_12rem_auto]">
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by code, name, client, type, status…"
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+          />
+          <Select
+            label="Status"
+            value={statusFilter}
+            onChange={(v) => setStatusFilter(v as StatusFilter)}
+            options={[
+              { value: "All", label: "All statuses" },
+              ...projectStatuses.map((s) => ({
+                value: s,
+                label: `${s}${statusCounts.get(s) ? ` (${statusCounts.get(s)})` : ""}`,
+              })),
+            ]}
+          />
+          <Select
+            label="Type"
+            value={typeFilter}
+            onChange={(v) => setTypeFilter(v as "All" | ProjectType)}
+            options={[
+              { value: "All", label: "All types" },
+              ...projectTypes.map((t) => ({ value: t, label: t })),
+            ]}
+          />
+          <div className="flex items-end">
+            <Button tone="primary" onClick={openCreate} className="w-full">+ New project</Button>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-sm text-slate-600">
+          <div className="flex flex-wrap items-center gap-2">
+            <span>
+              {filtered.length} project{filtered.length === 1 ? "" : "s"}
+              {totalsByCurrency.length > 0 ? " · " : ""}
+              {totalsByCurrency.map(([cur, sum], i) => (
+                <span key={cur} className="font-semibold text-slate-900">
+                  {i > 0 ? " · " : ""}
+                  {sum.toLocaleString("en-US", { maximumFractionDigits: 0 })} {cur}
+                </span>
+              ))}
+            </span>
+            {statusFilter !== "All" ? (
+              <button
+                type="button"
+                onClick={() => setStatusFilter("All")}
+                className="inline-flex items-center gap-1 rounded-full bg-brand-50 border border-brand-200 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-100"
+              >
+                {statusFilter}
+                <span aria-hidden>×</span>
+              </button>
+            ) : null}
+            {typeFilter !== "All" ? (
+              <button
+                type="button"
+                onClick={() => setTypeFilter("All")}
+                className="inline-flex items-center gap-1 rounded-full bg-brand-50 border border-brand-200 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-100"
+              >
+                {typeFilter}
+                <span aria-hidden>×</span>
+              </button>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSearch("");
+              setStatusFilter(DEFAULT_STATUS_FILTER);
+              setTypeFilter("All");
+            }}
+            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
+          >
+            Reset
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
@@ -358,8 +481,8 @@ export function ProjectsAdminClient({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="text-center text-slate-500 py-10">
-                  No projects match this search.
+                <td colSpan={8} className="text-center text-slate-500 py-10">
+                  No projects match these filters.
                 </td>
               </tr>
             ) : (
@@ -370,7 +493,12 @@ export function ProjectsAdminClient({
                   .join(", ");
                 const tint = projectRowTint(p.status);
                 return (
-                  <tr key={p.id} className={`border-t border-slate-100 ${tint}`}>
+                  <tr
+                    key={p.id}
+                    onClick={() => openEdit(p)}
+                    className={`border-t border-slate-100 cursor-pointer ${tint}`}
+                    title="Click to edit"
+                  >
                     <td className="px-2 py-1.5 font-mono text-xs">{p.projectCode}</td>
                     <td className="px-2 py-1.5">
                       <div>{p.projectName}</div>
@@ -381,8 +509,10 @@ export function ProjectsAdminClient({
                     <td className="px-2 py-1.5 font-mono hidden md:table-cell">
                       {clientNames || p.clientCodes.join(", ") || "—"}
                     </td>
-                    <td className="px-2 py-1.5 hidden lg:table-cell">{p.type || "—"}</td>
-                    <td className="px-2 py-1.5">
+                    <td className="px-2 py-1.5 hidden lg:table-cell">
+                      {p.type ? <TypePill type={p.type} /> : "—"}
+                    </td>
+                    <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                       <ProjectStatusSelect
                         value={p.status}
                         statuses={projectStatuses}
@@ -397,20 +527,15 @@ export function ProjectsAdminClient({
                         ? "—"
                         : `${p.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${p.currency || ""}`.trim()}
                     </td>
-                    <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                      <div className="inline-flex items-center gap-1.5">
-                        <Link
-                          href={`/admin/staffing?project=${encodeURIComponent(p.projectCode)}`}
-                          title="Manage staffings"
-                          aria-label="Manage staffings"
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                        >
-                          <ListIcon />
-                        </Link>
-                        <IconButton title="Edit" onClick={() => openEdit(p)}>
-                          <EditIcon />
-                        </IconButton>
-                      </div>
+                    <td className="px-2 py-1.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <Link
+                        href={`/admin/staffing?project=${encodeURIComponent(p.projectCode)}`}
+                        title="Manage staffings"
+                        aria-label="Manage staffings"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                      >
+                        <ListIcon />
+                      </Link>
                     </td>
                   </tr>
                 );
@@ -448,114 +573,145 @@ export function ProjectsAdminClient({
           </>
         }
       >
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormSelect
-            label="Client"
-            value={form.clientId}
-            onChange={onClientChange}
-          >
-            <option value="">— None —</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.clientCode} — {c.clientName}
-              </option>
-            ))}
-          </FormSelect>
-          <div>
-            <span className="text-xs font-medium text-slate-600">
-              Project code <span className="text-red-500">*</span>
-            </span>
-            <div className="mt-1 flex gap-2">
-              <input
-                type="text"
-                value={form.projectCode}
-                onChange={(e) => updateField("projectCode", e.target.value)}
-                required
-                className="block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm font-mono focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-                placeholder="AGX-2026-01"
-              />
-              <Button
-                tone="secondary"
-                size="sm"
-                disabled={codeLoading || !form.clientId}
-                onClick={suggestCode}
-                title={!form.clientId ? "Pick a client first" : "Suggest next available code"}
-              >
-                {codeLoading ? "…" : "Auto"}
-              </Button>
+        {/* Identity */}
+        <section className="space-y-3">
+          <SectionHeader title="Identity" hint="What the project is and who it's for." />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormSelect label="Client" value={form.clientId} onChange={onClientChange} required>
+              <option value="">— None —</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.clientCode} — {c.clientName}
+                </option>
+              ))}
+            </FormSelect>
+            <div>
+              <span className="text-xs font-medium text-slate-600">
+                Project code <span className="text-red-500">*</span>
+              </span>
+              <div className="mt-1 flex gap-2">
+                <input
+                  type="text"
+                  value={form.projectCode}
+                  onChange={(e) => updateField("projectCode", e.target.value)}
+                  required
+                  className="block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm font-mono focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                  placeholder="AGX-2026-01"
+                />
+                <Button
+                  tone="secondary"
+                  size="sm"
+                  disabled={codeLoading || !form.clientId}
+                  onClick={suggestCode}
+                  title={!form.clientId ? "Pick a client first" : "Suggest next available code"}
+                >
+                  {codeLoading ? "…" : "Auto"}
+                </Button>
+              </div>
+              <div className="mt-1 text-xs text-slate-400">Format: CLIENT-YEAR-NN</div>
             </div>
-            <div className="mt-1 text-xs text-slate-400">Format: CLIENT-YEAR-NN</div>
+            <FormField
+              label="Project name"
+              value={form.projectName}
+              onChange={(v) => updateField("projectName", v)}
+              required
+              className="sm:col-span-2"
+            />
+            <FormSelect label="Type" value={form.type} onChange={(v) => updateField("type", v)}>
+              <option value="">—</option>
+              {projectTypes.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </FormSelect>
+            <FormSelect label="Status" value={form.status} onChange={(v) => updateField("status", v)}>
+              <option value="">—</option>
+              {projectStatuses.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </FormSelect>
+            <FormField
+              label="Start date"
+              value={form.startDate}
+              onChange={(v) => updateField("startDate", v)}
+              type="date"
+            />
+            <FormField
+              label="End date"
+              value={form.endDate}
+              onChange={(v) => updateField("endDate", v)}
+              type="date"
+            />
           </div>
-          <FormField
-            label="Project name"
-            value={form.projectName}
-            onChange={(v) => updateField("projectName", v)}
-            required
-            className="sm:col-span-2"
-          />
-          <FormSelect label="Type" value={form.type} onChange={(v) => updateField("type", v)}>
-            <option value="">—</option>
-            {projectTypes.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </FormSelect>
-          <FormSelect label="Status" value={form.status} onChange={(v) => updateField("status", v)}>
-            <option value="">—</option>
-            {projectStatuses.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </FormSelect>
-          <FormField
-            label="Start date"
-            value={form.startDate}
-            onChange={(v) => updateField("startDate", v)}
-            type="date"
-          />
-          <FormField
-            label="End date"
-            value={form.endDate}
-            onChange={(v) => updateField("endDate", v)}
-            type="date"
-          />
-          <FormField
-            label="Total amount"
-            value={form.totalAmount}
-            onChange={(v) => updateField("totalAmount", v)}
-            type="number"
-          />
-          <FormSelect label="Currency" value={form.currency} onChange={(v) => updateCurrency(v)}>
-            <option value="">—</option>
-            {currencies.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </FormSelect>
-          <FormField
-            label="FX to EUR"
-            value={form.fxToEur}
-            onChange={(v) => updateField("fxToEur", v)}
-            type="number"
-          />
-          <FormSelect label="SOW signed" value={form.sowSigned} onChange={(v) => updateField("sowSigned", v)}>
-            <option value="">—</option>
-            {sowOptions.map((o) => (
-              <option key={o} value={o}>{o}</option>
-            ))}
-          </FormSelect>
-          <FormField
-            label="SOW validity date"
-            value={form.sowValidityDate}
-            onChange={(v) => updateField("sowValidityDate", v)}
-            type="date"
-          />
-        </div>
-        <div className="mt-3">
+        </section>
+
+        {/* Commercials */}
+        <section className="mt-5 space-y-3 border-t border-slate-100 pt-4">
+          <SectionHeader title="Commercials" hint="Total contract value and FX into EUR for reporting." />
+          <div className="grid gap-3 sm:grid-cols-3">
+            <FormField
+              label="Total amount"
+              value={form.totalAmount}
+              onChange={(v) => updateField("totalAmount", v)}
+              type="number"
+            />
+            <FormSelect label="Currency" value={form.currency} onChange={(v) => updateCurrency(v)}>
+              <option value="">—</option>
+              {currencies.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </FormSelect>
+            <FormField
+              label="FX to EUR"
+              value={form.fxToEur}
+              onChange={(v) => updateField("fxToEur", v)}
+              type="number"
+            />
+          </div>
+        </section>
+
+        {/* SOW */}
+        <section className="mt-5 space-y-3 border-t border-slate-100 pt-4">
+          <SectionHeader title="Statement of work" hint="Tracks whether the SOW is signed and until when it's valid." />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormSelect label="SOW signed" value={form.sowSigned} onChange={(v) => updateField("sowSigned", v)}>
+              <option value="">—</option>
+              {sowOptions.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </FormSelect>
+            <FormField
+              label="SOW validity date"
+              value={form.sowValidityDate}
+              onChange={(v) => updateField("sowValidityDate", v)}
+              type="date"
+            />
+          </div>
+
+          {showPaymentSchedule ? (
+            <PaymentScheduleEditor
+              type={form.type as ProjectType}
+              entries={form.paymentSchedule}
+              onChange={(entries) => updateField("paymentSchedule", entries)}
+            />
+          ) : form.sowSigned === "Yes" ? (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">
+              Pick a project Type (Fixed Price or Time &amp; Material) above to plan a payment
+              schedule.
+            </p>
+          ) : null}
+        </section>
+
+        {/* Objective */}
+        <section className="mt-5 space-y-3 border-t border-slate-100 pt-4">
+          <SectionHeader title="Objective" hint="One short paragraph describing what we're delivering." />
           <FormTextarea
-            label="Objective"
+            label=""
             value={form.objective}
             onChange={(v) => updateField("objective", v)}
             rows={3}
           />
-        </div>
+        </section>
+
         {error ? (
           <div className="mt-3 rounded-md bg-red-50 text-red-700 p-2.5 text-xs">{error}</div>
         ) : null}
@@ -577,27 +733,308 @@ export function ProjectsAdminClient({
         onCancel={() => (deleting ? undefined : setDeleteTarget(null))}
         onConfirm={confirmDelete}
       />
+
+      {toast ? (
+        <div
+          role="status"
+          className={`pointer-events-none fixed bottom-4 right-4 z-[70] rounded-lg border px-3 py-2 text-xs shadow-lg ${
+            toast.kind === "error"
+              ? "border-red-300 bg-red-50 text-red-800"
+              : "border-emerald-300 bg-emerald-50 text-emerald-800"
+          }`}
+        >
+          {toast.msg}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-// Returns Tailwind classes for both the row background tint and the
-// 4px left border, using project status as the colour key.
+// Section header used inside the edit modal so the form reads like a small
+// document instead of a wall of inputs.
+function SectionHeader({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div>
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h3>
+      {hint ? <p className="mt-0.5 text-xs text-slate-500">{hint}</p> : null}
+    </div>
+  );
+}
+
+// Inline editor for the payment schedule. Shape depends on project type:
+//   Fixed Price  → rows of milestone + % + target date.
+//   Time & Material → rows of month + %.
+// Adds a running total and a soft warning if the percentages don't sum to
+// 100 (we don't block save — schedules drift in real life — but we make it
+// impossible to ship a typo by accident).
+function PaymentScheduleEditor({
+  type,
+  entries,
+  onChange,
+}: {
+  type: ProjectType;
+  entries: PaymentScheduleEntry[];
+  onChange: (next: PaymentScheduleEntry[]) => void;
+}) {
+  // Coerce entries to match the current type so toggling between types
+  // doesn't show the wrong row shape. Entries of the "other" kind survive
+  // in state until the user touches them — we render them as best we can.
+  const visible = entries;
+  const sum = visible.reduce((s, e) => s + (Number.isFinite(e.percent) ? e.percent : 0), 0);
+  const sumOk = Math.abs(sum - 100) < 0.01;
+
+  function addRow() {
+    if (type === "Fixed Price") {
+      onChange([...visible, { kind: "milestone", milestone: "", percent: 0, date: null }]);
+    } else {
+      onChange([...visible, { kind: "month", month: defaultMonth(visible), percent: 0 }]);
+    }
+  }
+
+  function removeRow(idx: number) {
+    onChange(visible.filter((_, i) => i !== idx));
+  }
+
+  function patchRow(idx: number, patch: Partial<FixedPriceFields & MonthFields>) {
+    onChange(
+      visible.map((e, i) => {
+        if (i !== idx) return e;
+        if (e.kind === "milestone") {
+          return {
+            ...e,
+            milestone: patch.milestone ?? e.milestone,
+            percent: patch.percent ?? e.percent,
+            date: patch.date !== undefined ? patch.date : e.date,
+          };
+        }
+        return {
+          ...e,
+          month: patch.month ?? e.month,
+          percent: patch.percent ?? e.percent,
+        };
+      }),
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50/50 p-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <div>
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+            Payment schedule
+          </h4>
+          <p className="text-[11px] text-slate-500">
+            {type === "Fixed Price"
+              ? "Milestone-based: when each invoice goes out, against what deliverable."
+              : "Monthly run-rate: planned % of the total invoiced each month."}
+          </p>
+        </div>
+        <Button tone="secondary" size="sm" onClick={addRow}>
+          + Add row
+        </Button>
+      </div>
+
+      {visible.length === 0 ? (
+        <p className="mt-3 text-xs text-slate-500">
+          No rows yet. Click <span className="font-medium">Add row</span> to start.
+        </p>
+      ) : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wide text-slate-500">
+                {type === "Fixed Price" ? (
+                  <>
+                    <th className="text-left py-1 pr-2 font-medium">Milestone</th>
+                    <th className="text-right py-1 pr-2 font-medium w-20">%</th>
+                    <th className="text-left py-1 pr-2 font-medium w-40">Estimated date</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="text-left py-1 pr-2 font-medium w-40">Month</th>
+                    <th className="text-right py-1 pr-2 font-medium w-20">%</th>
+                    <th />
+                  </>
+                )}
+                <th className="w-8" />
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((e, i) => (
+                <tr key={i} className="border-t border-slate-200">
+                  {type === "Fixed Price" ? (
+                    <>
+                      <td className="py-1 pr-2">
+                        <input
+                          type="text"
+                          value={e.kind === "milestone" ? e.milestone : ""}
+                          onChange={(ev) => patchRow(i, { milestone: ev.target.value })}
+                          placeholder="e.g. Kickoff / Discovery / Delivery"
+                          className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                        />
+                      </td>
+                      <td className="py-1 pr-2">
+                        <PercentInput
+                          value={e.percent}
+                          onChange={(v) => patchRow(i, { percent: v })}
+                        />
+                      </td>
+                      <td className="py-1 pr-2">
+                        <input
+                          type="date"
+                          value={e.kind === "milestone" && e.date ? e.date : ""}
+                          onChange={(ev) =>
+                            patchRow(i, { date: ev.target.value ? ev.target.value : null })
+                          }
+                          className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                        />
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="py-1 pr-2">
+                        <input
+                          type="month"
+                          value={e.kind === "month" ? e.month : ""}
+                          onChange={(ev) => patchRow(i, { month: ev.target.value })}
+                          className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                        />
+                      </td>
+                      <td className="py-1 pr-2">
+                        <PercentInput
+                          value={e.percent}
+                          onChange={(v) => patchRow(i, { percent: v })}
+                        />
+                      </td>
+                      <td />
+                    </>
+                  )}
+                  <td className="py-1 text-right">
+                    <button
+                      type="button"
+                      onClick={() => removeRow(i)}
+                      title="Remove row"
+                      aria-label="Remove row"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600"
+                    >
+                      <svg
+                        viewBox="0 0 16 16"
+                        width="12"
+                        height="12"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        aria-hidden
+                      >
+                        <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
+                      </svg>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-slate-200">
+                <td className="py-1 pr-2 text-right font-medium text-slate-600" colSpan={1}>
+                  Total
+                </td>
+                <td className="py-1 pr-2 text-right">
+                  <span
+                    className={`tabular-nums font-semibold ${
+                      sumOk ? "text-emerald-700" : "text-amber-700"
+                    }`}
+                  >
+                    {sum.toFixed(2)} %
+                  </span>
+                </td>
+                <td className="py-1 pr-2 text-[11px] text-slate-500">
+                  {sumOk ? "Adds up to 100%." : `Off by ${(100 - sum).toFixed(2)}%`}
+                </td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type FixedPriceFields = { milestone: string; percent: number; date: string | null };
+type MonthFields = { month: string; percent: number };
+
+// Suggest a next month one beyond whatever the last row used, or the
+// current month if the list is empty. Keeps "+ Add row" feeling tidy when
+// admins enter a year of T&M rows in sequence.
+function defaultMonth(entries: PaymentScheduleEntry[]): string {
+  const months = entries
+    .filter((e): e is { kind: "month"; month: string; percent: number } => e.kind === "month")
+    .map((e) => e.month)
+    .filter((m) => /^\d{4}-\d{2}$/.test(m))
+    .sort();
+  const last = months[months.length - 1];
+  if (!last) {
+    const d = new Date();
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  }
+  const [y, m] = last.split("-").map(Number);
+  const next = new Date(Date.UTC(y, m, 1));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function PercentInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        type="number"
+        min={0}
+        max={100}
+        step={0.5}
+        value={Number.isFinite(value) ? value : 0}
+        onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-right tabular-nums focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+      />
+      <span className="text-[11px] text-slate-400">%</span>
+    </div>
+  );
+}
+
+// Row background + left border tinted by project status, like
+// /admin/timesheets uses for status. Lighter than before so the rows are
+// uniform and the click target reads as a single bar.
 function projectRowTint(status: string): string {
   switch (status) {
     case "In Progress":
-    case "Active": // legacy choice — render like In Progress
-      return "border-l-4 border-l-emerald-500 bg-emerald-50/50 hover:bg-emerald-50";
+    case "Active":
+      return "border-l-4 border-l-emerald-500 hover:bg-emerald-50/40";
     case "Not Started":
     case "Planned":
-      return "border-l-4 border-l-sky-500 bg-sky-50/60 hover:bg-sky-100/60";
+      return "border-l-4 border-l-sky-500 hover:bg-sky-50/40";
     case "On Hold":
-      return "border-l-4 border-l-red-500 bg-red-50/50 hover:bg-red-50";
+      return "border-l-4 border-l-red-500 hover:bg-red-50/40";
     case "Completed":
-      return "border-l-4 border-l-slate-400 bg-slate-50 hover:bg-slate-100";
+      return "border-l-4 border-l-slate-400 hover:bg-slate-100/60";
     default:
       return "border-l-4 border-l-slate-200 hover:bg-slate-50";
   }
+}
+
+function TypePill({ type }: { type: ProjectType }) {
+  const cls =
+    type === "Fixed Price"
+      ? "bg-violet-50 text-violet-700 border-violet-200"
+      : "bg-amber-50 text-amber-700 border-amber-200";
+  return (
+    <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
+      {type}
+    </span>
+  );
 }
 
 function ProjectStatusSelect({
@@ -636,3 +1073,33 @@ function ProjectStatusSelect({
   );
 }
 
+// Compact filter dropdown matching the timesheets page so the two admin
+// pages share a visual vocabulary.
+function Select({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <label className="block text-sm">
+      <span className="block text-slate-600 mb-1">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
