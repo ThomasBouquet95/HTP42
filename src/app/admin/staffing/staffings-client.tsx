@@ -393,16 +393,16 @@ export function StaffingsAdminClient({
                   <td className="px-2 py-1.5 hidden xl:table-cell text-slate-600 text-xs">
                     {s.roleInProject || "—"}
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell">
+                  <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell demo-blur">
                     {s.ratePerDay == null
                       ? "—"
                       : `${s.ratePerDay.toLocaleString("en-US")} ${s.currency || ""}`.trim()}
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums hidden lg:table-cell">
+                  <td className="px-2 py-1.5 text-right tabular-nums hidden lg:table-cell demo-blur">
                     {s.daysAllocated ?? "—"}
                   </td>
                   <td
-                    className={`px-3 py-2 text-right tabular-nums hidden lg:table-cell ${
+                    className={`px-3 py-2 text-right tabular-nums hidden lg:table-cell demo-blur ${
                       s.daysAllocated != null && s.daysUsed > s.daysAllocated
                         ? "text-amber-700"
                         : ""
@@ -410,7 +410,7 @@ export function StaffingsAdminClient({
                   >
                     {s.daysUsed > 0 ? s.daysUsed.toFixed(2) : "—"}
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums hidden lg:table-cell">
+                  <td className="px-2 py-1.5 text-right tabular-nums hidden lg:table-cell demo-blur">
                     {s.totalAmount == null
                       ? "—"
                       : `${s.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${s.currency || ""}`.trim()}

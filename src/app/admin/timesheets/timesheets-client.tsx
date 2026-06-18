@@ -366,11 +366,11 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
                   </td>
                   <td className="px-2 py-1.5">
                     <div className="font-mono text-[10px] text-slate-500">{t.memberCode}</div>
-                    <div>{t.memberName || "—"}</div>
+                    <div className="demo-blur">{t.memberName || "—"}</div>
                   </td>
                   <td className="px-2 py-1.5">
                     <div className="font-mono text-[10px] text-slate-500">{t.staffingCode}</div>
-                    <div className="truncate max-w-[16rem]">{t.projectName || t.projectCode || "—"}</div>
+                    <div className="truncate max-w-[16rem] demo-blur">{t.projectName || t.projectCode || "—"}</div>
                   </td>
                   <td className="px-2 py-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     <AdminStatusSelect
@@ -532,14 +532,14 @@ function TimesheetAdminModal({
               <span>{formatWeekRange(t.startDate, t.endDate)}</span>
               {t.submissionDate ? <span>· Submitted {t.submissionDate}</span> : null}
             </div>
-            <h2 className="mt-1 truncate text-base font-semibold text-slate-900">
+            <h2 className="mt-1 truncate text-base font-semibold text-slate-900 demo-blur">
               {t.memberName || t.memberCode}
             </h2>
             <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
               <span className="font-mono">{t.memberCode}</span>
               <span>·</span>
               <span className="font-mono">{t.staffingCode}</span>
-              <span className="truncate">{t.projectName || t.projectCode}</span>
+              <span className="truncate demo-blur">{t.projectName || t.projectCode}</span>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -578,7 +578,7 @@ function TimesheetAdminModal({
                   <td className="px-3 py-1.5 text-right tabular-nums">
                     {t[k].hours ? t[k].hours.toFixed(2) : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="px-3 py-1.5 text-slate-700 whitespace-pre-line">
+                  <td className="px-3 py-1.5 text-slate-700 whitespace-pre-line demo-blur">
                     {t[k].task || <span className="text-slate-300">—</span>}
                   </td>
                 </tr>

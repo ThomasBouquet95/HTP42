@@ -901,8 +901,8 @@ export function PaymentsClient({
                     <td className="px-2 py-1.5 font-mono text-xs hidden lg:table-cell">
                       {projectLabel(p) || "—"}
                     </td>
-                    <td className="px-2 py-1.5">{counterparty}</td>
-                    <td className="px-2 py-1.5 hidden lg:table-cell text-slate-700">
+                    <td className="px-2 py-1.5 demo-blur">{counterparty}</td>
+                    <td className="px-2 py-1.5 hidden lg:table-cell text-slate-700 demo-blur">
                       {p.invoiceReference || <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell">
@@ -915,7 +915,7 @@ export function PaymentsClient({
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">
+                    <td className="px-2 py-1.5 text-right tabular-nums demo-blur">
                       {p.invoiceValue == null
                         ? "—"
                         : p.invoiceValue.toLocaleString("en-US", { maximumFractionDigits: 2 })}
@@ -2234,7 +2234,7 @@ function StatCard({
   return (
     <div className={`rounded-lg border p-3 sm:p-4 ${bg}`}>
       <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`mt-1 text-xl sm:text-2xl font-semibold tabular-nums ${valueColor}`}>
+      <div className={`mt-1 text-xl sm:text-2xl font-semibold tabular-nums demo-blur ${valueColor}`}>
         {value}
       </div>
     </div>

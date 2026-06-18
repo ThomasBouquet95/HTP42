@@ -14,3 +14,21 @@ body {
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }
+
+/* Demo mode: blurs every element tagged with .demo-blur when the admin
+   has flipped the toggle in /admin. The data attribute is set on <html>
+   by components/demo-mode.tsx so the rule applies app-wide regardless of
+   which admin tab is rendered. Hovering an element reveals it
+   momentarily — handy for admins who still want to spot-check during a
+   demo without flipping the toggle off. */
+.demo-blur {
+  transition: filter 120ms ease-out;
+}
+html[data-demo="on"] .demo-blur {
+  filter: blur(5px);
+  user-select: none;
+}
+html[data-demo="on"] .demo-blur:hover,
+html[data-demo="on"] .demo-blur:focus-within {
+  filter: blur(0);
+}

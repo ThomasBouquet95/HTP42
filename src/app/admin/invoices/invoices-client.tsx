@@ -356,7 +356,7 @@ export function AdminInvoicesClient({
             {totalsByCurrency.map(([c, sum]) => (
               <span
                 key={`tot-${c}`}
-                className="rounded-full bg-slate-100 px-2 py-0.5 font-medium tabular-nums"
+                className="rounded-full bg-slate-100 px-2 py-0.5 font-medium tabular-nums demo-blur"
                 title="Sum of all invoice amounts in view"
               >
                 Σ {sum.toLocaleString("en-US", { maximumFractionDigits: 2 })} {c}
@@ -365,7 +365,7 @@ export function AdminInvoicesClient({
             {paidByCurrency.map(([c, sum]) => (
               <span
                 key={`paid-${c}`}
-                className="rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 px-2 py-0.5 font-medium tabular-nums"
+                className="rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 px-2 py-0.5 font-medium tabular-nums demo-blur"
                 title="Sum of Paid invoices in view"
               >
                 Paid {sum.toLocaleString("en-US", { maximumFractionDigits: 2 })} {c}
@@ -471,15 +471,15 @@ export function AdminInvoicesClient({
                       <div className="font-mono text-[10px] text-brand-700">
                         {r.memberCode || "—"}
                       </div>
-                      <div className="truncate max-w-[12rem]">{r.memberName || "—"}</div>
+                      <div className="truncate max-w-[12rem] demo-blur">{r.memberName || "—"}</div>
                     </td>
                     <td className="px-3 py-2">
                       <div className="font-mono text-[10px] text-brand-700">
                         {r.staffingCode || "—"}
                       </div>
-                      <div className="truncate max-w-[16rem]">{r.projectName || r.projectCode || "—"}</div>
+                      <div className="truncate max-w-[16rem] demo-blur">{r.projectName || r.projectCode || "—"}</div>
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
+                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap demo-blur">
                       {r.amount != null
                         ? `${r.amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}${
                             r.currency ? " " + r.currency : ""

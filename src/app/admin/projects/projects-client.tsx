@@ -435,7 +435,7 @@ export function ProjectsAdminClient({
               {filtered.length} project{filtered.length === 1 ? "" : "s"}
               {totalsByCurrency.length > 0 ? " · " : ""}
               {totalsByCurrency.map(([cur, sum], i) => (
-                <span key={cur} className="font-semibold text-slate-900">
+                <span key={cur} className="font-semibold text-slate-900 demo-blur">
                   {i > 0 ? " · " : ""}
                   {sum.toLocaleString("en-US", { maximumFractionDigits: 0 })} {cur}
                 </span>
@@ -513,12 +513,12 @@ export function ProjectsAdminClient({
                   >
                     <td className="px-2 py-1.5 font-mono text-xs">{p.projectCode}</td>
                     <td className="px-2 py-1.5">
-                      <div>{p.projectName}</div>
-                      <div className="text-xs text-slate-500 md:hidden">
+                      <div className="demo-blur">{p.projectName}</div>
+                      <div className="text-xs text-slate-500 md:hidden demo-blur">
                         {clientNames || p.clientCodes.join(", ") || "—"}
                       </div>
                     </td>
-                    <td className="px-2 py-1.5 font-mono hidden md:table-cell">
+                    <td className="px-2 py-1.5 font-mono hidden md:table-cell demo-blur">
                       {clientNames || p.clientCodes.join(", ") || "—"}
                     </td>
                     <td className="px-2 py-1.5 hidden lg:table-cell">
@@ -534,7 +534,7 @@ export function ProjectsAdminClient({
                     <td className="px-2 py-1.5 hidden xl:table-cell">
                       <DateRangeChip startIso={p.startDate} endIso={p.endDate} />
                     </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell">
+                    <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell demo-blur">
                       {p.totalAmount == null
                         ? "—"
                         : `${p.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${p.currency || ""}`.trim()}

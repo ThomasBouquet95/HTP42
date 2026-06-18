@@ -232,12 +232,12 @@ export function ClientsAdminClient({ clients }: Props) {
                 <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="px-2 py-1.5 font-mono text-xs">{c.clientCode}</td>
                   <td className="px-2 py-1.5">
-                    <div>{c.clientName}</div>
-                    <div className="text-xs text-slate-500 md:hidden">{c.industry || ""}</div>
+                    <div className="demo-blur">{c.clientName}</div>
+                    <div className="text-xs text-slate-500 md:hidden demo-blur">{c.industry || ""}</div>
                   </td>
-                  <td className="px-2 py-1.5 hidden md:table-cell">{c.industry || "—"}</td>
-                  <td className="px-2 py-1.5 hidden md:table-cell">{c.country || "—"}</td>
-                  <td className="px-2 py-1.5 hidden lg:table-cell">{c.keyContact || "—"}</td>
+                  <td className="px-2 py-1.5 hidden md:table-cell demo-blur">{c.industry || "—"}</td>
+                  <td className="px-2 py-1.5 hidden md:table-cell demo-blur">{c.country || "—"}</td>
+                  <td className="px-2 py-1.5 hidden lg:table-cell demo-blur">{c.keyContact || "—"}</td>
                   <td className="px-2 py-1.5 text-right">
                     <IconButton title="Edit" onClick={() => openEdit(c)}>
                       <EditIcon />

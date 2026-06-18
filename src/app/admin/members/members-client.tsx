@@ -338,10 +338,10 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                   </td>
                   <td className="px-2 py-1.5 font-mono text-[11px]">{m.memberCode}</td>
                   <td className="px-2 py-1.5">
-                    <div>{m.fullName}</div>
-                    <div className="text-xs text-slate-500 md:hidden">{m.email}</div>
+                    <div className="demo-blur">{m.fullName}</div>
+                    <div className="text-xs text-slate-500 md:hidden demo-blur">{m.email}</div>
                   </td>
-                  <td className="px-2 py-1.5 text-slate-600 hidden md:table-cell">{m.email}</td>
+                  <td className="px-2 py-1.5 text-slate-600 hidden md:table-cell demo-blur">{m.email}</td>
                   <td className="px-2 py-1.5 hidden lg:table-cell">{m.role || "—"}</td>
                   <td className="px-2 py-1.5">
                     <MemberStatusSelect
@@ -351,12 +351,12 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                     />
                   </td>
                   <td className="px-2 py-1.5 hidden lg:table-cell">{m.country || "—"}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell">
+                  <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell demo-blur">
                     {m.dailyRate == null
                       ? "—"
                       : `${m.dailyRate.toLocaleString("en-US")} ${m.currency || ""}`.trim()}
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell">
+                  <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell demo-blur">
                     {m.htp42DailyRate == null
                       ? "—"
                       : `${m.htp42DailyRate.toLocaleString("en-US")} ${m.currency || ""}`.trim()}

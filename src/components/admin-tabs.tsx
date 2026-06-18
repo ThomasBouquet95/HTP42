@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DemoModeToggle } from "@/components/demo-mode";
 
 type TabKey =
   | "home"
@@ -25,7 +26,7 @@ const TABS: Array<{ key: TabKey; href: string; label: string }> = [
 
 export function AdminTabs({ active }: { active: TabKey }) {
   return (
-    <div className="mb-5 border-b border-slate-200">
+    <div className="mb-5 flex items-end justify-between gap-3 border-b border-slate-200">
       <nav className="flex items-center gap-1 -mb-px overflow-x-auto">
         {TABS.map((t) => {
           const isActive = t.key === active;
@@ -45,6 +46,12 @@ export function AdminTabs({ active }: { active: TabKey }) {
           );
         })}
       </nav>
+      {/* Right-aligned, sits on the same baseline as the tab labels. The
+          toggle controls a global data attribute, so any .demo-blur class
+          inside the admin tabs reacts even on pages we haven't touched. */}
+      <div className="mb-1.5">
+        <DemoModeToggle />
+      </div>
     </div>
   );
 }

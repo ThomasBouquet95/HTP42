@@ -251,8 +251,8 @@ export function SignInActivityClient({
                         <PresenceDot lastActivity={r.lastActivity} now={tickNow} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-slate-900 truncate">{r.fullName || "—"}</div>
-                        <div className="text-[10px] text-slate-500 truncate">
+                        <div className="text-slate-900 truncate demo-blur">{r.fullName || "—"}</div>
+                        <div className="text-[10px] text-slate-500 truncate demo-blur">
                           {r.email || "—"}
                         </div>
                       </div>
