@@ -29,7 +29,7 @@ export function ReadOnlyTimesheet({ timesheet }: { timesheet: TimesheetRecord })
                 <td className="px-3 py-1.5 tabular-nums text-slate-700">
                   {r.day.hours ? r.day.hours.toFixed(2) : <span className="text-slate-300">—</span>}
                 </td>
-                <td className="px-3 py-1.5 text-slate-700">
+                <td className="px-3 py-1.5 text-slate-700 whitespace-pre-line">
                   {r.day.task || <span className="text-slate-300">—</span>}
                 </td>
               </tr>

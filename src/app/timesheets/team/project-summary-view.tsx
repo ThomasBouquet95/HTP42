@@ -859,7 +859,7 @@ function TimesheetReadModal({
                   <td className="px-3 py-1.5 text-right tabular-nums">
                     {d.hours ? d.hours.toFixed(2) : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="px-3 py-1.5 text-slate-700">
+                  <td className="px-3 py-1.5 text-slate-700 whitespace-pre-line">
                     {d.task || <span className="text-slate-300">—</span>}
                   </td>
                 </tr>

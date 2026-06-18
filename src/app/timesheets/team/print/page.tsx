@@ -220,7 +220,7 @@ function MemberSection({ member: m }: { member: ProjectTeamMember }) {
                 <tr key={k}>
                   <td className="day-cell">{DAY_LABELS[k]}</td>
                   <td className="num">{t[k].hours ? t[k].hours.toFixed(1) : "—"}</td>
-                  <td>{t[k].task || <span className="muted">—</span>}</td>
+                  <td style={{ whiteSpace: "pre-line" }}>{t[k].task || <span className="muted">—</span>}</td>
                 </tr>
               ))}
               <tr className="total-row">

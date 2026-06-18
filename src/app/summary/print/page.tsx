@@ -180,7 +180,7 @@ export default async function SummaryPrintPage({
                             {iso ? <div className="muted" style={{ fontSize: 10 }}>{formatPrintDate(iso)}</div> : null}
                           </td>
                           <td className="num">{t[k].hours ? t[k].hours.toFixed(2) : "—"}</td>
-                          <td>{t[k].task || <span className="muted">—</span>}</td>
+                          <td style={{ whiteSpace: "pre-line" }}>{t[k].task || <span className="muted">—</span>}</td>
                         </tr>
                       );
                     })}

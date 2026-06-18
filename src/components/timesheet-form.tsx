@@ -352,12 +352,12 @@ export function TimesheetForm({
                   />
                 </td>
                 <td className="px-3 py-1.5">
-                  <input
-                    type="text"
+                  <textarea
                     value={days[k].task}
                     onChange={(e) => updateDay(k, { task: e.target.value })}
-                    placeholder="What did you work on?"
-                    className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+                    placeholder={"What did you work on?\nUse new lines to list multiple items."}
+                    rows={2}
+                    className="block w-full resize-y rounded-md border border-slate-300 px-2 py-1 text-xs leading-snug focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
                   />
                 </td>
               </tr>

@@ -382,16 +382,22 @@ export function ProjectsAdminClient({
   return (
     <div className="space-y-4">
       {/* Filter / action bar — mirrors the look of /admin/timesheets so the
-          admin gets a consistent landing experience across tables. */}
+          admin gets a consistent landing experience across tables. Each
+          cell wraps the control in a label-and-input pair so the inputs
+          baseline-align across the row instead of the search box riding
+          higher than the labelled selects beside it. */}
       <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-3">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_12rem_12rem_auto]">
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by code, name, client, type, status…"
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
-          />
+          <label className="block text-sm">
+            <span className="block text-slate-600 mb-1">Search</span>
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Code, name, client, type, status…"
+              className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+            />
+          </label>
           <Select
             label="Status"
             value={statusFilter}
@@ -413,7 +419,13 @@ export function ProjectsAdminClient({
               ...projectTypes.map((t) => ({ value: t, label: t })),
             ]}
           />
-          <div className="flex items-end">
+          <div className="flex flex-col">
+            {/* Invisible spacer matches the label height of the surrounding
+                <Select /> labels so the button bottom-aligns with the
+                dropdowns instead of floating above them. */}
+            <span className="block text-sm mb-1" aria-hidden>
+              &nbsp;
+            </span>
             <Button tone="primary" onClick={openCreate} className="w-full">+ New project</Button>
           </div>
         </div>
@@ -1005,24 +1017,11 @@ function PercentInput({
   );
 }
 
-// Row background + left border tinted by project status, like
-// /admin/timesheets uses for status. Lighter than before so the rows are
-// uniform and the click target reads as a single bar.
-function projectRowTint(status: string): string {
-  switch (status) {
-    case "In Progress":
-    case "Active":
-      return "border-l-4 border-l-emerald-500 hover:bg-emerald-50/40";
-    case "Not Started":
-    case "Planned":
-      return "border-l-4 border-l-sky-500 hover:bg-sky-50/40";
-    case "On Hold":
-      return "border-l-4 border-l-red-500 hover:bg-red-50/40";
-    case "Completed":
-      return "border-l-4 border-l-slate-400 hover:bg-slate-100/60";
-    default:
-      return "border-l-4 border-l-slate-200 hover:bg-slate-50";
-  }
+// Row hover tint only — the colored left border was visual noise once the
+// status pill already encodes the same information. Keeps the table feel
+// uniform with /admin/timesheets.
+function projectRowTint(_status: string): string {
+  return "hover:bg-slate-50";
 }
 
 function TypePill({ type }: { type: ProjectType }) {
