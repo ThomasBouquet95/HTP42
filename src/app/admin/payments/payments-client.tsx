@@ -65,18 +65,23 @@ type SortKey =
   | "amount";
 type SortDir = "asc" | "desc";
 
-// Canonical filter options. Legacy values like "Pending" still exist on a
-// few historical rows but they shouldn't be filterable — the value isn't
-// part of our current lifecycle.
-const PAYMENT_STATUSES = ["Scheduled", "To be paid", "Paid", "Canceled"] as const;
+// Canonical filter options, kept in lockstep with PAYMENT_STATUSES in
+// lib/airtable.ts. Legacy values like "Pending" still exist on a few
+// historical rows but they shouldn't be filterable — the value isn't
+// part of our current lifecycle. "Under Review" is the default for
+// payments auto-created from member-invoice submissions and signals the
+// admin still needs to look at the invoice before promoting it.
+const PAYMENT_STATUSES = ["Under Review", "Scheduled", "To be paid", "Paid", "Canceled"] as const;
 const KNOWN_PAYMENT_STATUSES = new Set<string>(PAYMENT_STATUSES);
 
-// Stored values are canonical (Scheduled / To be paid / Paid) regardless of
-// direction; for Inflow we surface friendlier wording in the UI.
+// Stored values are canonical (Under Review / Scheduled / To be paid /
+// Paid) regardless of direction; for Inflow we surface friendlier
+// wording in the UI.
 function statusLabel(status: string, direction: "" | "Inflow" | "Outflow"): string {
   if (direction !== "Inflow") return status;
   if (status === "To be paid") return "To be received";
   if (status === "Paid") return "Received";
+  if (status === "Under Review") return "Under Review";
   return status;
 }
 
@@ -374,12 +379,14 @@ export function PaymentsClient({
   // bucketed away under "Other" and don't get their own bar.
   const statusBreakdown = useMemo(() => {
     const inflow: Record<PaymentStatus, number> = {
+      "Under Review": 0,
       Scheduled: 0,
       "To be paid": 0,
       Paid: 0,
       Canceled: 0,
     };
     const outflow: Record<PaymentStatus, number> = {
+      "Under Review": 0,
       Scheduled: 0,
       "To be paid": 0,
       Paid: 0,
@@ -393,9 +400,11 @@ export function PaymentsClient({
       else if (p.direction === "Outflow") outflow[status] += eur;
     }
     // Paid first so the most informative bar (money actually moved) sits
-    // at the top of each group. Canceled is already excluded by
-    // chartFiltered, but we keep the bucket available for completeness.
-    const order: PaymentStatus[] = ["Paid", "To be paid", "Scheduled"];
+    // at the top of each group. Under Review trails everything else: it's
+    // the "we haven't even decided yet" bucket. Canceled is already
+    // excluded by chartFiltered, but we keep the bucket available for
+    // completeness.
+    const order: PaymentStatus[] = ["Paid", "To be paid", "Scheduled", "Under Review"];
     return {
       inflow: order.map((s) => ({ status: s, value: inflow[s] })),
       outflow: order.map((s) => ({ status: s, value: outflow[s] })),
@@ -1531,7 +1540,8 @@ function StatusBreakdown({
   }
   const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
   // Two stacked sub-charts so inflow and outflow can be read independently.
-  // Hatched = planned (Scheduled / To be paid), solid = executed (Paid).
+  // Hatched = planned (Under Review / Scheduled / To be paid), solid =
+  // executed (Paid).
   return (
     <div className="space-y-4">
       <svg width="0" height="0" aria-hidden className="absolute">
@@ -1595,7 +1605,10 @@ function BreakdownGroup({
       <ul className="space-y-2">
         {rows.map((r) => {
           const pct = max === 0 ? 0 : (r.value / max) * 100;
-          const isPlanned = r.status === "Scheduled" || r.status === "To be paid";
+          const isPlanned =
+            r.status === "Scheduled" ||
+            r.status === "To be paid" ||
+            r.status === "Under Review";
           return (
             <li key={r.status}>
               <div className="flex items-center justify-between text-[11px]">
@@ -1682,9 +1695,21 @@ function DueDateCell({
   );
 }
 
-type StatusTone = "scheduled" | "tobepaid" | "paid" | "canceled" | "neutral";
+type StatusTone =
+  | "underreview"
+  | "scheduled"
+  | "tobepaid"
+  | "paid"
+  | "canceled"
+  | "neutral";
 
 function paymentRowTint(status: string): { row: string; select: StatusTone } {
+  // "Under Review" gets its own purple treatment so admins can spot
+  // freshly-arrived member invoices at a glance — distinct from the
+  // pre-existing palette (sky, amber, slate, red).
+  if (status === "Under Review") {
+    return { row: "bg-purple-50/60 hover:bg-purple-50", select: "underreview" };
+  }
   if (status === "Scheduled") {
     return { row: "bg-sky-50/50 hover:bg-sky-50", select: "scheduled" };
   }
@@ -1714,7 +1739,9 @@ function StatusSelect({
   saving?: boolean;
 }) {
   const toneCls =
-    tone === "scheduled"
+    tone === "underreview"
+      ? "bg-purple-50 border-purple-300 text-purple-800"
+      : tone === "scheduled"
       ? "bg-sky-50 border-sky-300 text-sky-800"
       : tone === "tobepaid"
       ? "bg-amber-50 border-amber-300 text-amber-800"

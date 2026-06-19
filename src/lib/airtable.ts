@@ -289,8 +289,23 @@ export type SowSigned = "Yes" | "In Progress" | "No";
 export const SOW_SIGNED_OPTIONS: SowSigned[] = ["Yes", "In Progress", "No"];
 
 export type PaymentDirection = "Inflow" | "Outflow";
-export type PaymentStatus = "Scheduled" | "To be paid" | "Paid" | "Canceled";
-export const PAYMENT_STATUSES: PaymentStatus[] = ["Scheduled", "To be paid", "Paid", "Canceled"];
+// Order matters here: this is the order admins see in the payment status
+// dropdown. "Under Review" sits first because it's the new default for
+// auto-created outflows from member-invoice submissions — admins want to
+// see those at the top of the dropdown when triaging an invoice.
+export type PaymentStatus =
+  | "Under Review"
+  | "Scheduled"
+  | "To be paid"
+  | "Paid"
+  | "Canceled";
+export const PAYMENT_STATUSES: PaymentStatus[] = [
+  "Under Review",
+  "Scheduled",
+  "To be paid",
+  "Paid",
+  "Canceled",
+];
 
 export type AttachmentRef = {
   id: string;

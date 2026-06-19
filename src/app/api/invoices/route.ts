@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import {
   attachInvoicePdf,
   createMemberInvoice,
+  createPayment,
   getInvoiceById,
   getStaffingsForMember,
   getTimesheetsForMember,
@@ -143,6 +144,41 @@ export async function POST(request: Request) {
     comment,
     pdfAttachment: null,
   });
+
+  // 1a) Auto-create a matching Outflow payment so finance picks the
+  // invoice up in /admin/payments as soon as it lands. The payment starts
+  // in "Under Review" so an admin still has to triage it (verify amount,
+  // PDF, etc.) before promoting to To be paid or Paid. Best-effort: an
+  // Airtable hiccup here mustn't lose the user's invoice submission, so
+  // we log and continue.
+  const paymentCurrency: Currency | "" = (["EUR", "USD", "CHF"].includes(currency)
+    ? (currency as Currency)
+    : "") as Currency | "";
+  try {
+    await createPayment({
+      direction: "Outflow",
+      type: "Subcontractor",
+      projectRecordIds: [project.id],
+      clientRecordIds: [],
+      memberRecordIds: [session.sub],
+      memberInvoiceRecordIds: [invoiceId],
+      invoiceDate: new Date().toISOString().slice(0, 10),
+      invoiceReference: "",
+      invoiceCurrency: paymentCurrency,
+      invoiceValue: amount,
+      fxRateToEur: null,
+      invoiceValueEur: null,
+      paymentTerms: "",
+      paymentStatus: "Under Review",
+      paymentDate: null,
+      dueDate: null,
+      beneficiary: session.fullName || session.email || session.memberCode,
+      comment: comment ? `From invoice submission: ${comment}` : "",
+      invoiceUrl: "",
+    });
+  } catch (e) {
+    console.error("Auto-create payment for invoice failed:", e);
+  }
 
   // 1b) Mark each covered timesheet as Invoiced. Best-effort: if one of the
   // updates fails (network blip, etc.) we don't unwind the invoice itself,
