@@ -2977,6 +2977,60 @@ export const CONTRACT_SIDES: ContractSide[] = [
 export type ContractType = "NDA" | "MSA" | "SOW" | "Other";
 export const CONTRACT_TYPES: ContractType[] = ["NDA", "MSA", "SOW", "Other"];
 
+// Canonical contract Status (renamed from "Stage" in the UI). Simplified
+// from the previous 10-value list — every legacy choice was migrated to
+// one of these five.
+export type ContractStatus =
+  | "Draft"
+  | "Under Negotiation"
+  | "Pending Signature"
+  | "Signed"
+  | "Terminated";
+export const CONTRACT_STATUSES: ContractStatus[] = [
+  "Draft",
+  "Under Negotiation",
+  "Pending Signature",
+  "Signed",
+  "Terminated",
+];
+
+// Computed validity. Stored Validity in Airtable is ignored: admins set
+// Stage and Expiry Date, the portal derives the rest. Three states:
+//   N/A     — not signed yet (Draft / Under Negotiation / Pending /
+//             Terminated / empty)
+//   Valid   — signed AND (no expiry on file OR today ≤ expiry)
+//   Expired — signed AND expiry date is in the past
+// `refresh regularly / daily` is satisfied implicitly because every
+// server-side read recomputes from the current date.
+export type ComputedValidity = "Valid" | "Expired" | "N/A";
+
+export function computeValidity(stage: string, expiryDate: string): ComputedValidity {
+  const s = stage.trim().toLowerCase();
+  if (s !== "signed") return "N/A";
+  const iso = parseLooseDate(expiryDate);
+  if (!iso) return "Valid"; // signed with no parseable expiry → still in force
+  const today = new Date().toISOString().slice(0, 10);
+  return iso < today ? "Expired" : "Valid";
+}
+
+// Best-effort parse of the messy date strings Airtable carries (e.g.
+// "15/12/2025", "1/1/24", "Late May 2026"). Returns ISO yyyy-mm-dd or
+// null when the string isn't a date.
+function parseLooseDate(s: string): string | null {
+  const t = s.trim();
+  if (!t) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  const m = t.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+  if (!m) return null;
+  let [, d, mo, y] = m;
+  if (y.length === 2) y = String(2000 + Number(y));
+  const dd = String(Number(d)).padStart(2, "0");
+  const mm = String(Number(mo)).padStart(2, "0");
+  if (Number(dd) < 1 || Number(dd) > 31) return null;
+  if (Number(mm) < 1 || Number(mm) > 12) return null;
+  return `${y}-${mm}-${dd}`;
+}
+
 // One signatory: name + role + company. Two slots on a contract — most
 // have one (the counterparty), some have two (both sides signed).
 export type ContractSignatory = {
@@ -3066,12 +3120,17 @@ function contractFromRecord(
       role: str(r, FIELDS.contracts.signatory2Role),
       company: str(r, FIELDS.contracts.signatory2Company),
     },
-    // Lifecycle
+    // Lifecycle. Validity is derived from Stage + Expiry Date so it's
+    // always fresh — admins don't have to chase stale "Valid" labels
+    // when an MSA quietly rolls past its expiry.
     signatureDate: str(r, FIELDS.contracts.signatureDate),
     expiryDate: str(r, FIELDS.contracts.expiryDate),
     stage: str(r, FIELDS.contracts.stage),
     contractStatus: str(r, FIELDS.contracts.contractStatus),
-    validity: str(r, FIELDS.contracts.validity),
+    validity: computeValidity(
+      str(r, FIELDS.contracts.stage),
+      str(r, FIELDS.contracts.expiryDate),
+    ),
     // Summary + attachment
     keyTerms: str(r, FIELDS.contracts.keyTerms),
     pdf: firstAttachment(r, FIELDS.contracts.pdf),

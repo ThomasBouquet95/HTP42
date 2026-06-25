@@ -5,10 +5,14 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   CONTRACT_SIDES,
+  CONTRACT_STATUSES,
   CONTRACT_TYPES,
+  computeValidity,
+  type ComputedValidity,
   type ContractFieldChoices,
   type ContractRecord,
   type ContractSide,
+  type ContractStatus,
   type ContractType,
 } from "@/lib/airtable";
 
@@ -72,7 +76,6 @@ type Filters = {
   type: "All" | string;
   side: "All" | ContractSide;
   stage: "All" | string;
-  status: "All" | string;
   validity: "All" | ValidityBucket;
 };
 
@@ -84,7 +87,6 @@ const DEFAULT_FILTERS: Filters = {
   type: "All",
   side: "All",
   stage: "All",
-  status: "All",
   validity: "All",
 };
 
@@ -212,10 +214,6 @@ export function ContractsAdminClient({
     () => uniqueSortedValues(contracts.map((c) => c.stage)),
     [contracts],
   );
-  const statusOptions = useMemo(
-    () => uniqueSortedValues(contracts.map((c) => c.contractStatus)),
-    [contracts],
-  );
 
   const filtered = useMemo(() => {
     const q = filters.search.trim().toLowerCase();
@@ -223,7 +221,6 @@ export function ContractsAdminClient({
       if (filters.type !== "All" && c.contractType !== filters.type) return false;
       if (filters.side !== "All" && resolveSide(c) !== filters.side) return false;
       if (filters.stage !== "All" && c.stage !== filters.stage) return false;
-      if (filters.status !== "All" && c.contractStatus !== filters.status) return false;
       if (filters.validity !== "All") {
         const bucket = validityBucket(c.validity);
         if (bucket !== filters.validity) return false;
@@ -277,10 +274,8 @@ export function ContractsAdminClient({
   const validityCounts = useMemo(() => {
     const out: Record<ValidityBucket, number> = {
       Valid: 0,
-      Invalid: 0,
       Expired: 0,
-      Pending: 0,
-      Other: 0,
+      "N/A": 0,
     };
     for (const c of contracts) {
       const b = validityBucket(c.validity);
@@ -304,7 +299,7 @@ export function ContractsAdminClient({
       />
 
       <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-3">
           <Select
             label="Search"
             renderAs="search"
@@ -322,21 +317,12 @@ export function ContractsAdminClient({
             ]}
           />
           <Select
-            label="Stage"
+            label="Status"
             value={filters.stage}
             onChange={(v) => update("stage", v)}
             options={[
-              { value: "All", label: "All stages" },
-              ...stageOptions.map((s) => ({ value: s, label: s })),
-            ]}
-          />
-          <Select
-            label="Status"
-            value={filters.status}
-            onChange={(v) => update("status", v)}
-            options={[
               { value: "All", label: "All statuses" },
-              ...statusOptions.map((s) => ({ value: s, label: s })),
+              ...stageOptions.map((s) => ({ value: s, label: s })),
             ]}
           />
         </div>
@@ -346,19 +332,15 @@ export function ContractsAdminClient({
             {(
               [
                 { value: "Valid", label: "Valid", count: validityCounts.Valid },
-                { value: "Invalid", label: "Invalid", count: validityCounts.Invalid },
                 { value: "Expired", label: "Expired", count: validityCounts.Expired },
-                { value: "Pending", label: "Pending", count: validityCounts.Pending },
-                { value: "Other", label: "Other", count: validityCounts.Other },
+                { value: "N/A", label: "N/A", count: validityCounts["N/A"] },
                 {
                   value: "All",
                   label: "All",
                   count:
                     validityCounts.Valid +
-                    validityCounts.Invalid +
                     validityCounts.Expired +
-                    validityCounts.Pending +
-                    validityCounts.Other,
+                    validityCounts["N/A"],
                 },
               ] as const
             ).map((tab) => {
@@ -409,8 +391,7 @@ export function ContractsAdminClient({
               <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Project / Member</th>
               <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Signed</th>
               <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Expires</th>
-              <th className="text-left px-2 py-1.5 font-medium">Stage</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Status</th>
+              <th className="text-left px-2 py-1.5 font-medium">Status</th>
               <th className="text-left px-2 py-1.5 font-medium">Validity</th>
               <th className="text-left px-2 py-1.5 font-medium">PDF</th>
             </tr>
@@ -418,7 +399,7 @@ export function ContractsAdminClient({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="text-center text-slate-500 py-10 text-xs">
+                <td colSpan={8} className="text-center text-slate-500 py-10 text-xs">
                   No contracts match these filters.
                 </td>
               </tr>
@@ -427,7 +408,7 @@ export function ContractsAdminClient({
                 const side = resolveSide(c);
                 const flagged =
                   isCriticalType(c.contractType) &&
-                  validityBucket(c.validity) === "Invalid";
+                  validityBucket(c.validity) === "Expired";
                 const counterparty = counterpartyLabel(c);
                 const projectLabel =
                   c.projectCodes.join(", ") || c.projectCode || "—";
@@ -442,7 +423,7 @@ export function ContractsAdminClient({
                     }`}
                     title={
                       flagged
-                        ? "Invalid MSA / SoW — click to review"
+                        ? "Expired MSA / SoW. Click to review."
                         : "Click for the full contract"
                     }
                   >
@@ -472,15 +453,8 @@ export function ContractsAdminClient({
                     <td className="px-2 py-1.5">
                       {c.stage ? <StagePill stage={c.stage} /> : <Dash />}
                     </td>
-                    <td className="px-2 py-1.5 hidden lg:table-cell">
-                      {c.contractStatus ? (
-                        <StatusPill status={c.contractStatus} />
-                      ) : (
-                        <Dash />
-                      )}
-                    </td>
                     <td className="px-2 py-1.5">
-                      {c.validity ? <ValidityPill validity={c.validity} /> : <Dash />}
+                      <ValidityPill validity={c.validity} />
                     </td>
                     <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                       {c.pdf?.url ? (
@@ -584,16 +558,32 @@ function counterpartyLabel(c: ContractRecord): string {
   return c.company;
 }
 
-export type ValidityBucket = "Valid" | "Invalid" | "Expired" | "Pending" | "Other";
+// Validity is computed server-side now (see computeValidity in
+// lib/airtable.ts). The client just buckets the value that came back.
+// Three values: Valid / Expired / N/A.
+export type ValidityBucket = ComputedValidity;
 
 function validityBucket(v: string): ValidityBucket {
   const s = v.trim().toLowerCase();
-  if (!s) return "Other";
-  if (s.includes("invalid")) return "Invalid";
-  if (s.includes("expired")) return "Expired";
-  if (s.includes("pending")) return "Pending";
-  if (s.includes("valid") || s === "active") return "Valid";
-  return "Other";
+  if (s === "expired") return "Expired";
+  if (s === "valid") return "Valid";
+  return "N/A";
+}
+
+// Mirror of the server's computeValidity so the modal updates the
+// validity pill instantly as the admin edits Status / Expiry, without
+// waiting for a save round-trip.
+function computeValidityLocal(stage: string, expiryDate: string): ComputedValidity {
+  return computeValidity(stage, expiryDate);
+}
+
+function validityExplanation(stage: string, expiryDate: string): string {
+  const v = computeValidityLocal(stage, expiryDate);
+  if (v === "N/A") return "Status isn't Signed yet.";
+  if (v === "Expired")
+    return `Signed but the expiry date ${expiryDate ? `(${expiryDate}) ` : ""}has passed.`;
+  if (expiryDate) return `Signed; in force until ${expiryDate}.`;
+  return "Signed; no expiry on file.";
 }
 
 function isCriticalType(contractType: string): boolean {
@@ -655,32 +645,13 @@ function StagePill({ stage }: { stage: string }) {
   );
 }
 
-function StatusPill({ status }: { status: string }) {
-  const s = status.toLowerCase();
-  let cls = "bg-slate-50 text-slate-700 border-slate-200";
-  if (s === "on track") cls = "bg-emerald-50 text-emerald-700 border-emerald-200";
-  else if (s === "action required") cls = "bg-orange-50 text-orange-700 border-orange-200";
-  else if (s === "awaiting response") cls = "bg-amber-50 text-amber-700 border-amber-200";
-  else if (s === "blocked") cls = "bg-red-50 text-red-700 border-red-200";
-  else if (s === "active") cls = "bg-sky-50 text-sky-700 border-sky-200";
-  return (
-    <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
-      {status}
-    </span>
-  );
-}
-
 function ValidityPill({ validity }: { validity: string }) {
   const bucket = validityBucket(validity);
   const cls =
     bucket === "Valid"
       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-      : bucket === "Invalid"
-      ? "bg-rose-50 text-rose-700 border-rose-200"
       : bucket === "Expired"
       ? "bg-red-50 text-red-700 border-red-200"
-      : bucket === "Pending"
-      ? "bg-amber-50 text-amber-700 border-amber-200"
       : "bg-slate-100 text-slate-600 border-slate-200";
   return (
     <span
@@ -804,9 +775,6 @@ function ActiveFilterChips({
   }
   if (filters.stage !== "All") {
     chips.push({ label: filters.stage, clear: () => onClear("stage", "All") });
-  }
-  if (filters.status !== "All") {
-    chips.push({ label: filters.status, clear: () => onClear("status", "All") });
   }
   if (filters.validity !== "All") {
     chips.push({ label: filters.validity, clear: () => onClear("validity", "All") });
@@ -1055,7 +1023,6 @@ function ContractDetailModal({
         c.signatory2.name || c.signatory2.role || c.signatory2.company,
       ),
   );
-  const [showMoreTerms, setShowMoreTerms] = useState<boolean>(false);
 
   // Close-with-confirm if there are unsaved changes. Escape and the
   // backdrop click both route through here so an admin doesn't lose a
@@ -1164,8 +1131,9 @@ function ContractDetailModal({
               <SidePill side={(draft.side || "Other") as ContractSide} />
               {draft.contractType ? <TypePill type={draft.contractType} /> : null}
               {draft.stage ? <StagePill stage={draft.stage} /> : null}
-              {draft.contractStatus ? <StatusPill status={draft.contractStatus} /> : null}
-              {draft.validity ? <ValidityPill validity={draft.validity} /> : null}
+              <ValidityPill
+                validity={computeValidityLocal(draft.stage, draft.expiryDate)}
+              />
             </div>
             <h2 className="mt-1 truncate text-base font-semibold text-slate-900 demo-blur">
               {counterpartyLabel(c) || "—"}
@@ -1387,10 +1355,33 @@ function ContractDetailModal({
             </div>
           </section>
 
-          {/* Lifecycle */}
+          {/* Lifecycle: Status first (the actionable thing), then dates,
+              then computed validity. Contract Status is gone — we
+              collapsed it into Status. */}
           <section className="space-y-3 border-t border-slate-100 pt-4">
-            <SectionHeader title="Lifecycle" />
+            <SectionHeader
+              title="Lifecycle"
+              hint="Status drives validity. Signed + (no expiry or future expiry) → Valid; signed + past expiry → Expired; everything else → N/A."
+            />
             <div className="grid gap-3 sm:grid-cols-3">
+              <SegmentedField
+                label="Status"
+                value={
+                  CONTRACT_STATUSES.includes(draft.stage as ContractStatus)
+                    ? draft.stage
+                    : draft.stage
+                    ? ""
+                    : ""
+                }
+                hint={
+                  draft.stage &&
+                  !CONTRACT_STATUSES.includes(draft.stage as ContractStatus)
+                    ? `Legacy value: "${draft.stage}". Pick a canonical status to keep the table tidy.`
+                    : undefined
+                }
+                options={CONTRACT_STATUSES.map((s) => ({ value: s, label: s }))}
+                onChange={(v) => set("stage", v)}
+              />
               <DateField
                 label="Signature date"
                 value={draft.signatureDate}
@@ -1401,24 +1392,22 @@ function ContractDetailModal({
                 value={draft.expiryDate}
                 onChange={(v) => set("expiryDate", v)}
               />
-              <ComboboxField
-                label="Validity"
-                value={draft.validity}
-                onChange={(v) => set("validity", v)}
-                options={fieldChoices.validity}
-              />
-              <ComboboxField
-                label="Stage"
-                value={draft.stage}
-                onChange={(v) => set("stage", v)}
-                options={fieldChoices.stage}
-              />
-              <ComboboxField
-                label="Contract status"
-                value={draft.contractStatus}
-                onChange={(v) => set("contractStatus", v)}
-                options={fieldChoices.contractStatus}
-              />
+              <div className="sm:col-span-3">
+                <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                  Validity (computed)
+                </span>
+                <div
+                  className="mt-1 flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] text-slate-600"
+                  title="Computed from Status + Expiry Date on every page load. Not manually editable."
+                >
+                  <ValidityPill
+                    validity={computeValidityLocal(draft.stage, draft.expiryDate)}
+                  />
+                  <span>
+                    {validityExplanation(draft.stage, draft.expiryDate)}
+                  </span>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -1478,109 +1467,18 @@ function ContractDetailModal({
           <section className="space-y-3 border-t border-slate-100 pt-4">
             <SectionHeader
               title="Key terms"
-              hint="A short summary — one bullet per line. The detailed terms hide in the section below."
+              hint="One bullet per line. Press Enter to start a new bullet."
             />
-            <textarea
+            <BulletTextarea
               value={draft.keyTerms}
-              onChange={(e) => set("keyTerms", e.target.value)}
-              rows={4}
+              onChange={(v) => set("keyTerms", v)}
+              rows={8}
               placeholder={
-                "• 12-month renewable term\n• Confidentiality 3 years\n• IP assigned to HTP42\n…"
+                "• 12-month renewable term\n• Confidentiality 3 years\n• IP assigned to HTP42"
               }
-              className="block w-full resize-y rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs leading-snug focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 whitespace-pre-line"
             />
           </section>
 
-          {/* Detailed terms (collapsible) */}
-          <section className="border-t border-slate-100 pt-4">
-            <button
-              type="button"
-              onClick={() => setShowMoreTerms((v) => !v)}
-              aria-expanded={showMoreTerms}
-              className="flex w-full items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-100"
-            >
-              <span className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  Detailed terms
-                </span>
-                <span className="text-[11px] text-slate-400">
-                  Confidentiality · Non-solicitation · IP · Exclusivity · …
-                </span>
-              </span>
-              <span
-                className={`text-slate-400 transition-transform ${
-                  showMoreTerms ? "rotate-180" : ""
-                }`}
-                aria-hidden
-              >
-                ▾
-              </span>
-            </button>
-            {showMoreTerms ? (
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <ComboboxField
-                  label="Non-solicitation"
-                  value={draft.nonSolicitation}
-                  onChange={(v) => set("nonSolicitation", v)}
-                  options={fieldChoices.nonSolicitation}
-                />
-                <ComboboxField
-                  label="Exclusivity"
-                  value={draft.exclusivity}
-                  onChange={(v) => set("exclusivity", v)}
-                  options={fieldChoices.exclusivity}
-                />
-                <ComboboxField
-                  label="Intellectual property"
-                  value={draft.intellectualProperty}
-                  onChange={(v) => set("intellectualProperty", v)}
-                  options={fieldChoices.intellectualProperty}
-                />
-                <ComboboxField
-                  label="Governing law"
-                  value={draft.governingLaw}
-                  onChange={(v) => set("governingLaw", v)}
-                  options={fieldChoices.governingLaw}
-                />
-                <ComboboxField
-                  label="Notice period"
-                  value={draft.noticePeriod}
-                  onChange={(v) => set("noticePeriod", v)}
-                  options={fieldChoices.noticePeriod}
-                />
-                <ComboboxField
-                  label="Duration"
-                  value={draft.duration}
-                  onChange={(v) => set("duration", v)}
-                  options={fieldChoices.duration}
-                />
-                <DateField
-                  label="Effective date"
-                  value={draft.effectiveDate}
-                  onChange={(v) => set("effectiveDate", v)}
-                />
-                <ComboboxField
-                  label="Consultant visibility"
-                  value={draft.consultantVisibility}
-                  onChange={(v) => set("consultantVisibility", v)}
-                  options={fieldChoices.consultantVisibility}
-                />
-                <TextareaField
-                  label="Confidentiality"
-                  value={draft.confidentiality}
-                  onChange={(v) => set("confidentiality", v)}
-                  span={2}
-                />
-                <TextareaField
-                  label="Specific clauses / comments"
-                  value={draft.clauses}
-                  onChange={(v) => set("clauses", v)}
-                  span={2}
-                  sensitive
-                />
-              </div>
-            ) : null}
-          </section>
         </div>
 
         {/* Footer: Cancel / Save */}
@@ -1619,6 +1517,109 @@ function ContractDetailModal({
 // ---------------------------------------------------------------------------
 // Form pieces used inside the modal
 // ---------------------------------------------------------------------------
+
+// Textarea that auto-prefills "• " on the first keystroke and inserts
+// "\n• " when the admin hits Enter. Backspace at the start of a bullet
+// removes the marker so the bullet collapses naturally. Pasting multi-
+// line text re-bullets every non-empty line so a quick paste from a
+// Word doc lands tidy.
+function BulletTextarea({
+  value,
+  onChange,
+  rows = 6,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  rows?: number;
+  placeholder?: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  const BULLET = "• ";
+
+  const setCaret = (pos: number) => {
+    requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el) return;
+      el.selectionStart = el.selectionEnd = pos;
+    });
+  };
+
+  const handleFocus = () => {
+    if (value.length === 0) {
+      onChange(BULLET);
+      setCaret(BULLET.length);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const v = el.value;
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      const insert = "\n" + BULLET;
+      const next = v.slice(0, start) + insert + v.slice(end);
+      onChange(next);
+      setCaret(start + insert.length);
+      return;
+    }
+    if (e.key === "Backspace" && start === end) {
+      // If the caret sits right after a "• " marker that opens a line,
+      // remove the whole marker in one keystroke instead of one space at
+      // a time, so deleting an unwanted bullet feels snappy.
+      const lineStart = v.lastIndexOf("\n", start - 1) + 1;
+      const prefix = v.slice(lineStart, start);
+      if (prefix === BULLET) {
+        e.preventDefault();
+        const next = v.slice(0, lineStart) + v.slice(start);
+        onChange(next);
+        setCaret(lineStart);
+      }
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const text = e.clipboardData.getData("text");
+    if (!text.includes("\n")) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const v = el.value;
+    // Re-bullet each non-empty line of the pasted block; the line we're
+    // pasting into gets the first chunk appended so the existing bullet
+    // is preserved.
+    const lines = text.split(/\r?\n/);
+    const bulleted = lines
+      .map((line, i) => {
+        const t = line.trim();
+        if (!t) return "";
+        if (i === 0) return t;
+        return BULLET + t;
+      })
+      .filter((l, i) => i === 0 || l.length > 0)
+      .join("\n");
+    const next = v.slice(0, start) + bulleted + v.slice(end);
+    onChange(next);
+    setCaret(start + bulleted.length);
+  };
+
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onFocus={handleFocus}
+      onKeyDown={handleKeyDown}
+      onPaste={handlePaste}
+      rows={rows}
+      placeholder={placeholder}
+      className="block w-full resize-y rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs leading-snug focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 whitespace-pre-line"
+    />
+  );
+}
 
 function SectionHeader({ title, hint }: { title: string; hint?: string }) {
   return (
