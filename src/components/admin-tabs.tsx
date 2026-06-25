@@ -10,6 +10,7 @@ type TabKey =
   | "timesheets"
   | "payments"
   | "invoices"
+  | "contracts"
   | "signins";
 
 const TABS: Array<{ key: TabKey; href: string; label: string }> = [
@@ -21,6 +22,7 @@ const TABS: Array<{ key: TabKey; href: string; label: string }> = [
   { key: "timesheets", href: "/admin/timesheets", label: "Timesheets" },
   { key: "payments", href: "/admin/payments", label: "Payments" },
   { key: "invoices", href: "/admin/invoices", label: "Invoices" },
+  { key: "contracts", href: "/admin/contracts", label: "Contracts" },
   { key: "signins", href: "/admin/sign-ins", label: "Sign-in activity" },
 ];
 

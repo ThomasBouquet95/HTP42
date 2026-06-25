@@ -20,6 +20,7 @@ export const TABLES = {
   payments: "Payments",
   memberInvoices: "Member Invoices",
   tasks: "Tasks",
+  contracts: "Contracts",
   chatConversations: "Chat Conversations",
   chatMessages: "Chat Messages",
 } as const;
@@ -163,6 +164,34 @@ export const FIELDS = {
     createdAt: "Created At",
     updatedAt: "Updated At",
     visibility: "Visibility",
+  },
+  // Contracts: NDAs, MSAs, SOWs, service contracts, etc. The dates in
+  // this table are NOT date fields — they're singleSelect / multilineText
+  // because admins enter free-form values like "MSA: Indefinite – SoW:
+  // 15/11 → 15/12/2025". We surface them as plain strings in the UI.
+  contracts: {
+    projectCode: "Project Code",
+    memberCode: "Member Code",
+    company: "Company / Consultant",
+    contractType: "Contract Type",
+    contactType: "Contact Type",
+    signatory: "Signatory",
+    contactDetails: "Contact Details",
+    signatureDate: "Signature Date",
+    effectiveDate: "Effective Date",
+    duration: "Duration",
+    expiryDate: "Expiry Date",
+    noticePeriod: "Notice Period",
+    nonSolicitation: "Non-Solicitation",
+    validity: "Validity",
+    confidentiality: "Confidentiality",
+    intellectualProperty: "Intellectual Property",
+    exclusivity: "Exclusivity",
+    governingLaw: "Governing Law / Jurisdiction",
+    consultantVisibility: "Consultant Visibility",
+    clauses: "Specific Clauses / Comments",
+    stage: "Stage",
+    contractStatus: "Contract Status",
   },
   chatConversations: {
     title: "Title",
@@ -2894,6 +2923,99 @@ export async function updateTask(recordId: string, input: TaskUpdateInput): Prom
 
 export async function deleteTask(recordId: string): Promise<void> {
   await base(TABLES.tasks).destroy([recordId]);
+}
+
+// ---------------------------------------------------------------------------
+// Admin: Contracts
+// ---------------------------------------------------------------------------
+
+// Contracts cover NDAs, MSAs, SoWs, service agreements, etc. The data
+// shape is messy by design: dates are stored as singleSelect or
+// multilineText (not date fields) because admins enter free-form values
+// like "MSA: Indefinite – SoW: 15/11 → 15/12/2025". We surface every
+// field as a plain string and let the admin reason about it visually
+// rather than try to parse semantics into a tight schema we'd have to
+// maintain alongside Airtable.
+export type ContractRecord = {
+  id: string;
+  projectCode: string;
+  memberRecordIds: string[];
+  memberCodes: string[];
+  company: string;
+  contractType: string;
+  contactType: string;
+  signatory: string;
+  contactDetails: string;
+  signatureDate: string;
+  effectiveDate: string;
+  duration: string;
+  expiryDate: string;
+  noticePeriod: string;
+  nonSolicitation: string;
+  validity: string;
+  confidentiality: string;
+  intellectualProperty: string;
+  exclusivity: string;
+  governingLaw: string;
+  consultantVisibility: string;
+  clauses: string;
+  stage: string;
+  contractStatus: string;
+};
+
+function contractFromRecord(
+  r: AirtableRecord<FieldSet>,
+  memberCodeById: Map<string, string>,
+): ContractRecord {
+  const memberRecordIds = linkedIds(r, FIELDS.contracts.memberCode);
+  return {
+    id: r.id,
+    projectCode: str(r, FIELDS.contracts.projectCode),
+    memberRecordIds,
+    memberCodes: memberRecordIds.map((id) => memberCodeById.get(id) ?? id),
+    company: str(r, FIELDS.contracts.company),
+    contractType: str(r, FIELDS.contracts.contractType),
+    contactType: str(r, FIELDS.contracts.contactType),
+    signatory: str(r, FIELDS.contracts.signatory),
+    contactDetails: str(r, FIELDS.contracts.contactDetails),
+    signatureDate: str(r, FIELDS.contracts.signatureDate),
+    effectiveDate: str(r, FIELDS.contracts.effectiveDate),
+    duration: str(r, FIELDS.contracts.duration),
+    expiryDate: str(r, FIELDS.contracts.expiryDate),
+    noticePeriod: str(r, FIELDS.contracts.noticePeriod),
+    nonSolicitation: str(r, FIELDS.contracts.nonSolicitation),
+    validity: str(r, FIELDS.contracts.validity),
+    confidentiality: str(r, FIELDS.contracts.confidentiality),
+    intellectualProperty: str(r, FIELDS.contracts.intellectualProperty),
+    exclusivity: str(r, FIELDS.contracts.exclusivity),
+    governingLaw: str(r, FIELDS.contracts.governingLaw),
+    consultantVisibility: str(r, FIELDS.contracts.consultantVisibility),
+    clauses: str(r, FIELDS.contracts.clauses),
+    stage: str(r, FIELDS.contracts.stage),
+    contractStatus: str(r, FIELDS.contracts.contractStatus),
+  };
+}
+
+export async function listAllContracts(): Promise<ContractRecord[]> {
+  const [records, memberCodeById] = await Promise.all([
+    base(TABLES.contracts).select().all(),
+    getMemberCodeMap(),
+  ]);
+  return records
+    .map((r) => contractFromRecord(r, memberCodeById))
+    // Most-recent signature first when the dd/mm/yyyy parse succeeds;
+    // unparseable rows sink to the bottom so admins see the freshest
+    // contracts as soon as the page opens.
+    .sort((a, b) => {
+      const ts = (s: string) => {
+        const m = s.match(/(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/);
+        if (!m) return 0;
+        const [, d, mo, y] = m;
+        const year = y.length === 2 ? 2000 + Number(y) : Number(y);
+        return new Date(Date.UTC(year, Number(mo) - 1, Number(d))).getTime();
+      };
+      return ts(b.signatureDate) - ts(a.signatureDate);
+    });
 }
 
 // ---------------------------------------------------------------------------

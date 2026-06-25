@@ -12,7 +12,7 @@ type Card = {
   description: string;
   Icon: React.ComponentType;
   // Tailwind colour key for the icon chip background.
-  tone: "people" | "delivery" | "finance";
+  tone: "people" | "delivery" | "finance" | "legal";
 };
 
 type Group = {
@@ -44,6 +44,14 @@ const GROUPS: Group[] = [
         description: "Last sign-in and total sign-in count per member.",
         Icon: ActivityIcon,
         tone: "people",
+      },
+      {
+        href: "/admin/contracts",
+        title: "Contracts",
+        description:
+          "NDAs, MSAs, SoWs and service agreements — filter by type, stage, validity and counterparty.",
+        Icon: DocumentIcon,
+        tone: "legal",
       },
     ],
   },
@@ -98,6 +106,7 @@ const TONE_BG: Record<Card["tone"], string> = {
   people: "bg-violet-50 text-violet-600 ring-violet-100",
   delivery: "bg-brand-50 text-brand-600 ring-brand-100",
   finance: "bg-emerald-50 text-emerald-600 ring-emerald-100",
+  legal: "bg-amber-50 text-amber-600 ring-amber-100",
 };
 
 export default async function AdminLandingPage() {
@@ -213,6 +222,16 @@ function ActivityIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
       <path d="M3 12h4l2-6 4 12 2-6h6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function DocumentIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M7 3h7l4 4v13a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V4.5A1.5 1.5 0 0 1 7 3Z" strokeLinejoin="round" />
+      <path d="M14 3v4h4" strokeLinejoin="round" />
+      <path d="M9 13h6M9 16h4" strokeLinecap="round" />
     </svg>
   );
 }
