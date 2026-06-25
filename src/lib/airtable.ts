@@ -169,30 +169,55 @@ export const FIELDS = {
   // this table are NOT date fields — they're singleSelect / multilineText
   // because admins enter free-form values like "MSA: Indefinite – SoW:
   // 15/11 → 15/12/2025". We surface them as plain strings in the UI.
+  //
+  // The post-redesign canonical fields are: side / type / client /
+  // project / member / signatory1 / signatory2 / signatureDate /
+  // expiryDate / keyTerms / stage / contractStatus / validity / pdf.
+  // The pre-redesign fields (company, contactType, signatory text,
+  // contactDetails, effectiveDate, duration, noticePeriod, confidentiality,
+  // nonSolicitation, intellectualProperty, exclusivity, governingLaw,
+  // consultantVisibility, clauses) remain in the schema for back-compat
+  // — they live in the collapsible "Terms" accordion in the new UI.
   contracts: {
+    // Identity
+    side: "Side",
+    contractType: "Contract Type",
+    otherDescription: "Other Description",
+    client: "Client",
+    project: "Project",
     projectCode: "Project Code",
     memberCode: "Member Code",
+    // Signatories (1 + optional 2)
+    signatory1Name: "Signatory 1 Name",
+    signatory1Role: "Signatory 1 Role",
+    signatory1Company: "Signatory 1 Company",
+    signatory2Name: "Signatory 2 Name",
+    signatory2Role: "Signatory 2 Role",
+    signatory2Company: "Signatory 2 Company",
+    // Lifecycle
+    signatureDate: "Signature Date",
+    expiryDate: "Expiry Date",
+    stage: "Stage",
+    contractStatus: "Contract Status",
+    validity: "Validity",
+    // Summary + attachment
+    keyTerms: "Key Terms",
+    pdf: "PDF",
+    // Legacy / terms detail (collapsible Terms accordion)
     company: "Company / Consultant",
-    contractType: "Contract Type",
     contactType: "Contact Type",
     signatory: "Signatory",
     contactDetails: "Contact Details",
-    signatureDate: "Signature Date",
     effectiveDate: "Effective Date",
     duration: "Duration",
-    expiryDate: "Expiry Date",
     noticePeriod: "Notice Period",
     nonSolicitation: "Non-Solicitation",
-    validity: "Validity",
     confidentiality: "Confidentiality",
     intellectualProperty: "Intellectual Property",
     exclusivity: "Exclusivity",
     governingLaw: "Governing Law / Jurisdiction",
     consultantVisibility: "Consultant Visibility",
     clauses: "Specific Clauses / Comments",
-    stage: "Stage",
-    contractStatus: "Contract Status",
-    pdf: "PDF",
   },
   chatConversations: {
     title: "Title",
@@ -2937,75 +2962,168 @@ export async function deleteTask(recordId: string): Promise<void> {
 // field as a plain string and let the admin reason about it visually
 // rather than try to parse semantics into a tight schema we'd have to
 // maintain alongside Airtable.
+export type ContractSide = "Client" | "Network Member" | "Partner" | "Other";
+export const CONTRACT_SIDES: ContractSide[] = [
+  "Client",
+  "Network Member",
+  "Partner",
+  "Other",
+];
+
+// Canonical type set the admin should pick from. Historical rows carry
+// any number of legacy values ("MSA + SoW", "Customer Facing SoW",
+// "Service Contract", ...) — those keep rendering as-is but new edits
+// snap to this short list.
+export type ContractType = "NDA" | "MSA" | "SOW" | "Other";
+export const CONTRACT_TYPES: ContractType[] = ["NDA", "MSA", "SOW", "Other"];
+
+// One signatory: name + role + company. Two slots on a contract — most
+// have one (the counterparty), some have two (both sides signed).
+export type ContractSignatory = {
+  name: string;
+  role: string;
+  company: string;
+};
+
 export type ContractRecord = {
   id: string;
-  projectCode: string;
+  // Identity
+  side: ContractSide | "";
+  contractType: string;
+  otherDescription: string;
+  clientRecordIds: string[];
+  clientCodes: string[];
+  clientNames: string[];
+  projectRecordIds: string[];
+  projectCodes: string[];
+  projectCode: string; // legacy free-form Project Code (multilineText)
   memberRecordIds: string[];
   memberCodes: string[];
+  // Signatories
+  signatory1: ContractSignatory;
+  signatory2: ContractSignatory;
+  // Lifecycle
+  signatureDate: string;
+  expiryDate: string;
+  stage: string;
+  contractStatus: string;
+  validity: string;
+  // Summary + attachment
+  keyTerms: string;
+  pdf: AttachmentRef | null;
+  // Legacy / terms detail (collapsible Terms accordion)
   company: string;
-  contractType: string;
   contactType: string;
   signatory: string;
   contactDetails: string;
-  signatureDate: string;
   effectiveDate: string;
   duration: string;
-  expiryDate: string;
   noticePeriod: string;
   nonSolicitation: string;
-  validity: string;
   confidentiality: string;
   intellectualProperty: string;
   exclusivity: string;
   governingLaw: string;
   consultantVisibility: string;
   clauses: string;
-  stage: string;
-  contractStatus: string;
-  pdf: AttachmentRef | null;
+};
+
+type LookupMaps = {
+  memberCodeById: Map<string, string>;
+  clientById: Map<string, { code: string; name: string }>;
+  projectById: Map<string, { code: string; name: string }>;
 };
 
 function contractFromRecord(
   r: AirtableRecord<FieldSet>,
-  memberCodeById: Map<string, string>,
+  maps: LookupMaps,
 ): ContractRecord {
   const memberRecordIds = linkedIds(r, FIELDS.contracts.memberCode);
+  const clientRecordIds = linkedIds(r, FIELDS.contracts.client);
+  const projectRecordIds = linkedIds(r, FIELDS.contracts.project);
   return {
     id: r.id,
+    // Identity
+    side: (str(r, FIELDS.contracts.side) as ContractSide) || "",
+    contractType: str(r, FIELDS.contracts.contractType),
+    otherDescription: str(r, FIELDS.contracts.otherDescription),
+    clientRecordIds,
+    clientCodes: clientRecordIds.map((id) => maps.clientById.get(id)?.code ?? id),
+    clientNames: clientRecordIds.map((id) => maps.clientById.get(id)?.name ?? ""),
+    projectRecordIds,
+    projectCodes: projectRecordIds.map((id) => maps.projectById.get(id)?.code ?? id),
     projectCode: str(r, FIELDS.contracts.projectCode),
     memberRecordIds,
-    memberCodes: memberRecordIds.map((id) => memberCodeById.get(id) ?? id),
+    memberCodes: memberRecordIds.map((id) => maps.memberCodeById.get(id) ?? id),
+    // Signatories
+    signatory1: {
+      name: str(r, FIELDS.contracts.signatory1Name),
+      role: str(r, FIELDS.contracts.signatory1Role),
+      company: str(r, FIELDS.contracts.signatory1Company),
+    },
+    signatory2: {
+      name: str(r, FIELDS.contracts.signatory2Name),
+      role: str(r, FIELDS.contracts.signatory2Role),
+      company: str(r, FIELDS.contracts.signatory2Company),
+    },
+    // Lifecycle
+    signatureDate: str(r, FIELDS.contracts.signatureDate),
+    expiryDate: str(r, FIELDS.contracts.expiryDate),
+    stage: str(r, FIELDS.contracts.stage),
+    contractStatus: str(r, FIELDS.contracts.contractStatus),
+    validity: str(r, FIELDS.contracts.validity),
+    // Summary + attachment
+    keyTerms: str(r, FIELDS.contracts.keyTerms),
+    pdf: firstAttachment(r, FIELDS.contracts.pdf),
+    // Legacy / terms detail (collapsible Terms accordion)
     company: str(r, FIELDS.contracts.company),
-    contractType: str(r, FIELDS.contracts.contractType),
     contactType: str(r, FIELDS.contracts.contactType),
     signatory: str(r, FIELDS.contracts.signatory),
     contactDetails: str(r, FIELDS.contracts.contactDetails),
-    signatureDate: str(r, FIELDS.contracts.signatureDate),
     effectiveDate: str(r, FIELDS.contracts.effectiveDate),
     duration: str(r, FIELDS.contracts.duration),
-    expiryDate: str(r, FIELDS.contracts.expiryDate),
     noticePeriod: str(r, FIELDS.contracts.noticePeriod),
     nonSolicitation: str(r, FIELDS.contracts.nonSolicitation),
-    validity: str(r, FIELDS.contracts.validity),
     confidentiality: str(r, FIELDS.contracts.confidentiality),
     intellectualProperty: str(r, FIELDS.contracts.intellectualProperty),
     exclusivity: str(r, FIELDS.contracts.exclusivity),
     governingLaw: str(r, FIELDS.contracts.governingLaw),
     consultantVisibility: str(r, FIELDS.contracts.consultantVisibility),
     clauses: str(r, FIELDS.contracts.clauses),
-    stage: str(r, FIELDS.contracts.stage),
-    contractStatus: str(r, FIELDS.contracts.contractStatus),
-    pdf: firstAttachment(r, FIELDS.contracts.pdf),
   };
 }
 
-export async function listAllContracts(): Promise<ContractRecord[]> {
-  const [records, memberCodeById] = await Promise.all([
-    base(TABLES.contracts).select().all(),
+async function getClientIndex(): Promise<Map<string, { code: string; name: string }>> {
+  const records = await base(TABLES.clients)
+    .select({ fields: [FIELDS.clients.clientCode, FIELDS.clients.clientName] })
+    .all();
+  return new Map(
+    records.map((r) => [
+      r.id,
+      {
+        code: str(r, FIELDS.clients.clientCode),
+        name: str(r, FIELDS.clients.clientName),
+      },
+    ]),
+  );
+}
+
+async function buildLookupMaps(): Promise<LookupMaps> {
+  const [memberCodeById, clientById, projectById] = await Promise.all([
     getMemberCodeMap(),
+    getClientIndex(),
+    getProjectIndex(),
+  ]);
+  return { memberCodeById, clientById, projectById };
+}
+
+export async function listAllContracts(): Promise<ContractRecord[]> {
+  const [records, maps] = await Promise.all([
+    base(TABLES.contracts).select().all(),
+    buildLookupMaps(),
   ]);
   return records
-    .map((r) => contractFromRecord(r, memberCodeById))
+    .map((r) => contractFromRecord(r, maps))
     // Most-recent signature first when the dd/mm/yyyy parse succeeds;
     // unparseable rows sink to the bottom so admins see the freshest
     // contracts as soon as the page opens.
@@ -3023,11 +3141,11 @@ export async function listAllContracts(): Promise<ContractRecord[]> {
 
 export async function getContractById(recordId: string): Promise<ContractRecord | null> {
   try {
-    const [r, memberCodeById] = await Promise.all([
+    const [r, maps] = await Promise.all([
       base(TABLES.contracts).find(recordId),
-      getMemberCodeMap(),
+      buildLookupMaps(),
     ]);
-    return contractFromRecord(r, memberCodeById);
+    return contractFromRecord(r, maps);
   } catch {
     return null;
   }
@@ -3040,20 +3158,36 @@ export async function getContractById(recordId: string): Promise<ContractRecord 
 // brand-new value (matches how the "Under Review" payment status was
 // bootstrapped).
 export type ContractEditableFields = {
+  // Identity
+  side?: ContractSide | "";
+  contractType?: string;
+  otherDescription?: string;
+  clientRecordIds?: string[];
+  projectRecordIds?: string[];
   projectCode?: string;
   memberRecordIds?: string[];
+  // Signatories
+  signatory1Name?: string;
+  signatory1Role?: string;
+  signatory1Company?: string;
+  signatory2Name?: string;
+  signatory2Role?: string;
+  signatory2Company?: string;
+  // Lifecycle
+  signatureDate?: string;
+  expiryDate?: string;
+  validity?: string;
+  // Summary
+  keyTerms?: string;
+  // Legacy / terms detail
   company?: string;
-  contractType?: string;
   contactType?: string;
   signatory?: string;
   contactDetails?: string;
-  signatureDate?: string;
   effectiveDate?: string;
   duration?: string;
-  expiryDate?: string;
   noticePeriod?: string;
   nonSolicitation?: string;
-  validity?: string;
   confidentiality?: string;
   intellectualProperty?: string;
   exclusivity?: string;
@@ -3073,29 +3207,50 @@ export async function updateContractFields(
     if (value === undefined) return;
     updates[FIELDS.contracts[key]] = value || null;
   };
-  setText("projectCode", fields.projectCode);
-  setText("company", fields.company);
+  // Identity
+  setText("side", fields.side);
   setText("contractType", fields.contractType);
+  setText("otherDescription", fields.otherDescription);
+  setText("projectCode", fields.projectCode);
+  // Signatories
+  setText("signatory1Name", fields.signatory1Name);
+  setText("signatory1Role", fields.signatory1Role);
+  setText("signatory1Company", fields.signatory1Company);
+  setText("signatory2Name", fields.signatory2Name);
+  setText("signatory2Role", fields.signatory2Role);
+  setText("signatory2Company", fields.signatory2Company);
+  // Lifecycle
+  setText("signatureDate", fields.signatureDate);
+  setText("expiryDate", fields.expiryDate);
+  setText("validity", fields.validity);
+  setText("stage", fields.stage);
+  setText("contractStatus", fields.contractStatus);
+  // Summary
+  setText("keyTerms", fields.keyTerms);
+  // Legacy / terms detail
+  setText("company", fields.company);
   setText("contactType", fields.contactType);
   setText("signatory", fields.signatory);
   setText("contactDetails", fields.contactDetails);
-  setText("signatureDate", fields.signatureDate);
   setText("effectiveDate", fields.effectiveDate);
   setText("duration", fields.duration);
-  setText("expiryDate", fields.expiryDate);
   setText("noticePeriod", fields.noticePeriod);
   setText("nonSolicitation", fields.nonSolicitation);
-  setText("validity", fields.validity);
   setText("confidentiality", fields.confidentiality);
   setText("intellectualProperty", fields.intellectualProperty);
   setText("exclusivity", fields.exclusivity);
   setText("governingLaw", fields.governingLaw);
   setText("consultantVisibility", fields.consultantVisibility);
   setText("clauses", fields.clauses);
-  setText("stage", fields.stage);
-  setText("contractStatus", fields.contractStatus);
+  // Linked records — null arrays should clear the link.
   if (fields.memberRecordIds !== undefined) {
     updates[FIELDS.contracts.memberCode] = fields.memberRecordIds;
+  }
+  if (fields.clientRecordIds !== undefined) {
+    updates[FIELDS.contracts.client] = fields.clientRecordIds;
+  }
+  if (fields.projectRecordIds !== undefined) {
+    updates[FIELDS.contracts.project] = fields.projectRecordIds;
   }
   if (Object.keys(updates).length === 0) return;
   await base(TABLES.contracts).update(

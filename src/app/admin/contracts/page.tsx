@@ -4,7 +4,9 @@ import { AdminTabs } from "@/components/admin-tabs";
 import {
   listAllContracts,
   listAllMembers,
+  listClients,
   listContractFieldChoices,
+  listProjects,
 } from "@/lib/airtable";
 import { ContractsAdminClient } from "./contracts-client";
 
@@ -14,20 +16,32 @@ export default async function AdminContractsPage() {
   const session = await requireAdminSession();
   if (!session) redirect("/dashboard");
 
-  // Fetch the contract list, the network members list (for the member
-  // link picker in the edit modal), and the full Airtable singleSelect
-  // choices in parallel. The choices come from the Airtable meta API so
-  // the comboboxes show every existing option — not just values that
-  // happen to be used by the rows currently on file.
-  const [contracts, allMembers, fieldChoices] = await Promise.all([
+  // Fetch the contract list, network members, clients, projects, and
+  // the full Airtable singleSelect choice set in parallel. Everything
+  // feeds the edit modal: members + clients + projects power the chip
+  // pickers, choices seed the combobox autocomplete on the long-tail
+  // terms fields.
+  const [contracts, allMembers, allClients, allProjects, fieldChoices] = await Promise.all([
     listAllContracts(),
     listAllMembers(),
+    listClients(),
+    listProjects(),
     listContractFieldChoices(),
   ]);
   const members = allMembers.map((m) => ({
     id: m.id,
     code: m.memberCode,
     name: m.fullName,
+  }));
+  const clients = allClients.map((c) => ({
+    id: c.id,
+    code: c.clientCode,
+    name: c.clientName,
+  }));
+  const projects = allProjects.map((p) => ({
+    id: p.id,
+    code: p.projectCode,
+    name: p.projectName,
   }));
 
   return (
@@ -42,6 +56,8 @@ export default async function AdminContractsPage() {
       <ContractsAdminClient
         contracts={contracts}
         members={members}
+        clients={clients}
+        projects={projects}
         fieldChoices={fieldChoices}
       />
     </main>

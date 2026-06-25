@@ -21,28 +21,46 @@ import { getContractById, updateContractFields } from "@/lib/airtable";
 const shortText = z.string().trim().max(200);
 const longText = z.string().max(5000);
 const schema = z.object({
+  // Identity
+  side: z
+    .union([z.enum(["Client", "Network Member", "Partner", "Other"]), z.literal("")])
+    .optional(),
+  contractType: shortText.optional(),
+  otherDescription: shortText.optional(),
+  clientRecordIds: z.array(z.string()).max(5).optional(),
+  projectRecordIds: z.array(z.string()).max(10).optional(),
   projectCode: shortText.optional(),
   memberRecordIds: z.array(z.string()).max(10).optional(),
+  // Signatories
+  signatory1Name: shortText.optional(),
+  signatory1Role: shortText.optional(),
+  signatory1Company: shortText.optional(),
+  signatory2Name: shortText.optional(),
+  signatory2Role: shortText.optional(),
+  signatory2Company: shortText.optional(),
+  // Lifecycle
+  signatureDate: shortText.optional(),
+  expiryDate: shortText.optional(),
+  stage: shortText.optional(),
+  contractStatus: shortText.optional(),
+  validity: shortText.optional(),
+  // Summary
+  keyTerms: longText.optional(),
+  // Legacy / terms detail
   company: shortText.optional(),
-  contractType: shortText.optional(),
   contactType: shortText.optional(),
   signatory: shortText.optional(),
   contactDetails: longText.optional(),
-  signatureDate: shortText.optional(),
   effectiveDate: shortText.optional(),
   duration: shortText.optional(),
-  expiryDate: shortText.optional(),
   noticePeriod: shortText.optional(),
   nonSolicitation: shortText.optional(),
-  validity: shortText.optional(),
   confidentiality: longText.optional(),
   intellectualProperty: shortText.optional(),
   exclusivity: shortText.optional(),
   governingLaw: shortText.optional(),
   consultantVisibility: shortText.optional(),
   clauses: longText.optional(),
-  stage: shortText.optional(),
-  contractStatus: shortText.optional(),
 });
 
 export async function PATCH(
