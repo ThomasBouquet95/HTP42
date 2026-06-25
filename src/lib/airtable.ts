@@ -3152,7 +3152,20 @@ export async function listContractFieldChoices(): Promise<ContractFieldChoices> 
   const choicesFor = (fieldName: string): string[] => {
     const field = table.fields.find((f) => f.name === fieldName);
     const raw = field?.options?.choices ?? [];
-    return raw.map((c) => c.name).filter(Boolean);
+    // Sort alphabetically (case-insensitive) so admins can scan a tidy
+    // datalist — Airtable returns choices in the order they were added,
+    // which is effectively random after years of edits. We dedupe too,
+    // since Airtable historical state sometimes carries near-duplicates.
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const c of raw) {
+      const name = c.name?.trim();
+      if (!name || seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase());
+      out.push(name);
+    }
+    out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+    return out;
   };
   return {
     contractType: choicesFor(FIELDS.contracts.contractType),

@@ -50,7 +50,7 @@ type Filters = {
   contactType: "All" | string;
   stage: StageFilter;
   status: StatusFilter;
-  validity: "All" | "Valid" | "Expired" | "Other";
+  validity: "All" | ValidityBucket;
 };
 
 // Admins typically open this tab to chase what's actively in motion —
@@ -225,7 +225,13 @@ export function ContractsAdminClient({
   // little pill counters next to the dropdowns reflect the inventory, not
   // whatever subset the user is staring at right now.
   const validityCounts = useMemo(() => {
-    const out = { Valid: 0, Expired: 0, Other: 0 };
+    const out: Record<ValidityBucket, number> = {
+      Valid: 0,
+      Invalid: 0,
+      Expired: 0,
+      Pending: 0,
+      Other: 0,
+    };
     for (const c of contracts) {
       const b = validityBucket(c.validity);
       out[b] += 1;
@@ -289,23 +295,29 @@ export function ContractsAdminClient({
           />
         </div>
 
-        {/* Validity tabs: Valid / Expired / Other / All. Picks up the
-            three meaningful buckets from the Airtable Validity field
-            (which has free-form values like "Valid – interdependent with
-            Client Master Contract") and routes anything outside
-            Valid/Expired to the catch-all "Other" pill. */}
+        {/* Validity tabs: Valid / Invalid / Expired / Pending / Other /
+            All. Buckets the free-form Airtable Validity values via
+            validityBucket() — see the comment above the function for
+            why substring order matters ("invalid" must be matched before
+            "valid"). */}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
-          <div className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 p-0.5 text-xs">
+          <div className="inline-flex flex-wrap items-center rounded-md border border-slate-200 bg-slate-50 p-0.5 text-xs">
             {(
               [
                 { value: "Valid", label: "Valid", count: validityCounts.Valid },
+                { value: "Invalid", label: "Invalid", count: validityCounts.Invalid },
                 { value: "Expired", label: "Expired", count: validityCounts.Expired },
+                { value: "Pending", label: "Pending", count: validityCounts.Pending },
                 { value: "Other", label: "Other", count: validityCounts.Other },
                 {
                   value: "All",
                   label: "All",
                   count:
-                    validityCounts.Valid + validityCounts.Expired + validityCounts.Other,
+                    validityCounts.Valid +
+                    validityCounts.Invalid +
+                    validityCounts.Expired +
+                    validityCounts.Pending +
+                    validityCounts.Other,
                 },
               ] as const
             ).map((tab) => {
@@ -478,13 +490,18 @@ function uniqueSortedValues(values: string[]): string[] {
   return [...set].sort((a, b) => a.localeCompare(b));
 }
 
-// Buckets the free-form Validity field into the three meaningful pills.
-// Anything that includes "Valid" (case-insensitive) is Valid; "Expired"
-// is Expired; everything else falls into "Other" (Unknown, edge cases).
-function validityBucket(v: string): "Valid" | "Expired" | "Other" {
+// Buckets the free-form Validity field into the five meaningful pills.
+// Order matters: we check the more-specific terms first ("invalid",
+// "expired", "pending") before the catch-all "valid" — otherwise a
+// substring match on "valid" would incorrectly capture "invalid".
+export type ValidityBucket = "Valid" | "Invalid" | "Expired" | "Pending" | "Other";
+
+function validityBucket(v: string): ValidityBucket {
   const s = v.trim().toLowerCase();
   if (!s) return "Other";
+  if (s.includes("invalid")) return "Invalid";
   if (s.includes("expired")) return "Expired";
+  if (s.includes("pending")) return "Pending";
   if (s.includes("valid") || s === "active") return "Valid";
   return "Other";
 }
@@ -584,8 +601,12 @@ function ValidityPill({ validity }: { validity: string }) {
   const cls =
     bucket === "Valid"
       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      : bucket === "Invalid"
+      ? "bg-rose-50 text-rose-700 border-rose-200"
       : bucket === "Expired"
       ? "bg-red-50 text-red-700 border-red-200"
+      : bucket === "Pending"
+      ? "bg-amber-50 text-amber-700 border-amber-200"
       : "bg-slate-100 text-slate-600 border-slate-200";
   return (
     <span
@@ -693,21 +714,46 @@ function ContractDetailModal({
               existing option from the dropdown.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="shrink-0 rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M6 6l12 12M18 6L6 18"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Saving badge: small, unobtrusive, top-right of the modal
+                header so an admin sees commits land without losing the
+                field they were editing. */}
+            {saving ? (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-medium text-brand-700 ring-1 ring-brand-200"
+                role="status"
+                aria-live="polite"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-3 w-3 animate-spin"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  aria-hidden
+                >
+                  <circle cx="12" cy="12" r="9" opacity="0.25" />
+                  <path d="M21 12a9 9 0 0 0-9-9" strokeLinecap="round" />
+                </svg>
+                Saving…
+              </span>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M6 6l12 12M18 6L6 18"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* PDF actions */}
@@ -1019,8 +1065,16 @@ function EditableField({
     void onCommit(draft);
   }
 
+  const hasOptions = !!options && options.length > 0;
   const colCls = span === 2 ? "sm:col-span-2" : "";
-  const inputCls = `mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 disabled:opacity-60 ${sensitive ? "demo-blur" : ""}`;
+  // pr-7 on combobox inputs leaves room for the ▾ chevron that signals
+  // "this field has a dropdown" — datalist alone gives no visual hint.
+  const inputCls = `mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 ${hasOptions && !multiline ? "pr-7" : ""} py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 disabled:opacity-60 ${sensitive ? "demo-blur" : ""}`;
+  const placeholder = hasOptions
+    ? "Pick or type a new value…"
+    : multiline
+    ? "—"
+    : "Type a value…";
 
   return (
     <label className={`block text-xs ${colCls}`}>
@@ -1028,6 +1082,14 @@ function EditableField({
         className={`block text-[11px] font-medium uppercase tracking-wide text-slate-500 ${labelHidden ? "sr-only" : ""}`}
       >
         {label}
+        {hasOptions ? (
+          <span
+            className="ml-1 font-normal normal-case tracking-normal text-slate-400"
+            title="Has a dropdown of existing values — custom values are also accepted."
+          >
+            · {options!.length} option{options!.length === 1 ? "" : "s"}
+          </span>
+        ) : null}
       </span>
       {multiline ? (
         <textarea
@@ -1043,13 +1105,13 @@ function EditableField({
           disabled={disabled}
           rows={3}
           className={`${inputCls} resize-y whitespace-pre-line`}
-          placeholder="—"
+          placeholder={placeholder}
         />
       ) : (
-        <>
+        <span className="relative block">
           <input
             type="text"
-            list={options && options.length > 0 ? listId : undefined}
+            list={hasOptions ? listId : undefined}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={commit}
@@ -1065,16 +1127,24 @@ function EditableField({
             }}
             disabled={disabled}
             className={inputCls}
-            placeholder="—"
+            placeholder={placeholder}
           />
-          {options && options.length > 0 ? (
+          {hasOptions ? (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400"
+            >
+              ▾
+            </span>
+          ) : null}
+          {hasOptions ? (
             <datalist id={listId}>
-              {options.map((o) => (
+              {options!.map((o) => (
                 <option key={o} value={o} />
               ))}
             </datalist>
           ) : null}
-        </>
+        </span>
       )}
     </label>
   );
