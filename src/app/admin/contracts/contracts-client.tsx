@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { ContractRecord } from "@/lib/airtable";
 
@@ -33,12 +34,91 @@ const DEFAULT_FILTERS: Filters = {
   validity: "Valid",
 };
 
-// How many rows each breakdown card shows before the "Show all" expander.
-const BREAKDOWN_PREVIEW_ROWS = 6;
-
-export function ContractsAdminClient({ contracts }: Props) {
+export function ContractsAdminClient({ contracts: initialContracts }: Props) {
+  const router = useRouter();
+  // Local mirror of the server-side list so optimistic edits / uploads
+  // reflect immediately while the server round-trip lands.
+  const [contracts, setContracts] = useState<ContractRecord[]>(initialContracts);
+  useEffect(() => setContracts(initialContracts), [initialContracts]);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // PATCH the editable lifecycle fields. Optimistic: we patch the local
+  // mirror first, surface a toast, and roll back on failure.
+  async function patchContract(
+    id: string,
+    patch: { contractType?: string; stage?: string; contractStatus?: string },
+  ) {
+    const previous = contracts.find((c) => c.id === id);
+    if (!previous) return;
+    setContracts((rs) =>
+      rs.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    );
+    setSavingIds((s) => new Set(s).add(id));
+    try {
+      const res = await fetch(`/api/admin/contracts/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? `Update failed (HTTP ${res.status})`);
+      }
+      setToast({ kind: "ok", msg: "Contract updated" });
+      router.refresh();
+    } catch (e) {
+      setContracts((rs) => rs.map((r) => (r.id === id ? previous : r)));
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Update failed" });
+    } finally {
+      setSavingIds((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
+
+  async function uploadPdf(id: string, file: File): Promise<boolean> {
+    setSavingIds((s) => new Set(s).add(id));
+    try {
+      const form = new FormData();
+      form.append("pdf", file);
+      const res = await fetch(`/api/admin/contracts/${encodeURIComponent(id)}/upload`, {
+        method: "POST",
+        body: form,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        contract?: ContractRecord;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error ?? `Upload failed (HTTP ${res.status})`);
+      if (data.contract) {
+        setContracts((rs) =>
+          rs.map((r) => (r.id === id ? (data.contract as ContractRecord) : r)),
+        );
+      }
+      setToast({ kind: "ok", msg: "PDF uploaded — notification sent" });
+      router.refresh();
+      return true;
+    } catch (e) {
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Upload failed" });
+      return false;
+    } finally {
+      setSavingIds((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
 
   // Build dropdown option lists from the real values present in the
   // dataset — no hardcoded enums, since Airtable's contract type/stage
@@ -103,31 +183,6 @@ export function ContractsAdminClient({ contracts }: Props) {
     }
     return out;
   }, [contracts]);
-
-  // Breakdown cards: rendered as filter toggles so clicking a row narrows
-  // the table to that bucket and re-clicking clears the filter — same
-  // pattern as the redesigned /admin/timesheets page.
-  const byType = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const c of filtered) {
-      const key = c.contractType || "—";
-      map.set(key, (map.get(key) ?? 0) + 1);
-    }
-    return [...map.entries()]
-      .map(([key, count]) => ({ key, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [filtered]);
-
-  const byCounterparty = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const c of filtered) {
-      const key = c.company || "—";
-      map.set(key, (map.get(key) ?? 0) + 1);
-    }
-    return [...map.entries()]
-      .map(([key, count]) => ({ key, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [filtered]);
 
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -243,37 +298,6 @@ export function ContractsAdminClient({ contracts }: Props) {
         </div>
       </div>
 
-      {/* Breakdown cards — click to filter, click again to clear. */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <BreakdownCard
-          title="By contract type"
-          rows={byType.map((r) => ({
-            key: r.key,
-            label: r.key,
-            count: r.count,
-          }))}
-          selectedKey={filters.type === "All" ? null : filters.type}
-          onSelect={(key) => update("type", filters.type === key ? "All" : key)}
-        />
-        <BreakdownCard
-          title="By counterparty"
-          rows={byCounterparty.map((r) => ({
-            key: r.key,
-            label: r.key,
-            count: r.count,
-            // Mask in demo mode — counterparty names are sensitive.
-            blur: true,
-          }))}
-          selectedKey={null}
-          onSelect={() => {
-            /* Counterparty isn't a filter axis on its own (use search
-               instead — the counterparty list is too long to make a tidy
-               dropdown). The breakdown stays informational. */
-          }}
-          informational
-        />
-      </div>
-
       {/* Main table */}
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full text-xs">
@@ -287,12 +311,13 @@ export function ContractsAdminClient({ contracts }: Props) {
               <th className="text-left px-2 py-1.5 font-medium">Stage</th>
               <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Status</th>
               <th className="text-left px-2 py-1.5 font-medium">Validity</th>
+              <th className="text-left px-2 py-1.5 font-medium">PDF</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-center text-slate-500 py-10 text-xs">
+                <td colSpan={9} className="text-center text-slate-500 py-10 text-xs">
                   No contracts match these filters.
                 </td>
               </tr>
@@ -340,6 +365,26 @@ export function ContractsAdminClient({ contracts }: Props) {
                   <td className="px-2 py-1.5">
                     {c.validity ? <ValidityPill validity={c.validity} /> : <Dash />}
                   </td>
+                  {/* PDF cell: stopPropagation so clicking the link
+                      downloads the file instead of also opening the
+                      detail modal. */}
+                  <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
+                    {c.pdf?.url ? (
+                      <a
+                        href={c.pdf.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-brand-700 hover:text-brand-800 font-medium"
+                        title={c.pdf.filename || "Download"}
+                      >
+                        Download
+                      </a>
+                    ) : (
+                      <span className="text-[10px] text-slate-400">
+                        Click row to upload
+                      </span>
+                    )}
+                  </td>
                 </tr>
               ))
             )}
@@ -350,8 +395,27 @@ export function ContractsAdminClient({ contracts }: Props) {
       {openContract ? (
         <ContractDetailModal
           contract={openContract}
+          saving={savingIds.has(openContract.id)}
+          typeOptions={typeOptions}
+          stageOptions={stageOptions}
+          statusOptions={statusOptions}
           onClose={() => setOpenId(null)}
+          onPatch={(patch) => patchContract(openContract.id, patch)}
+          onUpload={(file) => uploadPdf(openContract.id, file)}
         />
+      ) : null}
+
+      {toast ? (
+        <div
+          role="status"
+          className={`pointer-events-none fixed bottom-4 right-4 z-[70] rounded-lg border px-3 py-2 text-xs shadow-lg ${
+            toast.kind === "error"
+              ? "border-red-300 bg-red-50 text-red-800"
+              : "border-emerald-300 bg-emerald-50 text-emerald-800"
+          }`}
+        >
+          {toast.msg}
+        </div>
       ) : null}
     </div>
   );
@@ -489,123 +553,30 @@ function Dash() {
   return <span className="text-slate-300">—</span>;
 }
 
-type BreakdownRow = {
-  key: string;
-  label: string;
-  count: number;
-  blur?: boolean;
-};
-
-function BreakdownCard({
-  title,
-  rows,
-  selectedKey,
-  onSelect,
-  informational,
-}: {
-  title: string;
-  rows: BreakdownRow[];
-  selectedKey: string | null;
-  onSelect: (key: string) => void;
-  informational?: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const max = rows.length > 0 ? rows[0].count : 0;
-  const visible = expanded ? rows : rows.slice(0, BREAKDOWN_PREVIEW_ROWS);
-
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white">
-      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2">
-        <span className="text-sm font-semibold text-slate-800">{title}</span>
-        <span className="text-[11px] text-slate-400">
-          {informational ? "Top counterparties by contract count" : "Click a row to filter"}
-        </span>
-      </div>
-      {rows.length === 0 ? (
-        <div className="px-4 py-6 text-center text-sm text-slate-500">No data.</div>
-      ) : (
-        <>
-          <ul className="divide-y divide-slate-100">
-            {visible.map((r) => {
-              const active = !informational && selectedKey === r.key;
-              const pct = max === 0 ? 0 : (r.count / max) * 100;
-              const Cell = informational ? "div" : "button";
-              return (
-                <li key={r.key}>
-                  <Cell
-                    {...(informational
-                      ? {}
-                      : {
-                          type: "button" as const,
-                          onClick: () => onSelect(r.key),
-                          "aria-pressed": active,
-                        })}
-                    className={`relative block w-full px-4 py-2 text-left text-sm transition-colors ${
-                      informational
-                        ? ""
-                        : active
-                        ? "bg-brand-50"
-                        : "hover:bg-slate-50 cursor-pointer"
-                    }`}
-                  >
-                    <span className="relative z-10 flex items-center justify-between gap-3">
-                      <span className={`min-w-0 truncate ${r.blur ? "demo-blur" : ""}`}>
-                        <span
-                          className={`font-medium ${
-                            active ? "text-brand-800" : "text-slate-800"
-                          }`}
-                        >
-                          {r.label}
-                        </span>
-                      </span>
-                      <span className="flex shrink-0 items-center gap-2">
-                        <span className="font-semibold tabular-nums text-slate-900">
-                          {r.count}
-                        </span>
-                        {active ? (
-                          <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white">
-                            Filtered
-                          </span>
-                        ) : null}
-                      </span>
-                    </span>
-                    <span
-                      aria-hidden
-                      className="absolute inset-x-4 bottom-1 z-0 block h-0.5 rounded-full bg-slate-100"
-                    >
-                      <span
-                        className={`block h-full rounded-full ${active ? "bg-brand-500" : "bg-brand-300"}`}
-                        style={{ width: `${Math.max(2, pct)}%` }}
-                      />
-                    </span>
-                  </Cell>
-                </li>
-              );
-            })}
-          </ul>
-          {rows.length > BREAKDOWN_PREVIEW_ROWS ? (
-            <button
-              type="button"
-              onClick={() => setExpanded((e) => !e)}
-              className="block w-full border-t border-slate-100 px-4 py-1.5 text-center text-xs font-medium text-brand-600 hover:bg-slate-50"
-            >
-              {expanded ? "Show less" : `Show all (${rows.length})`}
-            </button>
-          ) : null}
-        </>
-      )}
-    </div>
-  );
-}
-
 // Detail modal: every field in one place, with sensitive bits (company,
 // signatory, contact details, clauses) tagged for demo-mode blur.
 function ContractDetailModal({
   contract: c,
+  saving,
+  typeOptions,
+  stageOptions,
+  statusOptions,
   onClose,
+  onPatch,
+  onUpload,
 }: {
   contract: ContractRecord;
+  saving: boolean;
+  typeOptions: string[];
+  stageOptions: string[];
+  statusOptions: string[];
   onClose: () => void;
+  onPatch: (patch: {
+    contractType?: string;
+    stage?: string;
+    contractStatus?: string;
+  }) => Promise<void>;
+  onUpload: (file: File) => Promise<boolean>;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -618,6 +589,20 @@ function ContractDetailModal({
       window.removeEventListener("keydown", onKey);
     };
   }, [onClose]);
+
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-upload of the same filename
+    if (!file) return;
+    setUploading(true);
+    try {
+      await onUpload(file);
+    } finally {
+      setUploading(false);
+    }
+  }
 
   return (
     <div
@@ -678,6 +663,97 @@ function ContractDetailModal({
           </button>
         </div>
 
+        {/* PDF actions: download if attached, otherwise upload. Always
+            visible — uploading triggers a Graph email to HTP42's inbox
+            so finance can keep a paper trail outside Airtable. */}
+        <div className="border-b border-slate-200 px-5 py-3">
+          {c.pdf?.url ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-slate-50 px-3 py-2">
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Signed PDF
+                </div>
+                <div className="truncate text-xs text-slate-700">
+                  {c.pdf.filename || "contract.pdf"}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <a
+                  href={c.pdf.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md border border-brand-300 bg-white px-2.5 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50"
+                >
+                  Download
+                </a>
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading || saving}
+                  className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {uploading ? "Uploading…" : "Replace"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-amber-50 px-3 py-2 ring-1 ring-amber-200">
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-800">
+                  No PDF on file
+                </div>
+                <div className="text-xs text-amber-700">
+                  Upload the signed contract — finance gets an email copy.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading || saving}
+                className="rounded-md bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+              >
+                {uploading ? "Uploading…" : "Upload PDF"}
+              </button>
+            </div>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            onChange={handleFile}
+          />
+        </div>
+
+        {/* Inline editors for Type / Stage / Status — the three fields
+            admins legitimately need to touch after a contract is filed.
+            Free-form input via a datalist so admins can type a new value
+            (auto-created in Airtable via typecast on the API side) or
+            pick from values already in the dataset. */}
+        <div className="grid gap-3 border-b border-slate-200 px-5 py-3 sm:grid-cols-3">
+          <EditableField
+            label="Contract type"
+            value={c.contractType}
+            options={typeOptions}
+            disabled={saving}
+            onCommit={(v) => onPatch({ contractType: v })}
+          />
+          <EditableField
+            label="Stage"
+            value={c.stage}
+            options={stageOptions}
+            disabled={saving}
+            onCommit={(v) => onPatch({ stage: v })}
+          />
+          <EditableField
+            label="Contract status"
+            value={c.contractStatus}
+            options={statusOptions}
+            disabled={saving}
+            onCommit={(v) => onPatch({ contractStatus: v })}
+          />
+        </div>
+
         {/* Body — KV grid grouped into Lifecycle, Signing, Terms, Clauses. */}
         <div className="space-y-5 px-5 py-4 text-xs">
           <Section title="Lifecycle">
@@ -712,6 +788,68 @@ function ContractDetailModal({
         </div>
       </div>
     </div>
+  );
+}
+
+// Editable lifecycle field. Renders as a labelled input backed by a
+// datalist of values already in the dataset so admins get autocomplete
+// without being locked into a frozen enum — if they type a brand-new
+// value the API typecasts it into a fresh Airtable choice. We commit on
+// blur or Enter; Escape reverts to the saved value.
+function EditableField({
+  label,
+  value,
+  options,
+  disabled,
+  onCommit,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  disabled?: boolean;
+  onCommit: (value: string) => Promise<void> | void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const listId = `contract-${label.replace(/\s+/g, "-").toLowerCase()}-options`;
+
+  function commit() {
+    const next = draft.trim();
+    if (next === value.trim()) return;
+    void onCommit(next);
+  }
+
+  return (
+    <label className="block text-xs">
+      <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-500">
+        {label}
+      </span>
+      <input
+        type="text"
+        list={listId}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+            (e.target as HTMLInputElement).blur();
+          } else if (e.key === "Escape") {
+            setDraft(value);
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+        disabled={disabled}
+        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 disabled:opacity-60"
+        placeholder="—"
+      />
+      <datalist id={listId}>
+        {options.map((o) => (
+          <option key={o} value={o} />
+        ))}
+      </datalist>
+    </label>
   );
 }
 

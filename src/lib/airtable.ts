@@ -192,6 +192,7 @@ export const FIELDS = {
     clauses: "Specific Clauses / Comments",
     stage: "Stage",
     contractStatus: "Contract Status",
+    pdf: "PDF",
   },
   chatConversations: {
     title: "Title",
@@ -2961,6 +2962,7 @@ export type ContractRecord = {
   clauses: string;
   stage: string;
   contractStatus: string;
+  pdf: AttachmentRef | null;
 };
 
 function contractFromRecord(
@@ -2993,6 +2995,7 @@ function contractFromRecord(
     clauses: str(r, FIELDS.contracts.clauses),
     stage: str(r, FIELDS.contracts.stage),
     contractStatus: str(r, FIELDS.contracts.contractStatus),
+    pdf: firstAttachment(r, FIELDS.contracts.pdf),
   };
 }
 
@@ -3016,6 +3019,75 @@ export async function listAllContracts(): Promise<ContractRecord[]> {
       };
       return ts(b.signatureDate) - ts(a.signatureDate);
     });
+}
+
+export async function getContractById(recordId: string): Promise<ContractRecord | null> {
+  try {
+    const [r, memberCodeById] = await Promise.all([
+      base(TABLES.contracts).find(recordId),
+      getMemberCodeMap(),
+    ]);
+    return contractFromRecord(r, memberCodeById);
+  } catch {
+    return null;
+  }
+}
+
+// Partial update for the admin-editable lifecycle fields. Each field is
+// individually optional — only the keys explicitly passed get written, so
+// flipping a single dropdown doesn't accidentally clear sibling fields.
+// We pass typecast=true so the Airtable singleSelect choice is created
+// on the fly if an admin types a new contract type / stage / status
+// value that doesn't exist yet (matches how Under Review was bootstrapped).
+export type ContractEditableFields = {
+  contractType?: string;
+  stage?: string;
+  contractStatus?: string;
+};
+
+export async function updateContractFields(
+  recordId: string,
+  fields: ContractEditableFields,
+): Promise<void> {
+  const updates: Record<string, unknown> = {};
+  if (fields.contractType !== undefined) {
+    updates[FIELDS.contracts.contractType] = fields.contractType || null;
+  }
+  if (fields.stage !== undefined) {
+    updates[FIELDS.contracts.stage] = fields.stage || null;
+  }
+  if (fields.contractStatus !== undefined) {
+    updates[FIELDS.contracts.contractStatus] = fields.contractStatus || null;
+  }
+  if (Object.keys(updates).length === 0) return;
+  await base(TABLES.contracts).update(
+    [{ id: recordId, fields: updates as FieldSet }],
+    { typecast: true },
+  );
+}
+
+// Attach a PDF to the Contracts row via Airtable's content endpoint
+// (same path as attachInvoicePdf). Airtable replaces the existing
+// attachment if any, which matches the admin's mental model of "the
+// signed PDF" — a single up-to-date file per contract.
+export async function attachContractPdf(
+  recordId: string,
+  filename: string,
+  base64: string,
+): Promise<void> {
+  const url = `https://content.airtable.com/v0/${env.airtableBaseId}/${recordId}/${encodeURIComponent(FIELDS.contracts.pdf)}/uploadAttachment`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.airtablePat}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ contentType: "application/pdf", filename, file: base64 }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Airtable upload failed (${res.status}): ${text}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
