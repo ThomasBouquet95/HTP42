@@ -44,10 +44,18 @@ type StageFilter = "All" | string;
 type StatusFilter = "All" | string;
 type TypeFilter = "All" | string;
 
+// Contact buckets: who's the counterparty side of the contract.
+//   Client  = HTP42 ↔ client (Contact Type = "Client")
+//   Network = HTP42 ↔ a network member / consultant / subcontractor
+//   Other   = IP Co., empty contact type, anything that doesn't fit
+// Same MSA / SoW / NDA contract types live on both sides — the
+// bucket is about the counterparty role, not the document kind.
+export type ContactBucket = "Client" | "Network" | "Other";
+
 type Filters = {
   search: string;
   type: TypeFilter;
-  contactType: "All" | string;
+  bucket: "All" | ContactBucket;
   stage: StageFilter;
   status: StatusFilter;
   validity: "All" | ValidityBucket;
@@ -59,7 +67,7 @@ type Filters = {
 const DEFAULT_FILTERS: Filters = {
   search: "",
   type: "All",
-  contactType: "All",
+  bucket: "All",
   stage: "All",
   status: "All",
   validity: "Valid",
@@ -176,10 +184,6 @@ export function ContractsAdminClient({
     () => uniqueSortedValues(contracts.map((c) => c.contractType)),
     [contracts],
   );
-  const contactTypeOptions = useMemo(
-    () => uniqueSortedValues(contracts.map((c) => c.contactType)),
-    [contracts],
-  );
   const stageOptions = useMemo(
     () => uniqueSortedValues(contracts.map((c) => c.stage)),
     [contracts],
@@ -193,7 +197,9 @@ export function ContractsAdminClient({
     const q = filters.search.trim().toLowerCase();
     return contracts.filter((c) => {
       if (filters.type !== "All" && c.contractType !== filters.type) return false;
-      if (filters.contactType !== "All" && c.contactType !== filters.contactType) return false;
+      if (filters.bucket !== "All" && contactBucket(c.contactType) !== filters.bucket) {
+        return false;
+      }
       if (filters.stage !== "All" && c.stage !== filters.stage) return false;
       if (filters.status !== "All" && c.contractStatus !== filters.status) return false;
       if (filters.validity !== "All") {
@@ -221,6 +227,15 @@ export function ContractsAdminClient({
     });
   }, [contracts, filters]);
 
+  // Per-bucket counts on every contract (not just filtered) so the tab
+  // strip's badges reflect total inventory, not whatever subset the
+  // admin is staring at right now.
+  const bucketCounts = useMemo(() => {
+    const out: Record<ContactBucket, number> = { Client: 0, Network: 0, Other: 0 };
+    for (const c of contracts) out[contactBucket(c.contactType)] += 1;
+    return out;
+  }, [contracts]);
+
   // Validity counts include EVERY contract (not just filtered) so the
   // little pill counters next to the dropdowns reflect the inventory, not
   // whatever subset the user is staring at right now.
@@ -247,9 +262,20 @@ export function ContractsAdminClient({
 
   return (
     <div className="space-y-4">
+      {/* Primary bucket tabs: which side of the contract — Client (HTP42
+          ↔ client), Network (HTP42 ↔ consultant/network member), Other
+          (IP Co., empty, edge cases). MSA / SoW / NDA can live on
+          either side; the bucket is about the counterparty role, not
+          the document kind. */}
+      <BucketTabs
+        active={filters.bucket}
+        counts={bucketCounts}
+        onSelect={(b) => update("bucket", b)}
+      />
+
       {/* Filter bar */}
       <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Select
             label="Search"
             renderAs="search"
@@ -264,15 +290,6 @@ export function ContractsAdminClient({
             options={[
               { value: "All", label: "All types" },
               ...typeOptions.map((t) => ({ value: t, label: t })),
-            ]}
-          />
-          <Select
-            label="Counterparty"
-            value={filters.contactType}
-            onChange={(v) => update("contactType", v)}
-            options={[
-              { value: "All", label: "All counterparties" },
-              ...contactTypeOptions.map((t) => ({ value: t, label: t })),
             ]}
           />
           <Select
@@ -383,12 +400,28 @@ export function ContractsAdminClient({
                 </td>
               </tr>
             ) : (
-              filtered.map((c) => (
+              filtered.map((c) => {
+                // Critical type + Invalid = the loudest red flag we
+                // can raise without an actual modal. The left border
+                // doubles as a visual anchor when admins scan the
+                // table top-to-bottom looking for trouble.
+                const flagged =
+                  isCriticalType(c.contractType) &&
+                  validityBucket(c.validity) === "Invalid";
+                return (
                 <tr
                   key={c.id}
                   onClick={() => setOpenId(c.id)}
-                  className="border-t border-slate-100 cursor-pointer hover:bg-slate-50 align-top"
-                  title="Click for the full contract"
+                  className={`border-t cursor-pointer align-top ${
+                    flagged
+                      ? "border-red-200 bg-red-50 hover:bg-red-100 ring-1 ring-inset ring-red-200"
+                      : "border-slate-100 hover:bg-slate-50"
+                  }`}
+                  title={
+                    flagged
+                      ? "Invalid MSA / SoW — click to review"
+                      : "Click for the full contract"
+                  }
                 >
                   <td className="px-2 py-1.5">
                     <div className="font-mono text-[10px] text-slate-500">
@@ -447,7 +480,8 @@ export function ContractsAdminClient({
                     )}
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>
@@ -490,6 +524,32 @@ function uniqueSortedValues(values: string[]): string[] {
   return [...set].sort((a, b) => a.localeCompare(b));
 }
 
+// Maps the free-form Contact Type field onto the three contract sides
+// admins reason about: client-side, consultant-side ("Network"), and
+// the long tail of edge cases ("Other": IP Co., empty, anything else).
+function contactBucket(contactType: string): ContactBucket {
+  const s = contactType.trim().toLowerCase();
+  if (!s) return "Other";
+  if (s === "client") return "Client";
+  // Everyone the network treats as a counterparty on the consultant
+  // side: a network member directly, a consultant working under one,
+  // or a subcontractor sitting under a member.
+  if (s === "network member" || s === "consultant" || s === "subcontractor") {
+    return "Network";
+  }
+  return "Other";
+}
+
+// MSA / SoW family. Anything whose contract type contains "msa" or
+// "sow" (case-insensitive) — so canonical "MSA" / "SoW" plus their
+// composite cousins ("MSA + SoW", "Internal SoW", "Subcontracting SoW",
+// "Customer Facing SoW") all match. These are the documents whose
+// invalidity carries real business risk, so the table flags them in red.
+function isCriticalType(contractType: string): boolean {
+  const s = contractType.trim().toLowerCase();
+  return s.includes("msa") || s.includes("sow");
+}
+
 // Buckets the free-form Validity field into the five meaningful pills.
 // Order matters: we check the more-specific terms first ("invalid",
 // "expired", "pending") before the catch-all "valid" — otherwise a
@@ -516,9 +576,6 @@ function ActiveFilterChips({
   const chips: { label: string; clear: () => void }[] = [];
   if (filters.type !== "All") {
     chips.push({ label: filters.type, clear: () => onClear("type", "All") });
-  }
-  if (filters.contactType !== "All") {
-    chips.push({ label: filters.contactType, clear: () => onClear("contactType", "All") });
   }
   if (filters.stage !== "All") {
     chips.push({ label: filters.stage, clear: () => onClear("stage", "All") });
@@ -1243,6 +1300,90 @@ function MemberPicker({
         </select>
       </div>
     </label>
+  );
+}
+
+// Primary tab strip above the filter bar — Client / Network / Other / All.
+// Each tab carries the inventory count so admins see the split at a
+// glance. Selecting a tab narrows everything below it to that side.
+function BucketTabs({
+  active,
+  counts,
+  onSelect,
+}: {
+  active: "All" | ContactBucket;
+  counts: Record<ContactBucket, number>;
+  onSelect: (value: "All" | ContactBucket) => void;
+}) {
+  const total = counts.Client + counts.Network + counts.Other;
+  const tabs: Array<{
+    value: "All" | ContactBucket;
+    label: string;
+    hint: string;
+    count: number;
+  }> = [
+    {
+      value: "All",
+      label: "All",
+      hint: "Every contract",
+      count: total,
+    },
+    {
+      value: "Client",
+      label: "Client",
+      hint: "HTP42 ↔ client",
+      count: counts.Client,
+    },
+    {
+      value: "Network",
+      label: "Network",
+      hint: "HTP42 ↔ consultant / network member",
+      count: counts.Network,
+    },
+    {
+      value: "Other",
+      label: "Other",
+      hint: "IP Co., empty, edge cases",
+      count: counts.Other,
+    },
+  ];
+  return (
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      {tabs.map((t) => {
+        const isActive = active === t.value;
+        return (
+          <button
+            key={t.value}
+            type="button"
+            onClick={() => onSelect(t.value)}
+            aria-pressed={isActive}
+            className={`group flex items-center justify-between rounded-lg border px-3 py-2 text-left transition-all ${
+              isActive
+                ? "border-brand-500 bg-brand-50 shadow-sm ring-1 ring-brand-200"
+                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+            }`}
+          >
+            <div className="min-w-0">
+              <div
+                className={`text-sm font-semibold ${
+                  isActive ? "text-brand-800" : "text-slate-900"
+                }`}
+              >
+                {t.label}
+              </div>
+              <div className="text-[11px] text-slate-500">{t.hint}</div>
+            </div>
+            <div
+              className={`shrink-0 text-base font-semibold tabular-nums ${
+                isActive ? "text-brand-700" : "text-slate-700"
+              }`}
+            >
+              {t.count}
+            </div>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
