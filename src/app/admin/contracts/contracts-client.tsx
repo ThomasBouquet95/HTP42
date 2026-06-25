@@ -229,7 +229,12 @@ export function ContractsAdminClient({
         if (bucket !== filters.validity) return false;
       }
       if (!q) return true;
+      // Search hay covers every label an admin would type into the
+      // box, including the canonical Side string so "client" / "network"
+      // / "partner" return only the matching bucket.
       const hay = [
+        resolveSide(c),
+        c.side,
         c.projectCode,
         c.company,
         c.contractType,
@@ -558,12 +563,24 @@ function resolveSide(c: ContractRecord): ContractSide {
   return "Other";
 }
 
-// Human-readable counterparty label that prefers structured links over
-// the legacy free-form Company / Consultant text.
+// Human-readable counterparty label that switches by Side: a Network
+// Member contract shows the linked member, a Client contract shows the
+// linked client name, and Partner / Other fall back to the legacy
+// Company / Consultant free-form field. Without this branch a Network
+// Member contract whose row also carried a stale Client link would
+// surface the client name — wrong counterparty visually.
 function counterpartyLabel(c: ContractRecord): string {
-  if (c.clientNames.length > 0) return c.clientNames.filter(Boolean).join(", ");
-  if (c.clientCodes.length > 0) return c.clientCodes.join(", ");
-  if (c.memberCodes.length > 0) return c.memberCodes.join(", ");
+  const side = resolveSide(c);
+  if (side === "Network Member") {
+    if (c.memberCodes.length > 0) return c.memberCodes.join(", ");
+    return c.company;
+  }
+  if (side === "Client") {
+    if (c.clientNames.some(Boolean)) return c.clientNames.filter(Boolean).join(", ");
+    if (c.clientCodes.length > 0) return c.clientCodes.join(", ");
+    return c.company;
+  }
+  // Partner / Other: free-form counterparty company.
   return c.company;
 }
 
@@ -703,19 +720,19 @@ function SideTabs({
     {
       value: "Client",
       label: "Client",
-      hint: "HTP42 ↔ client · MSA + SoW (per project) + NDA",
+      hint: "MSA across projects · SoW per project · NDA",
       count: counts.Client,
     },
     {
       value: "Network Member",
-      label: "Network Member",
-      hint: "HTP42 ↔ network member · MSA + SoW (per staffing) + NDA",
+      label: "Network",
+      hint: "MSA across projects · SoW per staffing · NDA",
       count: counts["Network Member"],
     },
     {
       value: "Partner",
       label: "Partner",
-      hint: "HTP42 ↔ potential partner · NDA",
+      hint: "Potential partners · NDA",
       count: counts.Partner,
     },
     {
@@ -726,7 +743,7 @@ function SideTabs({
     },
   ];
   return (
-    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+    <div className="grid gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
       {tabs.map((t) => {
         const isActive = active === t.value;
         return (
@@ -735,24 +752,26 @@ function SideTabs({
             type="button"
             onClick={() => onSelect(t.value)}
             aria-pressed={isActive}
-            className={`group flex items-center justify-between rounded-lg border px-3 py-2 text-left transition-all ${
+            className={`group flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left transition-all ${
               isActive
-                ? "border-brand-500 bg-brand-50 shadow-sm ring-1 ring-brand-200"
+                ? "border-brand-500 bg-brand-50 ring-1 ring-brand-200"
                 : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
             }`}
           >
             <div className="min-w-0">
               <div
-                className={`text-sm font-semibold ${
+                className={`text-[13px] font-semibold leading-tight ${
                   isActive ? "text-brand-800" : "text-slate-900"
                 }`}
               >
                 {t.label}
               </div>
-              <div className="truncate text-[11px] text-slate-500">{t.hint}</div>
+              <div className="truncate text-[10px] leading-tight text-slate-500">
+                {t.hint}
+              </div>
             </div>
             <div
-              className={`shrink-0 text-base font-semibold tabular-nums ${
+              className={`shrink-0 text-sm font-semibold tabular-nums ${
                 isActive ? "text-brand-700" : "text-slate-700"
               }`}
             >
@@ -777,6 +796,9 @@ function ActiveFilterChips({
   onClear: <K extends keyof Filters>(key: K, value: Filters[K]) => void;
 }) {
   const chips: { label: string; clear: () => void }[] = [];
+  if (filters.side !== "All") {
+    chips.push({ label: filters.side, clear: () => onClear("side", "All") });
+  }
   if (filters.type !== "All") {
     chips.push({ label: filters.type, clear: () => onClear("type", "All") });
   }
@@ -785,6 +807,9 @@ function ActiveFilterChips({
   }
   if (filters.status !== "All") {
     chips.push({ label: filters.status, clear: () => onClear("status", "All") });
+  }
+  if (filters.validity !== "All") {
+    chips.push({ label: filters.validity, clear: () => onClear("validity", "All") });
   }
   if (chips.length === 0) return null;
   return (
@@ -1074,9 +1099,30 @@ function ContractDetailModal({
     }
   }
 
-  // Local update helper bound to the draft.
+  // Local update helper bound to the draft. Changing Side or Type
+  // clears stale linked records that no longer apply — e.g. switching
+  // from Network Member to Client should drop the member link, and
+  // switching Type from SOW to MSA should drop the project link. Without
+  // this, the PATCH carries old links into Airtable and the contract
+  // appears "linked" on a relationship that doesn't exist.
   function set<K extends keyof DraftForm>(key: K, value: DraftForm[K]) {
-    setDraft((d) => ({ ...d, [key]: value }));
+    setDraft((d) => {
+      const next = { ...d, [key]: value };
+      if (key === "side") {
+        const newSide = value as ContractSide | "";
+        // Only the side that owns each link keeps its entries.
+        if (newSide !== "Network Member") next.memberRecordIds = [];
+        if (newSide !== "Client") next.clientRecordIds = [];
+      }
+      if (key === "contractType") {
+        const t = String(value).toLowerCase();
+        // SOW is the only type that links to a project. Anything else
+        // drops the project link so admins don't accidentally tie an
+        // NDA / MSA to a specific project.
+        if (!t.includes("sow")) next.projectRecordIds = [];
+      }
+      return next;
+    });
   }
 
   // Conditional sections based on Side + Type.
@@ -1101,8 +1147,14 @@ function ContractDetailModal({
       aria-modal="true"
       onClick={requestClose}
     >
+      {/* Constrain the panel height so only the body scrolls. The
+          header + PDF strip + footer stay pinned, so an admin in a long
+          form can always reach Save / Cancel without scrolling the whole
+          modal. max-w-4xl gives the form a touch more horizontal room
+          now that some sections need three columns. */}
       <div
-        className="relative w-full max-w-3xl rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200"
+        className="relative flex w-full max-w-4xl flex-col rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200"
+        style={{ maxHeight: "calc(100vh - 4rem)" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -1226,8 +1278,9 @@ function ContractDetailModal({
           />
         </div>
 
-        {/* Form body */}
-        <div className="space-y-5 px-5 py-4 text-xs">
+        {/* Form body — scrolls within the panel so the sticky footer
+            and the PDF / header strips stay visible. */}
+        <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4 text-xs">
           {/* Identity */}
           <section className="space-y-3">
             <SectionHeader title="Identity" hint="Which side of the contract this is and what it covers." />
@@ -1753,6 +1806,12 @@ function ComboboxField({
 // "15/12/2025" to "MSA: Indefinite – SoW: …"), so we render a plain
 // text input. Could upgrade to <input type="date"> later once the data
 // is normalized.
+// DateField upgrades to a native <input type="date"> when the stored
+// value parses cleanly to ISO yyyy-mm-dd (or dd/mm/yyyy / dd.mm.yyyy).
+// Falls back to a free-form text input + a small "use a date picker"
+// toggle for legacy strings like "MSA: Indefinite – SoW: …" that admins
+// still need to read and write. Both modes commit on every change so
+// the draft stays in sync.
 function DateField({
   label,
   value,
@@ -1762,20 +1821,65 @@ function DateField({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const iso = toIsoDate(value);
+  // Mode tracks user intent — if the stored value happens to be a date,
+  // start in "picker" mode; if it's free-form prose, start in "text".
+  // Admin can flip via the tiny inline button regardless.
+  const [mode, setMode] = useState<"picker" | "text">(iso ? "picker" : "text");
+  useEffect(() => {
+    setMode(toIsoDate(value) ? "picker" : "text");
+  }, [value]);
+
   return (
     <label className="block text-xs">
-      <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-500">
-        {label}
+      <span className="flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-slate-500">
+        <span>{label}</span>
+        <button
+          type="button"
+          onClick={() => setMode((m) => (m === "picker" ? "text" : "picker"))}
+          className="ml-2 text-[10px] font-normal normal-case tracking-normal text-slate-400 hover:text-slate-700"
+          title="Switch between date picker and free-text input"
+        >
+          {mode === "picker" ? "free text" : "use picker"}
+        </button>
       </span>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="e.g. 15/12/2025 or Q2 2026"
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-      />
+      {mode === "picker" ? (
+        <input
+          type="date"
+          value={iso ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+          className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+        />
+      ) : (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="e.g. 15/12/2025 or Q2 2026"
+          className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+        />
+      )}
     </label>
   );
+}
+
+// Best-effort parse of the messy historical date strings into ISO.
+// Handles dd/mm/yyyy, dd.mm.yyyy, dd-mm-yyyy, yyyy-mm-dd (+ 2-digit
+// years). Returns null when the string is something Airtable admins
+// invented like "Late May 2026" — the field then falls back to text.
+function toIsoDate(s: string): string | null {
+  const t = s.trim();
+  if (!t) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  const m = t.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+  if (!m) return null;
+  let [, d, mo, y] = m;
+  if (y.length === 2) y = String(2000 + Number(y));
+  const dd = String(Number(d)).padStart(2, "0");
+  const mm = String(Number(mo)).padStart(2, "0");
+  if (Number(dd) < 1 || Number(dd) > 31) return null;
+  if (Number(mm) < 1 || Number(mm) > 12) return null;
+  return `${y}-${mm}-${dd}`;
 }
 
 function SignatoryRow({
