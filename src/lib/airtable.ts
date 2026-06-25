@@ -3033,14 +3033,33 @@ export async function getContractById(recordId: string): Promise<ContractRecord 
   }
 }
 
-// Partial update for the admin-editable lifecycle fields. Each field is
-// individually optional — only the keys explicitly passed get written, so
-// flipping a single dropdown doesn't accidentally clear sibling fields.
-// We pass typecast=true so the Airtable singleSelect choice is created
-// on the fly if an admin types a new contract type / stage / status
-// value that doesn't exist yet (matches how Under Review was bootstrapped).
+// Partial update for the admin-editable contract fields. Every field is
+// individually optional — only the keys explicitly passed get written,
+// so editing one field doesn't accidentally clear siblings. typecast=true
+// lets the Airtable singleSelect choices auto-grow when an admin types a
+// brand-new value (matches how the "Under Review" payment status was
+// bootstrapped).
 export type ContractEditableFields = {
+  projectCode?: string;
+  memberRecordIds?: string[];
+  company?: string;
   contractType?: string;
+  contactType?: string;
+  signatory?: string;
+  contactDetails?: string;
+  signatureDate?: string;
+  effectiveDate?: string;
+  duration?: string;
+  expiryDate?: string;
+  noticePeriod?: string;
+  nonSolicitation?: string;
+  validity?: string;
+  confidentiality?: string;
+  intellectualProperty?: string;
+  exclusivity?: string;
+  governingLaw?: string;
+  consultantVisibility?: string;
+  clauses?: string;
   stage?: string;
   contractStatus?: string;
 };
@@ -3050,20 +3069,130 @@ export async function updateContractFields(
   fields: ContractEditableFields,
 ): Promise<void> {
   const updates: Record<string, unknown> = {};
-  if (fields.contractType !== undefined) {
-    updates[FIELDS.contracts.contractType] = fields.contractType || null;
-  }
-  if (fields.stage !== undefined) {
-    updates[FIELDS.contracts.stage] = fields.stage || null;
-  }
-  if (fields.contractStatus !== undefined) {
-    updates[FIELDS.contracts.contractStatus] = fields.contractStatus || null;
+  const setText = (key: keyof typeof FIELDS.contracts, value: string | undefined) => {
+    if (value === undefined) return;
+    updates[FIELDS.contracts[key]] = value || null;
+  };
+  setText("projectCode", fields.projectCode);
+  setText("company", fields.company);
+  setText("contractType", fields.contractType);
+  setText("contactType", fields.contactType);
+  setText("signatory", fields.signatory);
+  setText("contactDetails", fields.contactDetails);
+  setText("signatureDate", fields.signatureDate);
+  setText("effectiveDate", fields.effectiveDate);
+  setText("duration", fields.duration);
+  setText("expiryDate", fields.expiryDate);
+  setText("noticePeriod", fields.noticePeriod);
+  setText("nonSolicitation", fields.nonSolicitation);
+  setText("validity", fields.validity);
+  setText("confidentiality", fields.confidentiality);
+  setText("intellectualProperty", fields.intellectualProperty);
+  setText("exclusivity", fields.exclusivity);
+  setText("governingLaw", fields.governingLaw);
+  setText("consultantVisibility", fields.consultantVisibility);
+  setText("clauses", fields.clauses);
+  setText("stage", fields.stage);
+  setText("contractStatus", fields.contractStatus);
+  if (fields.memberRecordIds !== undefined) {
+    updates[FIELDS.contracts.memberCode] = fields.memberRecordIds;
   }
   if (Object.keys(updates).length === 0) return;
   await base(TABLES.contracts).update(
     [{ id: recordId, fields: updates as FieldSet }],
     { typecast: true },
   );
+}
+
+// Snapshot of every singleSelect field's full choice list on the
+// Contracts table. We fetch it once at page load and seed the
+// comboboxes — that way admins can pick existing choices (autocomplete)
+// or type a brand-new one (Airtable creates it on save via typecast).
+// Pulled from Airtable's meta API rather than from the loaded records:
+// the dataset only carries values that have actually been used, but the
+// admin asked for "all options" — which means the full Airtable choice
+// set, including options that no contract currently uses.
+export type ContractFieldChoices = {
+  contractType: string[];
+  contactType: string[];
+  signatureDate: string[];
+  effectiveDate: string[];
+  duration: string[];
+  expiryDate: string[];
+  noticePeriod: string[];
+  nonSolicitation: string[];
+  validity: string[];
+  intellectualProperty: string[];
+  exclusivity: string[];
+  governingLaw: string[];
+  consultantVisibility: string[];
+  stage: string[];
+  contractStatus: string[];
+  company: string[];
+};
+
+export async function listContractFieldChoices(): Promise<ContractFieldChoices> {
+  const url = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${env.airtablePat}` },
+    // Airtable's metadata endpoint isn't a hot path; cache the response
+    // for a minute so a tab-tab burst doesn't hammer it.
+    next: { revalidate: 60 },
+  });
+  if (!res.ok) {
+    // A meta-API outage shouldn't break the page; fall back to empty
+    // lists and let the comboboxes accept free-form input.
+    return emptyChoices();
+  }
+  const data = (await res.json()) as {
+    tables: Array<{ name: string; fields: Array<{ name: string; type: string; options?: { choices?: Array<{ name: string }> } }> }>;
+  };
+  const table = data.tables.find((t) => t.name === TABLES.contracts);
+  if (!table) return emptyChoices();
+  const choicesFor = (fieldName: string): string[] => {
+    const field = table.fields.find((f) => f.name === fieldName);
+    const raw = field?.options?.choices ?? [];
+    return raw.map((c) => c.name).filter(Boolean);
+  };
+  return {
+    contractType: choicesFor(FIELDS.contracts.contractType),
+    contactType: choicesFor(FIELDS.contracts.contactType),
+    signatureDate: choicesFor(FIELDS.contracts.signatureDate),
+    effectiveDate: choicesFor(FIELDS.contracts.effectiveDate),
+    duration: choicesFor(FIELDS.contracts.duration),
+    expiryDate: choicesFor(FIELDS.contracts.expiryDate),
+    noticePeriod: choicesFor(FIELDS.contracts.noticePeriod),
+    nonSolicitation: choicesFor(FIELDS.contracts.nonSolicitation),
+    validity: choicesFor(FIELDS.contracts.validity),
+    intellectualProperty: choicesFor(FIELDS.contracts.intellectualProperty),
+    exclusivity: choicesFor(FIELDS.contracts.exclusivity),
+    governingLaw: choicesFor(FIELDS.contracts.governingLaw),
+    consultantVisibility: choicesFor(FIELDS.contracts.consultantVisibility),
+    stage: choicesFor(FIELDS.contracts.stage),
+    contractStatus: choicesFor(FIELDS.contracts.contractStatus),
+    company: choicesFor(FIELDS.contracts.company),
+  };
+}
+
+function emptyChoices(): ContractFieldChoices {
+  return {
+    contractType: [],
+    contactType: [],
+    signatureDate: [],
+    effectiveDate: [],
+    duration: [],
+    expiryDate: [],
+    noticePeriod: [],
+    nonSolicitation: [],
+    validity: [],
+    intellectualProperty: [],
+    exclusivity: [],
+    governingLaw: [],
+    consultantVisibility: [],
+    stage: [],
+    contractStatus: [],
+    company: [],
+  };
 }
 
 // Attach a PDF to the Contracts row via Airtable's content endpoint

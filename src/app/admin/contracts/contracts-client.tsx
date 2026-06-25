@@ -3,10 +3,41 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { ContractRecord } from "@/lib/airtable";
+import type { ContractFieldChoices, ContractRecord } from "@/lib/airtable";
+
+// All editable fields the PATCH route accepts. Mirrors
+// ContractEditableFields in lib/airtable.ts.
+type ContractPatch = {
+  projectCode?: string;
+  memberRecordIds?: string[];
+  company?: string;
+  contractType?: string;
+  contactType?: string;
+  signatory?: string;
+  contactDetails?: string;
+  signatureDate?: string;
+  effectiveDate?: string;
+  duration?: string;
+  expiryDate?: string;
+  noticePeriod?: string;
+  nonSolicitation?: string;
+  validity?: string;
+  confidentiality?: string;
+  intellectualProperty?: string;
+  exclusivity?: string;
+  governingLaw?: string;
+  consultantVisibility?: string;
+  clauses?: string;
+  stage?: string;
+  contractStatus?: string;
+};
+
+type MemberOpt = { id: string; code: string; name: string };
 
 type Props = {
   contracts: ContractRecord[];
+  members: MemberOpt[];
+  fieldChoices: ContractFieldChoices;
 };
 
 type StageFilter = "All" | string;
@@ -34,7 +65,11 @@ const DEFAULT_FILTERS: Filters = {
   validity: "Valid",
 };
 
-export function ContractsAdminClient({ contracts: initialContracts }: Props) {
+export function ContractsAdminClient({
+  contracts: initialContracts,
+  members,
+  fieldChoices,
+}: Props) {
   const router = useRouter();
   // Local mirror of the server-side list so optimistic edits / uploads
   // reflect immediately while the server round-trip lands.
@@ -50,16 +85,30 @@ export function ContractsAdminClient({ contracts: initialContracts }: Props) {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // PATCH the editable lifecycle fields. Optimistic: we patch the local
-  // mirror first, surface a toast, and roll back on failure.
-  async function patchContract(
-    id: string,
-    patch: { contractType?: string; stage?: string; contractStatus?: string },
-  ) {
+  const membersById = useMemo(
+    () => new Map(members.map((m) => [m.id, m])),
+    [members],
+  );
+
+  // PATCH an editable field. Optimistic: we patch the local mirror
+  // first, surface a toast, and roll back on failure. We also rederive
+  // the memberCodes side-array when memberRecordIds changes so the
+  // table cell reflects the new linkage without waiting for the server
+  // refresh.
+  async function patchContract(id: string, patch: ContractPatch) {
     const previous = contracts.find((c) => c.id === id);
     if (!previous) return;
     setContracts((rs) =>
-      rs.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+      rs.map((r) => {
+        if (r.id !== id) return r;
+        const next = { ...r, ...patch };
+        if (patch.memberRecordIds !== undefined) {
+          next.memberCodes = patch.memberRecordIds.map(
+            (mid) => membersById.get(mid)?.code ?? mid,
+          );
+        }
+        return next;
+      }),
     );
     setSavingIds((s) => new Set(s).add(id));
     try {
@@ -396,9 +445,8 @@ export function ContractsAdminClient({ contracts: initialContracts }: Props) {
         <ContractDetailModal
           contract={openContract}
           saving={savingIds.has(openContract.id)}
-          typeOptions={typeOptions}
-          stageOptions={stageOptions}
-          statusOptions={statusOptions}
+          members={members}
+          fieldChoices={fieldChoices}
           onClose={() => setOpenId(null)}
           onPatch={(patch) => patchContract(openContract.id, patch)}
           onUpload={(file) => uploadPdf(openContract.id, file)}
@@ -558,24 +606,18 @@ function Dash() {
 function ContractDetailModal({
   contract: c,
   saving,
-  typeOptions,
-  stageOptions,
-  statusOptions,
+  members,
+  fieldChoices,
   onClose,
   onPatch,
   onUpload,
 }: {
   contract: ContractRecord;
   saving: boolean;
-  typeOptions: string[];
-  stageOptions: string[];
-  statusOptions: string[];
+  members: MemberOpt[];
+  fieldChoices: ContractFieldChoices;
   onClose: () => void;
-  onPatch: (patch: {
-    contractType?: string;
-    stage?: string;
-    contractStatus?: string;
-  }) => Promise<void>;
+  onPatch: (patch: ContractPatch) => Promise<void>;
   onUpload: (file: File) => Promise<boolean>;
 }) {
   useEffect(() => {
@@ -615,7 +657,8 @@ function ContractDetailModal({
         className="relative w-full max-w-3xl rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
+        {/* Header — pills reflect the current values; live-updates as
+            inline edits commit. */}
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
@@ -645,6 +688,10 @@ function ContractDetailModal({
               ) : null}
               {c.contactType ? <span>· {c.contactType}</span> : null}
             </div>
+            <p className="mt-1.5 text-[11px] text-slate-400">
+              Click any field below to edit. Type a custom value or pick an
+              existing option from the dropdown.
+            </p>
           </div>
           <button
             type="button"
@@ -663,9 +710,7 @@ function ContractDetailModal({
           </button>
         </div>
 
-        {/* PDF actions: download if attached, otherwise upload. Always
-            visible — uploading triggers a Graph email to HTP42's inbox
-            so finance can keep a paper trail outside Airtable. */}
+        {/* PDF actions */}
         <div className="border-b border-slate-200 px-5 py-3">
           {c.pdf?.url ? (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-slate-50 px-3 py-2">
@@ -725,167 +770,409 @@ function ContractDetailModal({
           />
         </div>
 
-        {/* Inline editors for Type / Stage / Status — the three fields
-            admins legitimately need to touch after a contract is filed.
-            Free-form input via a datalist so admins can type a new value
-            (auto-created in Airtable via typecast on the API side) or
-            pick from values already in the dataset. */}
-        <div className="grid gap-3 border-b border-slate-200 px-5 py-3 sm:grid-cols-3">
-          <EditableField
-            label="Contract type"
-            value={c.contractType}
-            options={typeOptions}
-            disabled={saving}
-            onCommit={(v) => onPatch({ contractType: v })}
-          />
-          <EditableField
-            label="Stage"
-            value={c.stage}
-            options={stageOptions}
-            disabled={saving}
-            onCommit={(v) => onPatch({ stage: v })}
-          />
-          <EditableField
-            label="Contract status"
-            value={c.contractStatus}
-            options={statusOptions}
-            disabled={saving}
-            onCommit={(v) => onPatch({ contractStatus: v })}
-          />
-        </div>
-
-        {/* Body — KV grid grouped into Lifecycle, Signing, Terms, Clauses. */}
+        {/* Editable body — every field is editable. Comboboxes (singleSelect)
+            seed their datalist with the full set of Airtable choices, not
+            just values found in the loaded contracts, AND accept any custom
+            value (Airtable creates a new choice on save via typecast=true).
+            Free-form text and multi-line fields render as <input>/<textarea>.
+            Member link uses a chip-picker against the network members
+            already loaded server-side. */}
         <div className="space-y-5 px-5 py-4 text-xs">
-          <Section title="Lifecycle">
-            <Kv label="Signature date" value={c.signatureDate} />
-            <Kv label="Effective date" value={c.effectiveDate} />
-            <Kv label="Expiry date" value={c.expiryDate} />
-            <Kv label="Duration" value={c.duration} />
-            <Kv label="Notice period" value={c.noticePeriod} />
-          </Section>
+          <FieldGroup title="Lifecycle status">
+            <EditableField
+              label="Contract type"
+              value={c.contractType}
+              options={fieldChoices.contractType}
+              disabled={saving}
+              onCommit={(v) => onPatch({ contractType: v })}
+            />
+            <EditableField
+              label="Stage"
+              value={c.stage}
+              options={fieldChoices.stage}
+              disabled={saving}
+              onCommit={(v) => onPatch({ stage: v })}
+            />
+            <EditableField
+              label="Contract status"
+              value={c.contractStatus}
+              options={fieldChoices.contractStatus}
+              disabled={saving}
+              onCommit={(v) => onPatch({ contractStatus: v })}
+            />
+            <EditableField
+              label="Validity"
+              value={c.validity}
+              options={fieldChoices.validity}
+              disabled={saving}
+              onCommit={(v) => onPatch({ validity: v })}
+            />
+          </FieldGroup>
 
-          <Section title="Signing">
-            <Kv label="Signatory" value={c.signatory} sensitive />
-            <Kv label="Contact details" value={c.contactDetails} sensitive multiline />
-          </Section>
+          <FieldGroup title="Identity">
+            <EditableField
+              label="Project code"
+              value={c.projectCode}
+              disabled={saving}
+              onCommit={(v) => onPatch({ projectCode: v })}
+            />
+            <MemberPicker
+              label="Member link"
+              members={members}
+              selectedIds={c.memberRecordIds}
+              disabled={saving}
+              onCommit={(ids) => onPatch({ memberRecordIds: ids })}
+            />
+            <EditableField
+              label="Company / consultant"
+              value={c.company}
+              options={fieldChoices.company}
+              sensitive
+              disabled={saving}
+              onCommit={(v) => onPatch({ company: v })}
+            />
+            <EditableField
+              label="Contact type"
+              value={c.contactType}
+              options={fieldChoices.contactType}
+              disabled={saving}
+              onCommit={(v) => onPatch({ contactType: v })}
+            />
+          </FieldGroup>
 
-          <Section title="Terms">
-            <Kv label="Confidentiality" value={c.confidentiality} multiline />
-            <Kv label="Non-solicitation" value={c.nonSolicitation} />
-            <Kv label="Intellectual property" value={c.intellectualProperty} />
-            <Kv label="Exclusivity" value={c.exclusivity} />
-            <Kv label="Governing law" value={c.governingLaw} />
-            <Kv label="Consultant visibility" value={c.consultantVisibility} />
-          </Section>
+          <FieldGroup title="Dates">
+            <EditableField
+              label="Signature date"
+              value={c.signatureDate}
+              options={fieldChoices.signatureDate}
+              disabled={saving}
+              onCommit={(v) => onPatch({ signatureDate: v })}
+            />
+            <EditableField
+              label="Effective date"
+              value={c.effectiveDate}
+              options={fieldChoices.effectiveDate}
+              disabled={saving}
+              onCommit={(v) => onPatch({ effectiveDate: v })}
+            />
+            <EditableField
+              label="Expiry date"
+              value={c.expiryDate}
+              options={fieldChoices.expiryDate}
+              disabled={saving}
+              onCommit={(v) => onPatch({ expiryDate: v })}
+            />
+            <EditableField
+              label="Duration"
+              value={c.duration}
+              options={fieldChoices.duration}
+              disabled={saving}
+              onCommit={(v) => onPatch({ duration: v })}
+            />
+            <EditableField
+              label="Notice period"
+              value={c.noticePeriod}
+              options={fieldChoices.noticePeriod}
+              disabled={saving}
+              onCommit={(v) => onPatch({ noticePeriod: v })}
+            />
+          </FieldGroup>
 
-          {c.clauses ? (
-            <Section title="Specific clauses / comments">
-              <div className="col-span-full whitespace-pre-line text-slate-700 demo-blur">
-                {c.clauses}
-              </div>
-            </Section>
-          ) : null}
+          <FieldGroup title="Signing">
+            <EditableField
+              label="Signatory"
+              value={c.signatory}
+              sensitive
+              disabled={saving}
+              onCommit={(v) => onPatch({ signatory: v })}
+            />
+            <EditableField
+              label="Contact details"
+              value={c.contactDetails}
+              multiline
+              sensitive
+              disabled={saving}
+              onCommit={(v) => onPatch({ contactDetails: v })}
+              span={2}
+            />
+          </FieldGroup>
+
+          <FieldGroup title="Terms">
+            <EditableField
+              label="Confidentiality"
+              value={c.confidentiality}
+              multiline
+              disabled={saving}
+              onCommit={(v) => onPatch({ confidentiality: v })}
+              span={2}
+            />
+            <EditableField
+              label="Non-solicitation"
+              value={c.nonSolicitation}
+              options={fieldChoices.nonSolicitation}
+              disabled={saving}
+              onCommit={(v) => onPatch({ nonSolicitation: v })}
+            />
+            <EditableField
+              label="Intellectual property"
+              value={c.intellectualProperty}
+              options={fieldChoices.intellectualProperty}
+              disabled={saving}
+              onCommit={(v) => onPatch({ intellectualProperty: v })}
+            />
+            <EditableField
+              label="Exclusivity"
+              value={c.exclusivity}
+              options={fieldChoices.exclusivity}
+              disabled={saving}
+              onCommit={(v) => onPatch({ exclusivity: v })}
+            />
+            <EditableField
+              label="Governing law"
+              value={c.governingLaw}
+              options={fieldChoices.governingLaw}
+              disabled={saving}
+              onCommit={(v) => onPatch({ governingLaw: v })}
+            />
+            <EditableField
+              label="Consultant visibility"
+              value={c.consultantVisibility}
+              options={fieldChoices.consultantVisibility}
+              disabled={saving}
+              onCommit={(v) => onPatch({ consultantVisibility: v })}
+              span={2}
+            />
+          </FieldGroup>
+
+          <FieldGroup title="Specific clauses / comments">
+            <EditableField
+              label="Notes"
+              value={c.clauses}
+              multiline
+              sensitive
+              disabled={saving}
+              onCommit={(v) => onPatch({ clauses: v })}
+              span={2}
+              labelHidden
+            />
+          </FieldGroup>
         </div>
       </div>
     </div>
   );
 }
 
-// Editable lifecycle field. Renders as a labelled input backed by a
-// datalist of values already in the dataset so admins get autocomplete
-// without being locked into a frozen enum — if they type a brand-new
-// value the API typecasts it into a fresh Airtable choice. We commit on
-// blur or Enter; Escape reverts to the saved value.
+function FieldGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        {title}
+      </h3>
+      <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">{children}</div>
+    </section>
+  );
+}
+
+// EditableField is the workhorse — every editable contract field uses
+// it. It supports:
+//   - Single-line text (default) with an optional <datalist> seeded by
+//     the full Airtable singleSelect choices, so admins get autocomplete
+//     on every existing option but can also type a brand-new value
+//     (the API typecasts so Airtable creates the choice on save).
+//   - Multi-line text via `multiline` → <textarea>.
+//   - Demo-mode blur via `sensitive` (counterparty, signatory, clauses).
+//   - Two-column span via `span={2}` so long-form fields take a full row.
+// Commit on blur or Enter; Escape reverts to the saved value.
 function EditableField({
   label,
   value,
   options,
   disabled,
   onCommit,
+  multiline,
+  sensitive,
+  span,
+  labelHidden,
 }: {
   label: string;
   value: string;
-  options: string[];
+  options?: string[];
   disabled?: boolean;
   onCommit: (value: string) => Promise<void> | void;
+  multiline?: boolean;
+  sensitive?: boolean;
+  span?: 1 | 2;
+  labelHidden?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   const listId = `contract-${label.replace(/\s+/g, "-").toLowerCase()}-options`;
 
   function commit() {
-    const next = draft.trim();
-    if (next === value.trim()) return;
-    void onCommit(next);
+    if (draft === value) return;
+    void onCommit(draft);
   }
 
+  const colCls = span === 2 ? "sm:col-span-2" : "";
+  const inputCls = `mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 disabled:opacity-60 ${sensitive ? "demo-blur" : ""}`;
+
   return (
-    <label className="block text-xs">
-      <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-500">
+    <label className={`block text-xs ${colCls}`}>
+      <span
+        className={`block text-[11px] font-medium uppercase tracking-wide text-slate-500 ${labelHidden ? "sr-only" : ""}`}
+      >
         {label}
       </span>
-      <input
-        type="text"
-        list={listId}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            commit();
-            (e.target as HTMLInputElement).blur();
-          } else if (e.key === "Escape") {
-            setDraft(value);
-            (e.target as HTMLInputElement).blur();
-          }
-        }}
-        disabled={disabled}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 disabled:opacity-60"
-        placeholder="—"
-      />
-      <datalist id={listId}>
-        {options.map((o) => (
-          <option key={o} value={o} />
-        ))}
-      </datalist>
+      {multiline ? (
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setDraft(value);
+              (e.target as HTMLTextAreaElement).blur();
+            }
+          }}
+          disabled={disabled}
+          rows={3}
+          className={`${inputCls} resize-y whitespace-pre-line`}
+          placeholder="—"
+        />
+      ) : (
+        <>
+          <input
+            type="text"
+            list={options && options.length > 0 ? listId : undefined}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commit();
+                (e.target as HTMLInputElement).blur();
+              } else if (e.key === "Escape") {
+                setDraft(value);
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            disabled={disabled}
+            className={inputCls}
+            placeholder="—"
+          />
+          {options && options.length > 0 ? (
+            <datalist id={listId}>
+              {options.map((o) => (
+                <option key={o} value={o} />
+              ))}
+            </datalist>
+          ) : null}
+        </>
+      )}
     </label>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        {title}
-      </h3>
-      <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">{children}</dl>
-    </section>
-  );
-}
-
-function Kv({
+// MemberPicker: chip-list of currently-linked network members plus a
+// dropdown to add another. Commits the full updated id array via the
+// PATCH route (Airtable's link field expects the resolved list). Limited
+// to ten members to match the API schema's max(10) guard.
+function MemberPicker({
   label,
-  value,
-  sensitive,
-  multiline,
+  members,
+  selectedIds,
+  disabled,
+  onCommit,
 }: {
   label: string;
-  value: string;
-  sensitive?: boolean;
-  multiline?: boolean;
+  members: MemberOpt[];
+  selectedIds: string[];
+  disabled?: boolean;
+  onCommit: (ids: string[]) => Promise<void> | void;
 }) {
+  const membersById = useMemo(
+    () => new Map(members.map((m) => [m.id, m])),
+    [members],
+  );
+  const remaining = useMemo(
+    () =>
+      members
+        .filter((m) => !selectedIds.includes(m.id))
+        .sort((a, b) => a.code.localeCompare(b.code)),
+    [members, selectedIds],
+  );
+
+  function remove(id: string) {
+    void onCommit(selectedIds.filter((s) => s !== id));
+  }
+  function add(id: string) {
+    if (!id) return;
+    if (selectedIds.includes(id)) return;
+    void onCommit([...selectedIds, id]);
+  }
+
   return (
-    <div className="grid grid-cols-[10rem_minmax(0,1fr)] gap-2 sm:contents">
-      <dt className="text-[11px] uppercase tracking-wide text-slate-500 sm:pt-0.5">
+    <label className="block text-xs sm:col-span-2">
+      <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-500">
         {label}
-      </dt>
-      <dd
-        className={`text-slate-800 ${sensitive ? "demo-blur" : ""} ${multiline ? "whitespace-pre-line" : ""}`}
-      >
-        {value || <Dash />}
-      </dd>
-    </div>
+      </span>
+      <div className="mt-1 flex min-h-[2.25rem] flex-wrap items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 py-1">
+        {selectedIds.length === 0 ? (
+          <span className="text-[11px] text-slate-400">No linked members.</span>
+        ) : (
+          selectedIds.map((id) => {
+            const m = membersById.get(id);
+            const code = m?.code ?? id;
+            const name = m?.name ?? "";
+            return (
+              <span
+                key={id}
+                className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-800"
+                title={name}
+              >
+                {code}
+                {!disabled ? (
+                  <button
+                    type="button"
+                    onClick={() => remove(id)}
+                    aria-label={`Remove ${code}`}
+                    className="text-brand-600 hover:text-brand-900"
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </span>
+            );
+          })
+        )}
+        <select
+          value=""
+          disabled={disabled || selectedIds.length >= 10 || remaining.length === 0}
+          onChange={(e) => {
+            const next = e.target.value;
+            e.target.value = "";
+            add(next);
+          }}
+          className="ml-auto rounded-md border border-transparent bg-transparent text-[11px] text-slate-500 hover:text-slate-800 focus:border-slate-300 focus:outline-none disabled:opacity-50"
+        >
+          <option value="">
+            {selectedIds.length >= 10 ? "Max reached" : "+ Add member…"}
+          </option>
+          {remaining.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.code} · {m.name}
+            </option>
+          ))}
+        </select>
+      </div>
+    </label>
   );
 }
 
