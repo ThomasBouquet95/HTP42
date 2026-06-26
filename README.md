@@ -37,7 +37,7 @@ Copy `.env.example` to `.env.local` and fill in:
 
 ```
 AIRTABLE_PAT=...
-AIRTABLE_BASE_ID=appmT8ncZ3XKWHDuy
+AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
 AUTH_SECRET=<run: openssl rand -base64 48>
 APP_URL=http://localhost:3000
 
@@ -76,7 +76,7 @@ npm run build
 
 ## Airtable schema expectations
 
-The code targets these exact field names in base `appmT8ncZ3XKWHDuy`:
+The code targets these exact field names in the configured base:
 
 - **Network Members:** `Email`, `Member Code`, `Full Name`, `Status` (single-select: `Active` / `Partially Active` / `Inactive`)
 - **Project Staffing:** `Staffing Code` (formula), `Project Code`, `Member Code` (linked), `Start Date`, `End Date`, `Status`
