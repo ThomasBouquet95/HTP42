@@ -270,6 +270,37 @@ export function ContractsAdminClient({
 
   const openContract = openId ? contracts.find((c) => c.id === openId) ?? null : null;
 
+  const [newOpen, setNewOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  async function createNewContract(prefill: Partial<ContractPatch>): Promise<string | null> {
+    setCreating(true);
+    try {
+      const res = await fetch("/api/admin/contracts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(prefill ?? {}),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        contract?: ContractRecord;
+        error?: string;
+      };
+      if (!res.ok || !data.contract)
+        throw new Error(data.error ?? `Create failed (HTTP ${res.status})`);
+      setContracts((rs) => [data.contract as ContractRecord, ...rs]);
+      setNewOpen(false);
+      setOpenId(data.contract.id);
+      setToast({ kind: "ok", msg: "New contract created — review and save." });
+      router.refresh();
+      return data.contract.id;
+    } catch (e) {
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Create failed" });
+      return null;
+    } finally {
+      setCreating(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <SideTabs
@@ -357,6 +388,13 @@ export function ContractsAdminClient({
               className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
             >
               Reset
+            </button>
+            <button
+              type="button"
+              onClick={() => setNewOpen(true)}
+              className="rounded-md bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700"
+            >
+              + New contract
             </button>
           </div>
         </div>
@@ -464,6 +502,15 @@ export function ContractsAdminClient({
         />
       ) : null}
 
+      {newOpen ? (
+        <NewContractDialog
+          busy={creating}
+          onClose={() => setNewOpen(false)}
+          onCreate={createNewContract}
+          onUploadPdf={uploadPdf}
+        />
+      ) : null}
+
       {toast ? (
         <div
           role="status"
@@ -536,15 +583,6 @@ function validityBucket(v: string): ValidityBucket {
 // waiting for a save round-trip.
 function computeValidityLocal(stage: string, expiryDate: string): ComputedValidity {
   return computeValidity(stage, expiryDate);
-}
-
-function validityExplanation(stage: string, expiryDate: string): string {
-  const v = computeValidityLocal(stage, expiryDate);
-  if (v === "N/A") return "Status isn't Signed yet.";
-  if (v === "Expired")
-    return `Signed but the expiry date ${expiryDate ? `(${expiryDate}) ` : ""}has passed.`;
-  if (expiryDate) return `Signed; in force until ${expiryDate}.`;
-  return "Signed; no expiry on file.";
 }
 
 function isCriticalType(contractType: string): boolean {
@@ -913,6 +951,214 @@ function sameArray(a: string[], b: string[]): boolean {
   return true;
 }
 
+// "+ New contract" wizard. Two paths:
+//   1) Upload a signed PDF → POST /api/admin/contracts/extract runs Claude
+//      with the PDF as a document attachment, returns a JSON of guessed
+//      fields. We create the contract with those fields, attach the PDF,
+//      and open the edit modal so the admin reviews + corrects before
+//      anything is "finalised".
+//   2) "Start blank" → POST /api/admin/contracts with {} → empty row →
+//      edit modal opens for manual entry.
+// The model is told to leave anything it can't read confidently empty,
+// so admins get a draft to vet rather than confident-but-wrong content.
+function NewContractDialog({
+  busy,
+  onClose,
+  onCreate,
+  onUploadPdf,
+}: {
+  busy: boolean;
+  onClose: () => void;
+  onCreate: (prefill: Partial<ContractPatch>) => Promise<string | null>;
+  onUploadPdf: (id: string, file: File) => Promise<boolean>;
+}) {
+  const [mode, setMode] = useState<"choose" | "extracting" | "creating">("choose");
+  const [error, setError] = useState<string>("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  async function handleBlank() {
+    setError("");
+    setMode("creating");
+    await onCreate({});
+  }
+
+  async function handleFile(file: File) {
+    setError("");
+    setMode("extracting");
+    try {
+      const form = new FormData();
+      form.append("pdf", file);
+      const res = await fetch("/api/admin/contracts/extract", {
+        method: "POST",
+        body: form,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        fields?: Record<string, unknown>;
+        error?: string;
+      };
+      if (!res.ok || !data.fields) {
+        throw new Error(data.error ?? `Extraction failed (HTTP ${res.status})`);
+      }
+      const prefill = sanitizePrefill(data.fields);
+      setMode("creating");
+      const newId = await onCreate(prefill);
+      // Attach the PDF the admin uploaded so the row + the source document
+      // travel together. Best-effort: a failed attach surfaces as a toast
+      // but doesn't unwind the row creation.
+      if (newId) await onUploadPdf(newId, file);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Extraction failed");
+      setMode("choose");
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 px-3 py-6"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl ring-1 ring-slate-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">New contract</h2>
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              Drop a signed PDF and Claude will pre-fill the fields, or start blank.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-full p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+            disabled={busy || mode !== "choose"}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M6 6l12 12M18 6L6 18"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <div className="mt-4">
+          <label
+            htmlFor="new-contract-pdf"
+            className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors ${
+              mode === "extracting"
+                ? "border-brand-300 bg-brand-50"
+                : "border-slate-300 hover:border-brand-400 hover:bg-brand-50"
+            } ${busy || mode !== "choose" ? "pointer-events-none opacity-60" : "cursor-pointer"}`}
+          >
+            <svg
+              width="28"
+              height="28"
+              viewBox="0 0 24 24"
+              fill="none"
+              className="text-brand-600"
+            >
+              <path
+                d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <div className="text-xs font-medium text-slate-800">
+              {mode === "extracting"
+                ? "Reading the PDF with Claude…"
+                : mode === "creating"
+                ? "Creating contract…"
+                : "Drop a PDF or click to pick a file"}
+            </div>
+            <div className="text-[10px] text-slate-500">PDF only · max 5 MB</div>
+          </label>
+          <input
+            ref={inputRef}
+            id="new-contract-pdf"
+            type="file"
+            accept="application/pdf,.pdf"
+            className="hidden"
+            disabled={busy || mode !== "choose"}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleFile(f);
+              e.currentTarget.value = "";
+            }}
+          />
+        </div>
+
+        {error ? (
+          <p className="mt-3 rounded-md bg-red-50 px-2 py-1.5 text-[11px] text-red-700 ring-1 ring-red-200">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
+          <button
+            type="button"
+            onClick={handleBlank}
+            disabled={busy || mode !== "choose"}
+            className="text-[11px] text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline disabled:opacity-50"
+          >
+            Or start blank
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy || mode !== "choose"}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Whitelist of editable contract patch keys we accept from the
+// extraction response. Anything Claude returns outside this set is
+// dropped silently so the PATCH validator on the server doesn't reject
+// the payload, and so a hallucinated field can't slip in.
+function sanitizePrefill(raw: Record<string, unknown>): Partial<ContractPatch> {
+  const allowed: Array<keyof ContractPatch> = [
+    "side",
+    "contractType",
+    "otherDescription",
+    "signatory1Name",
+    "signatory1Role",
+    "signatory1Company",
+    "signatory1Date",
+    "signatory2Name",
+    "signatory2Role",
+    "signatory2Company",
+    "signatory2Date",
+    "signatureDate",
+    "expiryDate",
+    "stage",
+    "keyTerms",
+    "comment",
+  ];
+  const out: Partial<ContractPatch> = {};
+  for (const key of allowed) {
+    const v = raw[key];
+    if (typeof v === "string" && v.trim()) {
+      (out as Record<string, string>)[key] = v.trim();
+    }
+  }
+  return out;
+}
+
 function ContractDetailModal({
   contract: c,
   saving,
@@ -1169,7 +1415,7 @@ function ContractDetailModal({
         <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4 text-xs">
           {/* Identity */}
           <section className="space-y-3">
-            <SectionHeader title="Identity" hint="Which side of the contract this is and what it covers." />
+            <SectionHeader title="Identity" />
             <div className="space-y-3">
               <SegmentedField
                 label="Side"
@@ -1234,7 +1480,6 @@ function ContractDetailModal({
               {sideIsPartner ? (
                 <TextField
                   label="Partner (company name)"
-                  hint="Set the counterparty company below in Signatory 1 → Company."
                   value={draft.signatory1Company}
                   onChange={(v) => set("signatory1Company", v)}
                   placeholder="Acme Health"
@@ -1247,13 +1492,6 @@ function ContractDetailModal({
               {typeIsSow ? (
                 <ProjectPicker
                   label="Project"
-                  hint={
-                    sideIsClient
-                      ? "Which project this SOW covers."
-                      : sideIsNetwork
-                      ? "Which project this SOW staffs the member onto."
-                      : "Which project this SOW covers."
-                  }
                   projects={projects}
                   selectedIds={draft.projectRecordIds}
                   onChange={(ids) => set("projectRecordIds", ids)}
@@ -1265,7 +1503,6 @@ function ContractDetailModal({
               {!sideIsClient && !sideIsNetwork && !sideIsPartner ? (
                 <TextField
                   label="Counterparty (company name)"
-                  hint="Set on Signatory 1 → Company below."
                   value={draft.signatory1Company}
                   onChange={(v) => set("signatory1Company", v)}
                   placeholder="Acme Health"
@@ -1275,33 +1512,38 @@ function ContractDetailModal({
             </div>
           </section>
 
-          {/* Lifecycle: Status first (the actionable thing), then dates,
-              then computed validity. Contract Status is gone — we
-              collapsed it into Status. */}
+          {/* Lifecycle. Validity is computed read-only from Status +
+              Expiry. */}
           <section className="space-y-3 border-t border-slate-100 pt-4">
-            <SectionHeader
-              title="Lifecycle"
-              hint="Status drives validity. Signed + (no expiry or future expiry) → Valid; signed + past expiry → Expired; everything else → N/A."
-            />
+            <SectionHeader title="Lifecycle" />
             <div className="grid gap-3 sm:grid-cols-3">
-              <SegmentedField
-                label="Status"
-                value={
-                  CONTRACT_STATUSES.includes(draft.stage as ContractStatus)
-                    ? draft.stage
-                    : draft.stage
-                    ? ""
-                    : ""
-                }
-                hint={
-                  draft.stage &&
-                  !CONTRACT_STATUSES.includes(draft.stage as ContractStatus)
-                    ? `Legacy value: "${draft.stage}". Pick a canonical status to keep the table tidy.`
-                    : undefined
-                }
-                options={CONTRACT_STATUSES.map((s) => ({ value: s, label: s }))}
-                onChange={(v) => set("stage", v)}
-              />
+              <label className="block text-xs">
+                <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                  Status
+                </span>
+                <select
+                  value={
+                    CONTRACT_STATUSES.includes(draft.stage as ContractStatus)
+                      ? draft.stage
+                      : ""
+                  }
+                  onChange={(e) => set("stage", e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                >
+                  <option value="">—</option>
+                  {CONTRACT_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+                {draft.stage &&
+                !CONTRACT_STATUSES.includes(draft.stage as ContractStatus) ? (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Legacy value: {`"${draft.stage}"`}. Pick one of the canonical statuses.
+                  </p>
+                ) : null}
+              </label>
               <DateField
                 label="Signature date"
                 value={draft.signatureDate}
@@ -1323,9 +1565,6 @@ function ContractDetailModal({
                   <ValidityPill
                     validity={computeValidityLocal(draft.stage, draft.expiryDate)}
                   />
-                  <span>
-                    {validityExplanation(draft.stage, draft.expiryDate)}
-                  </span>
                 </div>
               </div>
             </div>

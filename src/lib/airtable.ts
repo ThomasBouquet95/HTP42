@@ -3251,6 +3251,54 @@ export async function updateContractFields(
   );
 }
 
+// Create a new Contracts row with the supplied fields and return its
+// record id (plus the freshly-read ContractRecord so the client can
+// open the edit modal without a second round-trip). Mirrors
+// updateContractFields' field handling — every key is optional, so the
+// caller can either create a fully blank shell or pre-populate the
+// fields extracted from an uploaded PDF.
+export async function createContract(
+  fields: ContractEditableFields,
+): Promise<ContractRecord> {
+  const updates: Record<string, unknown> = {};
+  const setText = (key: keyof typeof FIELDS.contracts, value: string | undefined) => {
+    if (value === undefined || value === "") return;
+    updates[FIELDS.contracts[key]] = value;
+  };
+  setText("side", fields.side);
+  setText("contractType", fields.contractType);
+  setText("otherDescription", fields.otherDescription);
+  setText("projectCode", fields.projectCode);
+  setText("signatory1Name", fields.signatory1Name);
+  setText("signatory1Role", fields.signatory1Role);
+  setText("signatory1Company", fields.signatory1Company);
+  setText("signatory1Date", fields.signatory1Date);
+  setText("signatory2Name", fields.signatory2Name);
+  setText("signatory2Role", fields.signatory2Role);
+  setText("signatory2Company", fields.signatory2Company);
+  setText("signatory2Date", fields.signatory2Date);
+  setText("signatureDate", fields.signatureDate);
+  setText("expiryDate", fields.expiryDate);
+  setText("stage", fields.stage);
+  setText("keyTerms", fields.keyTerms);
+  setText("comment", fields.comment);
+  if (fields.memberRecordIds && fields.memberRecordIds.length > 0) {
+    updates[FIELDS.contracts.memberCode] = fields.memberRecordIds;
+  }
+  if (fields.clientRecordIds && fields.clientRecordIds.length > 0) {
+    updates[FIELDS.contracts.client] = fields.clientRecordIds;
+  }
+  if (fields.projectRecordIds && fields.projectRecordIds.length > 0) {
+    updates[FIELDS.contracts.project] = fields.projectRecordIds;
+  }
+  const [created] = await base(TABLES.contracts).create(
+    [{ fields: updates as FieldSet }],
+    { typecast: true },
+  );
+  const maps = await buildLookupMaps();
+  return contractFromRecord(created, maps);
+}
+
 // Attach a PDF to the Contracts row via Airtable's content endpoint
 // (same path as attachInvoicePdf). Airtable replaces the existing
 // attachment if any, which matches the admin's mental model of "the
