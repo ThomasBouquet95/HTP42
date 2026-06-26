@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
-import { getContractById, updateContractFields } from "@/lib/airtable";
+import {
+  deleteContract,
+  getContractById,
+  updateContractFields,
+} from "@/lib/airtable";
 
 // Partial PATCH for admin-editable contract fields. Every field is
 // optional. Only the keys the client sends get written, so editing one
@@ -69,4 +73,29 @@ export async function PATCH(
   }
   const after = (await getContractById(id)) ?? existing;
   return NextResponse.json({ ok: true, contract: after });
+}
+
+// Hard-delete a contract row. Admin-only; no soft-delete because the
+// portal already preserves the PDF on the row itself, and Airtable's
+// own revision history is the safety net for accidental deletes.
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const session = await requireAdminSession();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const { id } = await params;
+  const existing = await getContractById(id);
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  try {
+    await deleteContract(id);
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Delete failed" },
+      { status: 500 },
+    );
+  }
+  return NextResponse.json({ ok: true });
 }

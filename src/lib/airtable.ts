@@ -3299,6 +3299,11 @@ export async function createContract(
   return contractFromRecord(created, maps);
 }
 
+// Permanently delete a contract row.
+export async function deleteContract(recordId: string): Promise<void> {
+  await base(TABLES.contracts).destroy([recordId]);
+}
+
 // Attach a PDF to the Contracts row via Airtable's content endpoint
 // (same path as attachInvoicePdf). Airtable replaces the existing
 // attachment if any, which matches the admin's mental model of "the

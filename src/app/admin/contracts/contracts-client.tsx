@@ -188,6 +188,37 @@ export function ContractsAdminClient({
     }
   }
 
+  // Hard-delete a contract row. Confirms client-side because Airtable's
+  // own revision history is the only undo. Optimistic so the row
+  // disappears immediately; restored on failure.
+  async function deleteContractById(id: string): Promise<void> {
+    const previous = contracts.find((c) => c.id === id);
+    if (!previous) return;
+    setContracts((rs) => rs.filter((r) => r.id !== id));
+    setOpenId(null);
+    setSavingIds((s) => new Set(s).add(id));
+    try {
+      const res = await fetch(`/api/admin/contracts/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? `Delete failed (HTTP ${res.status})`);
+      }
+      setToast({ kind: "ok", msg: "Contract deleted" });
+      router.refresh();
+    } catch (e) {
+      setContracts((rs) => [previous, ...rs.filter((r) => r.id !== id)]);
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Delete failed" });
+    } finally {
+      setSavingIds((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
+
   const typeOptions = useMemo(
     () => uniqueSortedValues(contracts.map((c) => c.contractType)),
     [contracts],
@@ -508,6 +539,7 @@ export function ContractsAdminClient({
           onClose={() => setOpenId(null)}
           onSave={(patch) => saveContract(openContract.id, patch)}
           onUpload={(file) => uploadPdf(openContract.id, file)}
+          onDelete={() => deleteContractById(openContract.id)}
         />
       ) : null}
 
@@ -1006,6 +1038,7 @@ function NewContractDialog({
 }) {
   const [mode, setMode] = useState<"choose" | "extracting" | "creating">("choose");
   const [error, setError] = useState<string>("");
+  const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   async function handleBlank() {
@@ -1081,12 +1114,41 @@ function NewContractDialog({
           </button>
         </div>
 
-        <div className="mt-4">
+        <div
+          className="mt-4"
+          onDragEnter={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (mode === "choose" && !busy) setDragging(true);
+          }}
+          onDragOver={(e) => {
+            // Both preventDefault + a non-"none" dropEffect are required
+            // for the drop event to fire — without these the browser
+            // treats the file as a navigation and the page just opens
+            // the PDF in a new tab when released.
+            e.preventDefault();
+            e.stopPropagation();
+            if (mode === "choose" && !busy) e.dataTransfer.dropEffect = "copy";
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setDragging(false);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setDragging(false);
+            if (mode !== "choose" || busy) return;
+            const f = e.dataTransfer.files?.[0];
+            if (f) handleFile(f);
+          }}
+        >
           <label
             htmlFor="new-contract-pdf"
             className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors ${
-              mode === "extracting"
-                ? "border-brand-300 bg-brand-50"
+              mode === "extracting" || dragging
+                ? "border-brand-400 bg-brand-50"
                 : "border-slate-300 hover:border-brand-400 hover:bg-brand-50"
             } ${busy || mode !== "choose" ? "pointer-events-none opacity-60" : "cursor-pointer"}`}
           >
@@ -1110,6 +1172,8 @@ function NewContractDialog({
                 ? "Reading the PDF with Claude…"
                 : mode === "creating"
                 ? "Creating contract…"
+                : dragging
+                ? "Drop to upload"
                 : "Drop a PDF or click to pick a file"}
             </div>
             <div className="text-[10px] text-slate-500">PDF only · max 5 MB</div>
@@ -1130,9 +1194,26 @@ function NewContractDialog({
         </div>
 
         {error ? (
-          <p className="mt-3 rounded-md bg-red-50 px-2 py-1.5 text-[11px] text-red-700 ring-1 ring-red-200">
-            {error}
-          </p>
+          <div className="mt-3 rounded-md bg-red-50 px-2 py-1.5 text-[11px] text-red-700 ring-1 ring-red-200">
+            <p>{error}</p>
+            {/credit balance is too low/i.test(error) ? (
+              <p className="mt-1 text-red-600">
+                Top up the Anthropic API key at{" "}
+                <a
+                  href="https://console.anthropic.com/settings/billing"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:no-underline"
+                >
+                  console.anthropic.com → Plans &amp; Billing
+                </a>
+                .
+              </p>
+            ) : null}
+            <p className="mt-1 text-red-600">
+              You can still hit “Start blank” to create the contract and fill it in manually.
+            </p>
+          </div>
         ) : null}
 
         <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
@@ -1200,6 +1281,7 @@ function ContractDetailModal({
   onClose,
   onSave,
   onUpload,
+  onDelete,
 }: {
   contract: ContractRecord;
   saving: boolean;
@@ -1209,6 +1291,7 @@ function ContractDetailModal({
   onClose: () => void;
   onSave: (patch: ContractPatch) => Promise<void>;
   onUpload: (file: File) => Promise<boolean>;
+  onDelete: () => Promise<void>;
 }) {
   const original = useMemo(() => draftFromContract(c), [c]);
   const [draft, setDraft] = useState<DraftForm>(original);
@@ -1659,14 +1742,32 @@ function ContractDetailModal({
 
         </div>
 
-        {/* Footer: Cancel / Save */}
+        {/* Footer: Delete on the left, Cancel + Save on the right. */}
         <div className="flex items-center justify-between gap-3 rounded-b-2xl border-t border-slate-200 bg-slate-50 px-5 py-3">
-          <div className="text-[11px] text-slate-500">
-            {isDirty
-              ? `${Object.keys(patchPreview).length} unsaved change${
-                  Object.keys(patchPreview).length === 1 ? "" : "s"
-                }`
-              : "No changes yet."}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                if (
+                  window.confirm(
+                    "Delete this contract? This action can't be undone.",
+                  )
+                ) {
+                  await onDelete();
+                }
+              }}
+              disabled={saving}
+              className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              Delete
+            </button>
+            <span className="text-[11px] text-slate-500">
+              {isDirty
+                ? `${Object.keys(patchPreview).length} unsaved change${
+                    Object.keys(patchPreview).length === 1 ? "" : "s"
+                  }`
+                : "No changes yet."}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <button
