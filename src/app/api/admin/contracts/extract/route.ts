@@ -160,11 +160,16 @@ export async function POST(request: Request) {
       );
     }
     if (e instanceof Anthropic.APIError) {
+      // Surface the real Anthropic error message so admins know whether
+      // it's a "PDF too long" / "doc too many pages" / "format unsupported"
+      // problem vs. a transient server issue. Logged server-side too.
+      console.error("contract extract anthropic error", e.status, e.message);
       return NextResponse.json(
-        { error: `Extraction failed (${e.status}).` },
+        { error: `Extraction failed (${e.status}): ${e.message}` },
         { status: 502 },
       );
     }
+    console.error("contract extract error", e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Extraction failed." },
       { status: 500 },

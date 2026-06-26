@@ -404,16 +404,6 @@ export function ContractsAdminClient({
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full table-fixed text-xs">
-          <colgroup>
-            <col className="w-[12.5%]" />
-            <col className="w-[12.5%]" />
-            <col className="w-[12.5%]" />
-            <col className="w-[12.5%]" />
-            <col className="w-[12.5%]" />
-            <col className="w-[12.5%]" />
-            <col className="w-[12.5%]" />
-            <col className="w-[12.5%]" />
-          </colgroup>
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-2 py-1.5 font-medium text-center">Side</th>
@@ -424,12 +414,13 @@ export function ContractsAdminClient({
               <th className="px-2 py-1.5 font-medium text-center">Status</th>
               <th className="px-2 py-1.5 font-medium text-center">Validity</th>
               <th className="text-center px-2 py-1.5 font-medium">PDF</th>
+              <th className="text-center px-2 py-1.5 font-medium">Edit</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-center text-slate-500 py-10 text-xs">
+                <td colSpan={9} className="text-center text-slate-500 py-10 text-xs">
                   No contracts match these filters.
                 </td>
               </tr>
@@ -443,16 +434,13 @@ export function ContractsAdminClient({
                 return (
                   <tr
                     key={c.id}
-                    onClick={() => setOpenId(c.id)}
-                    className={`border-t cursor-pointer align-middle ${
+                    className={`border-t align-middle ${
                       flagged
-                        ? "border-red-200 bg-red-50 hover:bg-red-100 ring-1 ring-inset ring-red-200"
+                        ? "border-red-200 bg-red-50 ring-1 ring-inset ring-red-200"
                         : "border-slate-100 hover:bg-slate-50"
                     }`}
                     title={
-                      flagged
-                        ? "Expired MSA / SoW. Click to review."
-                        : "Click for the full contract"
+                      flagged ? "Expired MSA / SoW — review the row." : undefined
                     }
                   >
                     <td className="px-2 py-1.5 text-center">
@@ -476,7 +464,7 @@ export function ContractsAdminClient({
                     <td className="px-2 py-1.5 text-center">
                       <ValidityPill validity={c.validity} />
                     </td>
-                    <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-2 py-1.5 text-center">
                       {c.pdf?.url ? (
                         <a
                           href={c.pdf.url}
@@ -488,10 +476,19 @@ export function ContractsAdminClient({
                           Download
                         </a>
                       ) : (
-                        <span className="text-[10px] text-slate-400">
-                          Open to upload
-                        </span>
+                        <span className="text-[10px] text-slate-400">No file</span>
                       )}
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setOpenId(c.id)}
+                        title="Edit contract"
+                        aria-label="Edit contract"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                      >
+                        <EditIcon />
+                      </button>
                     </td>
                   </tr>
                 );
@@ -675,6 +672,25 @@ function ValidityPill({ validity }: { validity: string }) {
     >
       {label}
     </span>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 20h4l10-10-4-4L4 16v4z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M14 6l4 4"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 
