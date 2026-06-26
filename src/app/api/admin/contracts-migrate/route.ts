@@ -208,6 +208,26 @@ function toIsoLoose(s: string): string {
   return `${y}-${mm}-${dd}`;
 }
 
+// Normalize a free-form Contract Type string into one of the four
+// canonical buckets. Anything we can't recognise becomes "Other" and
+// the original verbatim is preserved in Other Description so the admin
+// doesn't lose the qualifier (e.g. "Customer Facing SoW (HTP42-03)").
+type TypeNormalization = { canonical: "NDA" | "MSA" | "SOW" | "Other"; original: string };
+function normalizeContractType(raw: string): TypeNormalization {
+  const t = raw.trim();
+  if (!t) return { canonical: "Other", original: "" };
+  const low = t.toLowerCase();
+  // SOW patterns: covers "SOW", "SoW", "Customer Facing SoW (HTP42-…)",
+  // "Statement of Work", "Order Form (SOW)" etc.
+  if (/\bsow\b|statement of work/.test(low)) return { canonical: "SOW", original: t };
+  if (/\bnda\b|non[- ]?disclosure/.test(low)) return { canonical: "NDA", original: t };
+  if (/\bmsa\b|master service|master services agreement|framework agreement/.test(low)) {
+    return { canonical: "MSA", original: t };
+  }
+  if (low === "other") return { canonical: "Other", original: "" };
+  return { canonical: "Other", original: t };
+}
+
 export async function POST() {
   const session = await requireAdminSession();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -294,6 +314,42 @@ export async function POST() {
       if (iso !== expBlob && /^\d{4}-\d{2}-\d{2}$/.test(iso)) {
         patch["Expiry Date"] = iso;
         changes.push("expiryDate.normalized");
+      }
+    }
+
+    // Normalize Contract Type into NDA / MSA / SOW / Other. When the
+    // value is something the admins typed verbatim (e.g. "Customer
+    // Facing SoW (HTP42-03)"), the qualifier is preserved in Other
+    // Description so detail survives the bucketing.
+    const typeRaw = asString(fields["Contract Type"]);
+    if (typeRaw.trim()) {
+      const norm = normalizeContractType(typeRaw);
+      if (norm.canonical !== typeRaw.trim()) {
+        patch["Contract Type"] = norm.canonical;
+        changes.push(`type→${norm.canonical}`);
+        const currentOther = asString(fields["Other Description"]).trim();
+        if (norm.canonical === "Other" && norm.original && !currentOther) {
+          patch["Other Description"] = norm.original;
+          changes.push("otherDescription");
+        }
+        // For SOW/MSA/NDA buckets, if the original carried a project /
+        // reference qualifier (e.g. "(HTP42-03)") and Other Description
+        // is empty, surface it there so the admin doesn't lose context.
+        if (
+          norm.canonical !== "Other" &&
+          !currentOther &&
+          /\(.+?\)/.test(norm.original) &&
+          norm.original.replace(/\s*\([^)]*\)\s*/g, "").trim().toLowerCase() !== norm.canonical.toLowerCase()
+        ) {
+          const qualifier = norm.original
+            .replace(new RegExp(`\\b${norm.canonical}\\b`, "i"), "")
+            .replace(/^\s*[-–—:]\s*/, "")
+            .trim();
+          if (qualifier) {
+            patch["Other Description"] = qualifier;
+            changes.push("otherDescription.qualifier");
+          }
+        }
       }
     }
 
