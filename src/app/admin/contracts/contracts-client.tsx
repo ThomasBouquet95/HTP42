@@ -1060,12 +1060,33 @@ function NewContractDialog({
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         fields?: Record<string, unknown>;
+        matches?: {
+          clientRecordIds?: string[];
+          projectRecordIds?: string[];
+          memberRecordIds?: string[];
+        };
         error?: string;
       };
       if (!res.ok || !data.fields) {
         throw new Error(data.error ?? `Extraction failed (HTTP ${res.status})`);
       }
       const prefill = sanitizePrefill(data.fields);
+      // Merge in the linked-record IDs the server fuzzy-matched against
+      // the existing clients / projects / members. Only attach the
+      // collection that matches the inferred Side so we don't create
+      // cross-side stale links.
+      const side = prefill.side;
+      if (data.matches) {
+        if (side === "Client" && data.matches.clientRecordIds?.length) {
+          prefill.clientRecordIds = data.matches.clientRecordIds;
+        }
+        if (side === "Network Member" && data.matches.memberRecordIds?.length) {
+          prefill.memberRecordIds = data.matches.memberRecordIds;
+        }
+        if (data.matches.projectRecordIds?.length) {
+          prefill.projectRecordIds = data.matches.projectRecordIds;
+        }
+      }
       setMode("creating");
       const newId = await onCreate(prefill);
       // Attach the PDF the admin uploaded so the row + the source document

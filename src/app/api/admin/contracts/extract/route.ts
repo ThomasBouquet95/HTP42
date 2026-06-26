@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireAdminSession } from "@/lib/auth";
+import { listAllMembers, listClients, listProjects } from "@/lib/airtable";
 import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
@@ -54,6 +55,9 @@ const SYSTEM_PROMPT = [
   '  "keyTerms": string — 3-8 short bullets, each starting with "• ", separated by newlines.',
   '       Example: "• 12-month renewable term\\n• Confidentiality 3 years post-termination\\n• IP assigned to HTP42".',
   '  "comment": string — leave empty unless there is a notable caveat the admin should know.',
+  '  "clientHint": string — the client / customer organisation name as it appears in the PDF (when side is "Client"). Leave empty otherwise.',
+  '  "memberHint": string — the network member / consultant full name as it appears in the PDF (when side is "Network Member"). Leave empty otherwise.',
+  '  "projectHint": string — the project code, name, or reference (e.g. "ECS-2026-06", "Halstead study") as it appears in the PDF. Leave empty if not mentioned.',
   "}",
   "",
   "Critical rules:",
@@ -97,32 +101,44 @@ export async function POST(request: Request) {
   const base64 = buf.toString("base64");
 
   try {
+    // Fetch the lookup lists in parallel with the Anthropic call so the
+    // fuzzy matching at the bottom has the data ready by the time the
+    // extraction returns.
     const client = new Anthropic({ apiKey: env.anthropicApiKey });
-    const response = await client.messages.create({
-      model: "claude-opus-4-8",
-      max_tokens: 4096,
-      thinking: { type: "disabled" },
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "document",
-              source: {
-                type: "base64",
-                media_type: "application/pdf",
-                data: base64,
+    const [response, clients, projects, members] = await Promise.all([
+      client.messages.create({
+        // Sonnet 4.6 reads PDFs significantly faster than Opus 4.8 with
+        // no meaningful drop in field-extraction quality. The admin
+        // reviews every field before save anyway, so we optimise for
+        // turnaround time here.
+        model: "claude-sonnet-4-6",
+        max_tokens: 4096,
+        thinking: { type: "disabled" },
+        system: SYSTEM_PROMPT,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "document",
+                source: {
+                  type: "base64",
+                  media_type: "application/pdf",
+                  data: base64,
+                },
               },
-            },
-            {
-              type: "text",
-              text: "Extract the contract fields from this PDF and return the JSON object as instructed.",
-            },
-          ],
-        },
-      ],
-    });
+              {
+                type: "text",
+                text: "Extract the contract fields from this PDF and return the JSON object as instructed.",
+              },
+            ],
+          },
+        ],
+      }),
+      listClients(),
+      listProjects(),
+      listAllMembers(),
+    ]);
     const text = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
@@ -143,13 +159,43 @@ export async function POST(request: Request) {
         { status: 502 },
       );
     }
+
+    // Fuzzy-match the textual hints Claude emitted against the existing
+    // Airtable records. We return record IDs (clientRecordIds /
+    // projectRecordIds / memberRecordIds) so the create endpoint can
+    // link them directly, exactly as if an admin had picked them.
+    const clientHint = stringField(parsed, "clientHint");
+    const projectHint = stringField(parsed, "projectHint");
+    const memberHint = stringField(parsed, "memberHint");
+    const sigCompany = stringField(parsed, "signatory1Company");
+
+    const matchedClientId = fuzzyMatch(
+      [clientHint, sigCompany].filter(Boolean).join(" "),
+      clients.map((c) => ({ id: c.id, label: `${c.clientCode} ${c.clientName}` })),
+    );
+    const matchedProjectId = fuzzyMatch(
+      projectHint,
+      projects.map((p) => ({ id: p.id, label: `${p.projectCode} ${p.projectName}` })),
+    );
+    const matchedMemberId = fuzzyMatch(
+      [memberHint, stringField(parsed, "signatory1Name")].filter(Boolean).join(" "),
+      members.map((m) => ({
+        id: m.id,
+        label: `${m.memberCode} ${m.fullName}`,
+      })),
+    );
+
     return NextResponse.json({
       ok: true,
       fields: parsed,
+      // Add the matched record IDs as parallel keys so the create
+      // payload can spread them in without needing to know about hints.
+      matches: {
+        clientRecordIds: matchedClientId ? [matchedClientId] : [],
+        projectRecordIds: matchedProjectId ? [matchedProjectId] : [],
+        memberRecordIds: matchedMemberId ? [matchedMemberId] : [],
+      },
       filename: file.name,
-      // Pass the base64 back so the client can attach the PDF to the
-      // freshly-created contract in a follow-up call. Saves us a second
-      // upload from the browser.
       pdfBase64: base64,
     });
   } catch (e) {
@@ -175,4 +221,59 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+function stringField(o: Record<string, unknown>, key: string): string {
+  const v = o[key];
+  return typeof v === "string" ? v.trim() : "";
+}
+
+// Fuzzy-match the hint string against a list of {id, label} candidates.
+// Two-step scoring:
+//   1. Exact code prefix / contained-in-label match wins outright. Useful
+//      for "ECS-2026-06" hitting "ECS-2026-06 Halstead Studies".
+//   2. Otherwise compare normalized token overlap (Jaccard-ish). Pick the
+//      best score; ignore matches below a confidence floor so we don't
+//      pollute the new contract with a random link.
+function fuzzyMatch(
+  hint: string,
+  candidates: Array<{ id: string; label: string }>,
+): string | null {
+  const h = normalize(hint);
+  if (!h) return null;
+  let best: { id: string; score: number } | null = null;
+  for (const c of candidates) {
+    const label = normalize(c.label);
+    if (!label) continue;
+    let score = 0;
+    if (label.includes(h) || h.includes(label)) {
+      score = 1;
+    } else {
+      score = jaccard(h, label);
+    }
+    if (!best || score > best.score) best = { id: c.id, score };
+  }
+  // 0.55 chosen empirically — high enough to skip a single-word coincidence
+  // ("the", "agreement") but loose enough that "Halstead Studies" still
+  // matches "ECS-2026-06 Halstead Studies".
+  if (!best || best.score < 0.55) return null;
+  return best.id;
+}
+
+function normalize(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function jaccard(a: string, b: string): number {
+  const A = new Set(a.split(/\s+/).filter((t) => t.length > 1));
+  const B = new Set(b.split(/\s+/).filter((t) => t.length > 1));
+  if (A.size === 0 || B.size === 0) return 0;
+  let intersect = 0;
+  for (const t of A) if (B.has(t)) intersect += 1;
+  const union = A.size + B.size - intersect;
+  return union === 0 ? 0 : intersect / union;
 }
