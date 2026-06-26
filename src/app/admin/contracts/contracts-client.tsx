@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import {
   CONTRACT_SIDES,
   CONTRACT_STATUSES,
@@ -255,6 +254,7 @@ export function ContractsAdminClient({
     const out: Record<ValidityBucket, number> = {
       Valid: 0,
       Expired: 0,
+      "Expiry Missing": 0,
       "N/A": 0,
     };
     for (const c of contracts) {
@@ -343,6 +343,7 @@ export function ContractsAdminClient({
             {(
               [
                 { value: "Valid", label: "Valid", count: validityCounts.Valid },
+                { value: "Expiry Missing", label: "Expiry missing", count: validityCounts["Expiry Missing"] },
                 { value: "Expired", label: "Expired", count: validityCounts.Expired },
                 { value: "N/A", label: "N/A", count: validityCounts["N/A"] },
                 {
@@ -350,6 +351,7 @@ export function ContractsAdminClient({
                   label: "All",
                   count:
                     validityCounts.Valid +
+                    validityCounts["Expiry Missing"] +
                     validityCounts.Expired +
                     validityCounts["N/A"],
                 },
@@ -401,17 +403,27 @@ export function ContractsAdminClient({
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-        <table className="w-full text-xs">
+        <table className="w-full table-fixed text-xs">
+          <colgroup>
+            <col className="w-[12.5%]" />
+            <col className="w-[12.5%]" />
+            <col className="w-[12.5%]" />
+            <col className="w-[12.5%]" />
+            <col className="w-[12.5%]" />
+            <col className="w-[12.5%]" />
+            <col className="w-[12.5%]" />
+            <col className="w-[12.5%]" />
+          </colgroup>
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-2 py-1.5 font-medium text-center">Side</th>
               <th className="px-2 py-1.5 font-medium text-center">Type</th>
               <th className="text-left px-2 py-1.5 font-medium">Counterparty</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell whitespace-nowrap">Signed</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell whitespace-nowrap">Expires</th>
+              <th className="text-left px-2 py-1.5 font-medium whitespace-nowrap">Signed</th>
+              <th className="text-left px-2 py-1.5 font-medium whitespace-nowrap">Expires</th>
               <th className="px-2 py-1.5 font-medium text-center">Status</th>
               <th className="px-2 py-1.5 font-medium text-center">Validity</th>
-              <th className="text-left px-2 py-1.5 font-medium">PDF</th>
+              <th className="text-center px-2 py-1.5 font-medium">PDF</th>
             </tr>
           </thead>
           <tbody>
@@ -450,12 +462,12 @@ export function ContractsAdminClient({
                       {c.contractType ? <TypePill type={c.contractType} /> : <Dash />}
                     </td>
                     <td className="px-2 py-1.5 demo-blur">
-                      <div className="truncate max-w-[18rem]">{counterparty || <Dash />}</div>
+                      <div className="truncate">{counterparty || <Dash />}</div>
                     </td>
-                    <td className="px-2 py-1.5 hidden md:table-cell whitespace-nowrap text-slate-700">
+                    <td className="px-2 py-1.5 whitespace-nowrap text-slate-700">
                       {formatFriendlyDate(c.signatureDate) || <Dash />}
                     </td>
-                    <td className="px-2 py-1.5 hidden md:table-cell whitespace-nowrap text-slate-700">
+                    <td className="px-2 py-1.5 whitespace-nowrap text-slate-700">
                       {formatFriendlyDate(c.expiryDate) || <Dash />}
                     </td>
                     <td className="px-2 py-1.5 text-center">
@@ -464,7 +476,7 @@ export function ContractsAdminClient({
                     <td className="px-2 py-1.5 text-center">
                       <ValidityPill validity={c.validity} />
                     </td>
-                    <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
                       {c.pdf?.url ? (
                         <a
                           href={c.pdf.url}
@@ -568,13 +580,14 @@ function counterpartyLabel(c: ContractRecord): string {
 
 // Validity is computed server-side now (see computeValidity in
 // lib/airtable.ts). The client just buckets the value that came back.
-// Three values: Valid / Expired / N/A.
+// Four values: Valid / Expired / Expiry Missing / N/A.
 export type ValidityBucket = ComputedValidity;
 
 function validityBucket(v: string): ValidityBucket {
   const s = v.trim().toLowerCase();
   if (s === "expired") return "Expired";
   if (s === "valid") return "Valid";
+  if (s === "expiry missing") return "Expiry Missing";
   return "N/A";
 }
 
@@ -651,13 +664,16 @@ function ValidityPill({ validity }: { validity: string }) {
       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
       : bucket === "Expired"
       ? "bg-red-50 text-red-700 border-red-200"
+      : bucket === "Expiry Missing"
+      ? "bg-orange-50 text-orange-700 border-orange-200"
       : "bg-slate-100 text-slate-600 border-slate-200";
+  const label = bucket === "Expiry Missing" ? "Expiry missing" : bucket;
   return (
     <span
       className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
       title={validity}
     >
-      {bucket}
+      {label}
     </span>
   );
 }
@@ -1288,40 +1304,13 @@ function ContractDetailModal({
         style={{ maxHeight: "calc(100vh - 4rem)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-              <SidePill side={(draft.side || "Other") as ContractSide} />
-              {draft.contractType ? <TypePill type={draft.contractType} /> : null}
-              {draft.stage ? <StagePill stage={draft.stage} /> : null}
-              <ValidityPill
-                validity={computeValidityLocal(draft.stage, draft.expiryDate)}
-              />
-            </div>
-            <h2 className="mt-1 truncate text-base font-semibold text-slate-900 demo-blur">
-              {counterpartyLabel(c) || "—"}
-            </h2>
-            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-              {c.projectCodes.length > 0 ? (
-                <Link
-                  href={`/admin/projects?project=${encodeURIComponent(c.projectCodes[0])}`}
-                  className="font-mono text-brand-700 hover:text-brand-800 hover:underline"
-                  title="Open the project"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {c.projectCodes.join(", ")}
-                </Link>
-              ) : c.projectCode ? (
-                <span className="font-mono text-slate-500">{c.projectCode}</span>
-              ) : null}
-              {c.memberCodes.length > 0 ? (
-                <span className="font-mono text-brand-700">
-                  {c.memberCodes.join(", ")}
-                </span>
-              ) : null}
-            </div>
-          </div>
+        {/* Header — counterparty name only. The badge cluster used to
+            sit here too, but it duplicated info from the Identity /
+            Lifecycle sections immediately below. */}
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
+          <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-slate-900 demo-blur">
+            {counterpartyLabel(c) || "New contract"}
+          </h2>
           <div className="flex shrink-0 items-center gap-2">
             {saving ? (
               <span
@@ -1442,7 +1431,6 @@ function ContractDetailModal({
               {typeIsOther ? (
                 <TextField
                   label="Describe the contract"
-                  hint="A few words is enough — e.g. service agreement, framework contract, MoU."
                   value={draft.otherDescription}
                   onChange={(v) => set("otherDescription", v)}
                   placeholder="Service agreement, MoU, framework, …"
@@ -1573,7 +1561,7 @@ function ContractDetailModal({
           {/* Signatories. Each carries its own date because the two
               parties on a contract often sign on different days. */}
           <section className="space-y-3 border-t border-slate-100 pt-4">
-            <SectionHeader title="Signatories" hint="Who signed the contract and when. Add a second only if two parties signed." />
+            <SectionHeader title="Signatories" />
             <SignatoryRow
               index={1}
               name={draft.signatory1Name}
@@ -1630,10 +1618,7 @@ function ContractDetailModal({
 
           {/* Key terms */}
           <section className="space-y-3 border-t border-slate-100 pt-4">
-            <SectionHeader
-              title="Key terms"
-              hint="One bullet per line. Press Enter to start a new bullet."
-            />
+            <SectionHeader title="Key terms" />
             <BulletTextarea
               value={draft.keyTerms}
               onChange={(v) => set("keyTerms", v)}
@@ -1646,10 +1631,7 @@ function ContractDetailModal({
 
           {/* Comment: free-form admin notes that don't fit Key Terms. */}
           <section className="space-y-3 border-t border-slate-100 pt-4">
-            <SectionHeader
-              title="Comment"
-              hint="Internal notes about this contract. Not shown in the table."
-            />
+            <SectionHeader title="Comment" />
             <textarea
               value={draft.comment}
               onChange={(e) => set("comment", e.target.value)}

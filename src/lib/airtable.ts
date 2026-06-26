@@ -2983,20 +2983,20 @@ export const CONTRACT_STATUSES: ContractStatus[] = [
 ];
 
 // Computed validity. Stored Validity in Airtable is ignored: admins set
-// Stage and Expiry Date, the portal derives the rest. Three states:
-//   N/A     — not signed yet (Draft / Under Negotiation / Pending /
-//             Terminated / empty)
-//   Valid   — signed AND (no expiry on file OR today ≤ expiry)
-//   Expired — signed AND expiry date is in the past
+// Stage and Expiry Date, the portal derives the rest. Four states:
+//   N/A             — not signed yet
+//   Valid           — signed AND expiry date is on or after today
+//   Expired         — signed AND expiry date is in the past
+//   Expiry Missing  — signed but no parseable expiry on file (warning state)
 // `refresh regularly / daily` is satisfied implicitly because every
 // server-side read recomputes from the current date.
-export type ComputedValidity = "Valid" | "Expired" | "N/A";
+export type ComputedValidity = "Valid" | "Expired" | "N/A" | "Expiry Missing";
 
 export function computeValidity(stage: string, expiryDate: string): ComputedValidity {
   const s = stage.trim().toLowerCase();
   if (s !== "signed") return "N/A";
   const iso = parseLooseDate(expiryDate);
-  if (!iso) return "Valid"; // signed with no parseable expiry → still in force
+  if (!iso) return "Expiry Missing";
   const today = new Date().toISOString().slice(0, 10);
   return iso < today ? "Expired" : "Valid";
 }
