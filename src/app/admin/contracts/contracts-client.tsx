@@ -9,7 +9,6 @@ import {
   CONTRACT_TYPES,
   computeValidity,
   type ComputedValidity,
-  type ContractFieldChoices,
   type ContractRecord,
   type ContractSide,
   type ContractStatus,
@@ -35,28 +34,14 @@ type ContractPatch = {
   signatory2Role?: string;
   signatory2Company?: string;
   // Lifecycle
+  signatory1Date?: string;
+  signatory2Date?: string;
   signatureDate?: string;
   expiryDate?: string;
   stage?: string;
-  contractStatus?: string;
-  validity?: string;
-  // Summary
+  // Summary + notes
   keyTerms?: string;
-  // Legacy / detailed terms (collapsible)
-  company?: string;
-  contactType?: string;
-  signatory?: string;
-  contactDetails?: string;
-  effectiveDate?: string;
-  duration?: string;
-  noticePeriod?: string;
-  nonSolicitation?: string;
-  confidentiality?: string;
-  intellectualProperty?: string;
-  exclusivity?: string;
-  governingLaw?: string;
-  consultantVisibility?: string;
-  clauses?: string;
+  comment?: string;
 };
 
 type MemberOpt = { id: string; code: string; name: string };
@@ -68,7 +53,6 @@ type Props = {
   members: MemberOpt[];
   clients: ClientOpt[];
   projects: ProjectOpt[];
-  fieldChoices: ContractFieldChoices;
 };
 
 type Filters = {
@@ -95,7 +79,6 @@ export function ContractsAdminClient({
   members,
   clients,
   projects,
-  fieldChoices,
 }: Props) {
   const router = useRouter();
   const [contracts, setContracts] = useState<ContractRecord[]>(initialContracts);
@@ -233,10 +216,7 @@ export function ContractsAdminClient({
         resolveSide(c),
         c.side,
         c.projectCode,
-        c.company,
         c.contractType,
-        c.contactType,
-        c.signatory,
         c.signatory1.name,
         c.signatory1.role,
         c.signatory1.company,
@@ -244,9 +224,9 @@ export function ContractsAdminClient({
         c.signatory2.role,
         c.signatory2.company,
         c.stage,
-        c.contractStatus,
         c.validity,
         c.keyTerms,
+        c.comment,
         c.otherDescription,
         ...c.memberCodes,
         ...c.clientCodes,
@@ -386,13 +366,13 @@ export function ContractsAdminClient({
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-2 py-1.5 font-medium">Side · Type</th>
+              <th className="px-2 py-1.5 font-medium text-center">Side</th>
+              <th className="px-2 py-1.5 font-medium text-center">Type</th>
               <th className="text-left px-2 py-1.5 font-medium">Counterparty</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Project / Member</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Signed</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Expires</th>
-              <th className="text-left px-2 py-1.5 font-medium">Status</th>
-              <th className="text-left px-2 py-1.5 font-medium">Validity</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell whitespace-nowrap">Signed</th>
+              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell whitespace-nowrap">Expires</th>
+              <th className="px-2 py-1.5 font-medium text-center">Status</th>
+              <th className="px-2 py-1.5 font-medium text-center">Validity</th>
               <th className="text-left px-2 py-1.5 font-medium">PDF</th>
             </tr>
           </thead>
@@ -410,13 +390,11 @@ export function ContractsAdminClient({
                   isCriticalType(c.contractType) &&
                   validityBucket(c.validity) === "Expired";
                 const counterparty = counterpartyLabel(c);
-                const projectLabel =
-                  c.projectCodes.join(", ") || c.projectCode || "—";
                 return (
                   <tr
                     key={c.id}
                     onClick={() => setOpenId(c.id)}
-                    className={`border-t cursor-pointer align-top ${
+                    className={`border-t cursor-pointer align-middle ${
                       flagged
                         ? "border-red-200 bg-red-50 hover:bg-red-100 ring-1 ring-inset ring-red-200"
                         : "border-slate-100 hover:bg-slate-50"
@@ -427,33 +405,25 @@ export function ContractsAdminClient({
                         : "Click for the full contract"
                     }
                   >
-                    <td className="px-2 py-1.5">
-                      <div className="flex flex-wrap items-center gap-1">
-                        <SidePill side={side} />
-                        {c.contractType ? <TypePill type={c.contractType} /> : null}
-                      </div>
+                    <td className="px-2 py-1.5 text-center">
+                      <SidePill side={side} />
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      {c.contractType ? <TypePill type={c.contractType} /> : <Dash />}
                     </td>
                     <td className="px-2 py-1.5 demo-blur">
-                      <div className="truncate max-w-[16rem]">{counterparty || "—"}</div>
-                    </td>
-                    <td className="px-2 py-1.5 hidden md:table-cell">
-                      <div className="font-mono text-[10px] text-slate-500">
-                        {projectLabel}
-                      </div>
-                      <div className="font-mono text-[10px] text-brand-700">
-                        {c.memberCodes.join(", ") || ""}
-                      </div>
+                      <div className="truncate max-w-[18rem]">{counterparty || <Dash />}</div>
                     </td>
                     <td className="px-2 py-1.5 hidden md:table-cell whitespace-nowrap text-slate-700">
-                      {c.signatureDate || <Dash />}
+                      {formatFriendlyDate(c.signatureDate) || <Dash />}
                     </td>
                     <td className="px-2 py-1.5 hidden md:table-cell whitespace-nowrap text-slate-700">
-                      {c.expiryDate || <Dash />}
+                      {formatFriendlyDate(c.expiryDate) || <Dash />}
                     </td>
-                    <td className="px-2 py-1.5">
+                    <td className="px-2 py-1.5 text-center">
                       {c.stage ? <StagePill stage={c.stage} /> : <Dash />}
                     </td>
-                    <td className="px-2 py-1.5">
+                    <td className="px-2 py-1.5 text-center">
                       <ValidityPill validity={c.validity} />
                     </td>
                     <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
@@ -488,7 +458,6 @@ export function ContractsAdminClient({
           members={members}
           clients={clients}
           projects={projects}
-          fieldChoices={fieldChoices}
           onClose={() => setOpenId(null)}
           onSave={(patch) => saveContract(openContract.id, patch)}
           onUpload={(file) => uploadPdf(openContract.id, file)}
@@ -525,37 +494,29 @@ function uniqueSortedValues(values: string[]): string[] {
 }
 
 // Resolve the canonical contract side. New rows carry an explicit `side`
-// field; legacy rows fall back to a derivation from Contact Type so the
-// page works without first backfilling everything.
+// field; legacy rows without it fall through to "Other" so they still
+// render somewhere instead of disappearing.
 function resolveSide(c: ContractRecord): ContractSide {
-  if (c.side) return c.side;
-  const s = c.contactType.trim().toLowerCase();
-  if (s === "client") return "Client";
-  if (s === "network member" || s === "consultant" || s === "subcontractor") {
-    return "Network Member";
-  }
-  return "Other";
+  return c.side || "Other";
 }
 
 // Human-readable counterparty label that switches by Side: a Network
 // Member contract shows the linked member, a Client contract shows the
-// linked client name, and Partner / Other fall back to the legacy
-// Company / Consultant free-form field. Without this branch a Network
-// Member contract whose row also carried a stale Client link would
-// surface the client name — wrong counterparty visually.
+// linked client name, and Partner / Other fall back to whichever
+// signatory company we have on file.
 function counterpartyLabel(c: ContractRecord): string {
   const side = resolveSide(c);
+  const sigCompany = c.signatory1.company || c.signatory2.company;
   if (side === "Network Member") {
     if (c.memberCodes.length > 0) return c.memberCodes.join(", ");
-    return c.company;
+    return sigCompany;
   }
   if (side === "Client") {
     if (c.clientNames.some(Boolean)) return c.clientNames.filter(Boolean).join(", ");
     if (c.clientCodes.length > 0) return c.clientCodes.join(", ");
-    return c.company;
+    return sigCompany;
   }
-  // Partner / Other: free-form counterparty company.
-  return c.company;
+  return sigCompany;
 }
 
 // Validity is computed server-side now (see computeValidity in
@@ -865,31 +826,16 @@ type DraftForm = {
   signatory1Name: string;
   signatory1Role: string;
   signatory1Company: string;
+  signatory1Date: string;
   signatory2Name: string;
   signatory2Role: string;
   signatory2Company: string;
+  signatory2Date: string;
   signatureDate: string;
   expiryDate: string;
   stage: string;
-  contractStatus: string;
-  validity: string;
   keyTerms: string;
-  // Detailed terms (collapsible)
-  confidentiality: string;
-  nonSolicitation: string;
-  intellectualProperty: string;
-  exclusivity: string;
-  governingLaw: string;
-  noticePeriod: string;
-  duration: string;
-  consultantVisibility: string;
-  effectiveDate: string;
-  clauses: string;
-  // Legacy free-text bits we surface for back-compat only
-  company: string;
-  contactType: string;
-  signatory: string;
-  contactDetails: string;
+  comment: string;
 };
 
 function draftFromContract(c: ContractRecord): DraftForm {
@@ -904,29 +850,16 @@ function draftFromContract(c: ContractRecord): DraftForm {
     signatory1Name: c.signatory1.name,
     signatory1Role: c.signatory1.role,
     signatory1Company: c.signatory1.company,
+    signatory1Date: c.signatory1.date,
     signatory2Name: c.signatory2.name,
     signatory2Role: c.signatory2.role,
     signatory2Company: c.signatory2.company,
+    signatory2Date: c.signatory2.date,
     signatureDate: c.signatureDate,
     expiryDate: c.expiryDate,
     stage: c.stage,
-    contractStatus: c.contractStatus,
-    validity: c.validity,
     keyTerms: c.keyTerms,
-    confidentiality: c.confidentiality,
-    nonSolicitation: c.nonSolicitation,
-    intellectualProperty: c.intellectualProperty,
-    exclusivity: c.exclusivity,
-    governingLaw: c.governingLaw,
-    noticePeriod: c.noticePeriod,
-    duration: c.duration,
-    consultantVisibility: c.consultantVisibility,
-    effectiveDate: c.effectiveDate,
-    clauses: c.clauses,
-    company: c.company,
-    contactType: c.contactType,
-    signatory: c.signatory,
-    contactDetails: c.contactDetails,
+    comment: c.comment,
   };
 }
 
@@ -943,29 +876,16 @@ function diffPatch(original: DraftForm, draft: DraftForm): ContractPatch {
     "signatory1Name",
     "signatory1Role",
     "signatory1Company",
+    "signatory1Date",
     "signatory2Name",
     "signatory2Role",
     "signatory2Company",
+    "signatory2Date",
     "signatureDate",
     "expiryDate",
     "stage",
-    "contractStatus",
-    "validity",
     "keyTerms",
-    "confidentiality",
-    "nonSolicitation",
-    "intellectualProperty",
-    "exclusivity",
-    "governingLaw",
-    "noticePeriod",
-    "duration",
-    "consultantVisibility",
-    "effectiveDate",
-    "clauses",
-    "company",
-    "contactType",
-    "signatory",
-    "contactDetails",
+    "comment",
   ];
   for (const key of stringKeys) {
     if (original[key] !== draft[key]) {
@@ -999,7 +919,6 @@ function ContractDetailModal({
   members,
   clients,
   projects,
-  fieldChoices,
   onClose,
   onSave,
   onUpload,
@@ -1009,7 +928,6 @@ function ContractDetailModal({
   members: MemberOpt[];
   clients: ClientOpt[];
   projects: ProjectOpt[];
-  fieldChoices: ContractFieldChoices;
   onClose: () => void;
   onSave: (patch: ContractPatch) => Promise<void>;
   onUpload: (file: File) => Promise<boolean>;
@@ -1316,9 +1234,9 @@ function ContractDetailModal({
               {sideIsPartner ? (
                 <TextField
                   label="Partner (company name)"
-                  hint="No Airtable link for partners yet — type the company name."
-                  value={draft.company}
-                  onChange={(v) => set("company", v)}
+                  hint="Set the counterparty company below in Signatory 1 → Company."
+                  value={draft.signatory1Company}
+                  onChange={(v) => set("signatory1Company", v)}
                   placeholder="Acme Health"
                   sensitive
                 />
@@ -1342,13 +1260,15 @@ function ContractDetailModal({
                 />
               ) : null}
 
-              {/* Side = Other → free-form counterparty company. */}
+              {/* Side = Other → free-form counterparty company, kept on
+                  Signatory 1 → Company. */}
               {!sideIsClient && !sideIsNetwork && !sideIsPartner ? (
                 <TextField
                   label="Counterparty (company name)"
-                  value={draft.company}
-                  onChange={(v) => set("company", v)}
-                  placeholder="—"
+                  hint="Set on Signatory 1 → Company below."
+                  value={draft.signatory1Company}
+                  onChange={(v) => set("signatory1Company", v)}
+                  placeholder="Acme Health"
                   sensitive
                 />
               ) : null}
@@ -1411,20 +1331,23 @@ function ContractDetailModal({
             </div>
           </section>
 
-          {/* Signatories */}
+          {/* Signatories. Each carries its own date because the two
+              parties on a contract often sign on different days. */}
           <section className="space-y-3 border-t border-slate-100 pt-4">
-            <SectionHeader title="Signatories" hint="Who signed the contract. Add a second only if two parties signed." />
+            <SectionHeader title="Signatories" hint="Who signed the contract and when. Add a second only if two parties signed." />
             <SignatoryRow
               index={1}
               name={draft.signatory1Name}
               role={draft.signatory1Role}
               company={draft.signatory1Company}
+              date={draft.signatory1Date}
               onChange={(patch) =>
                 setDraft((d) => ({
                   ...d,
                   signatory1Name: patch.name ?? d.signatory1Name,
                   signatory1Role: patch.role ?? d.signatory1Role,
                   signatory1Company: patch.company ?? d.signatory1Company,
+                  signatory1Date: patch.date ?? d.signatory1Date,
                 }))
               }
             />
@@ -1434,12 +1357,14 @@ function ContractDetailModal({
                 name={draft.signatory2Name}
                 role={draft.signatory2Role}
                 company={draft.signatory2Company}
+                date={draft.signatory2Date}
                 onChange={(patch) =>
                   setDraft((d) => ({
                     ...d,
                     signatory2Name: patch.name ?? d.signatory2Name,
                     signatory2Role: patch.role ?? d.signatory2Role,
                     signatory2Company: patch.company ?? d.signatory2Company,
+                    signatory2Date: patch.date ?? d.signatory2Date,
                   }))
                 }
                 onRemove={() => {
@@ -1449,6 +1374,7 @@ function ContractDetailModal({
                     signatory2Name: "",
                     signatory2Role: "",
                     signatory2Company: "",
+                    signatory2Date: "",
                   }));
                 }}
               />
@@ -1476,6 +1402,21 @@ function ContractDetailModal({
               placeholder={
                 "• 12-month renewable term\n• Confidentiality 3 years\n• IP assigned to HTP42"
               }
+            />
+          </section>
+
+          {/* Comment: free-form admin notes that don't fit Key Terms. */}
+          <section className="space-y-3 border-t border-slate-100 pt-4">
+            <SectionHeader
+              title="Comment"
+              hint="Internal notes about this contract. Not shown in the table."
+            />
+            <textarea
+              value={draft.comment}
+              onChange={(e) => set("comment", e.target.value)}
+              rows={3}
+              placeholder="e.g. waiting on client legal sign-off"
+              className="block w-full resize-y rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs leading-snug focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 whitespace-pre-line"
             />
           </section>
 
@@ -1744,122 +1685,29 @@ function TextareaField({
   );
 }
 
-// ComboboxField is the workhorse for singleSelect-backed fields. Renders
-// a labelled input + datalist of the FULL Airtable choice list with a
-// trailing chevron so admins know there's a dropdown. Typing a brand-new
-// value works — Airtable creates the choice on save via typecast.
-function ComboboxField({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: string[];
-  onChange: (v: string) => void;
-}) {
-  const hasOptions = options.length > 0;
-  const listId = `combo-${label.replace(/\s+/g, "-").toLowerCase()}`;
-  return (
-    <label className="block text-xs">
-      <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-500">
-        {label}
-        {hasOptions ? (
-          <span className="ml-1 font-normal normal-case tracking-normal text-slate-400">
-            · {options.length} option{options.length === 1 ? "" : "s"}
-          </span>
-        ) : null}
-      </span>
-      <span className="relative mt-1 block">
-        <input
-          type="text"
-          list={hasOptions ? listId : undefined}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={hasOptions ? "Pick or type a new value…" : "Type a value…"}
-          className={`block w-full rounded-md border border-slate-300 bg-white px-2 ${
-            hasOptions ? "pr-7" : ""
-          } py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600`}
-        />
-        {hasOptions ? (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400"
-          >
-            ▾
-          </span>
-        ) : null}
-        {hasOptions ? (
-          <datalist id={listId}>
-            {options.map((o) => (
-              <option key={o} value={o} />
-            ))}
-          </datalist>
-        ) : null}
-      </span>
-    </label>
-  );
-}
-
-// DateField is a free-form date input. The Airtable dates are NOT real
-// date fields (they're text / singleSelect that holds anything from
-// "15/12/2025" to "MSA: Indefinite – SoW: …"), so we render a plain
-// text input. Could upgrade to <input type="date"> later once the data
-// is normalized.
-// DateField upgrades to a native <input type="date"> when the stored
-// value parses cleanly to ISO yyyy-mm-dd (or dd/mm/yyyy / dd.mm.yyyy).
-// Falls back to a free-form text input + a small "use a date picker"
-// toggle for legacy strings like "MSA: Indefinite – SoW: …" that admins
-// still need to read and write. Both modes commit on every change so
-// the draft stays in sync.
+// DateField is a label + popup calendar (DatePopover) so admins pick
+// dates via a month grid rather than the browser's native date input.
+// Stored value is ISO yyyy-mm-dd; the popup also offers a free-text
+// fallback for legacy strings like "Late May 2026".
 function DateField({
   label,
   value,
   onChange,
+  placeholder,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  placeholder?: string;
 }) {
-  const iso = toIsoDate(value);
-  // Mode tracks user intent — if the stored value happens to be a date,
-  // start in "picker" mode; if it's free-form prose, start in "text".
-  // Admin can flip via the tiny inline button regardless.
-  const [mode, setMode] = useState<"picker" | "text">(iso ? "picker" : "text");
-  useEffect(() => {
-    setMode(toIsoDate(value) ? "picker" : "text");
-  }, [value]);
-
   return (
     <label className="block text-xs">
-      <span className="flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-slate-500">
-        <span>{label}</span>
-        <button
-          type="button"
-          onClick={() => setMode((m) => (m === "picker" ? "text" : "picker"))}
-          className="ml-2 text-[10px] font-normal normal-case tracking-normal text-slate-400 hover:text-slate-700"
-          title="Switch between date picker and free-text input"
-        >
-          {mode === "picker" ? "free text" : "use picker"}
-        </button>
+      <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-500">
+        {label}
       </span>
-      {mode === "picker" ? (
-        <input
-          type="date"
-          value={iso ?? ""}
-          onChange={(e) => onChange(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-        />
-      ) : (
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="e.g. 15/12/2025 or Q2 2026"
-          className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-        />
-      )}
+      <div className="mt-1">
+        <DatePopover value={value} onChange={onChange} placeholder={placeholder} />
+      </div>
     </label>
   );
 }
@@ -1867,7 +1715,7 @@ function DateField({
 // Best-effort parse of the messy historical date strings into ISO.
 // Handles dd/mm/yyyy, dd.mm.yyyy, dd-mm-yyyy, yyyy-mm-dd (+ 2-digit
 // years). Returns null when the string is something Airtable admins
-// invented like "Late May 2026" — the field then falls back to text.
+// invented like "Late May 2026" so the field falls back to free text.
 function toIsoDate(s: string): string | null {
   const t = s.trim();
   if (!t) return null;
@@ -1883,11 +1731,247 @@ function toIsoDate(s: string): string | null {
   return `${y}-${mm}-${dd}`;
 }
 
+// Friendly "21 Feb 1995" rendering for table cells. Falls back to the
+// raw string when it isn't a parseable date so legacy free-text values
+// like "Late May 2026" still surface as-is.
+const FRIENDLY_MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+function formatFriendlyDate(s: string): string {
+  const iso = toIsoDate(s);
+  if (!iso) return s.trim();
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${d} ${FRIENDLY_MONTHS[m - 1]} ${y}`;
+}
+
+// Popup calendar picker. Wraps the date input in a button that opens a
+// month grid (same visual shape as CalendarRange used elsewhere in the
+// portal). Click a day to set the value as ISO yyyy-mm-dd; the button
+// label displays the friendly format. Clicking outside the popover
+// closes it. Free-text fallback stays available via the small "free
+// text" toggle so legacy values like "Late May 2026" can still be
+// entered.
+function DatePopover({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"picker" | "text">(
+    toIsoDate(value) || !value ? "picker" : "text",
+  );
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (!ref.current) return;
+      if (ref.current.contains(e.target as Node)) return;
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  const iso = toIsoDate(value);
+  const label = iso ? formatFriendlyDate(iso) : value.trim();
+
+  return (
+    <div ref={ref} className="relative">
+      {mode === "picker" ? (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-left text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+        >
+          {label ? (
+            <span className="text-slate-800">{label}</span>
+          ) : (
+            <span className="text-slate-400">{placeholder ?? "Pick a date"}</span>
+          )}
+        </button>
+      ) : (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder ?? "e.g. Late May 2026"}
+          className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+        />
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          setMode((m) => (m === "picker" ? "text" : "picker"));
+          setOpen(false);
+        }}
+        className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] uppercase tracking-wide text-slate-400 hover:text-slate-700"
+        title="Switch between calendar picker and free-text input"
+      >
+        {mode === "picker" ? "txt" : "cal"}
+      </button>
+      {open && mode === "picker" ? (
+        <div className="absolute left-0 z-50 mt-1 rounded-md border border-slate-200 bg-white p-2 shadow-lg">
+          <SingleDateCalendar
+            value={iso ?? ""}
+            onPick={(s) => {
+              onChange(s);
+              setOpen(false);
+            }}
+            onClear={() => {
+              onChange("");
+              setOpen(false);
+            }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// Self-contained month calendar that emits a single ISO yyyy-mm-dd on
+// click. Visual style matches CalendarRange (Mon-Sun grid, brand-colored
+// endpoint) so it feels native to the portal.
+function SingleDateCalendar({
+  value,
+  onPick,
+  onClear,
+}: {
+  value: string;
+  onPick: (s: string) => void;
+  onClear: () => void;
+}) {
+  const seed = parseIsoLocal(value) ?? new Date();
+  const [cursor, setCursor] = useState<Date>(
+    new Date(seed.getFullYear(), seed.getMonth(), 1),
+  );
+  const selectedIso = value;
+  const monthLabel = cursor.toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth();
+  const startWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: Array<{ d: Date; inMonth: boolean }> = [];
+  const prevDays = new Date(year, month, 0).getDate();
+  for (let i = startWeekday; i > 0; i--) {
+    cells.push({ d: new Date(year, month - 1, prevDays - i + 1), inMonth: false });
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push({ d: new Date(year, month, d), inMonth: true });
+  }
+  while (cells.length < 42) {
+    const offset = cells.length - startWeekday - daysInMonth + 1;
+    cells.push({ d: new Date(year, month + 1, offset), inMonth: false });
+  }
+  const today = ymdLocal(new Date());
+  return (
+    <div className="w-[15.5rem] select-none normal-case tracking-normal">
+      <div className="mb-2 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setCursor(new Date(year, month - 1, 1))}
+          aria-label="Previous month"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
+        >
+          <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <path d="m7.5 3-3 3 3 3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => setCursor(new Date())}
+          className="text-xs font-medium text-slate-700 hover:text-brand-700"
+          title="Jump to current month"
+        >
+          {monthLabel}
+        </button>
+        <button
+          type="button"
+          onClick={() => setCursor(new Date(year, month + 1, 1))}
+          aria-label="Next month"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
+        >
+          <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <path d="m4.5 3 3 3-3 3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-y-0.5 text-[10px] uppercase tracking-wide text-slate-400">
+        {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((w) => (
+          <div key={w} className="text-center">
+            {w}
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 grid grid-cols-7 gap-y-0.5">
+        {cells.map(({ d, inMonth }, idx) => {
+          const s = ymdLocal(d);
+          const isSelected = s === selectedIso;
+          const isToday = s === today;
+          let cls = "h-7 text-[11px] flex items-center justify-center";
+          if (!inMonth) cls += " text-slate-300";
+          else cls += " text-slate-700";
+          if (isSelected) cls += " bg-brand-600 text-white rounded-md font-medium";
+          if (isToday && !isSelected)
+            cls += " ring-1 ring-inset ring-slate-300 rounded-md";
+          return (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => onPick(s)}
+              className={`${cls} hover:bg-brand-100 hover:text-brand-800 transition-colors`}
+            >
+              {d.getDate()}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex items-center justify-between text-[10px]">
+        <button
+          type="button"
+          onClick={() => onPick(today)}
+          className="text-slate-500 hover:text-brand-700"
+        >
+          Today
+        </button>
+        <button
+          type="button"
+          onClick={onClear}
+          className="text-slate-500 hover:text-red-600"
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function parseIsoLocal(s: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function ymdLocal(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
 function SignatoryRow({
   index,
   name,
   role,
   company,
+  date,
   onChange,
   onRemove,
 }: {
@@ -1895,7 +1979,10 @@ function SignatoryRow({
   name: string;
   role: string;
   company: string;
-  onChange: (patch: Partial<{ name: string; role: string; company: string }>) => void;
+  date: string;
+  onChange: (
+    patch: Partial<{ name: string; role: string; company: string; date: string }>,
+  ) => void;
   onRemove?: () => void;
 }) {
   return (
@@ -1914,7 +2001,7 @@ function SignatoryRow({
           </button>
         ) : null}
       </div>
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-4">
         <TextField
           label="Name"
           value={name}
@@ -1931,6 +2018,12 @@ function SignatoryRow({
           value={company}
           onChange={(v) => onChange({ company: v })}
           sensitive
+        />
+        <DateField
+          label="Signed on"
+          value={date}
+          onChange={(v) => onChange({ date: v })}
+          placeholder="Pick a date"
         />
       </div>
     </div>

@@ -170,14 +170,12 @@ export const FIELDS = {
   // because admins enter free-form values like "MSA: Indefinite – SoW:
   // 15/11 → 15/12/2025". We surface them as plain strings in the UI.
   //
-  // The post-redesign canonical fields are: side / type / client /
-  // project / member / signatory1 / signatory2 / signatureDate /
-  // expiryDate / keyTerms / stage / contractStatus / validity / pdf.
-  // The pre-redesign fields (company, contactType, signatory text,
-  // contactDetails, effectiveDate, duration, noticePeriod, confidentiality,
-  // nonSolicitation, intellectualProperty, exclusivity, governingLaw,
-  // consultantVisibility, clauses) remain in the schema for back-compat
-  // — they live in the collapsible "Terms" accordion in the new UI.
+  // Canonical fields the portal reads and writes. The detailed-terms
+  // columns (Confidentiality, IP, Non-solicitation, Exclusivity, Governing
+  // Law, Notice Period, Duration, Consultant Visibility, Effective Date,
+  // Specific Clauses, Company / Consultant, Contact Type, Signatory text,
+  // Contact Details) still exist on the Airtable table but the portal no
+  // longer surfaces them — their data has been migrated into Key Terms.
   contracts: {
     // Identity
     side: "Side",
@@ -187,37 +185,27 @@ export const FIELDS = {
     project: "Project",
     projectCode: "Project Code",
     memberCode: "Member Code",
-    // Signatories (1 + optional 2)
+    // Signatories (1 + optional 2). Each has its own date because the
+    // two parties often sign on different days.
     signatory1Name: "Signatory 1 Name",
     signatory1Role: "Signatory 1 Role",
     signatory1Company: "Signatory 1 Company",
+    signatory1Date: "Signatory 1 Date",
     signatory2Name: "Signatory 2 Name",
     signatory2Role: "Signatory 2 Role",
     signatory2Company: "Signatory 2 Company",
-    // Lifecycle
+    signatory2Date: "Signatory 2 Date",
+    // Lifecycle. Validity is derived from Status + Expiry Date so it isn't
+    // stored — the column may still exist on the table but the portal
+    // ignores any value sitting in it.
     signatureDate: "Signature Date",
     expiryDate: "Expiry Date",
     stage: "Stage",
-    contractStatus: "Contract Status",
-    validity: "Validity",
+    // Free-form admin notes.
+    comment: "Comment",
     // Summary + attachment
     keyTerms: "Key Terms",
     pdf: "PDF",
-    // Legacy / terms detail (collapsible Terms accordion)
-    company: "Company / Consultant",
-    contactType: "Contact Type",
-    signatory: "Signatory",
-    contactDetails: "Contact Details",
-    effectiveDate: "Effective Date",
-    duration: "Duration",
-    noticePeriod: "Notice Period",
-    nonSolicitation: "Non-Solicitation",
-    confidentiality: "Confidentiality",
-    intellectualProperty: "Intellectual Property",
-    exclusivity: "Exclusivity",
-    governingLaw: "Governing Law / Jurisdiction",
-    consultantVisibility: "Consultant Visibility",
-    clauses: "Specific Clauses / Comments",
   },
   chatConversations: {
     title: "Title",
@@ -3031,12 +3019,14 @@ function parseLooseDate(s: string): string | null {
   return `${y}-${mm}-${dd}`;
 }
 
-// One signatory: name + role + company. Two slots on a contract — most
-// have one (the counterparty), some have two (both sides signed).
+// One signatory: name + role + company + signing date. The two parties
+// on a contract usually sign on different days, so each side carries
+// its own date.
 export type ContractSignatory = {
   name: string;
   role: string;
   company: string;
+  date: string;
 };
 
 export type ContractRecord = {
@@ -3060,26 +3050,11 @@ export type ContractRecord = {
   signatureDate: string;
   expiryDate: string;
   stage: string;
-  contractStatus: string;
-  validity: string;
-  // Summary + attachment
+  validity: ComputedValidity;
+  // Summary + attachment + notes
   keyTerms: string;
+  comment: string;
   pdf: AttachmentRef | null;
-  // Legacy / terms detail (collapsible Terms accordion)
-  company: string;
-  contactType: string;
-  signatory: string;
-  contactDetails: string;
-  effectiveDate: string;
-  duration: string;
-  noticePeriod: string;
-  nonSolicitation: string;
-  confidentiality: string;
-  intellectualProperty: string;
-  exclusivity: string;
-  governingLaw: string;
-  consultantVisibility: string;
-  clauses: string;
 };
 
 type LookupMaps = {
@@ -3095,6 +3070,8 @@ function contractFromRecord(
   const memberRecordIds = linkedIds(r, FIELDS.contracts.memberCode);
   const clientRecordIds = linkedIds(r, FIELDS.contracts.client);
   const projectRecordIds = linkedIds(r, FIELDS.contracts.project);
+  const stage = str(r, FIELDS.contracts.stage);
+  const expiryDate = str(r, FIELDS.contracts.expiryDate);
   return {
     id: r.id,
     // Identity
@@ -3114,41 +3091,25 @@ function contractFromRecord(
       name: str(r, FIELDS.contracts.signatory1Name),
       role: str(r, FIELDS.contracts.signatory1Role),
       company: str(r, FIELDS.contracts.signatory1Company),
+      date: str(r, FIELDS.contracts.signatory1Date),
     },
     signatory2: {
       name: str(r, FIELDS.contracts.signatory2Name),
       role: str(r, FIELDS.contracts.signatory2Role),
       company: str(r, FIELDS.contracts.signatory2Company),
+      date: str(r, FIELDS.contracts.signatory2Date),
     },
-    // Lifecycle. Validity is derived from Stage + Expiry Date so it's
+    // Lifecycle. Validity is derived from Status + Expiry Date so it's
     // always fresh — admins don't have to chase stale "Valid" labels
     // when an MSA quietly rolls past its expiry.
     signatureDate: str(r, FIELDS.contracts.signatureDate),
-    expiryDate: str(r, FIELDS.contracts.expiryDate),
-    stage: str(r, FIELDS.contracts.stage),
-    contractStatus: str(r, FIELDS.contracts.contractStatus),
-    validity: computeValidity(
-      str(r, FIELDS.contracts.stage),
-      str(r, FIELDS.contracts.expiryDate),
-    ),
-    // Summary + attachment
+    expiryDate,
+    stage,
+    validity: computeValidity(stage, expiryDate),
+    // Summary + attachment + notes
     keyTerms: str(r, FIELDS.contracts.keyTerms),
+    comment: str(r, FIELDS.contracts.comment),
     pdf: firstAttachment(r, FIELDS.contracts.pdf),
-    // Legacy / terms detail (collapsible Terms accordion)
-    company: str(r, FIELDS.contracts.company),
-    contactType: str(r, FIELDS.contracts.contactType),
-    signatory: str(r, FIELDS.contracts.signatory),
-    contactDetails: str(r, FIELDS.contracts.contactDetails),
-    effectiveDate: str(r, FIELDS.contracts.effectiveDate),
-    duration: str(r, FIELDS.contracts.duration),
-    noticePeriod: str(r, FIELDS.contracts.noticePeriod),
-    nonSolicitation: str(r, FIELDS.contracts.nonSolicitation),
-    confidentiality: str(r, FIELDS.contracts.confidentiality),
-    intellectualProperty: str(r, FIELDS.contracts.intellectualProperty),
-    exclusivity: str(r, FIELDS.contracts.exclusivity),
-    governingLaw: str(r, FIELDS.contracts.governingLaw),
-    consultantVisibility: str(r, FIELDS.contracts.consultantVisibility),
-    clauses: str(r, FIELDS.contracts.clauses),
   };
 }
 
@@ -3229,32 +3190,18 @@ export type ContractEditableFields = {
   signatory1Name?: string;
   signatory1Role?: string;
   signatory1Company?: string;
+  signatory1Date?: string;
   signatory2Name?: string;
   signatory2Role?: string;
   signatory2Company?: string;
+  signatory2Date?: string;
   // Lifecycle
   signatureDate?: string;
   expiryDate?: string;
-  validity?: string;
-  // Summary
-  keyTerms?: string;
-  // Legacy / terms detail
-  company?: string;
-  contactType?: string;
-  signatory?: string;
-  contactDetails?: string;
-  effectiveDate?: string;
-  duration?: string;
-  noticePeriod?: string;
-  nonSolicitation?: string;
-  confidentiality?: string;
-  intellectualProperty?: string;
-  exclusivity?: string;
-  governingLaw?: string;
-  consultantVisibility?: string;
-  clauses?: string;
   stage?: string;
-  contractStatus?: string;
+  // Summary + notes
+  keyTerms?: string;
+  comment?: string;
 };
 
 export async function updateContractFields(
@@ -3275,32 +3222,18 @@ export async function updateContractFields(
   setText("signatory1Name", fields.signatory1Name);
   setText("signatory1Role", fields.signatory1Role);
   setText("signatory1Company", fields.signatory1Company);
+  setText("signatory1Date", fields.signatory1Date);
   setText("signatory2Name", fields.signatory2Name);
   setText("signatory2Role", fields.signatory2Role);
   setText("signatory2Company", fields.signatory2Company);
+  setText("signatory2Date", fields.signatory2Date);
   // Lifecycle
   setText("signatureDate", fields.signatureDate);
   setText("expiryDate", fields.expiryDate);
-  setText("validity", fields.validity);
   setText("stage", fields.stage);
-  setText("contractStatus", fields.contractStatus);
-  // Summary
+  // Summary + notes
   setText("keyTerms", fields.keyTerms);
-  // Legacy / terms detail
-  setText("company", fields.company);
-  setText("contactType", fields.contactType);
-  setText("signatory", fields.signatory);
-  setText("contactDetails", fields.contactDetails);
-  setText("effectiveDate", fields.effectiveDate);
-  setText("duration", fields.duration);
-  setText("noticePeriod", fields.noticePeriod);
-  setText("nonSolicitation", fields.nonSolicitation);
-  setText("confidentiality", fields.confidentiality);
-  setText("intellectualProperty", fields.intellectualProperty);
-  setText("exclusivity", fields.exclusivity);
-  setText("governingLaw", fields.governingLaw);
-  setText("consultantVisibility", fields.consultantVisibility);
-  setText("clauses", fields.clauses);
+  setText("comment", fields.comment);
   // Linked records — null arrays should clear the link.
   if (fields.memberRecordIds !== undefined) {
     updates[FIELDS.contracts.memberCode] = fields.memberRecordIds;
@@ -3316,110 +3249,6 @@ export async function updateContractFields(
     [{ id: recordId, fields: updates as FieldSet }],
     { typecast: true },
   );
-}
-
-// Snapshot of every singleSelect field's full choice list on the
-// Contracts table. We fetch it once at page load and seed the
-// comboboxes — that way admins can pick existing choices (autocomplete)
-// or type a brand-new one (Airtable creates it on save via typecast).
-// Pulled from Airtable's meta API rather than from the loaded records:
-// the dataset only carries values that have actually been used, but the
-// admin asked for "all options" — which means the full Airtable choice
-// set, including options that no contract currently uses.
-export type ContractFieldChoices = {
-  contractType: string[];
-  contactType: string[];
-  signatureDate: string[];
-  effectiveDate: string[];
-  duration: string[];
-  expiryDate: string[];
-  noticePeriod: string[];
-  nonSolicitation: string[];
-  validity: string[];
-  intellectualProperty: string[];
-  exclusivity: string[];
-  governingLaw: string[];
-  consultantVisibility: string[];
-  stage: string[];
-  contractStatus: string[];
-  company: string[];
-};
-
-export async function listContractFieldChoices(): Promise<ContractFieldChoices> {
-  const url = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${env.airtablePat}` },
-    // Airtable's metadata endpoint isn't a hot path; cache the response
-    // for a minute so a tab-tab burst doesn't hammer it.
-    next: { revalidate: 60 },
-  });
-  if (!res.ok) {
-    // A meta-API outage shouldn't break the page; fall back to empty
-    // lists and let the comboboxes accept free-form input.
-    return emptyChoices();
-  }
-  const data = (await res.json()) as {
-    tables: Array<{ name: string; fields: Array<{ name: string; type: string; options?: { choices?: Array<{ name: string }> } }> }>;
-  };
-  const table = data.tables.find((t) => t.name === TABLES.contracts);
-  if (!table) return emptyChoices();
-  const choicesFor = (fieldName: string): string[] => {
-    const field = table.fields.find((f) => f.name === fieldName);
-    const raw = field?.options?.choices ?? [];
-    // Sort alphabetically (case-insensitive) so admins can scan a tidy
-    // datalist — Airtable returns choices in the order they were added,
-    // which is effectively random after years of edits. We dedupe too,
-    // since Airtable historical state sometimes carries near-duplicates.
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const c of raw) {
-      const name = c.name?.trim();
-      if (!name || seen.has(name.toLowerCase())) continue;
-      seen.add(name.toLowerCase());
-      out.push(name);
-    }
-    out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-    return out;
-  };
-  return {
-    contractType: choicesFor(FIELDS.contracts.contractType),
-    contactType: choicesFor(FIELDS.contracts.contactType),
-    signatureDate: choicesFor(FIELDS.contracts.signatureDate),
-    effectiveDate: choicesFor(FIELDS.contracts.effectiveDate),
-    duration: choicesFor(FIELDS.contracts.duration),
-    expiryDate: choicesFor(FIELDS.contracts.expiryDate),
-    noticePeriod: choicesFor(FIELDS.contracts.noticePeriod),
-    nonSolicitation: choicesFor(FIELDS.contracts.nonSolicitation),
-    validity: choicesFor(FIELDS.contracts.validity),
-    intellectualProperty: choicesFor(FIELDS.contracts.intellectualProperty),
-    exclusivity: choicesFor(FIELDS.contracts.exclusivity),
-    governingLaw: choicesFor(FIELDS.contracts.governingLaw),
-    consultantVisibility: choicesFor(FIELDS.contracts.consultantVisibility),
-    stage: choicesFor(FIELDS.contracts.stage),
-    contractStatus: choicesFor(FIELDS.contracts.contractStatus),
-    company: choicesFor(FIELDS.contracts.company),
-  };
-}
-
-function emptyChoices(): ContractFieldChoices {
-  return {
-    contractType: [],
-    contactType: [],
-    signatureDate: [],
-    effectiveDate: [],
-    duration: [],
-    expiryDate: [],
-    noticePeriod: [],
-    nonSolicitation: [],
-    validity: [],
-    intellectualProperty: [],
-    exclusivity: [],
-    governingLaw: [],
-    consultantVisibility: [],
-    stage: [],
-    contractStatus: [],
-    company: [],
-  };
 }
 
 // Attach a PDF to the Contracts row via Airtable's content endpoint

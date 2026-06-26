@@ -64,25 +64,34 @@ export async function POST(
   // Same destination as invoice notifications by design — finance keeps
   // one inbox for "documents that just landed in the portal". Best-
   // effort: an email failure mustn't unwind the successful upload.
+  const counterparty =
+    existing.clientNames.filter(Boolean).join(", ") ||
+    existing.memberCodes.join(", ") ||
+    existing.signatory1.company ||
+    existing.signatory1.name ||
+    "";
   const label =
-    [existing.contractType, existing.company, existing.projectCode]
+    [existing.contractType, counterparty, existing.projectCode]
       .filter(Boolean)
       .join(" · ") || existing.id;
   const subject = `Contract uploaded: ${label}`;
   const safe = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const signatoryLine = [existing.signatory1, existing.signatory2]
+    .filter((s) => s.name)
+    .map((s) => `${s.name}${s.role ? ` (${s.role})` : ""}${s.date ? ` on ${s.date}` : ""}`)
+    .join("; ");
   const lines: string[] = [
     `A signed contract PDF has just been uploaded in the HTP42 portal.`,
     ``,
-    `Contract type: ${existing.contractType || "—"}`,
-    `Counterparty: ${existing.company || "—"} (${existing.contactType || "—"})`,
-    `Project: ${existing.projectCode || "—"}`,
+    `Contract type: ${existing.contractType || "n/a"}`,
+    `Counterparty: ${counterparty || "n/a"}`,
+    `Project: ${existing.projectCode || "n/a"}`,
     existing.memberCodes.length > 0 ? `Member: ${existing.memberCodes.join(", ")}` : null,
-    `Signatory: ${existing.signatory || "—"}`,
-    `Signature date: ${existing.signatureDate || "—"}`,
-    `Effective: ${existing.effectiveDate || "—"}`,
-    `Expiry: ${existing.expiryDate || "—"}`,
-    `Stage: ${existing.stage || "—"}`,
+    signatoryLine ? `Signatories: ${signatoryLine}` : null,
+    `Signature date: ${existing.signatureDate || "n/a"}`,
+    `Expiry: ${existing.expiryDate || "n/a"}`,
+    `Status: ${existing.stage || "n/a"}`,
     ``,
     `Uploaded by: ${session.fullName || session.email || session.memberCode}`,
     `Open in portal: ${env.appUrl}/admin/contracts`,
@@ -90,17 +99,16 @@ export async function POST(
   const htmlLines = [
     `<p>A signed contract PDF has just been uploaded in the HTP42 portal.</p>`,
     `<ul>`,
-    `<li><strong>Contract type:</strong> ${safe(existing.contractType || "—")}</li>`,
-    `<li><strong>Counterparty:</strong> ${safe(existing.company || "—")} (${safe(existing.contactType || "—")})</li>`,
-    `<li><strong>Project:</strong> ${safe(existing.projectCode || "—")}</li>`,
+    `<li><strong>Contract type:</strong> ${safe(existing.contractType || "n/a")}</li>`,
+    `<li><strong>Counterparty:</strong> ${safe(counterparty || "n/a")}</li>`,
+    `<li><strong>Project:</strong> ${safe(existing.projectCode || "n/a")}</li>`,
     existing.memberCodes.length > 0
       ? `<li><strong>Member:</strong> ${safe(existing.memberCodes.join(", "))}</li>`
       : "",
-    `<li><strong>Signatory:</strong> ${safe(existing.signatory || "—")}</li>`,
-    `<li><strong>Signature date:</strong> ${safe(existing.signatureDate || "—")}</li>`,
-    `<li><strong>Effective:</strong> ${safe(existing.effectiveDate || "—")}</li>`,
-    `<li><strong>Expiry:</strong> ${safe(existing.expiryDate || "—")}</li>`,
-    `<li><strong>Stage:</strong> ${safe(existing.stage || "—")}</li>`,
+    signatoryLine ? `<li><strong>Signatories:</strong> ${safe(signatoryLine)}</li>` : "",
+    `<li><strong>Signature date:</strong> ${safe(existing.signatureDate || "n/a")}</li>`,
+    `<li><strong>Expiry:</strong> ${safe(existing.expiryDate || "n/a")}</li>`,
+    `<li><strong>Status:</strong> ${safe(existing.stage || "n/a")}</li>`,
     `</ul>`,
     `<p>Uploaded by <strong>${safe(session.fullName || session.email || session.memberCode)}</strong>. The PDF is attached. <a href="${env.appUrl}/admin/contracts">Open in portal</a>.</p>`,
   ].filter(Boolean);

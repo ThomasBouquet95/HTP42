@@ -4,20 +4,10 @@ import { requireAdminSession } from "@/lib/auth";
 import { getContractById, updateContractFields } from "@/lib/airtable";
 
 // Partial PATCH for admin-editable contract fields. Every field is
-// optional — only the keys the client sends get written, so editing
-// one field never clobbers a sibling. typecast=true inside
-// updateContractFields makes Airtable auto-register brand-new
-// singleSelect choices an admin types in (the "Add a custom value"
-// affordance the UI advertises).
-//
-// Length caps:
-// - Short labels (type, stage, status, contactType, validity etc.):
-//   200 chars — Airtable singleSelects choke past that anyway.
-// - Date strings sit on singleSelect fields but admins write them as
-//   free text ("15/12/2025", "Late May 2026 (est.)"). 200 chars covers
-//   even verbose phrasings.
-// - Multi-line clause text (confidentiality, contactDetails, clauses):
-//   5000 chars — same ceiling as task/comment fields elsewhere.
+// optional. Only the keys the client sends get written, so editing one
+// field never clobbers a sibling. typecast=true inside
+// updateContractFields lets Airtable auto-register brand-new
+// singleSelect choices an admin types in.
 const shortText = z.string().trim().max(200);
 const longText = z.string().max(5000);
 const schema = z.object({
@@ -31,36 +21,23 @@ const schema = z.object({
   projectRecordIds: z.array(z.string()).max(10).optional(),
   projectCode: shortText.optional(),
   memberRecordIds: z.array(z.string()).max(10).optional(),
-  // Signatories
+  // Signatories. Each signatory carries its own date because the two
+  // parties on a contract usually sign on different days.
   signatory1Name: shortText.optional(),
   signatory1Role: shortText.optional(),
   signatory1Company: shortText.optional(),
+  signatory1Date: shortText.optional(),
   signatory2Name: shortText.optional(),
   signatory2Role: shortText.optional(),
   signatory2Company: shortText.optional(),
+  signatory2Date: shortText.optional(),
   // Lifecycle
   signatureDate: shortText.optional(),
   expiryDate: shortText.optional(),
   stage: shortText.optional(),
-  contractStatus: shortText.optional(),
-  validity: shortText.optional(),
-  // Summary
+  // Summary + notes
   keyTerms: longText.optional(),
-  // Legacy / terms detail
-  company: shortText.optional(),
-  contactType: shortText.optional(),
-  signatory: shortText.optional(),
-  contactDetails: longText.optional(),
-  effectiveDate: shortText.optional(),
-  duration: shortText.optional(),
-  noticePeriod: shortText.optional(),
-  nonSolicitation: shortText.optional(),
-  confidentiality: longText.optional(),
-  intellectualProperty: shortText.optional(),
-  exclusivity: shortText.optional(),
-  governingLaw: shortText.optional(),
-  consultantVisibility: shortText.optional(),
-  clauses: longText.optional(),
+  comment: longText.optional(),
 });
 
 export async function PATCH(
