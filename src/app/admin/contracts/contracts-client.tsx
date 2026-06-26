@@ -12,6 +12,7 @@ import {
   type ContractSide,
   type ContractStatus,
   type ContractType,
+  type ProjectStatus,
 } from "@/lib/airtable";
 
 // All editable fields the PATCH route accepts. Mirrors
@@ -45,13 +46,25 @@ type ContractPatch = {
 
 type MemberOpt = { id: string; code: string; name: string };
 type ClientOpt = { id: string; code: string; name: string };
-type ProjectOpt = { id: string; code: string; name: string };
+type ProjectOpt = {
+  id: string;
+  code: string;
+  name: string;
+  status?: ProjectStatus | "";
+  clientRecordIds?: string[];
+};
+type StaffingOpt = {
+  id: string;
+  projectCode: string;
+  memberRecordIds: string[];
+};
 
 type Props = {
   contracts: ContractRecord[];
   members: MemberOpt[];
   clients: ClientOpt[];
   projects: ProjectOpt[];
+  staffings: StaffingOpt[];
 };
 
 type Filters = {
@@ -78,6 +91,7 @@ export function ContractsAdminClient({
   members,
   clients,
   projects,
+  staffings,
 }: Props) {
   const router = useRouter();
   const [contracts, setContracts] = useState<ContractRecord[]>(initialContracts);
@@ -332,8 +346,54 @@ export function ContractsAdminClient({
     }
   }
 
+  const [view, setView] = useState<"list" | "overview">("list");
+
   return (
     <div className="space-y-4">
+      {/* Top-level view toggle: List of contracts vs. R/A/G overview
+          by client, member, and project. */}
+      <div className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 p-0.5 text-xs">
+        {(
+          [
+            { value: "list" as const, label: "List" },
+            { value: "overview" as const, label: "Overview" },
+          ]
+        ).map((t) => {
+          const active = view === t.value;
+          return (
+            <button
+              key={t.value}
+              type="button"
+              onClick={() => setView(t.value)}
+              aria-pressed={active}
+              className={`rounded-md px-3 py-1 font-medium transition-colors ${
+                active
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {view === "overview" ? (
+        <OverviewView
+          contracts={contracts}
+          members={members}
+          clients={clients}
+          projects={projects}
+          staffings={staffings}
+          onOpenContract={(id) => {
+            setView("list");
+            setOpenId(id);
+          }}
+        />
+      ) : null}
+
+      {view === "list" ? (
+        <>
       <SideTabs
         active={filters.side}
         counts={sideCounts}
@@ -528,6 +588,8 @@ export function ContractsAdminClient({
           </tbody>
         </table>
       </div>
+        </>
+      ) : null}
 
       {openContract ? (
         <ContractDetailModal
@@ -723,6 +785,427 @@ function EditIcon() {
         strokeLinecap="round"
       />
     </svg>
+  );
+}
+
+// Red / amber / green / missing health indicator for a contract slot
+// (client × NDA, project × SOW, etc.). Plain enum; rendered by RagPill.
+type Rag = "green" | "amber" | "red";
+
+function ragForContracts(contracts: ContractRecord[]): Rag {
+  if (contracts.length === 0) return "red";
+  const buckets = contracts.map((c) => validityBucket(c.validity));
+  if (buckets.includes("Valid")) return "green";
+  if (buckets.every((b) => b === "Expired")) return "red";
+  // Has a Pending / Expiry Missing / N/A contract — admin action required.
+  return "amber";
+}
+
+function RagPill({
+  rag,
+  label,
+  onClick,
+}: {
+  rag: Rag;
+  label: string;
+  onClick?: () => void;
+}) {
+  const cls =
+    rag === "green"
+      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      : rag === "amber"
+      ? "bg-orange-50 text-orange-700 border-orange-200"
+      : "bg-red-50 text-red-700 border-red-200";
+  const inner = (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
+    >
+      <span
+        aria-hidden
+        className={`h-1.5 w-1.5 rounded-full ${
+          rag === "green"
+            ? "bg-emerald-500"
+            : rag === "amber"
+            ? "bg-orange-500"
+            : "bg-red-500"
+        }`}
+      />
+      {label}
+    </span>
+  );
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className="hover:opacity-80">
+        {inner}
+      </button>
+    );
+  }
+  return inner;
+}
+
+// Overview tab. Three stacked sections, each a small table with a
+// counterparty in the leftmost column and one RAG pill per required
+// contract type. Click a pill → jump to the matching contract in the
+// List view (or open the first one when multiple).
+function OverviewView({
+  contracts,
+  members,
+  clients,
+  projects,
+  staffings,
+  onOpenContract,
+}: {
+  contracts: ContractRecord[];
+  members: MemberOpt[];
+  clients: ClientOpt[];
+  projects: ProjectOpt[];
+  staffings: StaffingOpt[];
+  onOpenContract: (id: string) => void;
+}) {
+  const membersById = useMemo(
+    () => new Map(members.map((m) => [m.id, m])),
+    [members],
+  );
+  const clientsById = useMemo(
+    () => new Map(clients.map((c) => [c.id, c])),
+    [clients],
+  );
+
+  // Indexes that let us answer "give me all contracts where
+  // side=X and type=Y and the linked client/member/project includes Z"
+  // without rescanning the whole list per cell.
+  const contractsByClientSide = useMemo(() => {
+    const out = new Map<string, ContractRecord[]>();
+    for (const c of contracts) {
+      if (c.side !== "Client") continue;
+      for (const id of c.clientRecordIds) {
+        const list = out.get(id) ?? [];
+        list.push(c);
+        out.set(id, list);
+      }
+    }
+    return out;
+  }, [contracts]);
+  const contractsByMemberSide = useMemo(() => {
+    const out = new Map<string, ContractRecord[]>();
+    for (const c of contracts) {
+      if (c.side !== "Network Member") continue;
+      for (const id of c.memberRecordIds) {
+        const list = out.get(id) ?? [];
+        list.push(c);
+        out.set(id, list);
+      }
+    }
+    return out;
+  }, [contracts]);
+  const contractsByProjectAndSide = useMemo(() => {
+    // key: `${projectId}|${side}`
+    const out = new Map<string, ContractRecord[]>();
+    for (const c of contracts) {
+      if (!c.projectRecordIds.length) continue;
+      const sideKey = c.side === "Network Member" ? "Network" : c.side;
+      for (const pid of c.projectRecordIds) {
+        const k = `${pid}|${sideKey}`;
+        const list = out.get(k) ?? [];
+        list.push(c);
+        out.set(k, list);
+      }
+    }
+    return out;
+  }, [contracts]);
+
+  const isType = (c: ContractRecord, t: ContractType) =>
+    c.contractType.trim().toUpperCase() === t;
+
+  // Clients shown in the overview: only those linked to at least one
+  // project or any contract — drops dormant entries from the matrix so
+  // it stays scannable.
+  const activeClients = useMemo(() => {
+    const used = new Set<string>();
+    for (const p of projects) (p.clientRecordIds ?? []).forEach((id) => used.add(id));
+    for (const c of contracts)
+      if (c.side === "Client") c.clientRecordIds.forEach((id) => used.add(id));
+    return clients
+      .filter((c) => used.has(c.id))
+      .sort((a, b) => a.code.localeCompare(b.code));
+  }, [clients, projects, contracts]);
+
+  // Members shown: those with at least one staffing or one network-side
+  // contract.
+  const activeMembers = useMemo(() => {
+    const used = new Set<string>();
+    for (const s of staffings) s.memberRecordIds.forEach((id) => used.add(id));
+    for (const c of contracts)
+      if (c.side === "Network Member") c.memberRecordIds.forEach((id) => used.add(id));
+    return members
+      .filter((m) => used.has(m.id))
+      .sort((a, b) => a.code.localeCompare(b.code));
+  }, [members, staffings, contracts]);
+
+  // Project order: ongoing first. We treat "In Progress" as ongoing,
+  // then Not Started / Planned / On Hold, then Completed at the bottom.
+  const orderedProjects = useMemo(() => {
+    const rank: Record<string, number> = {
+      "In Progress": 0,
+      "Not Started": 1,
+      Planned: 2,
+      "On Hold": 3,
+      "": 4,
+      Completed: 5,
+    };
+    return [...projects].sort((a, b) => {
+      const ra = rank[a.status ?? ""] ?? 4;
+      const rb = rank[b.status ?? ""] ?? 4;
+      if (ra !== rb) return ra - rb;
+      return a.code.localeCompare(b.code);
+    });
+  }, [projects]);
+
+  // Member ids staffed per project, keyed by project code (staffings
+  // join via projectCode, not record id).
+  const projectMemberIds = useMemo(() => {
+    const out = new Map<string, Set<string>>();
+    for (const s of staffings) {
+      if (!s.projectCode) continue;
+      const set = out.get(s.projectCode) ?? new Set<string>();
+      for (const id of s.memberRecordIds) set.add(id);
+      out.set(s.projectCode, set);
+    }
+    return out;
+  }, [staffings]);
+
+  const openFirst = (list: ContractRecord[]) => {
+    if (list.length > 0) onOpenContract(list[0].id);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Clients: each row should have an NDA + an MSA. */}
+      <section className="bg-white rounded-lg border border-slate-200">
+        <div className="border-b border-slate-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+          Clients <span className="font-normal text-slate-400">· NDA + MSA</span>
+        </div>
+        <table className="w-full table-fixed text-xs">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="text-left px-3 py-1.5 font-medium w-1/2">Client</th>
+              <th className="text-center px-3 py-1.5 font-medium">NDA</th>
+              <th className="text-center px-3 py-1.5 font-medium">MSA</th>
+            </tr>
+          </thead>
+          <tbody>
+            {activeClients.length === 0 ? (
+              <tr>
+                <td colSpan={3} className="text-center text-slate-500 py-6 text-xs">
+                  No active clients.
+                </td>
+              </tr>
+            ) : (
+              activeClients.map((cl) => {
+                const all = contractsByClientSide.get(cl.id) ?? [];
+                const ndas = all.filter((c) => isType(c, "NDA"));
+                const msas = all.filter((c) => isType(c, "MSA"));
+                return (
+                  <tr key={cl.id} className="border-t border-slate-100 align-middle">
+                    <td className="px-3 py-1.5 demo-blur">
+                      <div className="truncate">
+                        <span className="font-mono text-[10px] text-slate-500">
+                          {cl.code}
+                        </span>{" "}
+                        {cl.name}
+                      </div>
+                    </td>
+                    <td className="px-3 py-1.5 text-center">
+                      <RagPill
+                        rag={ragForContracts(ndas)}
+                        label={ndas.length > 0 ? "NDA" : "Missing"}
+                        onClick={ndas.length > 0 ? () => openFirst(ndas) : undefined}
+                      />
+                    </td>
+                    <td className="px-3 py-1.5 text-center">
+                      <RagPill
+                        rag={ragForContracts(msas)}
+                        label={msas.length > 0 ? "MSA" : "Missing"}
+                        onClick={msas.length > 0 ? () => openFirst(msas) : undefined}
+                      />
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      {/* Network Members: each row should have an MSA. */}
+      <section className="bg-white rounded-lg border border-slate-200">
+        <div className="border-b border-slate-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+          Network members <span className="font-normal text-slate-400">· MSA</span>
+        </div>
+        <table className="w-full table-fixed text-xs">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="text-left px-3 py-1.5 font-medium w-2/3">Member</th>
+              <th className="text-center px-3 py-1.5 font-medium">MSA</th>
+            </tr>
+          </thead>
+          <tbody>
+            {activeMembers.length === 0 ? (
+              <tr>
+                <td colSpan={2} className="text-center text-slate-500 py-6 text-xs">
+                  No active members.
+                </td>
+              </tr>
+            ) : (
+              activeMembers.map((m) => {
+                const all = contractsByMemberSide.get(m.id) ?? [];
+                const msas = all.filter((c) => isType(c, "MSA"));
+                return (
+                  <tr key={m.id} className="border-t border-slate-100 align-middle">
+                    <td className="px-3 py-1.5 demo-blur">
+                      <div className="truncate">
+                        <span className="font-mono text-[10px] text-slate-500">
+                          {m.code}
+                        </span>{" "}
+                        {m.name}
+                      </div>
+                    </td>
+                    <td className="px-3 py-1.5 text-center">
+                      <RagPill
+                        rag={ragForContracts(msas)}
+                        label={msas.length > 0 ? "MSA" : "Missing"}
+                        onClick={msas.length > 0 ? () => openFirst(msas) : undefined}
+                      />
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      {/* Projects: each row needs a Client-side SOW (HTP42 with the
+          client) AND a Network-side SOW for every staffed member. */}
+      <section className="bg-white rounded-lg border border-slate-200">
+        <div className="border-b border-slate-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+          Projects <span className="font-normal text-slate-400">· Client SOW + Member SOW(s)</span>
+        </div>
+        <table className="w-full table-fixed text-xs">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="text-left px-3 py-1.5 font-medium w-2/5">Project</th>
+              <th className="text-left px-3 py-1.5 font-medium">Client</th>
+              <th className="text-left px-3 py-1.5 font-medium whitespace-nowrap">Status</th>
+              <th className="text-center px-3 py-1.5 font-medium">Client SOW</th>
+              <th className="text-center px-3 py-1.5 font-medium">Member SOW(s)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orderedProjects.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="text-center text-slate-500 py-6 text-xs">
+                  No projects on file.
+                </td>
+              </tr>
+            ) : (
+              orderedProjects.map((p) => {
+                const clientSows =
+                  contractsByProjectAndSide.get(`${p.id}|Client`)?.filter((c) => isType(c, "SOW")) ?? [];
+                const memberSows =
+                  contractsByProjectAndSide.get(`${p.id}|Network`)?.filter((c) => isType(c, "SOW")) ?? [];
+                const clientRag = ragForContracts(clientSows);
+                // Member-SOW aggregate: green if every staffed member
+                // has at least one valid SOW; amber if some do; red if
+                // none. If there are no staffings (project not yet
+                // assigned), we surface "n/a" rather than red so it
+                // doesn't read as a missing contract.
+                const staffedMembers = projectMemberIds.get(p.code) ?? new Set<string>();
+                const totalStaffed = staffedMembers.size;
+                let memberRag: Rag = "red";
+                if (totalStaffed === 0) {
+                  // No one staffed yet — count any member SOW as green,
+                  // otherwise the cell can't go red because there is
+                  // nothing to compare against.
+                  memberRag = memberSows.length > 0 ? "green" : "red";
+                } else {
+                  let valid = 0;
+                  for (const memberId of staffedMembers) {
+                    const sows = memberSows.filter((c) =>
+                      c.memberRecordIds.includes(memberId),
+                    );
+                    if (sows.length === 0) continue;
+                    if (sows.some((c) => validityBucket(c.validity) === "Valid"))
+                      valid += 1;
+                  }
+                  if (valid === totalStaffed) memberRag = "green";
+                  else if (valid > 0) memberRag = "amber";
+                  else memberRag = memberSows.length > 0 ? "amber" : "red";
+                }
+                const clientName =
+                  (p.clientRecordIds ?? [])
+                    .map((id) => clientsById.get(id)?.name ?? clientsById.get(id)?.code ?? "")
+                    .filter(Boolean)
+                    .join(", ") || "—";
+                const memberSummary =
+                  totalStaffed === 0
+                    ? "no staffing"
+                    : `${totalStaffed} staffed`;
+                return (
+                  <tr
+                    key={p.id}
+                    className={`border-t border-slate-100 align-middle ${
+                      p.status === "Completed" ? "text-slate-400" : ""
+                    }`}
+                  >
+                    <td className="px-3 py-1.5">
+                      <div className="truncate">
+                        <span className="font-mono text-[10px] text-slate-500">
+                          {p.code}
+                        </span>{" "}
+                        {p.name}
+                      </div>
+                    </td>
+                    <td className="px-3 py-1.5 demo-blur">
+                      <div className="truncate">{clientName}</div>
+                    </td>
+                    <td className="px-3 py-1.5 whitespace-nowrap text-[11px] text-slate-600">
+                      {p.status || "—"}
+                    </td>
+                    <td className="px-3 py-1.5 text-center">
+                      <RagPill
+                        rag={clientRag}
+                        label={clientSows.length > 0 ? "SOW" : "Missing"}
+                        onClick={
+                          clientSows.length > 0
+                            ? () => openFirst(clientSows)
+                            : undefined
+                        }
+                      />
+                    </td>
+                    <td className="px-3 py-1.5 text-center">
+                      <RagPill
+                        rag={memberRag}
+                        label={
+                          memberSows.length > 0
+                            ? `${memberSows.length}/${Math.max(totalStaffed, memberSows.length)} · ${memberSummary}`
+                            : `0/${totalStaffed} · ${memberSummary}`
+                        }
+                        onClick={
+                          memberSows.length > 0
+                            ? () => openFirst(memberSows)
+                            : undefined
+                        }
+                      />
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </section>
+    </div>
   );
 }
 

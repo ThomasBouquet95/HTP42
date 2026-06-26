@@ -4,6 +4,7 @@ import { AdminTabs } from "@/components/admin-tabs";
 import {
   listAllContracts,
   listAllMembers,
+  listAllStaffings,
   listClients,
   listProjects,
 } from "@/lib/airtable";
@@ -15,14 +16,14 @@ export default async function AdminContractsPage() {
   const session = await requireAdminSession();
   if (!session) redirect("/dashboard");
 
-  // Fetch contracts + the picker option lists in parallel. The modal's
-  // status + type choosers use hard-coded canonical lists now, so we
-  // don't fetch Airtable singleSelect choices anymore.
-  const [contracts, allMembers, allClients, allProjects] = await Promise.all([
+  // Staffings are pulled too so the Overview tab can compute per-project
+  // "every staffed member has a network-side SOW" coverage.
+  const [contracts, allMembers, allClients, allProjects, allStaffings] = await Promise.all([
     listAllContracts(),
     listAllMembers(),
     listClients(),
     listProjects(),
+    listAllStaffings(),
   ]);
   const members = allMembers.map((m) => ({
     id: m.id,
@@ -34,10 +35,22 @@ export default async function AdminContractsPage() {
     code: c.clientCode,
     name: c.clientName,
   }));
+  // Projects keep their status so the Overview can put ongoing projects
+  // at the top and gray-out completed ones.
   const projects = allProjects.map((p) => ({
     id: p.id,
     code: p.projectCode,
     name: p.projectName,
+    status: p.status,
+    clientRecordIds: p.clientRecordIds,
+  }));
+  // Lightweight staffing summary keyed for the per-project member-SOW
+  // check. We don't need rates / dates / hours here, just the
+  // project↔member adjacency.
+  const staffings = allStaffings.map((s) => ({
+    id: s.id,
+    projectCode: s.projectCode,
+    memberRecordIds: s.memberRecordIds,
   }));
 
   return (
@@ -54,6 +67,7 @@ export default async function AdminContractsPage() {
         members={members}
         clients={clients}
         projects={projects}
+        staffings={staffings}
       />
     </main>
   );
