@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CONTRACT_SIDES,
@@ -978,6 +978,18 @@ function OverviewView({
     if (list.length > 0) onOpenContract(list[0].id);
   };
 
+  // Project rows whose per-member SOW breakdown is expanded.
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
+    new Set(),
+  );
+  const toggleProject = (id: string) =>
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   return (
     <div className="space-y-6">
       {/* Clients: each row should have an NDA + an MSA. */}
@@ -1122,83 +1134,153 @@ function OverviewView({
                 // doesn't read as a missing contract.
                 const staffedMembers = projectMemberIds.get(p.code) ?? new Set<string>();
                 const totalStaffed = staffedMembers.size;
+                // Per-member SOW breakdown — one row per staffed member
+                // with their best validity bucket + the matching SOW
+                // contracts (for the click-through). Drives both the
+                // aggregate pill and the expandable detail.
+                const memberBreakdown = [...staffedMembers].map((memberId) => {
+                  const sows = memberSows.filter((c) =>
+                    c.memberRecordIds.includes(memberId),
+                  );
+                  let rag: Rag;
+                  if (sows.length === 0) rag = "red";
+                  else if (sows.some((c) => validityBucket(c.validity) === "Valid"))
+                    rag = "green";
+                  else if (sows.every((c) => validityBucket(c.validity) === "Expired"))
+                    rag = "red";
+                  else rag = "amber";
+                  const m = membersById.get(memberId);
+                  return {
+                    memberId,
+                    code: m?.code ?? memberId,
+                    name: m?.name ?? "",
+                    sows,
+                    rag,
+                  };
+                });
+                memberBreakdown.sort((a, b) => a.code.localeCompare(b.code));
+                const validCount = memberBreakdown.filter((b) => b.rag === "green").length;
                 let memberRag: Rag = "red";
                 if (totalStaffed === 0) {
-                  // No one staffed yet — count any member SOW as green,
-                  // otherwise the cell can't go red because there is
-                  // nothing to compare against.
                   memberRag = memberSows.length > 0 ? "green" : "red";
-                } else {
-                  let valid = 0;
-                  for (const memberId of staffedMembers) {
-                    const sows = memberSows.filter((c) =>
-                      c.memberRecordIds.includes(memberId),
-                    );
-                    if (sows.length === 0) continue;
-                    if (sows.some((c) => validityBucket(c.validity) === "Valid"))
-                      valid += 1;
-                  }
-                  if (valid === totalStaffed) memberRag = "green";
-                  else if (valid > 0) memberRag = "amber";
-                  else memberRag = memberSows.length > 0 ? "amber" : "red";
-                }
+                } else if (validCount === totalStaffed) memberRag = "green";
+                else if (validCount > 0) memberRag = "amber";
+                else memberRag = memberSows.length > 0 ? "amber" : "red";
                 const clientName =
                   (p.clientRecordIds ?? [])
                     .map((id) => clientsById.get(id)?.name ?? clientsById.get(id)?.code ?? "")
                     .filter(Boolean)
                     .join(", ") || "—";
-                const memberSummary =
+                const expandable = totalStaffed > 0;
+                const expanded = expandedProjects.has(p.id);
+                const memberLabel =
                   totalStaffed === 0
-                    ? "no staffing"
-                    : `${totalStaffed} staffed`;
+                    ? memberSows.length > 0
+                      ? "no staffing"
+                      : "no staffing"
+                    : `${validCount}/${totalStaffed}`;
                 return (
-                  <tr
-                    key={p.id}
-                    className={`border-t border-slate-100 align-middle ${
-                      p.status === "Completed" ? "text-slate-400" : ""
-                    }`}
-                  >
-                    <td className="px-3 py-1.5">
-                      <div className="truncate">
-                        <span className="font-mono text-[10px] text-slate-500">
-                          {p.code}
-                        </span>{" "}
-                        {p.name}
-                      </div>
-                    </td>
-                    <td className="px-3 py-1.5 demo-blur">
-                      <div className="truncate">{clientName}</div>
-                    </td>
-                    <td className="px-3 py-1.5 whitespace-nowrap text-[11px] text-slate-600">
-                      {p.status || "—"}
-                    </td>
-                    <td className="px-3 py-1.5 text-center">
-                      <RagPill
-                        rag={clientRag}
-                        label={clientSows.length > 0 ? "SOW" : "Missing"}
-                        onClick={
-                          clientSows.length > 0
-                            ? () => openFirst(clientSows)
-                            : undefined
-                        }
-                      />
-                    </td>
-                    <td className="px-3 py-1.5 text-center">
-                      <RagPill
-                        rag={memberRag}
-                        label={
-                          memberSows.length > 0
-                            ? `${memberSows.length}/${Math.max(totalStaffed, memberSows.length)} · ${memberSummary}`
-                            : `0/${totalStaffed} · ${memberSummary}`
-                        }
-                        onClick={
-                          memberSows.length > 0
-                            ? () => openFirst(memberSows)
-                            : undefined
-                        }
-                      />
-                    </td>
-                  </tr>
+                  <Fragment key={p.id}>
+                    <tr
+                      className={`border-t border-slate-100 align-middle ${
+                        p.status === "Completed" ? "text-slate-400" : ""
+                      }`}
+                    >
+                      <td className="px-3 py-1.5">
+                        <div className="truncate">
+                          <span className="font-mono text-[10px] text-slate-500">
+                            {p.code}
+                          </span>{" "}
+                          {p.name}
+                        </div>
+                      </td>
+                      <td className="px-3 py-1.5 demo-blur">
+                        <div className="truncate">{clientName}</div>
+                      </td>
+                      <td className="px-3 py-1.5 whitespace-nowrap text-[11px] text-slate-600">
+                        {p.status || "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-center">
+                        <RagPill
+                          rag={clientRag}
+                          label={clientSows.length > 0 ? "SOW" : "Missing"}
+                          onClick={
+                            clientSows.length > 0
+                              ? () => openFirst(clientSows)
+                              : undefined
+                          }
+                        />
+                      </td>
+                      <td className="px-3 py-1.5 text-center">
+                        <button
+                          type="button"
+                          onClick={
+                            expandable ? () => toggleProject(p.id) : undefined
+                          }
+                          disabled={!expandable}
+                          className={`inline-flex items-center gap-1 ${
+                            expandable ? "hover:opacity-80" : "cursor-default"
+                          }`}
+                          title={
+                            expandable
+                              ? "Show each staffed member's SOW status"
+                              : undefined
+                          }
+                        >
+                          <RagPill rag={memberRag} label={memberLabel} />
+                          {expandable ? (
+                            <svg
+                              width="10"
+                              height="10"
+                              viewBox="0 0 12 12"
+                              fill="none"
+                              className={`text-slate-400 transition-transform ${
+                                expanded ? "rotate-180" : ""
+                              }`}
+                            >
+                              <path
+                                d="M3 4.5 6 7.5 9 4.5"
+                                stroke="currentColor"
+                                strokeWidth="1.4"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          ) : null}
+                        </button>
+                      </td>
+                    </tr>
+                    {expanded && expandable ? (
+                      <tr className="border-t border-slate-100 bg-slate-50/60">
+                        <td colSpan={5} className="px-3 py-2">
+                          <div className="space-y-1">
+                            {memberBreakdown.map((b) => (
+                              <div
+                                key={b.memberId}
+                                className="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1 ring-1 ring-slate-100"
+                              >
+                                <div className="min-w-0 truncate demo-blur text-[11px] text-slate-700">
+                                  <span className="font-mono text-[10px] text-slate-500">
+                                    {b.code}
+                                  </span>{" "}
+                                  {b.name}
+                                </div>
+                                <RagPill
+                                  rag={b.rag}
+                                  label={b.sows.length > 0 ? "SOW" : "Missing"}
+                                  onClick={
+                                    b.sows.length > 0
+                                      ? () => openFirst(b.sows)
+                                      : undefined
+                                  }
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 );
               })
             )}
