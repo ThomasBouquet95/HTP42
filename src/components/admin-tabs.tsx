@@ -1,59 +1,121 @@
 import Link from "next/link";
 import { DemoModeToggle } from "@/components/demo-mode";
 
-type TabKey =
-  | "home"
+// Page keys are the individual admin sub-pages. Each one belongs to
+// exactly one category below. Pages pass their own key as `active`;
+// the component figures out which category to highlight.
+type PageKey =
   | "members"
+  | "staffing"
+  | "signins"
   | "clients"
   | "projects"
-  | "staffing"
   | "timesheets"
   | "payments"
   | "invoices"
-  | "contracts"
-  | "signins";
+  | "contracts";
 
-const TABS: Array<{ key: TabKey; href: string; label: string }> = [
-  { key: "home", href: "/admin", label: "Overview" },
-  { key: "members", href: "/admin/members", label: "Network Members" },
-  { key: "clients", href: "/admin/clients", label: "Clients" },
-  { key: "projects", href: "/admin/projects", label: "Projects" },
-  { key: "staffing", href: "/admin/staffing", label: "Project Staffing" },
-  { key: "timesheets", href: "/admin/timesheets", label: "Timesheets" },
-  { key: "payments", href: "/admin/payments", label: "Payments" },
-  { key: "invoices", href: "/admin/invoices", label: "Invoices" },
-  { key: "contracts", href: "/admin/contracts", label: "Contracts" },
-  { key: "signins", href: "/admin/sign-ins", label: "Sign-in activity" },
+type Page = { key: PageKey; href: string; label: string };
+type Category = { key: string; label: string; pages: Page[] };
+
+// Two-level admin navigation. Top row = categories, second row =
+// the sub-pages of whichever category the current page lives in.
+// Single-page categories (Clients, Legal) skip the second row since it
+// would just echo the category tab.
+const CATEGORIES: Category[] = [
+  {
+    key: "network",
+    label: "Network / HR",
+    pages: [
+      { key: "members", href: "/admin/members", label: "Members" },
+      { key: "staffing", href: "/admin/staffing", label: "Staffing" },
+      { key: "signins", href: "/admin/sign-ins", label: "Sign-in activity" },
+    ],
+  },
+  {
+    key: "clients",
+    label: "Clients",
+    pages: [{ key: "clients", href: "/admin/clients", label: "Clients" }],
+  },
+  {
+    key: "projects",
+    label: "Projects",
+    pages: [
+      { key: "projects", href: "/admin/projects", label: "Projects" },
+      { key: "timesheets", href: "/admin/timesheets", label: "Timesheets" },
+    ],
+  },
+  {
+    key: "finance",
+    label: "Finance",
+    pages: [
+      { key: "payments", href: "/admin/payments", label: "Payments" },
+      { key: "invoices", href: "/admin/invoices", label: "Invoices" },
+    ],
+  },
+  {
+    key: "legal",
+    label: "Legal",
+    pages: [{ key: "contracts", href: "/admin/contracts", label: "Contracts" }],
+  },
 ];
 
-export function AdminTabs({ active }: { active: TabKey }) {
+export function AdminTabs({ active }: { active: PageKey }) {
+  const activeCategory =
+    CATEGORIES.find((c) => c.pages.some((p) => p.key === active)) ?? CATEGORIES[0];
+  const showSubRow = activeCategory.pages.length > 1;
+
   return (
-    <div className="mb-5 flex items-end justify-between gap-3 border-b border-slate-200">
-      <nav className="flex items-center gap-1 -mb-px overflow-x-auto">
-        {TABS.map((t) => {
-          const isActive = t.key === active;
-          return (
-            <Link
-              key={t.key}
-              href={t.href}
-              aria-current={isActive ? "page" : undefined}
-              className={`inline-flex items-center px-3 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
-                isActive
-                  ? "border-brand-600 text-brand-700"
-                  : "border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300"
-              }`}
-            >
-              {t.label}
-            </Link>
-          );
-        })}
-      </nav>
-      {/* Right-aligned, sits on the same baseline as the tab labels. The
-          toggle controls a global data attribute, so any .demo-blur class
-          inside the admin tabs reacts even on pages we haven't touched. */}
-      <div className="mb-1.5">
-        <DemoModeToggle />
+    <div className="mb-5 space-y-2">
+      {/* Category row (pill style) + demo toggle. */}
+      <div className="flex items-center justify-between gap-3">
+        <nav className="flex items-center gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1">
+          {CATEGORIES.map((c) => {
+            const isActive = c.key === activeCategory.key;
+            return (
+              <Link
+                key={c.key}
+                href={c.pages[0].href}
+                aria-current={isActive ? "page" : undefined}
+                className={`inline-flex items-center rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors ${
+                  isActive
+                    ? "bg-white text-brand-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                {c.label}
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="shrink-0">
+          <DemoModeToggle />
+        </div>
       </div>
+
+      {/* Sub-page row for the active category. Hidden for single-page
+          categories where it would just duplicate the category tab. */}
+      {showSubRow ? (
+        <nav className="flex items-center gap-1 border-b border-slate-200 -mb-px overflow-x-auto">
+          {activeCategory.pages.map((p) => {
+            const isActive = p.key === active;
+            return (
+              <Link
+                key={p.key}
+                href={p.href}
+                aria-current={isActive ? "page" : undefined}
+                className={`inline-flex items-center px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
+                  isActive
+                    ? "border-brand-600 text-brand-700"
+                    : "border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300"
+                }`}
+              >
+                {p.label}
+              </Link>
+            );
+          })}
+        </nav>
+      ) : null}
     </div>
   );
 }
