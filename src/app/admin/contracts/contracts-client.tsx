@@ -658,13 +658,14 @@ export function ContractsAdminClient({
                           href={c.pdf.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-brand-700 hover:text-brand-800 font-medium"
-                          title={c.pdf.filename || "Download"}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-brand-700 hover:bg-brand-50 hover:text-brand-800"
+                          title={`Download ${c.pdf.filename || "PDF"}`}
+                          aria-label="Download PDF"
                         >
-                          Download
+                          <FileIcon />
                         </a>
                       ) : (
-                        <span className="text-[10px] text-slate-400">No file</span>
+                        <Dash />
                       )}
                     </td>
                     <td className="px-2 py-1.5 text-center">
@@ -866,6 +867,27 @@ function ValidityPill({ validity }: { validity: string }) {
   );
 }
 
+function FileIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M7 3h7l4 4v13a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V4.5A1.5 1.5 0 0 1 7 3Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path d="M14 3v4h4" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path
+        d="M12 11v6m0 0l-2.5-2.5M12 17l2.5-2.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function EditIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -885,17 +907,43 @@ function EditIcon() {
   );
 }
 
-// Red / amber / green / missing health indicator for a contract slot
-// (client × NDA, project × SOW, etc.). Plain enum; rendered by RagPill.
+// Red / amber / green health indicator for a contract slot (client ×
+// NDA, project × SOW, etc.). Rendered by RagPill.
 type Rag = "green" | "amber" | "red";
 
-function ragForContracts(contracts: ContractRecord[]): Rag {
-  if (contracts.length === 0) return "red";
-  const buckets = contracts.map((c) => validityBucket(c.validity));
-  if (buckets.includes("Valid")) return "green";
-  if (buckets.every((b) => b === "Expired")) return "red";
-  // Has a Pending / Expiry Missing / N/A contract — admin action required.
-  return "amber";
+// Status of a required contract slot, resolved from whatever contracts
+// fill it. Labels describe the STATE (not the contract type, which is
+// already the column header):
+//   green  · "Valid"        — a signed, in-force contract WITH its PDF
+//   amber  · "Doc missing"  — signed and in-force, but no PDF attached
+//   amber  · "In progress"  — exists but not yet signed (draft / pending)
+//   red    · "Expired"      — the only contracts are past their expiry
+//   red    · "Missing"      — no contract at all
+// `open` jumps to that contract in the List view (undefined when there
+// is nothing to open, i.e. the Missing case).
+type SlotStatus = { rag: Rag; label: string; open?: () => void };
+
+function slotStatus(
+  contracts: ContractRecord[],
+  onOpen: (id: string) => void,
+): SlotStatus {
+  if (contracts.length === 0) return { rag: "red", label: "Missing" };
+  const inForce = (c: ContractRecord) => {
+    const b = validityBucket(c.validity);
+    return b === "Valid" || b === "Expiry Missing";
+  };
+  const validWithDoc = contracts.find((c) => inForce(c) && c.pdf?.url);
+  if (validWithDoc)
+    return { rag: "green", label: "Valid", open: () => onOpen(validWithDoc.id) };
+  const valid = contracts.find((c) => inForce(c));
+  if (valid)
+    return { rag: "amber", label: "Doc missing", open: () => onOpen(valid.id) };
+  const pending = contracts.find(
+    (c) => validityBucket(c.validity) !== "Expired",
+  );
+  if (pending)
+    return { rag: "amber", label: "In progress", open: () => onOpen(pending.id) };
+  return { rag: "red", label: "Expired", open: () => onOpen(contracts[0].id) };
 }
 
 function RagPill({
@@ -938,6 +986,19 @@ function RagPill({
     );
   }
   return inner;
+}
+
+// Convenience wrapper: resolve a slot's status from its contracts and
+// render the pill. Keeps the Overview tables terse.
+function SlotPill({
+  contracts,
+  onOpen,
+}: {
+  contracts: ContractRecord[];
+  onOpen: (id: string) => void;
+}) {
+  const s = slotStatus(contracts, onOpen);
+  return <RagPill rag={s.rag} label={s.label} onClick={s.open} />;
 }
 
 // Overview tab. Three stacked sections, each a small table with a
@@ -1071,10 +1132,6 @@ function OverviewView({
     return out;
   }, [staffings]);
 
-  const openFirst = (list: ContractRecord[]) => {
-    if (list.length > 0) onOpenContract(list[0].id);
-  };
-
   // Project rows whose per-member SOW breakdown is expanded.
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
     new Set(),
@@ -1125,18 +1182,10 @@ function OverviewView({
                       </div>
                     </td>
                     <td className="px-3 py-1.5 text-center">
-                      <RagPill
-                        rag={ragForContracts(ndas)}
-                        label={ndas.length > 0 ? "NDA" : "Missing"}
-                        onClick={ndas.length > 0 ? () => openFirst(ndas) : undefined}
-                      />
+                      <SlotPill contracts={ndas} onOpen={onOpenContract} />
                     </td>
                     <td className="px-3 py-1.5 text-center">
-                      <RagPill
-                        rag={ragForContracts(msas)}
-                        label={msas.length > 0 ? "MSA" : "Missing"}
-                        onClick={msas.length > 0 ? () => openFirst(msas) : undefined}
-                      />
+                      <SlotPill contracts={msas} onOpen={onOpenContract} />
                     </td>
                   </tr>
                 );
@@ -1180,11 +1229,7 @@ function OverviewView({
                       </div>
                     </td>
                     <td className="px-3 py-1.5 text-center">
-                      <RagPill
-                        rag={ragForContracts(msas)}
-                        label={msas.length > 0 ? "MSA" : "Missing"}
-                        onClick={msas.length > 0 ? () => openFirst(msas) : undefined}
-                      />
+                      <SlotPill contracts={msas} onOpen={onOpenContract} />
                     </td>
                   </tr>
                 );
@@ -1223,45 +1268,34 @@ function OverviewView({
                   contractsByProjectAndSide.get(`${p.id}|Client`)?.filter((c) => isType(c, "SOW")) ?? [];
                 const memberSows =
                   contractsByProjectAndSide.get(`${p.id}|Network`)?.filter((c) => isType(c, "SOW")) ?? [];
-                const clientRag = ragForContracts(clientSows);
-                // Member-SOW aggregate: green if every staffed member
-                // has at least one valid SOW; amber if some do; red if
-                // none. If there are no staffings (project not yet
-                // assigned), we surface "n/a" rather than red so it
-                // doesn't read as a missing contract.
+                const clientStatus = slotStatus(clientSows, onOpenContract);
                 const staffedMembers = projectMemberIds.get(p.code) ?? new Set<string>();
                 const totalStaffed = staffedMembers.size;
                 // Per-member SOW breakdown — one row per staffed member
-                // with their best validity bucket + the matching SOW
-                // contracts (for the click-through). Drives both the
-                // aggregate pill and the expandable detail.
+                // with its slot status (green/amber/red + label + link).
+                // Drives both the aggregate pill and the expandable detail.
                 const memberBreakdown = [...staffedMembers].map((memberId) => {
                   const sows = memberSows.filter((c) =>
                     c.memberRecordIds.includes(memberId),
                   );
-                  let rag: Rag;
-                  if (sows.length === 0) rag = "red";
-                  else if (sows.some((c) => validityBucket(c.validity) === "Valid"))
-                    rag = "green";
-                  else if (sows.every((c) => validityBucket(c.validity) === "Expired"))
-                    rag = "red";
-                  else rag = "amber";
                   const m = membersById.get(memberId);
                   return {
                     memberId,
                     code: m?.code ?? memberId,
                     name: m?.name ?? "",
                     sows,
-                    rag,
+                    status: slotStatus(sows, onOpenContract),
                   };
                 });
                 memberBreakdown.sort((a, b) => a.code.localeCompare(b.code));
-                const validCount = memberBreakdown.filter((b) => b.rag === "green").length;
+                const greenCount = memberBreakdown.filter(
+                  (b) => b.status.rag === "green",
+                ).length;
                 let memberRag: Rag = "red";
                 if (totalStaffed === 0) {
                   memberRag = memberSows.length > 0 ? "green" : "red";
-                } else if (validCount === totalStaffed) memberRag = "green";
-                else if (validCount > 0) memberRag = "amber";
+                } else if (greenCount === totalStaffed) memberRag = "green";
+                else if (greenCount > 0) memberRag = "amber";
                 else memberRag = memberSows.length > 0 ? "amber" : "red";
                 const clientName =
                   (p.clientRecordIds ?? [])
@@ -1272,10 +1306,8 @@ function OverviewView({
                 const expanded = expandedProjects.has(p.id);
                 const memberLabel =
                   totalStaffed === 0
-                    ? memberSows.length > 0
-                      ? "no staffing"
-                      : "no staffing"
-                    : `${validCount}/${totalStaffed}`;
+                    ? "no staffing"
+                    : `${greenCount}/${totalStaffed}`;
                 return (
                   <Fragment key={p.id}>
                     <tr
@@ -1299,13 +1331,9 @@ function OverviewView({
                       </td>
                       <td className="px-3 py-1.5 text-center">
                         <RagPill
-                          rag={clientRag}
-                          label={clientSows.length > 0 ? "SOW" : "Missing"}
-                          onClick={
-                            clientSows.length > 0
-                              ? () => openFirst(clientSows)
-                              : undefined
-                          }
+                          rag={clientStatus.rag}
+                          label={clientStatus.label}
+                          onClick={clientStatus.open}
                         />
                       </td>
                       <td className="px-3 py-1.5 text-center">
@@ -1363,13 +1391,9 @@ function OverviewView({
                                   {b.name}
                                 </div>
                                 <RagPill
-                                  rag={b.rag}
-                                  label={b.sows.length > 0 ? "SOW" : "Missing"}
-                                  onClick={
-                                    b.sows.length > 0
-                                      ? () => openFirst(b.sows)
-                                      : undefined
-                                  }
+                                  rag={b.status.rag}
+                                  label={b.status.label}
+                                  onClick={b.status.open}
                                 />
                               </div>
                             ))}

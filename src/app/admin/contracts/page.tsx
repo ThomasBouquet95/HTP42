@@ -58,9 +58,7 @@ export default async function AdminContractsPage() {
       <AdminTabs active="contracts" />
       <div className="mb-4 flex items-baseline gap-3">
         <h1 className="text-base sm:text-lg font-semibold">Contracts</h1>
-        <span className="text-xs text-slate-500">
-          · {contracts.length} on file (NDA, MSA, SoW, service agreements)
-        </span>
+        <span className="text-xs text-slate-500">· {contracts.length}</span>
       </div>
       <ContractsAdminClient
         contracts={contracts}

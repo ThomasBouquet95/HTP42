@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
-import { ListIcon } from "@/components/admin-icons";
+import { EditIcon } from "@/components/admin-icons";
 import { DateRangeChip } from "@/components/date-range-chip";
 import type {
   ClientRecord,
@@ -493,9 +493,7 @@ export function ProjectsAdminClient({
                 return (
                   <tr
                     key={p.id}
-                    onClick={() => openEdit(p)}
-                    className={`border-t border-slate-100 cursor-pointer ${tint}`}
-                    title="Click to edit"
+                    className={`border-t border-slate-100 ${tint}`}
                   >
                     <td className="px-2 py-1.5 font-mono text-xs">{p.projectCode}</td>
                     <td className="px-2 py-1.5">
@@ -525,15 +523,16 @@ export function ProjectsAdminClient({
                         ? "—"
                         : `${p.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${p.currency || ""}`.trim()}
                     </td>
-                    <td className="px-2 py-1.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                      <Link
-                        href={`/admin/staffing?project=${encodeURIComponent(p.projectCode)}`}
-                        title="Manage staffings"
-                        aria-label="Manage staffings"
+                    <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(p)}
+                        title="Edit project"
+                        aria-label="Edit project"
                         className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                       >
-                        <ListIcon />
-                      </Link>
+                        <EditIcon />
+                      </button>
                     </td>
                   </tr>
                 );
