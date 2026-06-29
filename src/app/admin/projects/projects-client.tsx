@@ -643,7 +643,7 @@ export function ProjectsAdminClient({
 
         {/* Commercials */}
         <section className="mt-5 space-y-3 border-t border-slate-100 pt-4">
-          <SectionHeader title="Commercials" hint="Total contract value and FX into EUR for reporting." />
+          <SectionHeader title="Commercials" />
           <div className="grid gap-3 sm:grid-cols-3">
             <FormField
               label="Total amount"
@@ -669,10 +669,7 @@ export function ProjectsAdminClient({
         {/* Payment schedule. SOW signed / validity tracking moved to the
             Legal (Contracts) section — a project's SOW lives there now. */}
         <section className="mt-5 space-y-3 border-t border-slate-100 pt-4">
-          <SectionHeader
-            title="Payment schedule"
-            hint="Monthly run-rate: planned % of the total invoiced each month."
-          />
+          <SectionHeader title="Payment schedule" />
           {showPaymentSchedule ? (
             <PaymentScheduleEditor
               type={form.type as ProjectType}
@@ -689,7 +686,7 @@ export function ProjectsAdminClient({
 
         {/* Objective */}
         <section className="mt-5 space-y-3 border-t border-slate-100 pt-4">
-          <SectionHeader title="Objective" hint="One short paragraph describing what we're delivering." />
+          <SectionHeader title="Objective" />
           <FormTextarea
             label=""
             value={form.objective}
@@ -804,17 +801,7 @@ function PaymentScheduleEditor({
 
   return (
     <div className="rounded-md border border-slate-200 bg-slate-50/50 p-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Payment schedule
-          </h4>
-          <p className="text-[11px] text-slate-500">
-            {type === "Fixed Price"
-              ? "Milestone-based: when each invoice goes out, against what deliverable."
-              : "Monthly run-rate: planned % of the total invoiced each month."}
-          </p>
-        </div>
+      <div className="flex items-baseline justify-end gap-3">
         <Button tone="secondary" size="sm" onClick={addRow}>
           + Add row
         </Button>

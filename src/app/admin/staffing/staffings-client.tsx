@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
-import { EditIcon, IconButton, TrashIcon } from "@/components/admin-icons";
+import { EditIcon, IconButton } from "@/components/admin-icons";
 import type {
   Currency,
   ProjectRole,
@@ -419,18 +419,9 @@ export function StaffingsAdminClient({
                     <StaffingStatusPill value={s.status} />
                   </td>
                   <td className="px-2 py-1.5 text-right">
-                    <div className="inline-flex items-center gap-1">
-                      <IconButton title="Edit" onClick={() => openEdit(s)}>
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton
-                        title="Delete staffing"
-                        tone="danger"
-                        onClick={() => setDeleteTarget(s)}
-                      >
-                        <TrashIcon />
-                      </IconButton>
-                    </div>
+                    <IconButton title="Edit" onClick={() => openEdit(s)}>
+                      <EditIcon />
+                    </IconButton>
                   </td>
                 </tr>
               ))
