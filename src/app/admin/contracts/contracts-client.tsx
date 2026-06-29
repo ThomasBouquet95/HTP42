@@ -73,6 +73,10 @@ type Filters = {
   side: "All" | ContractSide;
   stage: "All" | string;
   validity: "All" | ValidityBucket;
+  // Project record id, or "All". Matches directly-linked contracts
+  // (SOWs) plus the indirectly-related NDAs/MSAs for the project's
+  // client and staffed members.
+  project: "All" | string;
 };
 
 // Land on All by default — admins typically want the full picture and
@@ -84,6 +88,7 @@ const DEFAULT_FILTERS: Filters = {
   side: "All",
   stage: "All",
   validity: "All",
+  project: "All",
 };
 
 export function ContractsAdminClient({
@@ -241,13 +246,90 @@ export function ContractsAdminClient({
     () => uniqueSortedValues(contracts.map((c) => c.stage)),
     [contracts],
   );
+  // Ongoing projects first in the dropdown, then by code — mirrors the
+  // Overview ordering so the two views feel consistent.
+  const projectFilterOptions = useMemo(() => {
+    const rank: Record<string, number> = {
+      "In Progress": 0,
+      "Not Started": 1,
+      Planned: 2,
+      "On Hold": 3,
+      "": 4,
+      Completed: 5,
+    };
+    return [...projects]
+      .sort((a, b) => {
+        const ra = rank[a.status ?? ""] ?? 4;
+        const rb = rank[b.status ?? ""] ?? 4;
+        if (ra !== rb) return ra - rb;
+        return a.code.localeCompare(b.code);
+      })
+      .map((p) => ({ id: p.id, label: `${p.code} · ${p.name}` }));
+  }, [projects]);
+
+  // For each project, the set of contract ids "relevant" to it:
+  //   - direct: any contract linked to the project (the SOWs, both
+  //     client and network side);
+  //   - indirect, client side: the project's client's NDAs + MSAs;
+  //   - indirect, network side: the MSAs of every member staffed on the
+  //     project.
+  // The List "Project" filter uses this so picking a project surfaces
+  // the full contractual context, not just the SOW.
+  const projectContractIds = useMemo(() => {
+    // project code -> set of staffed member record ids
+    const membersByProjectCode = new Map<string, Set<string>>();
+    for (const s of staffings) {
+      if (!s.projectCode) continue;
+      const set = membersByProjectCode.get(s.projectCode) ?? new Set<string>();
+      for (const id of s.memberRecordIds) set.add(id);
+      membersByProjectCode.set(s.projectCode, set);
+    }
+    const out = new Map<string, Set<string>>();
+    for (const p of projects) {
+      const clientIds = new Set(p.clientRecordIds ?? []);
+      const memberIds = membersByProjectCode.get(p.code) ?? new Set<string>();
+      const ids = new Set<string>();
+      for (const c of contracts) {
+        const type = c.contractType.trim().toUpperCase();
+        // Direct project link (SOWs live here).
+        if (c.projectRecordIds.includes(p.id)) {
+          ids.add(c.id);
+          continue;
+        }
+        // Indirect: the client's NDA / MSA.
+        if (
+          c.side === "Client" &&
+          (type === "NDA" || type === "MSA") &&
+          c.clientRecordIds.some((id) => clientIds.has(id))
+        ) {
+          ids.add(c.id);
+          continue;
+        }
+        // Indirect: a staffed member's MSA.
+        if (
+          c.side === "Network Member" &&
+          type === "MSA" &&
+          c.memberRecordIds.some((id) => memberIds.has(id))
+        ) {
+          ids.add(c.id);
+        }
+      }
+      out.set(p.id, ids);
+    }
+    return out;
+  }, [contracts, projects, staffings]);
 
   const filtered = useMemo(() => {
     const q = filters.search.trim().toLowerCase();
+    const projectIds =
+      filters.project !== "All"
+        ? projectContractIds.get(filters.project) ?? new Set<string>()
+        : null;
     return contracts.filter((c) => {
       if (filters.type !== "All" && c.contractType !== filters.type) return false;
       if (filters.side !== "All" && resolveSide(c) !== filters.side) return false;
       if (filters.stage !== "All" && c.stage !== filters.stage) return false;
+      if (projectIds && !projectIds.has(c.id)) return false;
       if (filters.validity !== "All") {
         const bucket = validityBucket(c.validity);
         if (bucket !== filters.validity) return false;
@@ -282,7 +364,7 @@ export function ContractsAdminClient({
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [contracts, filters]);
+  }, [contracts, filters, projectContractIds]);
 
   const sideCounts = useMemo(() => {
     const out: Record<ContractSide, number> = {
@@ -401,13 +483,22 @@ export function ContractsAdminClient({
       />
 
       <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Select
             label="Search"
             renderAs="search"
             value={filters.search}
             onChange={(v) => update("search", v)}
             placeholder="Project, member, client, signatory…"
+          />
+          <Select
+            label="Project"
+            value={filters.project}
+            onChange={(v) => update("project", v)}
+            options={[
+              { value: "All", label: "All projects" },
+              ...projectFilterOptions.map((p) => ({ value: p.id, label: p.label })),
+            ]}
           />
           <Select
             label="Contract type"
@@ -474,7 +565,13 @@ export function ContractsAdminClient({
             <span>
               {filtered.length} contract{filtered.length === 1 ? "" : "s"}
             </span>
-            <ActiveFilterChips filters={filters} onClear={update} />
+            <ActiveFilterChips
+              filters={filters}
+              onClear={update}
+              projectLabel={(id) =>
+                projects.find((p) => p.id === id)?.code ?? "Project"
+              }
+            />
             <button
               type="button"
               onClick={() => setFilters(DEFAULT_FILTERS)}
@@ -1390,13 +1487,21 @@ function SideTabs({
 function ActiveFilterChips({
   filters,
   onClear,
+  projectLabel,
 }: {
   filters: Filters;
   onClear: <K extends keyof Filters>(key: K, value: Filters[K]) => void;
+  projectLabel?: (id: string) => string;
 }) {
   const chips: { label: string; clear: () => void }[] = [];
   if (filters.side !== "All") {
     chips.push({ label: filters.side, clear: () => onClear("side", "All") });
+  }
+  if (filters.project !== "All") {
+    chips.push({
+      label: projectLabel?.(filters.project) ?? "Project",
+      clear: () => onClear("project", "All"),
+    });
   }
   if (filters.type !== "All") {
     chips.push({ label: filters.type, clear: () => onClear("type", "All") });
