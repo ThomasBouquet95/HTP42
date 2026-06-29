@@ -8,7 +8,6 @@ import {
   PROJECT_STATUSES,
   PROJECT_TYPES,
   CURRENCIES,
-  SOW_SIGNED_OPTIONS,
 } from "@/lib/airtable";
 import { ProjectsAdminClient } from "./projects-client";
 
@@ -38,7 +37,6 @@ export default async function AdminProjectsPage() {
           projectTypes={PROJECT_TYPES}
           projectStatuses={PROJECT_STATUSES}
           currencies={CURRENCIES}
-          sowOptions={SOW_SIGNED_OPTIONS}
         />
     </main>
   );

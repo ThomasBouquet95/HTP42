@@ -65,8 +65,6 @@ export const FIELDS = {
     fxToEur: "FX to EUR",
     totalAmountEur: "Total Amount EUR",
     status: "Status",
-    sowSigned: "SOW Signed",
-    sowValidityDate: "SOW Validity Date",
     paymentSchedule: "Payment Schedule",
   },
   clients: {
@@ -328,8 +326,6 @@ export type ProjectType = "Fixed Price" | "Time & Material";
 export const PROJECT_TYPES: ProjectType[] = ["Fixed Price", "Time & Material"];
 export type Currency = "EUR" | "USD" | "CHF";
 export const CURRENCIES: Currency[] = ["EUR", "USD", "CHF"];
-export type SowSigned = "Yes" | "In Progress" | "No";
-export const SOW_SIGNED_OPTIONS: SowSigned[] = ["Yes", "In Progress", "No"];
 
 export type PaymentDirection = "Inflow" | "Outflow";
 // Order matters here: this is the order admins see in the payment status
@@ -437,8 +433,6 @@ export type ProjectRecord = {
   fxToEur: number | null;
   totalAmountEur: number | null;
   status: ProjectStatus | "";
-  sowSigned: SowSigned | "";
-  sowValidityDate: string | null;
   paymentSchedule: PaymentScheduleEntry[];
 };
 
@@ -1111,8 +1105,6 @@ function projectFromRecord(r: AirtableRecord<FieldSet>): ProjectRecord {
     fxToEur: numOrNull(r, FIELDS.projects.fxToEur),
     totalAmountEur: numOrNull(r, FIELDS.projects.totalAmountEur),
     status: str(r, FIELDS.projects.status) as ProjectStatus | "",
-    sowSigned: str(r, FIELDS.projects.sowSigned) as SowSigned | "",
-    sowValidityDate: dateOrNull(r, FIELDS.projects.sowValidityDate),
     paymentSchedule: parsePaymentSchedule(str(r, FIELDS.projects.paymentSchedule)),
   };
 }
@@ -1146,8 +1138,6 @@ export type ProjectInput = {
   totalAmount: number | null;
   fxToEur: number | null;
   status: ProjectStatus | "";
-  sowSigned: SowSigned | "";
-  sowValidityDate: string | null;
   paymentSchedule: PaymentScheduleEntry[];
 };
 
@@ -1171,8 +1161,6 @@ function projectFields(input: ProjectInput): Record<string, unknown> {
     [FIELDS.projects.totalAmount]: input.totalAmount,
     [FIELDS.projects.fxToEur]: input.fxToEur,
     [FIELDS.projects.status]: input.status === "" ? null : input.status,
-    [FIELDS.projects.sowSigned]: input.sowSigned === "" ? null : input.sowSigned,
-    [FIELDS.projects.sowValidityDate]: input.sowValidityDate,
     [FIELDS.projects.paymentSchedule]: serialisePaymentSchedule(input.paymentSchedule),
   };
 }

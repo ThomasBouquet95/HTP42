@@ -6,11 +6,9 @@ import {
   PROJECT_STATUSES,
   PROJECT_TYPES,
   CURRENCIES,
-  SOW_SIGNED_OPTIONS,
   type Currency,
   type ProjectStatus,
   type ProjectType,
-  type SowSigned,
 } from "@/lib/airtable";
 
 const nullableNumber = z.union([z.number(), z.null()]).optional();
@@ -45,8 +43,6 @@ const schema = z.object({
   totalAmount: nullableNumber,
   fxToEur: nullableNumber,
   status: z.union([z.enum(PROJECT_STATUSES as [string, ...string[]]), z.literal("")]).default(""),
-  sowSigned: z.union([z.enum(SOW_SIGNED_OPTIONS as [string, ...string[]]), z.literal("")]).default(""),
-  sowValidityDate: nullableDate,
   paymentSchedule: paymentScheduleSchema,
 });
 
@@ -77,8 +73,6 @@ export async function POST(request: Request) {
     totalAmount: d.totalAmount ?? null,
     fxToEur: d.fxToEur ?? null,
     status: d.status as ProjectStatus | "",
-    sowSigned: d.sowSigned as SowSigned | "",
-    sowValidityDate: d.sowValidityDate ?? null,
     paymentSchedule: d.paymentSchedule.map((e) =>
       e.kind === "milestone"
         ? { kind: "milestone" as const, milestone: e.milestone, percent: e.percent, date: e.date ?? null }

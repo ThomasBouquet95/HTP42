@@ -14,7 +14,6 @@ import type {
   ProjectRecord,
   ProjectStatus,
   ProjectType,
-  SowSigned,
 } from "@/lib/airtable";
 
 type MemberOpt = { id: string; code: string; name: string };
@@ -26,7 +25,6 @@ type Props = {
   projectTypes: readonly ProjectType[];
   projectStatuses: readonly ProjectStatus[];
   currencies: readonly Currency[];
-  sowOptions: readonly SowSigned[];
 };
 
 type FormState = {
@@ -42,8 +40,6 @@ type FormState = {
   totalAmount: string;
   fxToEur: string;
   status: string;
-  sowSigned: string;
-  sowValidityDate: string;
   paymentSchedule: PaymentScheduleEntry[];
 };
 
@@ -61,8 +57,6 @@ function emptyForm(defaultYear: number): FormState {
     totalAmount: "",
     fxToEur: "",
     status: "",
-    sowSigned: "",
-    sowValidityDate: "",
     paymentSchedule: [],
   };
 }
@@ -85,9 +79,6 @@ function validateProjectForm(f: FormState): string | null {
   if (f.totalAmount && !f.currency) return "Pick the currency that goes with the total amount.";
   if (f.currency && f.currency !== "EUR" && f.totalAmount && !f.fxToEur) {
     return "An FX rate is required when the currency is not EUR.";
-  }
-  if (f.sowSigned === "Yes" && !f.sowValidityDate) {
-    return "If the SOW is signed, fill in its validity date.";
   }
   for (const e of f.paymentSchedule) {
     if (!Number.isFinite(e.percent) || e.percent < 0 || e.percent > 100) {
@@ -114,8 +105,6 @@ function fromRecord(p: ProjectRecord): FormState {
     totalAmount: p.totalAmount == null ? "" : String(p.totalAmount),
     fxToEur: p.fxToEur == null ? "" : String(p.fxToEur),
     status: p.status,
-    sowSigned: p.sowSigned,
-    sowValidityDate: p.sowValidityDate ?? "",
     paymentSchedule: p.paymentSchedule.slice(),
   };
 }
@@ -133,7 +122,6 @@ export function ProjectsAdminClient({
   projectTypes,
   projectStatuses,
   currencies,
-  sowOptions,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getUTCFullYear();
@@ -330,8 +318,6 @@ export function ProjectsAdminClient({
         totalAmount: form.totalAmount === "" ? null : Number(form.totalAmount),
         fxToEur: form.fxToEur === "" ? null : Number(form.fxToEur),
         status: form.status,
-        sowSigned: form.sowSigned,
-        sowValidityDate: form.sowValidityDate || null,
         paymentSchedule: form.paymentSchedule,
       };
       const url = creating ? "/api/admin/projects" : `/api/admin/projects/${editing!.id}`;
@@ -377,7 +363,7 @@ export function ProjectsAdminClient({
   }
 
   const modalOpen = creating || !!editing;
-  const showPaymentSchedule = form.sowSigned === "Yes" && (form.type === "Fixed Price" || form.type === "Time & Material");
+  const showPaymentSchedule = form.type === "Fixed Price" || form.type === "Time & Material";
 
   return (
     <div className="space-y-4">
@@ -681,36 +667,25 @@ export function ProjectsAdminClient({
           </div>
         </section>
 
-        {/* SOW */}
+        {/* Payment schedule. SOW signed / validity tracking moved to the
+            Legal (Contracts) section — a project's SOW lives there now. */}
         <section className="mt-5 space-y-3 border-t border-slate-100 pt-4">
-          <SectionHeader title="Statement of work" hint="Tracks whether the SOW is signed and until when it's valid." />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <FormSelect label="SOW signed" value={form.sowSigned} onChange={(v) => updateField("sowSigned", v)}>
-              <option value="">—</option>
-              {sowOptions.map((o) => (
-                <option key={o} value={o}>{o}</option>
-              ))}
-            </FormSelect>
-            <FormField
-              label="SOW validity date"
-              value={form.sowValidityDate}
-              onChange={(v) => updateField("sowValidityDate", v)}
-              type="date"
-            />
-          </div>
-
+          <SectionHeader
+            title="Payment schedule"
+            hint="Monthly run-rate: planned % of the total invoiced each month."
+          />
           {showPaymentSchedule ? (
             <PaymentScheduleEditor
               type={form.type as ProjectType}
               entries={form.paymentSchedule}
               onChange={(entries) => updateField("paymentSchedule", entries)}
             />
-          ) : form.sowSigned === "Yes" ? (
+          ) : (
             <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">
               Pick a project Type (Fixed Price or Time &amp; Material) above to plan a payment
               schedule.
             </p>
-          ) : null}
+          )}
         </section>
 
         {/* Objective */}
