@@ -28,7 +28,6 @@ const CATEGORIES: Category[] = [
     label: "Network / HR",
     pages: [
       { key: "members", href: "/admin/members", label: "Members" },
-      { key: "staffing", href: "/admin/staffing", label: "Staffing" },
       { key: "signins", href: "/admin/sign-ins", label: "Sign-in activity" },
     ],
   },
@@ -42,6 +41,7 @@ const CATEGORIES: Category[] = [
     label: "Projects",
     pages: [
       { key: "projects", href: "/admin/projects", label: "Projects" },
+      { key: "staffing", href: "/admin/staffing", label: "Staffing" },
       { key: "timesheets", href: "/admin/timesheets", label: "Timesheets" },
     ],
   },
