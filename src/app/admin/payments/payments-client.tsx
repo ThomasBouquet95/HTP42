@@ -1143,8 +1143,8 @@ function paymentRowTint(
 ): { row: string; cell0: string; select: StatusTone } {
   if (status === "Under Review") {
     return {
-      row: "bg-purple-100 hover:bg-purple-200/70",
-      cell0: "border-l-4 border-purple-500",
+      row: "bg-purple-100 hover:bg-purple-200/70 ring-1 ring-inset ring-purple-400",
+      cell0: "border-l-4 border-purple-600",
       select: "underreview",
     };
   }
