@@ -15,6 +15,7 @@ type PageKey =
   | "payments"
   | "cockpit"
   | "invoices"
+  | "legalcockpit"
   | "contracts";
 
 type Page = { key: PageKey; href: string; label: string };
@@ -60,7 +61,10 @@ const CATEGORIES: Category[] = [
   {
     key: "legal",
     label: "Legal",
-    pages: [{ key: "contracts", href: "/admin/contracts", label: "Contracts" }],
+    pages: [
+      { key: "legalcockpit", href: "/admin/legal", label: "Cockpit" },
+      { key: "contracts", href: "/admin/contracts", label: "Contracts" },
+    ],
   },
 ];
 

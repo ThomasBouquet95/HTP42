@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { DownloadChip } from "@/components/download-chip";
 import {
   CONTRACT_SIDES,
@@ -66,6 +66,9 @@ type Props = {
   clients: ClientOpt[];
   projects: ProjectOpt[];
   staffings: StaffingOpt[];
+  // "list" = the contracts table (default, /admin/contracts).
+  // "cockpit" = the R/A/G overview dashboard (/admin/legal).
+  mode?: "list" | "cockpit";
 };
 
 type Filters = {
@@ -98,12 +101,20 @@ export function ContractsAdminClient({
   clients,
   projects,
   staffings,
+  mode = "list",
 }: Props) {
   const router = useRouter();
   const [contracts, setContracts] = useState<ContractRecord[]>(initialContracts);
   useEffect(() => setContracts(initialContracts), [initialContracts]);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [openId, setOpenId] = useState<string | null>(null);
+  // The Legal cockpit links here as /admin/contracts?open=<id>; open
+  // that contract's modal on arrival.
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const id = searchParams.get("open");
+    if (id) setOpenId(id);
+  }, [searchParams]);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
@@ -429,53 +440,27 @@ export function ContractsAdminClient({
     }
   }
 
-  const [view, setView] = useState<"list" | "overview">("list");
+  // Cockpit mode (the Legal "Cockpit" sub-page) renders the R/A/G
+  // overview. Clicking a pill jumps to the contracts list with the
+  // matching contract opened via ?open=<id>.
+  if (mode === "cockpit") {
+    return (
+      <OverviewView
+        contracts={contracts}
+        members={members}
+        clients={clients}
+        projects={projects}
+        staffings={staffings}
+        onOpenContract={(id) =>
+          router.push(`/admin/contracts?open=${encodeURIComponent(id)}`)
+        }
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">
-      {/* Top-level view toggle: List of contracts vs. R/A/G overview
-          by client, member, and project. */}
-      <div className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 p-0.5 text-xs">
-        {(
-          [
-            { value: "list" as const, label: "List" },
-            { value: "overview" as const, label: "Overview" },
-          ]
-        ).map((t) => {
-          const active = view === t.value;
-          return (
-            <button
-              key={t.value}
-              type="button"
-              onClick={() => setView(t.value)}
-              aria-pressed={active}
-              className={`rounded-md px-3 py-1 font-medium transition-colors ${
-                active
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {view === "overview" ? (
-        <OverviewView
-          contracts={contracts}
-          members={members}
-          clients={clients}
-          projects={projects}
-          staffings={staffings}
-          onOpenContract={(id) => {
-            setView("list");
-            setOpenId(id);
-          }}
-        />
-      ) : null}
-
-      {view === "list" ? (
+      {(
         <>
       <SideTabs
         active={filters.side}
@@ -681,7 +666,7 @@ export function ContractsAdminClient({
         </table>
       </div>
         </>
-      ) : null}
+      )}
 
       {openContract ? (
         <ContractDetailModal
