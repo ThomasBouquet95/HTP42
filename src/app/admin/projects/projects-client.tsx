@@ -157,16 +157,6 @@ export function ProjectsAdminClient({
     });
   }, [projects, search, statusFilter, typeFilter]);
 
-  const totalsByCurrency = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const p of filtered) {
-      if (p.totalAmount == null) continue;
-      const key = p.currency || "—";
-      map.set(key, (map.get(key) ?? 0) + p.totalAmount);
-    }
-    return [...map.entries()];
-  }, [filtered]);
-
   // Status pill counts — show in the filter row so admins can see the
   // shape of the pipeline at a glance.
   const statusCounts = useMemo(() => {
@@ -419,13 +409,6 @@ export function ProjectsAdminClient({
           <div className="flex flex-wrap items-center gap-2">
             <span>
               {filtered.length} project{filtered.length === 1 ? "" : "s"}
-              {totalsByCurrency.length > 0 ? " · " : ""}
-              {totalsByCurrency.map(([cur, sum], i) => (
-                <span key={cur} className="font-semibold text-slate-900 demo-blur">
-                  {i > 0 ? " · " : ""}
-                  {sum.toLocaleString("en-US", { maximumFractionDigits: 0 })} {cur}
-                </span>
-              ))}
             </span>
             {statusFilter !== "All" ? (
               <button

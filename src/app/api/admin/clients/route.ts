@@ -11,6 +11,7 @@ const schema = z.object({
     .trim()
     .regex(CODE, "Client code must be exactly 3 uppercase letters."),
   clientName: z.string().trim().min(1).max(200),
+  kind: z.union([z.enum(["Client", "Partner"]), z.literal("")]).optional().default(""),
   industry: z.string().trim().max(120).optional().default(""),
   country: z.string().trim().max(120).optional().default(""),
   keyContact: z.string().trim().max(200).optional().default(""),

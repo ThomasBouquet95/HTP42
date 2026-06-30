@@ -70,6 +70,7 @@ export const FIELDS = {
   clients: {
     clientCode: "Client Code",
     clientName: "Client Name",
+    kind: "Client or Partner",
     industry: "Industry",
     country: "Country",
     keyContact: "Key Contact",
@@ -384,10 +385,14 @@ export type MemberAdminRecord = MemberRecord & {
   currency: Currency | "";
 };
 
+export type ClientKind = "Client" | "Partner";
+export const CLIENT_KINDS: ClientKind[] = ["Client", "Partner"];
+
 export type ClientRecord = {
   id: string;
   clientCode: string;
   clientName: string;
+  kind: ClientKind | "";
   industry: string;
   country: string;
   keyContact: string;
@@ -968,6 +973,7 @@ function clientFromRecord(r: AirtableRecord<FieldSet>): ClientRecord {
     id: r.id,
     clientCode: str(r, FIELDS.clients.clientCode),
     clientName: str(r, FIELDS.clients.clientName),
+    kind: (str(r, FIELDS.clients.kind) as ClientKind) || "",
     industry: str(r, FIELDS.clients.industry),
     country: str(r, FIELDS.clients.country),
     keyContact: str(r, FIELDS.clients.keyContact),
@@ -994,6 +1000,7 @@ export async function getClientById(recordId: string): Promise<ClientRecord | nu
 export type ClientInput = {
   clientCode: string;
   clientName: string;
+  kind: ClientKind | "";
   industry: string;
   country: string;
   keyContact: string;
@@ -1004,6 +1011,7 @@ function clientFields(input: ClientInput): Record<string, unknown> {
   return {
     [FIELDS.clients.clientCode]: input.clientCode,
     [FIELDS.clients.clientName]: input.clientName,
+    [FIELDS.clients.kind]: input.kind === "" ? null : input.kind,
     [FIELDS.clients.industry]: input.industry,
     [FIELDS.clients.country]: input.country,
     [FIELDS.clients.keyContact]: input.keyContact,
@@ -1012,16 +1020,18 @@ function clientFields(input: ClientInput): Record<string, unknown> {
 }
 
 export async function createClient(input: ClientInput): Promise<string> {
-  const [created] = await base(TABLES.clients).create([
-    { fields: clientFields(input) as FieldSet },
-  ]);
+  const [created] = await base(TABLES.clients).create(
+    [{ fields: clientFields(input) as FieldSet }],
+    { typecast: true },
+  );
   return created.id;
 }
 
 export async function updateClient(recordId: string, input: ClientInput): Promise<void> {
-  await base(TABLES.clients).update([
-    { id: recordId, fields: clientFields(input) as FieldSet },
-  ]);
+  await base(TABLES.clients).update(
+    [{ id: recordId, fields: clientFields(input) as FieldSet }],
+    { typecast: true },
+  );
 }
 
 export async function deleteClient(recordId: string): Promise<void> {

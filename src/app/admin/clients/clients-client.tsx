@@ -3,15 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
-import { Button, FormField, FormTextarea } from "@/components/form-controls";
+import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { EditIcon, IconButton } from "@/components/admin-icons";
-import type { ClientRecord } from "@/lib/airtable";
+import { CLIENT_KINDS, type ClientKind, type ClientRecord } from "@/lib/airtable";
 
 type Props = { clients: ClientRecord[] };
 
 type FormState = {
   clientCode: string;
   clientName: string;
+  kind: ClientKind | "";
   industry: string;
   country: string;
   keyContact: string;
@@ -21,6 +22,7 @@ type FormState = {
 const EMPTY: FormState = {
   clientCode: "",
   clientName: "",
+  kind: "Client",
   industry: "",
   country: "",
   keyContact: "",
@@ -31,6 +33,7 @@ function fromRecord(c: ClientRecord): FormState {
   return {
     clientCode: c.clientCode,
     clientName: c.clientName,
+    kind: c.kind,
     industry: c.industry,
     country: c.country,
     keyContact: c.keyContact,
@@ -62,7 +65,7 @@ export function ClientsAdminClient({ clients }: Props) {
     const q = search.trim().toLowerCase();
     if (!q) return clients;
     return clients.filter((c) =>
-      [c.clientCode, c.clientName, c.industry, c.country, c.keyContact].some(
+      [c.clientCode, c.clientName, c.kind, c.industry, c.country, c.keyContact].some(
         (v) => v && v.toLowerCase().includes(q),
       ),
     );
@@ -214,6 +217,7 @@ export function ClientsAdminClient({ clients }: Props) {
             <tr>
               <th className="text-left px-2 py-1.5 font-medium">Code</th>
               <th className="text-left px-2 py-1.5 font-medium">Name</th>
+              <th className="text-left px-2 py-1.5 font-medium">Type</th>
               <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Industry</th>
               <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Country</th>
               <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Key contact</th>
@@ -223,7 +227,7 @@ export function ClientsAdminClient({ clients }: Props) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center text-slate-500 py-10">
+                <td colSpan={7} className="text-center text-slate-500 py-10">
                   No clients match this search.
                 </td>
               </tr>
@@ -234,6 +238,9 @@ export function ClientsAdminClient({ clients }: Props) {
                   <td className="px-2 py-1.5">
                     <div className="demo-blur">{c.clientName}</div>
                     <div className="text-xs text-slate-500 md:hidden demo-blur">{c.industry || ""}</div>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    {c.kind ? <KindPill kind={c.kind} /> : <span className="text-slate-300">—</span>}
                   </td>
                   <td className="px-2 py-1.5 hidden md:table-cell demo-blur">{c.industry || "—"}</td>
                   <td className="px-2 py-1.5 hidden md:table-cell demo-blur">{c.country || "—"}</td>
@@ -295,6 +302,18 @@ export function ClientsAdminClient({ clients }: Props) {
             onChange={(v) => updateField("clientName", v)}
             required
           />
+          <FormSelect
+            label="Client or Partner"
+            value={form.kind}
+            onChange={(v) => updateField("kind", v as ClientKind | "")}
+          >
+            <option value="">—</option>
+            {CLIENT_KINDS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </FormSelect>
           <FormField label="Industry" value={form.industry} onChange={(v) => updateField("industry", v)} />
           <FormField label="Country" value={form.country} onChange={(v) => updateField("country", v)} />
           <FormField
@@ -335,6 +354,20 @@ export function ClientsAdminClient({ clients }: Props) {
         onConfirm={confirmDelete}
       />
     </div>
+  );
+}
+
+function KindPill({ kind }: { kind: ClientKind }) {
+  const cls =
+    kind === "Partner"
+      ? "bg-teal-50 text-teal-700 border-teal-200"
+      : "bg-sky-50 text-sky-700 border-sky-200";
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
+    >
+      {kind}
+    </span>
   );
 }
 

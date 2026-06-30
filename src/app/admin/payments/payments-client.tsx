@@ -1708,7 +1708,7 @@ function paymentRowTint(status: string): { row: string; select: StatusTone } {
   // freshly-arrived member invoices at a glance — distinct from the
   // pre-existing palette (sky, amber, slate, red).
   if (status === "Under Review") {
-    return { row: "bg-purple-50/60 hover:bg-purple-50", select: "underreview" };
+    return { row: "bg-purple-100/70 hover:bg-purple-100", select: "underreview" };
   }
   if (status === "Scheduled") {
     return { row: "bg-sky-50/50 hover:bg-sky-50", select: "scheduled" };

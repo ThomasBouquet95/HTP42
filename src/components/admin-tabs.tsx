@@ -33,8 +33,8 @@ const CATEGORIES: Category[] = [
   },
   {
     key: "clients",
-    label: "Clients",
-    pages: [{ key: "clients", href: "/admin/clients", label: "Clients" }],
+    label: "Clients & Partners",
+    pages: [{ key: "clients", href: "/admin/clients", label: "Clients & Partners" }],
   },
   {
     key: "projects",

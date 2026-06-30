@@ -16,7 +16,7 @@ export default async function AdminClientsPage() {
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <AdminTabs active="clients" />
         <div className="mb-4 flex items-baseline gap-3">
-          <h1 className="text-base sm:text-lg font-semibold">Clients</h1>
+          <h1 className="text-base sm:text-lg font-semibold">Clients &amp; Partners</h1>
           <span className="text-xs text-slate-500">· {clients.length}</span>
         </div>
         <ClientsAdminClient clients={clients} />
