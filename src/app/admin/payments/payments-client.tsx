@@ -1157,8 +1157,8 @@ function paymentRowTint(
 ): { row: string; cell0: string; select: StatusTone } {
   if (status === "Under Review") {
     return {
-      row: "bg-purple-100 hover:bg-purple-200/70 ring-1 ring-inset ring-purple-400",
-      cell0: "border-l-4 border-purple-600",
+      row: "bg-brand-50 hover:bg-brand-100 ring-1 ring-inset ring-brand-400",
+      cell0: "border-l-4 border-brand-600",
       select: "underreview",
     };
   }
@@ -1192,7 +1192,7 @@ function StatusSelect({
 }) {
   const toneCls =
     tone === "underreview"
-      ? "bg-purple-50 border-purple-300 text-purple-800"
+      ? "bg-brand-50 border-brand-400 text-brand-700"
       : tone === "scheduled"
       ? "bg-sky-50 border-sky-300 text-sky-800"
       : tone === "tobepaid"
