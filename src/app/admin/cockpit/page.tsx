@@ -17,7 +17,6 @@ export default async function AdminCockpitPage() {
       <AdminTabs active="cockpit" />
       <div className="mb-4 flex items-baseline gap-3">
         <h1 className="text-base sm:text-lg font-semibold">Financial cockpit</h1>
-        <span className="text-xs text-slate-500">· EUR, canceled excluded</span>
       </div>
       <CockpitClient payments={payments} />
     </main>

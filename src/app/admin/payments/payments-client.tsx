@@ -737,7 +737,7 @@ export function PaymentsClient({
                     key={p.id}
                     className={`border-t border-slate-100 align-top ${tint.row}`}
                   >
-                    <td className="px-2 py-1.5"><DirectionPill direction={p.direction} /></td>
+                    <td className={`px-2 py-1.5 ${tint.cell0}`}><DirectionPill direction={p.direction} /></td>
                     <td className="px-2 py-1.5 hidden md:table-cell">{p.type || "—"}</td>
                     <td className="px-2 py-1.5 font-mono text-xs hidden lg:table-cell">
                       {projectLabel(p) || "—"}
@@ -1135,29 +1135,32 @@ type StatusTone =
   | "canceled"
   | "neutral";
 
-function paymentRowTint(status: string): { row: string; select: StatusTone } {
-  // "Under Review" gets its own purple treatment so admins can spot
-  // freshly-arrived member invoices at a glance — distinct from the
-  // pre-existing palette (sky, amber, slate, red).
+// `cell0` is applied to the row's FIRST cell. A ring/box-shadow on a
+// <tr> doesn't paint reliably across browsers, so "Under Review" rows
+// get a thick purple left bar there instead — a flag that always shows.
+function paymentRowTint(
+  status: string,
+): { row: string; cell0: string; select: StatusTone } {
   if (status === "Under Review") {
     return {
-      row: "bg-purple-100/70 hover:bg-purple-100 ring-1 ring-inset ring-purple-400",
+      row: "bg-purple-100 hover:bg-purple-200/70",
+      cell0: "border-l-4 border-purple-500",
       select: "underreview",
     };
   }
   if (status === "Scheduled") {
-    return { row: "bg-sky-50/50 hover:bg-sky-50", select: "scheduled" };
+    return { row: "bg-sky-50/50 hover:bg-sky-50", cell0: "", select: "scheduled" };
   }
   if (status === "To be paid") {
-    return { row: "bg-amber-50/50 hover:bg-amber-50", select: "tobepaid" };
+    return { row: "bg-amber-50/50 hover:bg-amber-50", cell0: "", select: "tobepaid" };
   }
   if (status === "Paid") {
-    return { row: "bg-slate-50 hover:bg-slate-100", select: "paid" };
+    return { row: "bg-slate-50 hover:bg-slate-100", cell0: "", select: "paid" };
   }
   if (status === "Canceled") {
-    return { row: "bg-red-50/40 hover:bg-red-50", select: "canceled" };
+    return { row: "bg-red-50/40 hover:bg-red-50", cell0: "", select: "canceled" };
   }
-  return { row: "hover:bg-slate-50", select: "neutral" };
+  return { row: "hover:bg-slate-50", cell0: "", select: "neutral" };
 }
 
 function StatusSelect({
