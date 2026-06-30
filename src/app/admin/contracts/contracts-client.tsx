@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { DownloadChip } from "@/components/download-chip";
 import {
   CONTRACT_SIDES,
   CONTRACT_STATUSES,
@@ -653,20 +654,13 @@ export function ContractsAdminClient({
                       <ValidityPill validity={c.validity} />
                     </td>
                     <td className="px-2 py-1.5 text-center">
-                      {c.pdf?.url ? (
-                        <a
-                          href={c.pdf.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-brand-700 hover:bg-brand-50 hover:text-brand-800"
-                          title={`Download ${c.pdf.filename || "PDF"}`}
-                          aria-label="Download PDF"
-                        >
-                          <FileIcon />
-                        </a>
-                      ) : (
-                        <Dash />
-                      )}
+                      <span className="inline-flex justify-center">
+                        <DownloadChip
+                          url={c.pdf?.url}
+                          title={`Open ${c.pdf?.filename || "PDF"}`}
+                          emptyTitle="No PDF on file"
+                        />
+                      </span>
                     </td>
                     <td className="px-2 py-1.5 text-center">
                       <button
@@ -864,27 +858,6 @@ function ValidityPill({ validity }: { validity: string }) {
     >
       {label}
     </span>
-  );
-}
-
-function FileIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M7 3h7l4 4v13a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V4.5A1.5 1.5 0 0 1 7 3Z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-      <path d="M14 3v4h4" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-      <path
-        d="M12 11v6m0 0l-2.5-2.5M12 17l2.5-2.5"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }
 

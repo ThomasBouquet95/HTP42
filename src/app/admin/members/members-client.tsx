@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { EditIcon, IconButton } from "@/components/admin-icons";
+import { DownloadChip } from "@/components/download-chip";
 import type {
   Currency,
   MemberAdminRecord,
@@ -365,20 +366,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                     className="px-2 py-1.5 hidden md:table-cell"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {m.cv ? (
-                      <a
-                        href={m.cv.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-brand-700 hover:bg-brand-50 hover:text-brand-800"
-                        title="Open CV"
-                        aria-label="Open CV"
-                      >
-                        <FileIcon />
-                      </a>
-                    ) : (
-                      <span className="text-slate-400">—</span>
-                    )}
+                    <DownloadChip url={m.cv?.url} title="Open CV" emptyTitle="No CV on file" />
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     <IconButton title="Edit" onClick={() => openEdit(m)}>
@@ -572,27 +560,5 @@ function MemberStatusSelect({
         </option>
       ))}
     </select>
-  );
-}
-
-// Matches the download/open icon used in the payments + contracts lists.
-function FileIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M7 3h7l4 4v13a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V4.5A1.5 1.5 0 0 1 7 3Z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-      <path d="M14 3v4h4" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-      <path
-        d="M12 11v6m0 0l-2.5-2.5M12 17l2.5-2.5"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }

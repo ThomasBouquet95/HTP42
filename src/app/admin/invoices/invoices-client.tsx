@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { DownloadChip } from "@/components/download-chip";
 import type { InvoiceStatus, MemberInvoiceRecord } from "@/lib/airtable";
 import { INVOICE_STATUSES } from "@/lib/airtable";
 
@@ -520,20 +521,11 @@ export function AdminInvoicesClient({
                       )}
                     </td>
                     <td className="px-3 py-2">
-                      {r.pdf ? (
-                        <a
-                          href={r.pdf.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-brand-700 hover:bg-brand-50 hover:text-brand-800"
-                          title={`Download ${r.pdf.filename || "PDF"}`}
-                          aria-label="Download PDF"
-                        >
-                          <FileIcon />
-                        </a>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
+                      <DownloadChip
+                        url={r.pdf?.url}
+                        title={`Open ${r.pdf?.filename || "PDF"}`}
+                        emptyTitle="No PDF on file"
+                      />
                     </td>
                     <td className="px-3 py-2">
                       <div
@@ -641,24 +633,3 @@ function todayStamp(): string {
 }
 
 // Matches the contracts list download icon (page + down-arrow).
-function FileIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M7 3h7l4 4v13a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V4.5A1.5 1.5 0 0 1 7 3Z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-      <path d="M14 3v4h4" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-      <path
-        d="M12 11v6m0 0l-2.5-2.5M12 17l2.5-2.5"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
