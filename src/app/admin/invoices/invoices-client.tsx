@@ -525,10 +525,11 @@ export function AdminInvoicesClient({
                           href={r.pdf.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-brand-700 hover:underline"
-                          title={r.pdf.filename}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-brand-700 hover:bg-brand-50 hover:text-brand-800"
+                          title={`Download ${r.pdf.filename || "PDF"}`}
+                          aria-label="Download PDF"
                         >
-                          <DocIcon /> <span className="truncate max-w-[10rem]">{r.pdf.filename}</span>
+                          <FileIcon />
                         </a>
                       ) : (
                         <span className="text-slate-400">—</span>
@@ -639,11 +640,24 @@ function todayStamp(): string {
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function DocIcon() {
+// Matches the contracts list download icon (page + down-arrow).
+function FileIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" strokeLinejoin="round" />
-      <path d="M14 3v6h6" strokeLinejoin="round" />
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M7 3h7l4 4v13a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V4.5A1.5 1.5 0 0 1 7 3Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path d="M14 3v4h4" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path
+        d="M12 11v6m0 0l-2.5-2.5M12 17l2.5-2.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

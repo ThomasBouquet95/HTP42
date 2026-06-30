@@ -50,8 +50,8 @@ const CATEGORIES: Category[] = [
     key: "finance",
     label: "Finance",
     pages: [
-      { key: "payments", href: "/admin/payments", label: "Payments" },
       { key: "cockpit", href: "/admin/cockpit", label: "Cockpit" },
+      { key: "payments", href: "/admin/payments", label: "Payments" },
       { key: "invoices", href: "/admin/invoices", label: "Invoices" },
     ],
   },
