@@ -18,7 +18,7 @@ import { sendMailViaGraph } from "@/lib/email";
 import { generateTimesheetSummaryPdf } from "@/lib/timesheet-pdf";
 
 export const runtime = "nodejs";
-const MAX_BYTES = 1 * 1024 * 1024; // 1 MB
+const MAX_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export async function GET() {
   const session = await getSession();
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
   }
   if (file.size > MAX_BYTES) {
     return NextResponse.json(
-      { error: `PDF is too large (${(file.size / 1024 / 1024).toFixed(2)} MB). Max 1 MB.` },
+      { error: `PDF is too large (${(file.size / 1024 / 1024).toFixed(2)} MB). Max 2 MB.` },
       { status: 400 },
     );
   }

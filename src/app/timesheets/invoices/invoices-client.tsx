@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { MemberInvoiceRecord } from "@/lib/airtable";
 
-const MAX_BYTES = 1 * 1024 * 1024;
+const MAX_BYTES = 2 * 1024 * 1024;
 
 type StaffingOpt = {
   id: string;
@@ -285,7 +285,7 @@ function NewInvoiceModal({
       return onError("Only PDF files are accepted.");
     }
     if (file.size > MAX_BYTES) {
-      return onError(`PDF is too large (${(file.size / 1024 / 1024).toFixed(2)} MB). Max 1 MB.`);
+      return onError(`PDF is too large (${(file.size / 1024 / 1024).toFixed(2)} MB). Max 2 MB.`);
     }
     setSubmitting(true);
     try {
@@ -475,7 +475,7 @@ function NewInvoiceModal({
             <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
               Invoice PDF <span className="text-red-500">*</span>
               <span className="ml-1 text-[10px] normal-case font-normal text-slate-400">
-                (max 1 MB)
+                (max 2 MB)
               </span>
             </span>
             <input
