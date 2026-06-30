@@ -77,6 +77,19 @@ const KNOWN_PAYMENT_STATUSES = new Set<string>(PAYMENT_STATUSES);
 // Stored values are canonical (Under Review / Scheduled / To be paid /
 // Paid) regardless of direction; for Inflow we surface friendlier
 // wording in the UI.
+// Legacy Airtable rows carry statuses that predate the canonical set
+// ("Invoiced", "Pending", "Unpaid", "Overdue", …). They aren't in the
+// dropdown, so a raw <select> would silently fall back to showing its
+// first option ("Under Review") while the styling saw an unknown value
+// — the row looked "Under Review" but wasn't treated as such. Normalize
+// any unrecognised status to "Under Review" (it genuinely needs an
+// admin to set a real status), so display, filtering, framing and the
+// edit form all agree. The canonical value is persisted the next time
+// the row is saved.
+function effectiveStatus(status: string): string {
+  return KNOWN_PAYMENT_STATUSES.has(status) ? status : "Under Review";
+}
+
 function statusLabel(status: string, direction: "" | "Inflow" | "Outflow"): string {
   if (direction !== "Inflow") return status;
   if (status === "To be paid") return "To be received";
@@ -168,7 +181,7 @@ function fromRecord(p: PaymentRecord): FormState {
     invoiceValue: p.invoiceValue == null ? "" : String(p.invoiceValue),
     fxRateToEur: p.fxRateToEur == null ? "" : String(p.fxRateToEur),
     paymentTerms: p.paymentTerms,
-    paymentStatus: p.paymentStatus,
+    paymentStatus: effectiveStatus(p.paymentStatus),
     paymentDate: p.paymentDate ?? "",
     dueDate: p.dueDate ?? "",
     beneficiary: p.beneficiary,
@@ -242,7 +255,7 @@ export function PaymentsClient({
     const q = filters.search.trim().toLowerCase();
     return rows.filter((p) => {
       if (filters.direction !== "All" && p.direction !== filters.direction) return false;
-      if (filters.status !== "All" && p.paymentStatus !== filters.status) return false;
+      if (filters.status !== "All" && effectiveStatus(p.paymentStatus) !== filters.status) return false;
       if (filters.currency !== "All" && p.invoiceCurrency !== filters.currency) return false;
       // Date range filters apply only once the user has picked BOTH ends —
       // a half-set range previously hid every payment outside the partial bound.
@@ -731,7 +744,8 @@ export function PaymentsClient({
                   p.direction === "Inflow"
                     ? clientLabel(p) || "—"
                     : memberLabel(p) || p.beneficiary || "—";
-                const tint = paymentRowTint(p.paymentStatus);
+                const status = effectiveStatus(p.paymentStatus);
+                const tint = paymentRowTint(status);
                 return (
                   <tr
                     key={p.id}
@@ -769,7 +783,7 @@ export function PaymentsClient({
                       onClick={(e) => e.stopPropagation()}
                     >
                       <StatusSelect
-                        value={p.paymentStatus}
+                        value={status}
                         onChange={(next) => updateStatus(p.id, next)}
                         tone={tint.select}
                         direction={p.direction}
