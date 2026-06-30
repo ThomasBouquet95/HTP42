@@ -5,6 +5,7 @@ import { DemoModeToggle } from "@/components/demo-mode";
 // exactly one category below. Pages pass their own key as `active`;
 // the component figures out which category to highlight.
 type PageKey =
+  | "networkcockpit"
   | "members"
   | "staffing"
   | "signins"
@@ -28,6 +29,7 @@ const CATEGORIES: Category[] = [
     key: "network",
     label: "Network / HR",
     pages: [
+      { key: "networkcockpit", href: "/admin/network", label: "Cockpit" },
       { key: "members", href: "/admin/members", label: "Members" },
       { key: "signins", href: "/admin/sign-ins", label: "Sign-in activity" },
     ],
