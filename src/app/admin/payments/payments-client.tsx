@@ -1158,7 +1158,7 @@ function paymentRowTint(
   if (status === "Under Review") {
     return {
       row: "bg-brand-50 hover:bg-brand-100 ring-1 ring-inset ring-brand-400",
-      cell0: "border-l-4 border-brand-600",
+      cell0: "",
       select: "underreview",
     };
   }
