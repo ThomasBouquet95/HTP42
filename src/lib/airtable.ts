@@ -134,6 +134,7 @@ export const FIELDS = {
     beneficiary: "Beneficiary",
     comment: "Comment",
     invoiceUrl: "Invoice URL",
+    invoicePdf: "Invoice PDF",
   },
   memberInvoices: {
     invoiceCode: "Invoice Code",
@@ -466,6 +467,7 @@ export type PaymentRecord = {
   beneficiary: string;
   comment: string;
   invoiceUrl: string;
+  invoicePdf: AttachmentRef | null;
 };
 
 export type StaffingRecord = {
@@ -1304,6 +1306,7 @@ function paymentFromRecord(r: AirtableRecord<FieldSet>): PaymentRecord {
     beneficiary: str(r, FIELDS.payments.beneficiary),
     comment: str(r, FIELDS.payments.comment),
     invoiceUrl: str(r, FIELDS.payments.invoiceUrl),
+    invoicePdf: firstAttachment(r, FIELDS.payments.invoicePdf),
   };
 }
 
@@ -3312,6 +3315,63 @@ export async function attachContractPdf(
   base64: string,
 ): Promise<void> {
   const url = `https://content.airtable.com/v0/${env.airtableBaseId}/${recordId}/${encodeURIComponent(FIELDS.contracts.pdf)}/uploadAttachment`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.airtablePat}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ contentType: "application/pdf", filename, file: base64 }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Airtable upload failed (${res.status}): ${text}`);
+  }
+}
+
+// Ensure the "Invoice PDF" attachment field exists on the Payments
+// table. Created lazily via the meta API (the MCP create_field flow
+// needs a manual approval click; the server PAT has schema scope and
+// doesn't). Idempotent: a no-op once the column exists.
+export async function ensurePaymentInvoicePdfField(): Promise<void> {
+  const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+  const res = await fetch(metaUrl, {
+    headers: { Authorization: `Bearer ${env.airtablePat}` },
+    cache: "no-store",
+  });
+  if (!res.ok) return; // best-effort; the attach call will surface a clear error
+  const data = (await res.json()) as {
+    tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+  };
+  const table = data.tables.find((t) => t.name === TABLES.payments);
+  if (!table) return;
+  if (table.fields.some((f) => f.name === FIELDS.payments.invoicePdf)) return;
+  await fetch(
+    `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.airtablePat}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: FIELDS.payments.invoicePdf,
+        type: "multipleAttachments",
+        description:
+          "Scanned / PDF copy of the invoice for this payment. Uploaded via the HTP42 admin portal.",
+      }),
+    },
+  );
+}
+
+// Attach a PDF to the Payments row's "Invoice PDF" field via Airtable's
+// content endpoint. Mirrors attachContractPdf.
+export async function attachPaymentPdf(
+  recordId: string,
+  filename: string,
+  base64: string,
+): Promise<void> {
+  const url = `https://content.airtable.com/v0/${env.airtableBaseId}/${recordId}/${encodeURIComponent(FIELDS.payments.invoicePdf)}/uploadAttachment`;
   const res = await fetch(url, {
     method: "POST",
     headers: {

@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { DownloadChip } from "@/components/download-chip";
 import type { Currency, PaymentRecord, PaymentStatus } from "@/lib/airtable";
 
 type LinkOpt = { id: string; code: string; name: string };
@@ -238,6 +239,10 @@ export function PaymentsClient({
   const [error, setError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PaymentRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Invoice PDF picked in the edit modal but not yet uploaded. On save
+  // we create/update the payment first, then upload the file against the
+  // resulting record id (so it works for brand-new payments too).
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
 
   const statusOptions = useMemo(() => {
     // Only surface canonical statuses in the filter, ignoring legacy values
@@ -356,6 +361,7 @@ export function PaymentsClient({
     setCreating(true);
     setForm(EMPTY_FORM);
     setError(null);
+    setInvoiceFile(null);
   }
 
   function openEdit(p: PaymentRecord) {
@@ -363,6 +369,7 @@ export function PaymentsClient({
     setCreating(false);
     setForm(fromRecord(p));
     setError(null);
+    setInvoiceFile(null);
   }
 
   function closeModal() {
@@ -373,6 +380,7 @@ export function PaymentsClient({
     setEditing(null);
     setCreating(false);
     setError(null);
+    setInvoiceFile(null);
   }
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -475,6 +483,22 @@ export function PaymentsClient({
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(d.error ?? "Save failed.");
+      }
+      const data = (await res.json().catch(() => ({}))) as { id?: string };
+      const paymentId = creating ? data.id : editing!.id;
+      // Upload the invoice PDF (if one was picked) against the saved
+      // record. The upload route also emails the finance inbox.
+      if (invoiceFile && paymentId) {
+        const fd = new FormData();
+        fd.append("pdf", invoiceFile);
+        const up = await fetch(
+          `/api/admin/payments/${encodeURIComponent(paymentId)}/upload`,
+          { method: "POST", body: fd },
+        );
+        if (!up.ok) {
+          const d = (await up.json().catch(() => ({}))) as { error?: string };
+          throw new Error(d.error ?? "Payment saved, but the invoice upload failed.");
+        }
       }
       closeModalNow();
       router.refresh();
@@ -961,6 +985,42 @@ export function PaymentsClient({
                 ) : null
               }
             />
+            {/* Invoice PDF: view the attached file + upload one. Uploading
+                also notifies the finance inbox. */}
+            <div className="sm:col-span-2">
+              <span className="block text-xs font-medium text-slate-600 mb-1">
+                Invoice PDF
+              </span>
+              <div className="flex items-center gap-2">
+                {editing?.invoicePdf?.url ? (
+                  <DownloadChip
+                    url={editing.invoicePdf.url}
+                    title={`Open ${editing.invoicePdf.filename || "invoice PDF"}`}
+                  />
+                ) : null}
+                <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                  {invoiceFile
+                    ? "Change file"
+                    : editing?.invoicePdf?.url
+                    ? "Replace PDF"
+                    : "Upload PDF"}
+                  <input
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="hidden"
+                    onChange={(e) => setInvoiceFile(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+                {invoiceFile ? (
+                  <span className="truncate text-[11px] text-slate-500">
+                    {invoiceFile.name}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Saves with the payment and emails the finance inbox. PDF, max 5 MB.
+              </p>
+            </div>
           </div>
         </FormSection>
 
