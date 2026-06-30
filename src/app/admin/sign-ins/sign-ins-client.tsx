@@ -47,6 +47,29 @@ export function SignInActivityClient({
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
+  // Clicking a member row pins the charts to just that person.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedMember = useMemo(
+    () => rows.find((r) => r.id === selectedId) ?? null,
+    [rows, selectedId],
+  );
+  // When a member is selected, recompute the day-buckets from only their
+  // last sign-in / last activity; otherwise use the all-members buckets
+  // computed server-side.
+  const signInChart = useMemo(
+    () =>
+      selectedMember
+        ? buildDailyBuckets([selectedMember.lastSignIn], 30)
+        : signInBuckets,
+    [selectedMember, signInBuckets],
+  );
+  const activityChart = useMemo(
+    () =>
+      selectedMember
+        ? buildDailyBuckets([selectedMember.lastActivity], 30)
+        : activityBuckets,
+    [selectedMember, activityBuckets],
+  );
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({
     key: "lastActivity",
     dir: "desc",
@@ -146,17 +169,46 @@ export function SignInActivityClient({
       </div>
 
       {/* Charts */}
+      {selectedMember ? (
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-slate-500">Charts filtered to</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 border border-brand-200 px-2 py-0.5 font-medium text-brand-700 demo-blur">
+            {selectedMember.fullName || selectedMember.memberCode}
+            <button
+              type="button"
+              onClick={() => setSelectedId(null)}
+              aria-label="Clear member filter"
+              className="text-brand-500 hover:text-brand-800"
+            >
+              ✕
+            </button>
+          </span>
+          <span className="text-slate-400">Click the member again to clear.</span>
+        </div>
+      ) : (
+        <p className="text-[11px] text-slate-400">
+          Tip: click a member in the table to filter these charts to that person.
+        </p>
+      )}
       <div className="grid gap-3 lg:grid-cols-2">
         <ChartCard
           title="Latest sign-in by day"
-          subtitle="When each member's most recent session landed (last 30 days)"
-          buckets={signInBuckets}
+          subtitle={
+            selectedMember
+              ? "This member's most recent session (last 30 days)"
+              : "When each member's most recent session landed (last 30 days)"
+          }
+          buckets={signInChart}
           tone="brand"
         />
         <ChartCard
           title="Latest activity by day"
-          subtitle="Most recent heartbeat per member, bucketed by day (last 30 days)"
-          buckets={activityBuckets}
+          subtitle={
+            selectedMember
+              ? "This member's most recent heartbeat (last 30 days)"
+              : "Most recent heartbeat per member, bucketed by day (last 30 days)"
+          }
+          buckets={activityChart}
           tone="emerald"
         />
       </div>
@@ -236,7 +288,19 @@ export function SignInActivityClient({
               </tr>
             ) : (
               sorted.map((r) => (
-                <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50">
+                <tr
+                  key={r.id}
+                  onClick={() =>
+                    setSelectedId((cur) => (cur === r.id ? null : r.id))
+                  }
+                  aria-pressed={selectedId === r.id}
+                  title="Filter the charts to this member"
+                  className={`border-t border-slate-100 cursor-pointer ${
+                    selectedId === r.id
+                      ? "bg-brand-50 hover:bg-brand-100"
+                      : "hover:bg-slate-50"
+                  }`}
+                >
                   <td className="px-3 py-1.5">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="relative shrink-0">
@@ -666,4 +730,39 @@ function initials(name: string): string {
   const first = parts[0][0] ?? "";
   const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
   return `${first}${last}`.toUpperCase();
+}
+
+// Same daily bucketing the server uses, repeated here so the charts can
+// be recomputed client-side when a single member is selected.
+function buildDailyBuckets(
+  isos: Array<string | null>,
+  days: number,
+): { key: string; count: number }[] {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const buckets: { key: string; count: number }[] = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const startDay = new Date(today.getTime() - (days - 1) * dayMs);
+  for (let i = 0; i < days; i++) {
+    const d = new Date(startDay.getTime() + i * dayMs);
+    buckets.push({ key: dayKey(d), count: 0 });
+  }
+  const idx = new Map(buckets.map((b, i) => [b.key, i]));
+  for (const iso of isos) {
+    if (!iso) continue;
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t)) continue;
+    const d = new Date(t);
+    d.setHours(0, 0, 0, 0);
+    const i = idx.get(dayKey(d));
+    if (i !== undefined) buckets[i].count += 1;
+  }
+  return buckets;
+}
+
+function dayKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
