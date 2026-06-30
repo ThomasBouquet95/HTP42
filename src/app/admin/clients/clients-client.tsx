@@ -212,7 +212,7 @@ export function ClientsAdminClient({ clients }: Props) {
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-        <table className="w-full text-xs">
+        <table className="w-full table-fixed text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
               <th className="text-left px-2 py-1.5 font-medium">Code</th>
