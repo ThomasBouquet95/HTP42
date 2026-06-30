@@ -1157,7 +1157,7 @@ function paymentRowTint(
 ): { row: string; cell0: string; select: StatusTone } {
   if (status === "Under Review") {
     return {
-      row: "bg-brand-50 hover:bg-brand-100 ring-1 ring-inset ring-brand-400",
+      row: "bg-brand-50 hover:bg-brand-100 outline outline-2 -outline-offset-2 outline-brand-400",
       cell0: "",
       select: "underreview",
     };
