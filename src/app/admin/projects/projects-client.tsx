@@ -7,7 +7,7 @@ import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { EditIcon } from "@/components/admin-icons";
 import { DateRangeChip } from "@/components/date-range-chip";
-import { DatePopover } from "@/components/date-picker";
+import { DatePopover, MonthPopover } from "@/components/date-picker";
 import type {
   ClientRecord,
   Currency,
@@ -132,6 +132,8 @@ export function ProjectsAdminClient({
   const [editing, setEditing] = useState<ProjectRecord | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm(currentYear));
+  const [baseline, setBaseline] = useState<FormState>(emptyForm(currentYear));
+  const [showDiscard, setShowDiscard] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [codeLoading, setCodeLoading] = useState(false);
@@ -170,27 +172,37 @@ export function ProjectsAdminClient({
   }, [projects]);
 
   function openCreate() {
+    const initial = emptyForm(currentYear);
     setEditing(null);
     setCreating(true);
-    setForm(emptyForm(currentYear));
+    setForm(initial);
+    setBaseline(initial);
     setError(null);
   }
 
   function openEdit(p: ProjectRecord) {
+    const initial = fromRecord(p);
     setEditing(p);
     setCreating(false);
-    setForm(fromRecord(p));
+    setForm(initial);
+    setBaseline(initial);
     setError(null);
   }
 
+  // Guarded close (X, backdrop, Cancel): warn before dropping unsaved edits.
   function closeModal() {
     if (saving) return;
+    if (dirty) {
+      setShowDiscard(true);
+      return;
+    }
     closeModalNow();
   }
   function closeModalNow() {
     setEditing(null);
     setCreating(false);
     setError(null);
+    setShowDiscard(false);
   }
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -354,6 +366,10 @@ export function ProjectsAdminClient({
   }
 
   const modalOpen = creating || !!editing;
+  const dirty = useMemo(
+    () => JSON.stringify(form) !== JSON.stringify(baseline),
+    [form, baseline],
+  );
   const showPaymentSchedule = form.type === "Fixed Price" || form.type === "Time & Material";
 
   return (
@@ -701,6 +717,16 @@ export function ProjectsAdminClient({
         onConfirm={confirmDelete}
       />
 
+      <ConfirmDialog
+        open={showDiscard}
+        title="Discard changes?"
+        message="You have unsaved changes. Close without saving?"
+        confirmLabel="Discard"
+        confirmTone="danger"
+        onCancel={() => setShowDiscard(false)}
+        onConfirm={closeModalNow}
+      />
+
       {toast ? (
         <div
           role="status"
@@ -854,11 +880,10 @@ function PaymentScheduleEditor({
                   ) : (
                     <>
                       <td className="py-1 pr-2">
-                        <input
-                          type="month"
+                        <MonthPopover
                           value={e.kind === "month" ? e.month : ""}
-                          onChange={(ev) => patchRow(i, { month: ev.target.value })}
-                          className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                          onChange={(v) => patchRow(i, { month: v })}
+                          placeholder="Pick a month"
                         />
                       </td>
                       <td className="py-1 pr-2">

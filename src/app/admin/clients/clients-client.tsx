@@ -54,12 +54,19 @@ export function ClientsAdminClient({ clients }: Props) {
   const [editing, setEditing] = useState<ClientRecord | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY);
+  const [baseline, setBaseline] = useState<FormState>(EMPTY);
+  const [showDiscard, setShowDiscard] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [codeStatus, setCodeStatus] = useState<CodeStatus>({ state: "idle" });
   const codeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ClientRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const dirty = useMemo(
+    () => JSON.stringify(form) !== JSON.stringify(baseline),
+    [form, baseline],
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -75,23 +82,35 @@ export function ClientsAdminClient({ clients }: Props) {
     setEditing(null);
     setCreating(true);
     setForm(EMPTY);
+    setBaseline(EMPTY);
     setError(null);
     setCodeStatus({ state: "idle" });
   }
 
   function openEdit(c: ClientRecord) {
+    const initial = fromRecord(c);
     setEditing(c);
     setCreating(false);
-    setForm(fromRecord(c));
+    setForm(initial);
+    setBaseline(initial);
     setError(null);
     setCodeStatus({ state: "idle" });
   }
 
+  // Guarded close (X, backdrop, Cancel): warn before dropping unsaved edits.
   function closeModal() {
     if (saving) return;
+    if (dirty) {
+      setShowDiscard(true);
+      return;
+    }
+    closeModalNow();
+  }
+  function closeModalNow() {
     setEditing(null);
     setCreating(false);
     setError(null);
+    setShowDiscard(false);
   }
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -162,7 +181,7 @@ export function ClientsAdminClient({ clients }: Props) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error ?? "Save failed.");
       }
-      closeModal();
+      closeModalNow();
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed.");
@@ -182,7 +201,7 @@ export function ClientsAdminClient({ clients }: Props) {
       }
       const wasEditing = editing?.id === deleteTarget.id;
       setDeleteTarget(null);
-      if (wasEditing) closeModal();
+      if (wasEditing) closeModalNow();
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed.");
@@ -352,6 +371,16 @@ export function ClientsAdminClient({ clients }: Props) {
         busy={deleting}
         onCancel={() => (deleting ? undefined : setDeleteTarget(null))}
         onConfirm={confirmDelete}
+      />
+
+      <ConfirmDialog
+        open={showDiscard}
+        title="Discard changes?"
+        message="You have unsaved changes. Close without saving?"
+        confirmLabel="Discard"
+        confirmTone="danger"
+        onCancel={() => setShowDiscard(false)}
+        onConfirm={closeModalNow}
       />
     </div>
   );

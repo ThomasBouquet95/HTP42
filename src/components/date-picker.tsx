@@ -295,6 +295,173 @@ function SingleDateCalendar({
   );
 }
 
+// Month picker popover (value is "YYYY-MM"). Same look as DatePopover but the
+// grid is 12 months with year navigation instead of a day grid. Used for the
+// Time & Material payment schedule where entries are monthly.
+export function MonthPopover({
+  value,
+  onChange,
+  placeholder,
+  align = "left",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  align?: "left" | "right";
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (!ref.current) return;
+      if (ref.current.contains(e.target as Node)) return;
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  const valid = /^\d{4}-\d{2}$/.test(value);
+  const label = valid ? formatFriendlyMonth(value) : "";
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 py-1 text-left text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+      >
+        <CalendarGlyph />
+        {label ? (
+          <span className="text-slate-800">{label}</span>
+        ) : (
+          <span className="text-slate-400">{placeholder ?? "Pick a month"}</span>
+        )}
+      </button>
+      {open ? (
+        <div
+          className={`absolute z-50 mt-1 rounded-md border border-slate-200 bg-white p-2 shadow-lg ${
+            align === "right" ? "right-0" : "left-0"
+          }`}
+        >
+          <MonthGrid
+            value={valid ? value : ""}
+            onPick={(v) => {
+              onChange(v);
+              setOpen(false);
+            }}
+            onClear={() => {
+              onChange("");
+              setOpen(false);
+            }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MonthGrid({
+  value,
+  onPick,
+  onClear,
+}: {
+  value: string;
+  onPick: (v: string) => void;
+  onClear: () => void;
+}) {
+  const now = new Date();
+  const seedYear = /^\d{4}-\d{2}$/.test(value)
+    ? Number(value.slice(0, 4))
+    : now.getFullYear();
+  const [year, setYear] = useState<number>(seedYear);
+  const selMonth = /^\d{4}-\d{2}$/.test(value) ? Number(value.slice(5, 7)) : null;
+  const selYear = /^\d{4}-\d{2}$/.test(value) ? Number(value.slice(0, 4)) : null;
+  const thisMonth = now.getMonth() + 1;
+  const thisYear = now.getFullYear();
+  return (
+    <div className="w-[15.5rem] select-none normal-case tracking-normal">
+      <div className="mb-2 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setYear((y) => y - 1)}
+          aria-label="Previous year"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
+        >
+          <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <path d="m7.5 3-3 3 3 3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => setYear(thisYear)}
+          className="text-xs font-medium text-slate-700 hover:text-brand-700"
+          title="Jump to current year"
+        >
+          {year}
+        </button>
+        <button
+          type="button"
+          onClick={() => setYear((y) => y + 1)}
+          aria-label="Next year"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
+        >
+          <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <path d="m4.5 3 3 3-3 3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-1">
+        {FRIENDLY_MONTHS.map((label, i) => {
+          const m = i + 1;
+          const isSelected = selMonth === m && selYear === year;
+          const isCurrent = thisMonth === m && thisYear === year;
+          let cls = "h-8 rounded-md text-[11px] flex items-center justify-center transition-colors";
+          if (isSelected) cls += " bg-brand-600 text-white font-medium";
+          else {
+            cls += " text-slate-700 hover:bg-brand-100 hover:text-brand-800";
+            if (isCurrent) cls += " ring-1 ring-inset ring-slate-300";
+          }
+          return (
+            <button
+              key={label}
+              type="button"
+              onClick={() => onPick(`${year}-${String(m).padStart(2, "0")}`)}
+              className={cls}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex items-center justify-between text-[10px]">
+        <button
+          type="button"
+          onClick={() => onPick(`${thisYear}-${String(thisMonth).padStart(2, "0")}`)}
+          className="text-slate-500 hover:text-brand-700"
+        >
+          This month
+        </button>
+        <button
+          type="button"
+          onClick={onClear}
+          className="text-slate-500 hover:text-red-600"
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// "Feb 2026" from "YYYY-MM".
+export function formatFriendlyMonth(s: string): string {
+  if (!/^\d{4}-\d{2}$/.test(s)) return s.trim();
+  const [y, m] = s.split("-").map(Number);
+  return `${FRIENDLY_MONTHS[m - 1]} ${y}`;
+}
+
 function parseIsoLocal(s: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
   const [y, m, d] = s.split("-").map(Number);
