@@ -51,6 +51,7 @@ type FormState = {
   fxToEur: string;
   sowReference: string;
   sowStatus: string;
+  status: string;
   startDate: string;
   endDate: string;
   notes: string;
@@ -67,6 +68,7 @@ const EMPTY: FormState = {
   fxToEur: "",
   sowReference: "",
   sowStatus: "",
+  status: "",
   startDate: "",
   endDate: "",
   notes: "",
@@ -84,6 +86,7 @@ function fromRecord(s: StaffingAdminRecord): FormState {
     fxToEur: s.fxToEur == null ? "" : String(s.fxToEur),
     sowReference: s.sowReference,
     sowStatus: s.sowStatus,
+    status: s.rawStatus ?? "",
     startDate: s.startDate ?? "",
     endDate: s.endDate ?? "",
     notes: s.notes,
@@ -198,6 +201,22 @@ export function StaffingsAdminClient({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  // Inline status change straight from the list, mirroring the timesheets and
+  // members tables. Writes the stored status field (an explicit override).
+  async function updateStatus(id: string, next: string) {
+    try {
+      const res = await fetch(`/api/admin/staffings/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!res.ok) throw new Error();
+      router.refresh();
+    } catch {
+      setToast({ kind: "error", msg: "Could not update status — try again." });
+    }
+  }
+
 
   async function updateCurrency(currency: string) {
     setForm((f) => ({ ...f, currency }));
@@ -252,9 +271,7 @@ export function StaffingsAdminClient({
         sowStatus: form.sowStatus,
         startDate: form.startDate || null,
         endDate: form.endDate || null,
-        // Status is no longer in the form — preserve whatever the row already
-        // has on edit, default to empty on create.
-        status: editing?.status ?? "",
+        status: form.status,
         notes: form.notes,
       };
       const url = creating ? "/api/admin/staffings" : `/api/admin/staffings/${editing!.id}`;
@@ -416,7 +433,11 @@ export function StaffingsAdminClient({
                       : `${s.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${s.currency || ""}`.trim()}
                   </td>
                   <td className="px-2 py-1.5 whitespace-nowrap">
-                    <StaffingStatusPill value={s.status} />
+                    <StaffingStatusSelect
+                      value={s.status}
+                      statuses={staffingStatuses}
+                      onChange={(next) => updateStatus(s.id, next)}
+                    />
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     <IconButton title="Edit" onClick={() => openEdit(s)}>
@@ -565,6 +586,21 @@ export function StaffingsAdminClient({
               <option key={s} value={s}>{s}</option>
             ))}
           </FormSelect>
+          <FormSelect
+            label="Status"
+            value={form.status}
+            onChange={(v) => updateField("status", v)}
+            hint={
+              <span className="text-slate-500">
+                Defaults to auto (days logged vs allocated). Pick to override.
+              </span>
+            }
+          >
+            <option value="">Auto (from days)</option>
+            {staffingStatuses.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </FormSelect>
         </div>
         {(derivedTotal != null || derivedTotalEur != null) ? (
           <div className="mt-3 rounded-md bg-slate-50 border border-slate-200 p-2.5 text-xs text-slate-700">
@@ -632,23 +668,40 @@ export function StaffingsAdminClient({
   );
 }
 
-// Read-only pill: staffing status is auto-derived from days used vs allocated.
-function StaffingStatusPill({ value }: { value: string }) {
+// Editable status dropdown, matching the members table. Defaults to the
+// value derived from days logged vs allocated; choosing one here stores an
+// explicit override.
+function StaffingStatusSelect({
+  value,
+  statuses,
+  onChange,
+}: {
+  value: string;
+  statuses: readonly string[];
+  onChange: (next: string) => void;
+}) {
   const cls =
     value === "In Progress"
       ? "bg-emerald-50 border-emerald-300 text-emerald-800"
       : value === "Completed"
-      ? "bg-slate-200 border-slate-300 text-slate-700"
+      ? "bg-slate-100 border-slate-300 text-slate-700"
       : value === "Not Started"
       ? "bg-sky-50 border-sky-300 text-sky-800"
       : "bg-white border-slate-300 text-slate-500";
   return (
-    <span
-      className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${cls}`}
-      title="Auto-derived from days logged vs allocated"
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      title="Auto-derived from days logged vs allocated; pick to override"
+      className={`block w-full rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${cls} focus:outline-none focus:ring-1 focus:ring-brand-600`}
     >
-      {value || "—"}
-    </span>
+      {statuses.map((s) => (
+        <option key={s} value={s}>
+          {s}
+        </option>
+      ))}
+    </select>
   );
 }
 

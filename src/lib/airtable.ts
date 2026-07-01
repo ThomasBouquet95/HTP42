@@ -501,7 +501,12 @@ export type StaffingAdminRecord = {
   sowStatus: SowStatus | "";
   startDate: string | null;
   endDate: string | null;
+  // Resolved status shown in the list: explicit stored value if set, else
+  // derived from days logged vs allocated.
   status: StaffingStatus | "";
+  // The raw stored status ("" = no override, i.e. auto). Used by the edit
+  // form so saving unrelated fields doesn't silently pin an auto status.
+  rawStatus: StaffingStatus | "";
   notes: string;
 };
 
@@ -2158,8 +2163,12 @@ function staffingAdminFromRecord(
     sowStatus: str(r, FIELDS.projectStaffing.sowStatus) as SowStatus | "",
     startDate: dateOrNull(r, FIELDS.projectStaffing.startDate),
     endDate: dateOrNull(r, FIELDS.projectStaffing.endDate),
-    // Status is derived from the data; the stored field is no longer source-of-truth.
-    status: deriveStaffingStatus(days, daysUsedByStaffingId?.get(r.id) ?? 0),
+    // An explicitly set status wins so admins can override; otherwise we
+    // fall back to the value derived from days logged vs allocated.
+    status:
+      (str(r, FIELDS.projectStaffing.status) as StaffingStatus | "") ||
+      deriveStaffingStatus(days, daysUsedByStaffingId?.get(r.id) ?? 0),
+    rawStatus: str(r, FIELDS.projectStaffing.status) as StaffingStatus | "",
     notes: str(r, FIELDS.projectStaffing.notes),
   };
 }
