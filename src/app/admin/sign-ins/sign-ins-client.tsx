@@ -38,37 +38,18 @@ export function SignInActivityClient({
   rows,
   kpis,
   signInBuckets,
-  activityBuckets,
 }: {
   rows: SignInActivity[];
   kpis: Kpis;
   signInBuckets: Bucket[];
-  activityBuckets: Bucket[];
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
-  // Clicking a member row pins the charts to just that person.
+  // Clicking a member row shows that person's sign-in stats.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedMember = useMemo(
     () => rows.find((r) => r.id === selectedId) ?? null,
     [rows, selectedId],
-  );
-  // When a member is selected, recompute the day-buckets from only their
-  // last sign-in / last activity; otherwise use the all-members buckets
-  // computed server-side.
-  const signInChart = useMemo(
-    () =>
-      selectedMember
-        ? buildDailyBuckets([selectedMember.lastSignIn], 30)
-        : signInBuckets,
-    [selectedMember, signInBuckets],
-  );
-  const activityChart = useMemo(
-    () =>
-      selectedMember
-        ? buildDailyBuckets([selectedMember.lastActivity], 30)
-        : activityBuckets,
-    [selectedMember, activityBuckets],
   );
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({
     key: "lastActivity",
@@ -161,57 +142,45 @@ export function SignInActivityClient({
           sub={`${kpis.signedInLast30} active in 30d`}
         />
         <Kpi
-          label="Total sign-ins"
-          value={kpis.totalSignIns}
-          sub={`${kpis.neverSignedIn} never signed in`}
+          label="Not signed in"
+          value={kpis.neverSignedIn}
+          sub="never opened the portal"
           tone={kpis.neverSignedIn > 0 ? "warn" : undefined}
         />
       </div>
 
-      {/* Charts */}
+      {/* Selected member → their stats (we only store the latest sign-in
+          and a running count, not per-event history, so a per-day chart
+          would just be one bar). Otherwise the all-members chart. */}
       {selectedMember ? (
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-slate-500">Charts filtered to</span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 border border-brand-200 px-2 py-0.5 font-medium text-brand-700 demo-blur">
-            {selectedMember.fullName || selectedMember.memberCode}
-            <button
-              type="button"
-              onClick={() => setSelectedId(null)}
-              aria-label="Clear member filter"
-              className="text-brand-500 hover:text-brand-800"
-            >
-              ✕
-            </button>
-          </span>
-          <span className="text-slate-400">Click the member again to clear.</span>
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <div className="mb-3 flex items-center gap-2 text-xs">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 border border-brand-200 px-2 py-0.5 font-medium text-brand-700 demo-blur">
+              {selectedMember.fullName || selectedMember.memberCode}
+              <button
+                type="button"
+                onClick={() => setSelectedId(null)}
+                aria-label="Clear member selection"
+                className="text-brand-500 hover:text-brand-800"
+              >
+                ✕
+              </button>
+            </span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <MiniStat label="Total sign-ins" value={String(selectedMember.signInCount)} />
+            <MiniStat label="Last sign-in" value={fmtDateTime(selectedMember.lastSignIn)} />
+            <MiniStat label="Last activity" value={fmtDateTime(selectedMember.lastActivity)} />
+          </div>
         </div>
       ) : (
-        <p className="text-[11px] text-slate-400">
-          Tip: click a member in the table to filter these charts to that person.
-        </p>
-      )}
-      <div className="grid gap-3 lg:grid-cols-2">
         <ChartCard
           title="Latest sign-in by day"
-          subtitle={
-            selectedMember
-              ? "This member's most recent session (last 30 days)"
-              : "When each member's most recent session landed (last 30 days)"
-          }
-          buckets={signInChart}
+          subtitle="When each member's most recent session landed (last 30 days)"
+          buckets={signInBuckets}
           tone="brand"
         />
-        <ChartCard
-          title="Latest activity by day"
-          subtitle={
-            selectedMember
-              ? "This member's most recent heartbeat (last 30 days)"
-              : "Most recent heartbeat per member, bucketed by day (last 30 days)"
-          }
-          buckets={activityChart}
-          tone="emerald"
-        />
-      </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
@@ -732,37 +701,24 @@ function initials(name: string): string {
   return `${first}${last}`.toUpperCase();
 }
 
-// Same daily bucketing the server uses, repeated here so the charts can
-// be recomputed client-side when a single member is selected.
-function buildDailyBuckets(
-  isos: Array<string | null>,
-  days: number,
-): { key: string; count: number }[] {
-  const dayMs = 24 * 60 * 60 * 1000;
-  const buckets: { key: string; count: number }[] = [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const startDay = new Date(today.getTime() - (days - 1) * dayMs);
-  for (let i = 0; i < days; i++) {
-    const d = new Date(startDay.getTime() + i * dayMs);
-    buckets.push({ key: dayKey(d), count: 0 });
-  }
-  const idx = new Map(buckets.map((b, i) => [b.key, i]));
-  for (const iso of isos) {
-    if (!iso) continue;
-    const t = Date.parse(iso);
-    if (!Number.isFinite(t)) continue;
-    const d = new Date(t);
-    d.setHours(0, 0, 0, 0);
-    const i = idx.get(dayKey(d));
-    if (i !== undefined) buckets[i].count += 1;
-  }
-  return buckets;
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50/60 p-3">
+      <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-semibold tabular-nums text-slate-900">{value}</div>
+    </div>
+  );
 }
 
-function dayKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+function fmtDateTime(iso: string | null): string {
+  if (!iso) return "—";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "—";
+  return new Date(t).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

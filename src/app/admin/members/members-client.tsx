@@ -93,6 +93,54 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
   const codeTouchedRef = useRef(false);
   const [deleteTarget, setDeleteTarget] = useState<MemberAdminRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [cvBusy, setCvBusy] = useState(false);
+
+  // Admin-side CV upload/replace/remove for the member being edited. On
+  // success we patch the open `editing` record so the chip updates live.
+  async function uploadCv(file: File) {
+    if (!editing) return;
+    setCvBusy(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.set("file", file);
+      const res = await fetch(`/api/admin/members/${editing.id}/cv`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        member?: MemberAdminRecord;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error ?? "CV upload failed.");
+      if (data.member) setEditing((cur) => (cur ? { ...cur, cv: data.member!.cv } : cur));
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "CV upload failed.");
+    } finally {
+      setCvBusy(false);
+    }
+  }
+
+  async function removeCv() {
+    if (!editing) return;
+    setCvBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/members/${editing.id}/cv`, { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as {
+        member?: MemberAdminRecord;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error ?? "Could not remove CV.");
+      setEditing((cur) => (cur ? { ...cur, cv: null } : cur));
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not remove CV.");
+    } finally {
+      setCvBusy(false);
+    }
+  }
 
   useEffect(() => {
     return () => {
@@ -302,6 +350,19 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full table-fixed text-xs">
+          <colgroup>
+            <col className="w-10" />{/* avatar */}
+            <col className="w-[8%]" />{/* Code */}
+            <col />{/* Name */}
+            <col className="w-[24%]" />{/* Email — widened */}
+            <col />{/* Role */}
+            <col />{/* Status */}
+            <col />{/* Country */}
+            <col />{/* Member rate */}
+            <col />{/* HTP42 rate */}
+            <col className="w-12" />{/* CV — narrowed */}
+            <col className="w-10" />{/* actions */}
+          </colgroup>
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-2 py-1.5 font-medium w-9" />
@@ -488,6 +549,47 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
             rows={3}
           />
         </div>
+        {editing ? (
+          <div className="mt-3">
+            <span className="block text-[11px] uppercase tracking-wide font-medium text-slate-500 mb-1">
+              CV
+            </span>
+            <div className="flex items-center gap-2">
+              <DownloadChip url={editing.cv?.url} title="Open CV" emptyTitle="No CV on file" />
+              <label
+                className={`inline-flex items-center rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 ${
+                  cvBusy ? "pointer-events-none opacity-60" : "cursor-pointer"
+                }`}
+              >
+                {cvBusy ? "Uploading…" : editing.cv?.url ? "Replace CV" : "Upload CV"}
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf,.doc,.docx"
+                  className="hidden"
+                  disabled={cvBusy}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) uploadCv(f);
+                    e.currentTarget.value = "";
+                  }}
+                />
+              </label>
+              {editing.cv?.url ? (
+                <button
+                  type="button"
+                  onClick={removeCv}
+                  disabled={cvBusy}
+                  className="text-[11px] text-slate-500 hover:text-red-600 disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">
+              The consultant can also upload their own CV from their profile page. PDF or Word, max 2 MB.
+            </p>
+          </div>
+        ) : null}
         {error ? (
           <div className="mt-3 rounded-md bg-red-50 text-red-700 p-2.5 text-xs">{error}</div>
         ) : null}

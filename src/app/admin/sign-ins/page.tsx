@@ -51,17 +51,12 @@ export default async function AdminSignInsPage() {
   // every individual login event, so the chart shows "members whose latest
   // session landed on this day" rather than total sessions across all time.
   const signInBuckets = buildDailyBuckets(rows.map((r) => r.lastSignIn), 30);
-  const activityBuckets = buildDailyBuckets(rows.map((r) => r.lastActivity), 30);
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <AdminTabs active="signins" />
       <header className="mb-5">
         <h1 className="text-base sm:text-lg font-semibold text-slate-900">Sign-in activity</h1>
-        <p className="mt-0.5 text-xs text-slate-500">
-          Who's currently on the portal and when each member last opened it.
-          Presence is refreshed every minute by an in-app heartbeat.
-        </p>
       </header>
 
       <SignInActivityClient
@@ -76,7 +71,6 @@ export default async function AdminSignInsPage() {
           totalSignIns,
         }}
         signInBuckets={signInBuckets}
-        activityBuckets={activityBuckets}
       />
     </main>
   );
