@@ -103,34 +103,11 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
     }
   }
 
-  const [pdfBusyStaffing, setPdfBusyStaffing] = useState<string | null>(null);
-  // Generate and download a PDF summary of the staffing's timesheets directly
-  // (no browser print dialog).
-  async function downloadStaffingPdf(staffingId: string, label: string) {
+  // Open the printable (Save-as-PDF) staffing report in a new tab. It lives at
+  // /print/staffing/[id] (no app header) and auto-opens the print dialog.
+  function openStaffingPrint(staffingId: string) {
     if (!staffingId) return;
-    setPdfBusyStaffing(staffingId);
-    try {
-      const res = await fetch(
-        `/api/admin/staffings/${encodeURIComponent(staffingId)}/timesheets-pdf`,
-      );
-      if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? `Could not generate PDF (HTTP ${res.status})`);
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `timesheets-${label || staffingId}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      setToast({ kind: "error", msg: e instanceof Error ? e.message : "PDF failed" });
-    } finally {
-      setPdfBusyStaffing(null);
-    }
+    window.open(`/print/staffing/${encodeURIComponent(staffingId)}`, "_blank", "noopener");
   }
 
   const memberOptions = useMemo(() => {
@@ -429,23 +406,16 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
                   <td className="px-2 py-1.5 text-right" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
-                      onClick={() => downloadStaffingPdf(t.staffingRecordId, t.staffingCode)}
-                      disabled={!t.staffingRecordId || pdfBusyStaffing === t.staffingRecordId}
-                      title="Download a PDF of this staffing's timesheets"
-                      aria-label="Download staffing timesheets PDF"
+                      onClick={() => openStaffingPrint(t.staffingRecordId)}
+                      disabled={!t.staffingRecordId}
+                      title="Open a printable PDF of this staffing's timesheets"
+                      aria-label="Staffing timesheets PDF"
                       className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40"
                     >
-                      {pdfBusyStaffing === t.staffingRecordId ? (
-                        <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                        </svg>
-                      ) : (
-                        <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-                          <path d="M8 2v7m0 0L5.5 6.5M8 9l2.5-2.5" strokeLinecap="round" strokeLinejoin="round" />
-                          <path d="M3 11v1.5A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V11" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      )}
+                      <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                        <path d="M8 2v7m0 0L5.5 6.5M8 9l2.5-2.5" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M3 11v1.5A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V11" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
                     </button>
                   </td>
                 </tr>

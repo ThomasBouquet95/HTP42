@@ -82,6 +82,10 @@ export function generateTimesheetSummaryPdf(
     doc.fontSize(18).fillColor("#0f172a").text(meta.title ?? "Timesheet summary", LEFT, doc.y, {
       width: RIGHT - LEFT,
     });
+    if (meta.subtitle) {
+      doc.moveDown(0.15);
+      doc.fontSize(10).fillColor("#475569").text(meta.subtitle, LEFT, doc.y, { width: RIGHT - LEFT });
+    }
     doc.moveDown(0.5);
 
     const totalHours = timesheets.reduce((s, t) => s + (t.totalHours ?? 0), 0);
