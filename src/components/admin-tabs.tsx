@@ -32,7 +32,7 @@ const CATEGORIES: Category[] = [
     pages: [
       { key: "networkcockpit", href: "/admin/network", label: "Cockpit" },
       { key: "members", href: "/admin/members", label: "Members" },
-      { key: "signins", href: "/admin/sign-ins", label: "Sign-in activity" },
+      { key: "signins", href: "/admin/sign-ins", label: "App activity" },
     ],
   },
   {

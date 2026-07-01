@@ -94,13 +94,23 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
   const [deleteTarget, setDeleteTarget] = useState<MemberAdminRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [cvBusy, setCvBusy] = useState(false);
+  const [cvMsg, setCvMsg] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const [baseline, setBaseline] = useState<FormState>(EMPTY);
+  const [showDiscard, setShowDiscard] = useState(false);
+
+  // Whether the text fields have unsaved edits. CV changes are persisted
+  // immediately by their own endpoint, so they don't count toward "dirty".
+  const dirty = useMemo(
+    () => JSON.stringify(form) !== JSON.stringify(baseline),
+    [form, baseline],
+  );
 
   // Admin-side CV upload/replace/remove for the member being edited. On
   // success we patch the open `editing` record so the chip updates live.
   async function uploadCv(file: File) {
     if (!editing) return;
     setCvBusy(true);
-    setError(null);
+    setCvMsg(null);
     try {
       const fd = new FormData();
       fd.set("file", file);
@@ -114,9 +124,10 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
       };
       if (!res.ok) throw new Error(data.error ?? "CV upload failed.");
       if (data.member) setEditing((cur) => (cur ? { ...cur, cv: data.member!.cv } : cur));
+      setCvMsg({ kind: "success", text: "CV replaced." });
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "CV upload failed.");
+      setCvMsg({ kind: "error", text: e instanceof Error ? e.message : "CV upload failed." });
     } finally {
       setCvBusy(false);
     }
@@ -125,7 +136,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
   async function removeCv() {
     if (!editing) return;
     setCvBusy(true);
-    setError(null);
+    setCvMsg(null);
     try {
       const res = await fetch(`/api/admin/members/${editing.id}/cv`, { method: "DELETE" });
       const data = (await res.json().catch(() => ({}))) as {
@@ -134,9 +145,10 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
       };
       if (!res.ok) throw new Error(data.error ?? "Could not remove CV.");
       setEditing((cur) => (cur ? { ...cur, cv: null } : cur));
+      setCvMsg({ kind: "success", text: "CV removed." });
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not remove CV.");
+      setCvMsg({ kind: "error", text: e instanceof Error ? e.message : "Could not remove CV." });
     } finally {
       setCvBusy(false);
     }
@@ -195,17 +207,22 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
     setEditing(null);
     setCreating(true);
     setForm(EMPTY);
+    setBaseline(EMPTY);
     setError(null);
+    setCvMsg(null);
     setCodeStatus({ state: "idle" });
     nameTouchedRef.current = false;
     codeTouchedRef.current = false;
   }
 
   function openEdit(m: MemberAdminRecord) {
+    const initial = fromRecord(m);
     setEditing(m);
     setCreating(false);
-    setForm(fromRecord(m));
+    setForm(initial);
+    setBaseline(initial);
     setError(null);
+    setCvMsg(null);
     setCodeStatus({ state: "idle" });
     nameTouchedRef.current = true;
     codeTouchedRef.current = true;
@@ -225,11 +242,25 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
     }
   }
 
-  function closeModal() {
-    if (saving) return;
+  // Hard close: wipe modal state without any prompt. Used after a successful
+  // save/delete and once the user confirms discarding edits.
+  function forceClose() {
     setEditing(null);
     setCreating(false);
     setError(null);
+    setCvMsg(null);
+    setShowDiscard(false);
+  }
+
+  // Guarded close (X button, backdrop, Cancel). If there are unsaved text
+  // edits we ask for confirmation before throwing them away.
+  function closeModal() {
+    if (saving) return;
+    if (dirty) {
+      setShowDiscard(true);
+      return;
+    }
+    forceClose();
   }
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -302,7 +333,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error ?? "Save failed.");
       }
-      closeModal();
+      forceClose();
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed.");
@@ -322,7 +353,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
       }
       const wasEditing = editing?.id === deleteTarget.id;
       setDeleteTarget(null);
-      if (wasEditing) closeModal();
+      if (wasEditing) forceClose();
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed.");
@@ -469,6 +500,64 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
           </>
         }
       >
+        {editing ? (
+          <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+                CV
+              </span>
+              {cvBusy ? (
+                <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+                  <Spinner /> Uploading…
+                </span>
+              ) : cvMsg ? (
+                <span
+                  className={`text-[11px] font-medium ${
+                    cvMsg.kind === "success" ? "text-green-600" : "text-red-600"
+                  }`}
+                >
+                  {cvMsg.text}
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <DownloadChip url={editing.cv?.url} title="Open CV" emptyTitle="No CV on file" />
+              <label
+                className={`inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 ${
+                  cvBusy ? "pointer-events-none opacity-60" : "cursor-pointer"
+                }`}
+              >
+                {cvBusy ? <Spinner /> : null}
+                {cvBusy ? "Uploading…" : editing.cv?.url ? "Replace CV" : "Upload CV"}
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf,.doc,.docx"
+                  className="hidden"
+                  disabled={cvBusy}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) uploadCv(f);
+                    e.currentTarget.value = "";
+                  }}
+                />
+              </label>
+              {editing.cv?.url ? (
+                <button
+                  type="button"
+                  onClick={removeCv}
+                  disabled={cvBusy}
+                  className="text-[11px] text-slate-500 hover:text-red-600 disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-400">
+              Saved instantly, no need to press Save. The consultant can also upload their own CV
+              from their profile page. PDF or Word, max 2 MB.
+            </p>
+          </div>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <FormField
             label="Full name"
@@ -549,47 +638,6 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
             rows={3}
           />
         </div>
-        {editing ? (
-          <div className="mt-3">
-            <span className="block text-[11px] uppercase tracking-wide font-medium text-slate-500 mb-1">
-              CV
-            </span>
-            <div className="flex items-center gap-2">
-              <DownloadChip url={editing.cv?.url} title="Open CV" emptyTitle="No CV on file" />
-              <label
-                className={`inline-flex items-center rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 ${
-                  cvBusy ? "pointer-events-none opacity-60" : "cursor-pointer"
-                }`}
-              >
-                {cvBusy ? "Uploading…" : editing.cv?.url ? "Replace CV" : "Upload CV"}
-                <input
-                  type="file"
-                  accept="application/pdf,.pdf,.doc,.docx"
-                  className="hidden"
-                  disabled={cvBusy}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) uploadCv(f);
-                    e.currentTarget.value = "";
-                  }}
-                />
-              </label>
-              {editing.cv?.url ? (
-                <button
-                  type="button"
-                  onClick={removeCv}
-                  disabled={cvBusy}
-                  className="text-[11px] text-slate-500 hover:text-red-600 disabled:opacity-50"
-                >
-                  Remove
-                </button>
-              ) : null}
-            </div>
-            <p className="mt-1 text-[11px] text-slate-400">
-              The consultant can also upload their own CV from their profile page. PDF or Word, max 2 MB.
-            </p>
-          </div>
-        ) : null}
         {error ? (
           <div className="mt-3 rounded-md bg-red-50 text-red-700 p-2.5 text-xs">{error}</div>
         ) : null}
@@ -611,7 +659,42 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
         onCancel={() => (deleting ? undefined : setDeleteTarget(null))}
         onConfirm={confirmDelete}
       />
+
+      <ConfirmDialog
+        open={showDiscard}
+        title="Discard changes?"
+        message="You have unsaved changes. Close without saving?"
+        confirmLabel="Discard"
+        confirmTone="danger"
+        onCancel={() => setShowDiscard(false)}
+        onConfirm={forceClose}
+      />
     </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg
+      className="h-3.5 w-3.5 animate-spin text-current"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+      />
+    </svg>
   );
 }
 

@@ -19,7 +19,7 @@ const FILTER_OPTIONS: { value: Filter; label: string }[] = [
   { value: "onlineNow", label: "Online now" },
   { value: "active7", label: "Active last 7d" },
   { value: "active30", label: "Active last 30d" },
-  { value: "never", label: "Never signed in" },
+  { value: "never", label: "Never opened" },
 ];
 
 type Kpis = {
@@ -142,16 +142,17 @@ export function SignInActivityClient({
           sub={`${kpis.signedInLast30} active in 30d`}
         />
         <Kpi
-          label="Not signed in"
+          label="Never opened"
           value={kpis.neverSignedIn}
-          sub="never opened the portal"
+          sub="never opened the app"
           tone={kpis.neverSignedIn > 0 ? "warn" : undefined}
         />
       </div>
 
-      {/* Selected member → their stats (we only store the latest sign-in
-          and a running count, not per-event history, so a per-day chart
-          would just be one bar). Otherwise the all-members chart. */}
+      {/* Selected member → their stats. "Opened" means they loaded the app
+          and interacted with at least one page, not a password login. We only
+          store the latest open and a running count, not per-event history,
+          so we show numbers rather than a per-day chart. */}
       {selectedMember ? (
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <div className="mb-3 flex items-center gap-2 text-xs">
@@ -168,15 +169,23 @@ export function SignInActivityClient({
             </span>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
-            <MiniStat label="Total sign-ins" value={String(selectedMember.signInCount)} />
-            <MiniStat label="Last sign-in" value={fmtDateTime(selectedMember.lastSignIn)} />
-            <MiniStat label="Last activity" value={fmtDateTime(selectedMember.lastActivity)} />
+            <div className="rounded-md border border-brand-200 bg-brand-50/60 p-3">
+              <div className="text-[11px] uppercase tracking-wide text-brand-600">Times opened</div>
+              <div className="mt-1 text-3xl font-semibold tabular-nums text-brand-700">
+                {selectedMember.signInCount}
+              </div>
+              <div className="mt-0.5 text-[11px] text-slate-500">
+                opened the app &amp; interacted
+              </div>
+            </div>
+            <MiniStat label="Last opened" value={fmtDateTime(selectedMember.lastSignIn)} />
+            <MiniStat label="Last active" value={fmtDateTime(selectedMember.lastActivity)} />
           </div>
         </div>
       ) : (
         <ChartCard
-          title="Latest sign-in by day"
-          subtitle="When each member's most recent session landed (last 30 days)"
+          title="Last opened by day"
+          subtitle="When each member last opened the app (last 30 days)"
           buckets={signInBuckets}
           tone="brand"
         />
@@ -241,10 +250,10 @@ export function SignInActivityClient({
                 <SortBtn label="Status" colKey="lastActivity" sort={sort} onToggle={toggleSort} />
               </th>
               <th className="text-right px-3 py-2 font-medium">
-                <SortBtn label="Sign-ins" colKey="signInCount" sort={sort} onToggle={toggleSort} align="right" />
+                <SortBtn label="Opens" colKey="signInCount" sort={sort} onToggle={toggleSort} align="right" />
               </th>
               <th className="text-left px-3 py-2 font-medium">
-                <SortBtn label="Last sign-in" colKey="lastSignIn" sort={sort} onToggle={toggleSort} />
+                <SortBtn label="Last opened" colKey="lastSignIn" sort={sort} onToggle={toggleSort} />
               </th>
             </tr>
           </thead>
@@ -263,7 +272,7 @@ export function SignInActivityClient({
                     setSelectedId((cur) => (cur === r.id ? null : r.id))
                   }
                   aria-pressed={selectedId === r.id}
-                  title="Filter the charts to this member"
+                  title="Show this member's activity"
                   className={`border-t border-slate-100 cursor-pointer ${
                     selectedId === r.id
                       ? "bg-brand-50 hover:bg-brand-100"

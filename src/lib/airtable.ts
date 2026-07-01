@@ -679,7 +679,9 @@ export async function updateMemberProfile(
 
 // Upload an attachment to an attachment field on a member record using
 // Airtable's content endpoint (base64 payload, up to 5 MB per file).
-// We replace any existing attachment in the field to keep things simple.
+// The content endpoint *appends*, so to make this behave like a replace we
+// first clear the field. Otherwise "replace the CV" leaves the old file as
+// the first attachment and firstAttachment() keeps returning the stale one.
 export async function uploadMemberAttachment(
   recordId: string,
   field: "photo" | "cv",
@@ -688,6 +690,10 @@ export async function uploadMemberAttachment(
   base64: string,
 ): Promise<MemberRecord | null> {
   const fieldName = field === "photo" ? FIELDS.networkMembers.photo : FIELDS.networkMembers.cv;
+  // Clear first so the upload replaces rather than appends.
+  await base(TABLES.networkMembers).update([
+    { id: recordId, fields: { [fieldName]: [] } as FieldSet },
+  ]);
   const url = `https://content.airtable.com/v0/${env.airtableBaseId}/${recordId}/${encodeURIComponent(fieldName)}/uploadAttachment`;
   const res = await fetch(url, {
     method: "POST",
