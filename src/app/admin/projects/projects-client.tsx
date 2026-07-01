@@ -788,22 +788,35 @@ function PaymentScheduleEditor({
     onChange(visible.filter((_, i) => i !== idx));
   }
 
+  // Patch a row, coercing it to match the editor's current type. This matters
+  // when a project's stored schedule was entered under the other type (e.g. a
+  // T&M project still holding milestone rows): without coercion the branch
+  // below would key off the stale `e.kind` and silently drop a month/date
+  // pick, leaving the field blank after the user clicked a value.
   function patchRow(idx: number, patch: Partial<FixedPriceFields & MonthFields>) {
     onChange(
       visible.map((e, i) => {
         if (i !== idx) return e;
-        if (e.kind === "milestone") {
+        if (type === "Fixed Price") {
+          const base =
+            e.kind === "milestone"
+              ? e
+              : { kind: "milestone" as const, milestone: "", percent: e.percent, date: null };
           return {
-            ...e,
-            milestone: patch.milestone ?? e.milestone,
-            percent: patch.percent ?? e.percent,
-            date: patch.date !== undefined ? patch.date : e.date,
+            ...base,
+            milestone: patch.milestone ?? base.milestone,
+            percent: patch.percent ?? base.percent,
+            date: patch.date !== undefined ? patch.date : base.date,
           };
         }
+        const base =
+          e.kind === "month"
+            ? e
+            : { kind: "month" as const, month: "", percent: e.percent };
         return {
-          ...e,
-          month: patch.month ?? e.month,
-          percent: patch.percent ?? e.percent,
+          ...base,
+          month: patch.month ?? base.month,
+          percent: patch.percent ?? base.percent,
         };
       }),
     );
