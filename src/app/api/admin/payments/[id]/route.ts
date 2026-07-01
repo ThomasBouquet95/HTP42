@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
 import {
+  cascadeInvoicePaidForPayment,
   CURRENCIES,
   deletePayment,
   getPaymentById,
@@ -65,6 +66,13 @@ export async function PATCH(
     // email machinery is misconfigured / Graph rejects the attachment.
     void notifyOutflowPaid(after).catch((e) => {
       console.error("Outflow-paid notification failed:", e);
+    });
+  }
+  // Carry the billing lifecycle forward: a payment going Paid marks its linked
+  // member invoices Paid and flips their Invoiced timesheets to Paid.
+  if (before && becamePaid(before, nextStatus) && before.memberInvoiceRecordIds.length > 0) {
+    void cascadeInvoicePaidForPayment(before).catch((e) => {
+      console.error("Invoice-paid cascade failed:", e);
     });
   }
   return NextResponse.json({ ok: true });
@@ -140,7 +148,23 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       console.error("Outflow-paid notification failed:", e);
     });
   }
+  if (becamePaid(existing, nextStatus)) {
+    // Re-read so the cascade uses the just-saved invoice links, not the stale
+    // pre-edit ones (a PUT can change which invoices the payment covers).
+    const after = (await getPaymentById(id)) ?? existing;
+    if (after.memberInvoiceRecordIds.length > 0) {
+      void cascadeInvoicePaidForPayment(after).catch((e) => {
+        console.error("Invoice-paid cascade failed:", e);
+      });
+    }
+  }
   return NextResponse.json({ ok: true });
+}
+
+// True when a payment crosses into Paid from any other state. Used to trigger
+// the invoice → timesheet Paid cascade exactly once per transition.
+function becamePaid(before: PaymentRecord, nextStatus: PaymentStatus | ""): boolean {
+  return nextStatus === "Paid" && before.paymentStatus !== "Paid";
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -1816,6 +1816,49 @@ export async function markInvoiceEmail(
   ]);
 }
 
+// When an Outflow payment linked to member invoice(s) is marked Paid, carry
+// the billing lifecycle forward: mark each linked invoice Paid and flip that
+// invoice's staffing's Invoiced timesheets to Paid. Best-effort — callers
+// wrap this so a cascade hiccup never blocks the payment update itself.
+//
+// Association is at the staffing level (we don't store a per-timesheet invoice
+// link), so if one staffing carries several open invoices at the same time,
+// paying one flips all of that staffing's currently-Invoiced timesheets.
+export async function cascadeInvoicePaidForPayment(payment: PaymentRecord): Promise<void> {
+  for (const invoiceId of payment.memberInvoiceRecordIds) {
+    try {
+      const inv = await getInvoiceById(invoiceId);
+      if (!inv) continue;
+      // Mark the member invoice Paid (leave Cancelled / already-Paid alone).
+      if (inv.status !== "Cancelled" && inv.status !== "Paid") {
+        await base(TABLES.memberInvoices).update([
+          { id: invoiceId, fields: { [FIELDS.memberInvoices.status]: "Paid" } as FieldSet },
+        ]);
+      }
+      // Flip that staffing's Invoiced timesheets to Paid. filterByFormula sees
+      // the Project Staffing link's primary value (the staffing code).
+      if (inv.staffingCode) {
+        const rows = await base(TABLES.timesheets)
+          .select({
+            filterByFormula: `AND(FIND("${escape(inv.staffingCode)}", ARRAYJOIN({${FIELDS.timesheets.projectStaffing}})), {${FIELDS.timesheets.status}} = "Invoiced")`,
+          })
+          .all();
+        for (let i = 0; i < rows.length; i += 10) {
+          const chunk = rows.slice(i, i + 10);
+          await base(TABLES.timesheets).update(
+            chunk.map((r) => ({
+              id: r.id,
+              fields: { [FIELDS.timesheets.status]: "Paid" } as FieldSet,
+            })),
+          );
+        }
+      }
+    } catch (e) {
+      console.error("cascadeInvoicePaidForPayment failed for invoice", invoiceId, e);
+    }
+  }
+}
+
 async function getProjectNameMap(): Promise<Map<string, string>> {
   const records = await base(TABLES.projects)
     .select({

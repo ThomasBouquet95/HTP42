@@ -31,7 +31,9 @@ const ADMIN_EDITABLE_STATUSES: TimesheetStatus[] = [
 const BREAKDOWN_PREVIEW_ROWS = 6;
 
 type Filters = {
-  status: "All" | TimesheetStatus;
+  // Multi-select: a timesheet matches when its status is in this set. An empty
+  // set means "no status filter" (show everything).
+  status: TimesheetStatus[];
   memberCode: string;
   projectCode: string;
   staffingId: string;
@@ -39,10 +41,11 @@ type Filters = {
   to: string;
 };
 
-// Admins land on Submitted: that's the actionable pile (review → invoice).
-// Drafts are members' work-in-progress and noise at triage time.
+// Admins land on the billing lifecycle — Submitted, Invoiced, Paid — which is
+// the actionable pile. Drafts (members' work-in-progress) and Deleted are
+// hidden by default but can be toggled on.
 const DEFAULT_FILTERS: Filters = {
-  status: "Submitted",
+  status: ["Submitted", "Invoiced", "Paid"],
   memberCode: "All",
   projectCode: "All",
   staffingId: "All",
@@ -134,7 +137,7 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
 
   const filtered = useMemo(() => {
     return rows.filter((t) => {
-      if (filters.status !== "All" && t.status !== filters.status) return false;
+      if (filters.status.length > 0 && !filters.status.includes(t.status)) return false;
       if (filters.memberCode !== "All" && t.memberCode !== filters.memberCode) return false;
       if (filters.projectCode !== "All" && t.projectCode !== filters.projectCode) return false;
       if (filters.staffingId !== "All" && t.staffingRecordId !== filters.staffingId) return false;
@@ -218,16 +221,21 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
     <div className="space-y-4">
       {/* Filter bar */}
       <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-          <Select
-            label="Status"
-            value={filters.status}
-            onChange={(v) => update("status", v as Filters["status"])}
-            options={[
-              { value: "All", label: "All statuses" },
-              ...TIMESHEET_STATUSES.map((s) => ({ value: s, label: s })),
-            ]}
+        <div className="mb-3">
+          <span className="block text-sm text-slate-600 mb-1">Status</span>
+          <StatusMultiSelect
+            selected={filters.status}
+            onToggle={(s) =>
+              update(
+                "status",
+                filters.status.includes(s)
+                  ? filters.status.filter((x) => x !== s)
+                  : [...filters.status, s],
+              )
+            }
           />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Select
             label="Member"
             value={filters.memberCode}
@@ -727,6 +735,44 @@ const STATUS_CHIP: Record<TimesheetStatus, string> = {
   Paid: "bg-emerald-600 text-white border-emerald-700",
   Deleted: "bg-orange-50 text-orange-700 border-orange-200",
 };
+
+// Multi-select status filter: a toggle chip per status. Active chips use the
+// same colour language as the row badges; empty selection means "all".
+function StatusMultiSelect({
+  selected,
+  onToggle,
+}: {
+  selected: TimesheetStatus[];
+  onToggle: (s: TimesheetStatus) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {TIMESHEET_STATUSES.map((s) => {
+        const active = selected.includes(s);
+        return (
+          <button
+            key={s}
+            type="button"
+            onClick={() => onToggle(s)}
+            aria-pressed={active}
+            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+              active
+                ? STATUS_CHIP[s]
+                : "border-slate-200 bg-white text-slate-400 hover:bg-slate-50"
+            }`}
+          >
+            {active ? (
+              <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden>
+                <path d="M3.5 8.5l3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            ) : null}
+            {s}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function Select({
   label,
