@@ -7,6 +7,7 @@ import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { EditIcon } from "@/components/admin-icons";
 import { DateRangeChip } from "@/components/date-range-chip";
+import { DatePopover } from "@/components/date-picker";
 import type {
   ClientRecord,
   Currency,
@@ -800,7 +801,7 @@ function PaymentScheduleEditor({
           No rows yet. Click <span className="font-medium">Add row</span> to start.
         </p>
       ) : (
-        <div className="mt-3 overflow-x-auto">
+        <div className="mt-3">
           <table className="w-full text-xs">
             <thead>
               <tr className="text-[10px] uppercase tracking-wide text-slate-500">
@@ -841,13 +842,12 @@ function PaymentScheduleEditor({
                         />
                       </td>
                       <td className="py-1 pr-2">
-                        <input
-                          type="date"
+                        <DatePopover
                           value={e.kind === "milestone" && e.date ? e.date : ""}
-                          onChange={(ev) =>
-                            patchRow(i, { date: ev.target.value ? ev.target.value : null })
-                          }
-                          className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                          onChange={(v) => patchRow(i, { date: v ? v : null })}
+                          placeholder="Pick a date"
+                          allowFreeText={false}
+                          align="right"
                         />
                       </td>
                     </>
