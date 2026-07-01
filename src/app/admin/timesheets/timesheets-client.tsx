@@ -787,7 +787,7 @@ const STATUS_CHIP: Record<TimesheetStatus, string> = {
   Draft: "bg-slate-100 text-slate-600 border-slate-200",
   Submitted: "bg-amber-50 text-amber-700 border-amber-200",
   Invoiced: "bg-blue-50 text-blue-700 border-blue-200",
-  Paid: "bg-emerald-600 text-white border-emerald-700",
+  Paid: "bg-emerald-100 text-emerald-800 border-emerald-300",
   Deleted: "bg-rose-50 text-rose-700 border-rose-200",
 };
 

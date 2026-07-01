@@ -35,30 +35,38 @@ export async function GET(
 
   const first = rows[0];
   const totalHours = rows.reduce((s, t) => s + t.totalHours, 0);
-  const pdf = await generateTimesheetSummaryPdf(
-    {
-      memberName: first.memberName,
-      memberCode: first.memberCode,
-      amount: null,
-      currency: "",
-      comment: "",
-      staffingCode: first.staffingCode,
-      projectCode: first.projectCode,
-      projectName: first.projectName,
-      title: "Staffing timesheet summary",
-      subtitle: `${first.memberName || first.memberCode} · staffing ${
-        first.staffingCode || "—"
-      } · ${rows.length} timesheet${rows.length === 1 ? "" : "s"}, ${totalHours.toFixed(2)} h`,
-    },
-    rows,
-  );
+  try {
+    const pdf = await generateTimesheetSummaryPdf(
+      {
+        memberName: first.memberName,
+        memberCode: first.memberCode,
+        amount: null,
+        currency: "",
+        comment: "",
+        staffingCode: first.staffingCode,
+        projectCode: first.projectCode,
+        projectName: first.projectName,
+        title: "Staffing timesheet summary",
+        subtitle: `${first.memberName || first.memberCode} · staffing ${
+          first.staffingCode || "—"
+        } · ${rows.length} timesheet${rows.length === 1 ? "" : "s"}, ${totalHours.toFixed(2)} h`,
+      },
+      rows,
+    );
 
-  const filename = `timesheets-${first.staffingCode || id}.pdf`;
-  return new NextResponse(new Uint8Array(pdf), {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${filename}"`,
-      "Cache-Control": "no-store",
-    },
-  });
+    const filename = `timesheets-${first.staffingCode || id}.pdf`;
+    return new NextResponse(new Uint8Array(pdf), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch (e) {
+    console.error("Staffing timesheet PDF generation failed:", e);
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "PDF generation failed." },
+      { status: 500 },
+    );
+  }
 }
