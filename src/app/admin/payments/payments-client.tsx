@@ -1,10 +1,11 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { DownloadChip } from "@/components/download-chip";
+import { DateField } from "@/components/date-picker";
 import type { Currency, PaymentRecord, PaymentStatus } from "@/lib/airtable";
 
 type LinkOpt = { id: string; code: string; name: string };
@@ -32,6 +33,9 @@ type Props = {
   members: LinkOpt[];
   memberInvoices: MemberInvoiceOpt[];
   currencies: readonly Currency[];
+  // Prefills the search box, e.g. when arriving from an invoice's "payment"
+  // link (/admin/payments?search=PAY-CODE).
+  initialSearch?: string;
 };
 
 type Filters = {
@@ -203,6 +207,7 @@ export function PaymentsClient({
   members,
   memberInvoices,
   currencies,
+  initialSearch,
 }: Props) {
   const router = useRouter();
   // Local mirror of the server-side payment list so we can apply optimistic
@@ -227,7 +232,10 @@ export function PaymentsClient({
     p.clientRecordIds.map((id) => clientsById.get(id)?.name || clientsById.get(id)?.code).filter(Boolean).join(", ");
   const memberLabel = (p: PaymentRecord) =>
     p.memberRecordIds.map((id) => membersById.get(id)?.name || membersById.get(id)?.code).filter(Boolean).join(", ");
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<Filters>({
+    ...DEFAULT_FILTERS,
+    search: initialSearch ?? "",
+  });
   const [sort, setSort] = useState<{ key: SortKey | null; dir: SortDir }>({
     key: "dueDate",
     dir: "desc",
@@ -235,6 +243,8 @@ export function PaymentsClient({
   const [editing, setEditing] = useState<PaymentRecord | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [baseline, setBaseline] = useState<FormState>(EMPTY_FORM);
+  const [showDiscard, setShowDiscard] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PaymentRecord | null>(null);
@@ -243,6 +253,12 @@ export function PaymentsClient({
   // we create/update the payment first, then upload the file against the
   // resulting record id (so it works for brand-new payments too).
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+
+  // Unsaved edits = form differs from what we opened with, or a PDF was picked.
+  const dirty = useMemo(
+    () => JSON.stringify(form) !== JSON.stringify(baseline) || invoiceFile !== null,
+    [form, baseline, invoiceFile],
+  );
 
   const statusOptions = useMemo(() => {
     // Only surface canonical statuses in the filter, ignoring legacy values
@@ -360,20 +376,28 @@ export function PaymentsClient({
     setEditing(null);
     setCreating(true);
     setForm(EMPTY_FORM);
+    setBaseline(EMPTY_FORM);
     setError(null);
     setInvoiceFile(null);
   }
 
   function openEdit(p: PaymentRecord) {
+    const initial = fromRecord(p);
     setEditing(p);
     setCreating(false);
-    setForm(fromRecord(p));
+    setForm(initial);
+    setBaseline(initial);
     setError(null);
     setInvoiceFile(null);
   }
 
+  // Guarded close (X, backdrop, Cancel): warn before dropping unsaved edits.
   function closeModal() {
     if (saving) return;
+    if (dirty) {
+      setShowDiscard(true);
+      return;
+    }
     closeModalNow();
   }
   function closeModalNow() {
@@ -381,6 +405,7 @@ export function PaymentsClient({
     setCreating(false);
     setError(null);
     setInvoiceFile(null);
+    setShowDiscard(false);
   }
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -816,8 +841,11 @@ export function PaymentsClient({
                     </td>
                     <td className="px-2 py-1.5 text-right">
                       <div className="inline-flex items-center gap-1">
-                        <InvoiceLink url={p.invoiceUrl} />
-                        <PaymentDetailsPopover p={p} />
+                        <DownloadChip
+                          url={p.invoicePdf?.url}
+                          title={`Open ${p.invoicePdf?.filename || "invoice PDF"}`}
+                          emptyTitle="No invoice PDF on file"
+                        />
                         <button
                           type="button"
                           onClick={() => openEdit(p)}
@@ -866,6 +894,40 @@ export function PaymentsClient({
           </>
         }
       >
+        {/* Invoice PDF at the top, styled like the members CV upload. Picked
+            here, uploaded when the payment is saved (and emails finance). */}
+        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+              Invoice PDF
+            </span>
+            {invoiceFile ? (
+              <span className="text-[11px] font-medium text-brand-700">Uploads when you save</span>
+            ) : null}
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <DownloadChip
+              url={editing?.invoicePdf?.url}
+              title={`Open ${editing?.invoicePdf?.filename || "invoice PDF"}`}
+              emptyTitle="No invoice PDF yet"
+            />
+            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+              {invoiceFile ? "Change file" : editing?.invoicePdf?.url ? "Replace PDF" : "Upload PDF"}
+              <input
+                type="file"
+                accept="application/pdf,.pdf"
+                className="hidden"
+                onChange={(e) => setInvoiceFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            {invoiceFile ? (
+              <span className="truncate text-[11px] text-slate-500">{invoiceFile.name}</span>
+            ) : null}
+          </div>
+          <p className="mt-1.5 text-[11px] text-slate-400">
+            Saved with the payment and emails the finance inbox. PDF, max 5 MB.
+          </p>
+        </div>
         <p className="text-xs text-slate-500 mb-3">
           Payment code is auto-generated by Airtable.
         </p>
@@ -954,11 +1016,11 @@ export function PaymentsClient({
 
         <FormSection title="Invoice">
           <div className="grid gap-3 sm:grid-cols-2">
-            <FormField
+            <DateField
               label="Invoice date"
               value={form.invoiceDate}
               onChange={(v) => updateField("invoiceDate", v)}
-              type="date"
+              placeholder="Pick a date"
             />
             <FormField
               label="Invoice reference"
@@ -985,42 +1047,6 @@ export function PaymentsClient({
                 ) : null
               }
             />
-            {/* Invoice PDF: view the attached file + upload one. Uploading
-                also notifies the finance inbox. */}
-            <div className="sm:col-span-2">
-              <span className="block text-xs font-medium text-slate-600 mb-1">
-                Invoice PDF
-              </span>
-              <div className="flex items-center gap-2">
-                {editing?.invoicePdf?.url ? (
-                  <DownloadChip
-                    url={editing.invoicePdf.url}
-                    title={`Open ${editing.invoicePdf.filename || "invoice PDF"}`}
-                  />
-                ) : null}
-                <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                  {invoiceFile
-                    ? "Change file"
-                    : editing?.invoicePdf?.url
-                    ? "Replace PDF"
-                    : "Upload PDF"}
-                  <input
-                    type="file"
-                    accept="application/pdf,.pdf"
-                    className="hidden"
-                    onChange={(e) => setInvoiceFile(e.target.files?.[0] ?? null)}
-                  />
-                </label>
-                {invoiceFile ? (
-                  <span className="truncate text-[11px] text-slate-500">
-                    {invoiceFile.name}
-                  </span>
-                ) : null}
-              </div>
-              <p className="mt-1 text-[11px] text-slate-400">
-                Saves with the payment and emails the finance inbox. PDF, max 5 MB.
-              </p>
-            </div>
           </div>
         </FormSection>
 
@@ -1083,11 +1109,11 @@ export function PaymentsClient({
               onChange={(v) => updateField("paymentTerms", v)}
               placeholder="e.g. 30"
             />
-            <FormField
+            <DateField
               label="Due date"
               value={form.dueDate}
               onChange={(v) => updateField("dueDate", v)}
-              type="date"
+              placeholder="Pick a date"
             />
             <FormField
               label={form.direction === "Inflow" ? "Receipt date" : "Payment date"}
@@ -1138,6 +1164,16 @@ export function PaymentsClient({
         busy={deleting}
         onCancel={() => (deleting ? undefined : setDeleteTarget(null))}
         onConfirm={confirmDelete}
+      />
+
+      <ConfirmDialog
+        open={showDiscard}
+        title="Discard changes?"
+        message="You have unsaved changes. Close without saving?"
+        confirmLabel="Discard"
+        confirmTone="danger"
+        onCancel={() => setShowDiscard(false)}
+        onConfirm={closeModalNow}
       />
 
       {toast ? (
@@ -1659,100 +1695,6 @@ function FormSection({ title, children }: { title: string; children: React.React
       </h3>
       {children}
     </section>
-  );
-}
-
-function PaymentDetailsPopover({ p }: { p: PaymentRecord }) {
-  const items: Array<[string, string]> = [];
-  if (p.paymentCode) items.push(["Code", p.paymentCode]);
-  if (p.invoiceDate) items.push(["Invoice date", p.invoiceDate]);
-  if (p.invoiceReference) items.push(["Invoice ref.", p.invoiceReference]);
-  if (p.invoiceValueEur != null)
-    items.push([
-      "Value EUR",
-      p.invoiceValueEur.toLocaleString("en-US", { maximumFractionDigits: 2 }),
-    ]);
-  if (p.paymentTerms)
-    items.push([
-      "Payment terms",
-      /^\d+$/.test(p.paymentTerms) ? `${p.paymentTerms} days` : p.paymentTerms,
-    ]);
-  if (p.fxRateToEur != null) items.push(["FX to EUR", String(p.fxRateToEur)]);
-  if (p.beneficiary) items.push(["Beneficiary", p.beneficiary]);
-  if (p.comment) items.push(["Comment", p.comment]);
-  return (
-    <span className="group relative inline-flex">
-      <button
-        type="button"
-        aria-label="Show payment details"
-        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <EyeIcon />
-      </button>
-      <span
-        role="tooltip"
-        className="pointer-events-none absolute right-9 top-0 z-30 hidden min-w-[14rem] max-w-sm whitespace-normal rounded-lg border border-slate-200 bg-white p-3 text-[11px] text-slate-700 shadow-lg group-hover:block group-focus-within:block"
-      >
-        <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1">
-          {items.map(([k, v]) => (
-            <Fragment key={k}>
-              <dt className="text-slate-500 whitespace-nowrap">{k}</dt>
-              <dd
-                className={`break-words font-normal normal-case tracking-normal ${k === "Code" ? "font-mono" : ""}`}
-              >
-                {v}
-              </dd>
-            </Fragment>
-          ))}
-        </dl>
-      </span>
-    </span>
-  );
-}
-
-function InvoiceLink({ url }: { url: string }) {
-  if (!url) {
-    return (
-      <span
-        title="No invoice link on file"
-        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-300"
-        aria-label="No invoice link on file"
-      >
-        <DocIcon />
-      </span>
-    );
-  }
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      title="Open invoice"
-      aria-label="Open invoice"
-      onClick={(e) => e.stopPropagation()}
-      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100"
-    >
-      <DocIcon />
-    </a>
-  );
-}
-
-function DocIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" strokeLinejoin="round" />
-      <path d="M14 3v6h6" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function EyeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-      <path d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z" strokeLinejoin="round" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
   );
 }
 

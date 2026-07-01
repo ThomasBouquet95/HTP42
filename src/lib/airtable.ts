@@ -3363,6 +3363,121 @@ export async function listAllContracts(): Promise<ContractRecord[]> {
     });
 }
 
+// ---------------------------------------------------------------------------
+// Document search — a unified index of every saved PDF across the portal
+// (contracts, member CVs, member invoices) so admins can fuzzy-search one
+// place for any document.
+// ---------------------------------------------------------------------------
+
+export type DocumentKind = "Contract" | "CV" | "Invoice";
+
+export type DocumentRecord = {
+  id: string; // `${kind}:${recordId}`
+  kind: DocumentKind;
+  title: string;
+  subtitle: string;
+  date: string | null; // ISO-ish, best-effort, for sorting
+  url: string;
+  filename: string;
+  // Space-joined lowercase haystack the client fuzzy-matches against.
+  keywords: string;
+};
+
+export async function listAllDocuments(): Promise<DocumentRecord[]> {
+  const [contracts, members, invoices] = await Promise.all([
+    listAllContracts(),
+    listAllMembers(),
+    listAllInvoices(),
+  ]);
+
+  const docs: DocumentRecord[] = [];
+
+  for (const c of contracts) {
+    if (!c.pdf?.url) continue;
+    const typeLabel = c.contractType || c.otherDescription || c.side || "Contract";
+    const parties = [...c.clientNames, ...c.clientCodes, ...c.memberCodes].filter(Boolean);
+    docs.push({
+      id: `Contract:${c.id}`,
+      kind: "Contract",
+      title: typeLabel,
+      subtitle: [c.side, parties.join(", "), c.projectCodes.join(", ")]
+        .filter(Boolean)
+        .join(" · "),
+      date: c.signatureDate || c.expiryDate || null,
+      url: c.pdf.url,
+      filename: c.pdf.filename || "contract.pdf",
+      keywords: [
+        typeLabel,
+        c.side,
+        c.contractType,
+        c.otherDescription,
+        ...c.clientNames,
+        ...c.clientCodes,
+        ...c.projectCodes,
+        c.projectCode,
+        ...c.memberCodes,
+        c.signatory1?.name,
+        c.signatory1?.company,
+        c.signatory2?.name,
+        c.signatory2?.company,
+        c.keyTerms,
+        c.pdf.filename,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+    });
+  }
+
+  for (const m of members) {
+    if (!m.cv?.url) continue;
+    docs.push({
+      id: `CV:${m.id}`,
+      kind: "CV",
+      title: m.fullName || m.memberCode,
+      subtitle: [m.memberCode, m.role, m.title].filter(Boolean).join(" · "),
+      date: null,
+      url: m.cv.url,
+      filename: m.cv.filename || "cv.pdf",
+      keywords: [m.fullName, m.memberCode, m.role, m.title, m.country, m.cv.filename]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+    });
+  }
+
+  for (const i of invoices) {
+    if (!i.pdf?.url) continue;
+    docs.push({
+      id: `Invoice:${i.id}`,
+      kind: "Invoice",
+      title: i.invoiceCode || "Invoice",
+      subtitle: [i.memberName || i.memberCode, i.staffingCode, i.projectName || i.projectCode]
+        .filter(Boolean)
+        .join(" · "),
+      date: i.submissionDate,
+      url: i.pdf.url,
+      filename: i.pdf.filename || "invoice.pdf",
+      keywords: [
+        i.invoiceCode,
+        i.memberName,
+        i.memberCode,
+        i.staffingCode,
+        i.projectCode,
+        i.projectName,
+        i.currency,
+        i.comment,
+        i.pdf.filename,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+    });
+  }
+
+  return docs;
+}
+
 export async function getContractById(recordId: string): Promise<ContractRecord | null> {
   try {
     const [r, maps] = await Promise.all([

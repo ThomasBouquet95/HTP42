@@ -13,9 +13,14 @@ import { PaymentsClient } from "./payments-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminPaymentsPage() {
+export default async function AdminPaymentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ search?: string }>;
+}) {
   const session = await requireAdminSession();
   if (!session) redirect("/dashboard");
+  const { search } = await searchParams;
 
   const [payments, projects, clients, members, invoices] = await Promise.all([
     listPayments(),
@@ -55,6 +60,7 @@ export default async function AdminPaymentsPage() {
             pdfUrl: i.pdf?.url ?? "",
           }))}
           currencies={CURRENCIES}
+          initialSearch={search ?? ""}
         />
     </main>
   );

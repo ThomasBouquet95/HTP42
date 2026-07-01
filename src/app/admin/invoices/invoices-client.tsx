@@ -1,15 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { DownloadChip } from "@/components/download-chip";
-import type { InvoiceStatus, MemberInvoiceRecord } from "@/lib/airtable";
-import { INVOICE_STATUSES } from "@/lib/airtable";
-
-type StatusFilter = "All" | InvoiceStatus | "Unset";
+import type { MemberInvoiceRecord } from "@/lib/airtable";
 
 type Filters = {
-  status: StatusFilter;
   memberCode: string;
   projectCode: string;
   staffingId: string;
@@ -19,7 +15,6 @@ type Filters = {
 };
 
 const DEFAULT_FILTERS: Filters = {
-  status: "All",
   memberCode: "All",
   projectCode: "All",
   staffingId: "All",
@@ -30,16 +25,14 @@ const DEFAULT_FILTERS: Filters = {
 
 export function AdminInvoicesClient({
   invoices,
+  paymentByInvoiceId,
 }: {
   invoices: MemberInvoiceRecord[];
+  paymentByInvoiceId: Record<string, { id: string; code: string }>;
 }) {
-  const router = useRouter();
   const [rows, setRows] = useState(invoices);
   useEffect(() => setRows(invoices), [invoices]);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
-  const [zipping, setZipping] = useState(false);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -88,11 +81,6 @@ export function AdminInvoicesClient({
   const filtered = useMemo(() => {
     const q = filters.search.trim().toLowerCase();
     return rows.filter((r) => {
-      if (filters.status === "Unset") {
-        if (r.status !== "") return false;
-      } else if (filters.status !== "All" && r.status !== filters.status) {
-        return false;
-      }
       if (filters.memberCode !== "All" && r.memberCode !== filters.memberCode) return false;
       if (filters.projectCode !== "All" && r.projectCode !== filters.projectCode) return false;
       if (filters.staffingId !== "All" && r.staffingRecordId !== filters.staffingId) return false;
@@ -128,72 +116,6 @@ export function AdminInvoicesClient({
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   }, [filtered]);
 
-  const paidByCurrency = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const r of filtered) {
-      if (r.status !== "Paid" || r.amount == null) continue;
-      const key = r.currency || "—";
-      m.set(key, (m.get(key) ?? 0) + r.amount);
-    }
-    return [...m.entries()];
-  }, [filtered]);
-
-  // Selection only applies to the rows currently in view — selecting all
-  // means "everything I can see", not the entire dataset.
-  const visibleIds = useMemo(() => new Set(filtered.map((r) => r.id)), [filtered]);
-  const allVisibleSelected =
-    filtered.length > 0 && filtered.every((r) => selected.has(r.id));
-  function toggleAllVisible() {
-    setSelected((prev) => {
-      if (allVisibleSelected) {
-        const next = new Set(prev);
-        for (const id of visibleIds) next.delete(id);
-        return next;
-      }
-      return new Set([...prev, ...visibleIds]);
-    });
-  }
-  function toggleOne(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  async function updateStatus(id: string, next: InvoiceStatus | "") {
-    const prevRow = rows.find((r) => r.id === id);
-    if (!prevRow || prevRow.status === next) return;
-    if (!next) return; // we don't unset status from the admin UI
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, status: next } : r)));
-    setSavingIds((s) => new Set(s).add(id));
-    try {
-      const res = await fetch(`/api/invoices/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status: next }),
-      });
-      if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? `Update failed (HTTP ${res.status})`);
-      }
-      setToast({ kind: "ok", msg: "Invoice status updated" });
-      router.refresh();
-    } catch (e) {
-      setRows((rs) =>
-        rs.map((r) => (r.id === id ? { ...r, status: prevRow.status } : r)),
-      );
-      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Update failed" });
-    } finally {
-      setSavingIds((s) => {
-        const n = new Set(s);
-        n.delete(id);
-        return n;
-      });
-    }
-  }
-
   function exportCsv() {
     const headers = [
       "Submitted",
@@ -205,7 +127,7 @@ export function AdminInvoicesClient({
       "Project Name",
       "Amount",
       "Currency",
-      "Status",
+      "Payment",
       "Comment",
       "PDF",
       "Email Sent",
@@ -220,7 +142,7 @@ export function AdminInvoicesClient({
       r.projectName,
       r.amount != null ? String(r.amount) : "",
       r.currency,
-      r.status,
+      paymentByInvoiceId[r.id]?.code ?? "",
       r.comment,
       r.pdf?.url ?? "",
       r.emailSent ? "yes" : r.emailError ? "failed" : "no",
@@ -239,58 +161,11 @@ export function AdminInvoicesClient({
     URL.revokeObjectURL(url);
   }
 
-  async function downloadPdfs() {
-    const ids = [...selected].filter((id) => {
-      const row = rows.find((r) => r.id === id);
-      return row?.pdf?.url;
-    });
-    if (ids.length === 0) {
-      setToast({ kind: "error", msg: "Pick at least one invoice with a PDF." });
-      return;
-    }
-    setZipping(true);
-    try {
-      const res = await fetch("/api/admin/invoices/zip", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ids }),
-      });
-      if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? `Download failed (HTTP ${res.status})`);
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `htp42-invoice-pdfs-${todayStamp()}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      setToast({ kind: "ok", msg: `Bundled ${ids.length} PDF${ids.length === 1 ? "" : "s"}` });
-    } catch (e) {
-      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Download failed" });
-    } finally {
-      setZipping(false);
-    }
-  }
-
   return (
     <div className="space-y-4">
       {/* Filters */}
       <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
-          <Select
-            label="Status"
-            value={filters.status}
-            onChange={(v) => update("status", v as Filters["status"])}
-            options={[
-              { value: "All", label: "All statuses" },
-              { value: "Unset", label: "Unset" },
-              ...INVOICE_STATUSES.map((s) => ({ value: s, label: s })),
-            ]}
-          />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <Select
             label="Member"
             value={filters.memberCode}
@@ -350,6 +225,13 @@ export function AdminInvoicesClient({
           >
             Reset filters
           </button>
+          <button
+            type="button"
+            onClick={exportCsv}
+            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
+          >
+            Export CSV
+          </button>
           <div className="ml-auto flex flex-wrap items-center gap-2 text-xs text-slate-600">
             <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium">
               {filtered.length} invoice{filtered.length === 1 ? "" : "s"}
@@ -363,47 +245,8 @@ export function AdminInvoicesClient({
                 Σ {sum.toLocaleString("en-US", { maximumFractionDigits: 2 })} {c}
               </span>
             ))}
-            {paidByCurrency.map(([c, sum]) => (
-              <span
-                key={`paid-${c}`}
-                className="rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 px-2 py-0.5 font-medium tabular-nums demo-blur"
-                title="Sum of Paid invoices in view"
-              >
-                Paid {sum.toLocaleString("en-US", { maximumFractionDigits: 2 })} {c}
-              </span>
-            ))}
           </div>
         </div>
-      </div>
-
-      {/* Action bar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-slate-500">
-          {selected.size} selected
-        </span>
-        <button
-          type="button"
-          onClick={downloadPdfs}
-          disabled={selected.size === 0 || zipping}
-          className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50 disabled:opacity-50"
-        >
-          {zipping ? "Bundling…" : "Download PDFs (zip)"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setSelected(new Set())}
-          disabled={selected.size === 0}
-          className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50 disabled:opacity-50"
-        >
-          Clear selection
-        </button>
-        <button
-          type="button"
-          onClick={exportCsv}
-          className="ml-auto rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
-        >
-          Export CSV
-        </button>
       </div>
 
       {/* Table */}
@@ -411,47 +254,28 @@ export function AdminInvoicesClient({
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-2 py-2 w-8">
-                <input
-                  type="checkbox"
-                  aria-label="Select all visible"
-                  checked={allVisibleSelected}
-                  onChange={toggleAllVisible}
-                  className="rounded border-slate-300"
-                />
-              </th>
               <th className="text-left px-3 py-2 font-medium">Submitted</th>
               <th className="text-left px-3 py-2 font-medium">Invoice</th>
               <th className="text-left px-3 py-2 font-medium">Member</th>
               <th className="text-left px-3 py-2 font-medium">Staffing</th>
               <th className="text-right px-3 py-2 font-medium">Amount</th>
-              <th className="text-left px-3 py-2 font-medium">Status</th>
+              <th className="text-left px-3 py-2 font-medium">Payment</th>
               <th className="text-left px-3 py-2 font-medium">PDF</th>
               <th className="text-left px-3 py-2 font-medium">Comment</th>
-              <th />
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center text-slate-500 py-10">
+                <td colSpan={8} className="text-center text-slate-500 py-10">
                   No invoices match these filters.
                 </td>
               </tr>
             ) : (
               filtered.map((r) => {
-                const isSaving = savingIds.has(r.id);
+                const payment = paymentByInvoiceId[r.id];
                 return (
                   <tr key={r.id} className="border-t border-slate-100 align-top">
-                    <td className="px-2 py-2">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${r.invoiceCode}`}
-                        checked={selected.has(r.id)}
-                        onChange={() => toggleOne(r.id)}
-                        className="rounded border-slate-300"
-                      />
-                    </td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">
                       {r.submissionDate
                         ? new Date(r.submissionDate).toLocaleString("en-GB", {
@@ -467,6 +291,18 @@ export function AdminInvoicesClient({
                       <div className="font-mono text-[11px] text-slate-900">
                         {r.invoiceCode || "—"}
                       </div>
+                      {r.emailError ? (
+                        <div
+                          className="mt-0.5 text-[9px] uppercase tracking-wide text-amber-700"
+                          title={r.emailError}
+                        >
+                          Email failed
+                        </div>
+                      ) : r.emailSent ? null : (
+                        <div className="mt-0.5 text-[9px] uppercase tracking-wide text-slate-400">
+                          Email pending
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <div className="font-mono text-[10px] text-brand-700">
@@ -488,36 +324,17 @@ export function AdminInvoicesClient({
                         : "—"}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
-                      <select
-                        value={r.status}
-                        onChange={(e) =>
-                          updateStatus(r.id, e.target.value as InvoiceStatus | "")
-                        }
-                        disabled={isSaving}
-                        className={`rounded-md border px-1.5 py-0.5 text-[11px] ${statusCls(r.status)} disabled:opacity-50`}
-                      >
-                        {r.status === "" ? <option value="">—</option> : null}
-                        {INVOICE_STATUSES.map((s) => (
-                          <option
-                            key={s}
-                            value={s}
-                            disabled={s === "Cancelled" && r.status === "Paid"}
-                          >
-                            {s}
-                          </option>
-                        ))}
-                      </select>
-                      {r.emailError ? (
-                        <div
-                          className="mt-0.5 text-[9px] uppercase tracking-wide text-amber-700"
-                          title={r.emailError}
+                      {payment ? (
+                        <Link
+                          href={`/admin/payments?search=${encodeURIComponent(payment.code)}`}
+                          className="inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 font-mono text-[11px] text-brand-700 hover:bg-brand-100"
+                          title="Open the corresponding payment"
                         >
-                          Email failed
-                        </div>
-                      ) : r.emailSent ? null : (
-                        <div className="mt-0.5 text-[9px] uppercase tracking-wide text-slate-400">
-                          Email pending
-                        </div>
+                          {payment.code || "Payment"}
+                          <span aria-hidden>↗</span>
+                        </Link>
+                      ) : (
+                        <span className="text-slate-300">—</span>
                       )}
                     </td>
                     <td className="px-3 py-2">
@@ -535,7 +352,6 @@ export function AdminInvoicesClient({
                         {r.comment || "—"}
                       </div>
                     </td>
-                    <td />
                   </tr>
                 );
               })
@@ -558,13 +374,6 @@ export function AdminInvoicesClient({
       ) : null}
     </div>
   );
-}
-
-function statusCls(status: InvoiceStatus | "" | string): string {
-  if (status === "Paid") return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (status === "Cancelled") return "border-red-200 bg-red-50 text-red-700";
-  if (status === "To be paid") return "border-amber-200 bg-amber-50 text-amber-700";
-  return "border-slate-200 bg-white text-slate-600";
 }
 
 function Select({
@@ -631,5 +440,3 @@ function todayStamp(): string {
   const d = new Date();
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
 }
-
-// Matches the contracts list download icon (page + down-arrow).
