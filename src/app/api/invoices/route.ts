@@ -283,6 +283,9 @@ export async function POST(request: Request) {
             staffingCode: staffing.staffingCode,
             projectCode: project.projectCode,
             projectName: project.projectName,
+            subtitle: `Attached to the invoice submission from ${
+              session.fullName || session.email || session.memberCode
+            } (${session.memberCode}).`,
           },
           chosenTimesheets.map((t) => ({
             timesheetCode: t.timesheetCode,

@@ -34,7 +34,6 @@ export async function GET(
   }
 
   const first = rows[0];
-  const totalHours = rows.reduce((s, t) => s + t.totalHours, 0);
   try {
     const pdf = await generateTimesheetSummaryPdf(
       {
@@ -47,9 +46,7 @@ export async function GET(
         projectCode: first.projectCode,
         projectName: first.projectName,
         title: "Staffing timesheet summary",
-        subtitle: `${first.memberName || first.memberCode} · staffing ${
-          first.staffingCode || "—"
-        } · ${rows.length} timesheet${rows.length === 1 ? "" : "s"}, ${totalHours.toFixed(2)} h`,
+        subtitle: first.memberName || first.memberCode,
       },
       rows,
     );

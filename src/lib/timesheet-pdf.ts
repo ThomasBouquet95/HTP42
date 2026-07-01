@@ -1,14 +1,14 @@
 import PDFDocument from "pdfkit";
 import type { TimesheetRecord } from "./airtable";
 
-// Server-side PDF rendering for the timesheet attachment that ships
-// alongside a member-submitted invoice email. Uses pdfkit (pure JS, no
-// chromium dependency) so it works fine inside a Vercel serverless
-// function with no cold-start fireworks.
+// Server-side PDF rendering for the timesheet summary — used both as the
+// attachment shipped with a member-submitted invoice email and as the
+// per-staffing export downloaded from the admin timesheets table. Uses pdfkit
+// (pure JS, no chromium) so it runs fine inside a Vercel serverless function.
 //
-// Layout: one header block (member + period + total hours), then one
-// table per week with day-by-day hours and task notes, then a final
-// total row across all weeks.
+// Layout: a header block (title + project/staffing meta on the left, totals
+// box on the right), then one table per week with day-by-day hours and task
+// notes, then a total row per week.
 
 const HOURS_PER_DAY = 8;
 
@@ -20,6 +20,13 @@ const DAY_LABEL: Record<(typeof DAY_KEYS)[number], string> = {
   thursday: "Thu",
   friday: "Fri",
 };
+
+// Page geometry (A4, 40pt margins).
+const LEFT = 40;
+const RIGHT = 555;
+const META_WIDTH = 320; // keep left-hand meta clear of the totals box
+const BOX_X = 380;
+const BOX_W = 175;
 
 export type PdfTimesheet = Pick<
   TimesheetRecord,
@@ -47,8 +54,8 @@ export type TimesheetPdfMeta = {
   staffingCode: string;
   projectCode: string;
   projectName: string;
-  // Optional header overrides. Default to the invoice-attachment wording so
-  // existing callers are unchanged; the admin staffing export passes its own.
+  // Optional header overrides. title defaults to "Timesheet summary". Pass
+  // subtitle to show a line under the title; pass "" (or omit) to hide it.
   title?: string;
   subtitle?: string;
 };
@@ -65,133 +72,133 @@ export function generateTimesheetSummaryPdf(
     doc.on("error", reject);
 
     // ----- Header --------------------------------------------------------
-    doc.fontSize(16).fillColor("#0f172a").text(meta.title ?? "Timesheet summary", { continued: false });
-    doc.moveDown(0.2);
-    doc
-      .fontSize(10)
-      .fillColor("#475569")
-      .text(
-        meta.subtitle ??
-          `Attached to the invoice submission from ${meta.memberName} (${meta.memberCode}).`,
-      );
+    doc.fontSize(16).fillColor("#0f172a").text(meta.title ?? "Timesheet summary", LEFT, doc.y, {
+      width: RIGHT - LEFT,
+    });
+    if (meta.subtitle) {
+      doc.moveDown(0.2);
+      doc.fontSize(10).fillColor("#475569").text(meta.subtitle, LEFT, doc.y, {
+        width: RIGHT - LEFT,
+      });
+    }
     doc.moveDown(0.5);
 
     const totalHours = timesheets.reduce((s, t) => s + (t.totalHours ?? 0), 0);
     const totalDays = totalHours / HOURS_PER_DAY;
 
-    // Two-column metadata grid: invoice context on the left, totals on the right.
-    const yStart = doc.y;
+    // Left-hand meta column (constrained width so it never runs under the
+    // totals box). Project first, then Staffing.
+    const metaTop = doc.y;
     doc.fontSize(9).fillColor("#475569");
-    doc.text(`Staffing: ${meta.staffingCode || "—"}`, 40, yStart);
-    doc.text(`Project: ${meta.projectCode || "—"}${meta.projectName ? ` · ${meta.projectName}` : ""}`);
+    doc.text(
+      `Project: ${meta.projectCode || "—"}${meta.projectName ? ` · ${meta.projectName}` : ""}`,
+      LEFT,
+      metaTop,
+      { width: META_WIDTH },
+    );
+    doc.text(`Staffing: ${meta.staffingCode || "—"}`, LEFT, doc.y, { width: META_WIDTH });
     if (meta.amount != null) {
       doc.text(
         `Invoice amount: ${meta.amount.toLocaleString("en-US", {
           maximumFractionDigits: 2,
         })} ${meta.currency}`,
+        LEFT,
+        doc.y,
+        { width: META_WIDTH },
       );
     }
     if (meta.comment) {
-      doc.text(`Comment: ${truncate(meta.comment, 220)}`);
+      doc.text(`Comment: ${truncate(meta.comment, 220)}`, LEFT, doc.y, { width: META_WIDTH });
     }
-    doc.text(`Generated: ${formatTodayLong()}`);
-    // Totals box on the right.
-    const boxX = 380;
-    const boxY = yStart - 2;
-    doc.rect(boxX, boxY, 175, 56).strokeColor("#cbd5e1").lineWidth(0.75).stroke();
-    doc.fillColor("#0f172a").fontSize(9).text("Timesheets", boxX + 10, boxY + 6);
-    doc.fontSize(16).text(String(timesheets.length), boxX + 10, boxY + 18);
-    doc.fontSize(9).fillColor("#0f172a").text("Total hours", boxX + 90, boxY + 6);
-    doc
-      .fontSize(16)
-      .text(totalHours.toFixed(1), boxX + 90, boxY + 18, { width: 75 });
+    doc.text(`Generated: ${formatTodayLong()}`, LEFT, doc.y, { width: META_WIDTH });
+    const metaBottom = doc.y;
+
+    // Totals box on the right — drawn independently of the text cursor.
+    const boxY = metaTop - 2;
+    doc.rect(BOX_X, boxY, BOX_W, 56).strokeColor("#cbd5e1").lineWidth(0.75).stroke();
+    doc.fillColor("#0f172a").fontSize(9).text("Timesheets", BOX_X + 10, boxY + 6, { width: 75 });
+    doc.fontSize(16).text(String(timesheets.length), BOX_X + 10, boxY + 18, { width: 75 });
+    doc.fontSize(9).fillColor("#0f172a").text("Total hours", BOX_X + 90, boxY + 6, { width: 75 });
+    doc.fontSize(16).text(totalHours.toFixed(1), BOX_X + 90, boxY + 18, { width: 75 });
     doc
       .fontSize(8)
       .fillColor("#64748b")
-      .text(`(${totalDays.toFixed(1)} days)`, boxX + 90, boxY + 38, { width: 75 });
+      .text(`(${totalDays.toFixed(1)} days)`, BOX_X + 90, boxY + 38, { width: 75 });
 
+    // Continue below whichever column is taller.
     doc.fillColor("#0f172a");
-    // Move past the box.
-    doc.y = Math.max(doc.y, boxY + 56) + 14;
+    doc.y = Math.max(metaBottom, boxY + 56) + 16;
+    doc.x = LEFT;
 
-    // ----- Per-timesheet tables -----------------------------------------
+    // ----- Per-week tables ----------------------------------------------
     for (const t of timesheets) {
       ensureSpace(doc, 130);
-      doc.fontSize(11).fillColor("#0f172a");
-      doc.text(
-        `Week of ${t.startDate ?? "—"}${t.endDate ? ` to ${t.endDate}` : ""}`,
-        { continued: false },
-      );
-      doc
-        .fontSize(8)
-        .fillColor("#64748b")
-        .text(
-          `${t.timesheetCode || "—"} · staffing ${t.staffingCode || "—"} · ${t.projectCode}${
-            t.projectName ? ` · ${t.projectName}` : ""
-          }${t.submissionDate ? ` · submitted ${t.submissionDate}` : ""}`,
-        );
-      doc.moveDown(0.25);
+      const start = t.startDate;
+      const end = t.endDate ?? (start ? addDaysIso(start, 4) : null);
+      const rangeLabel =
+        start && end
+          ? `Week of ${longDate(start)} to ${longDate(end)}`
+          : start
+          ? `Week of ${longDate(start)}`
+          : "Week";
+      doc.fontSize(11).fillColor("#0f172a").text(rangeLabel, LEFT, doc.y, {
+        width: RIGHT - LEFT,
+      });
+      doc.moveDown(0.35);
 
       // Table header
       const tableTop = doc.y;
-      const colDay = 40;
-      const colHours = 90;
-      const colTask = 140;
-      const rowHeight = 16;
+      const colDay = LEFT;
+      const colHours = 150;
+      const colTask = 210;
 
       doc.fontSize(8).fillColor("#475569");
-      doc.text("Day", colDay, tableTop);
+      doc.text("Day", colDay, tableTop, { width: 100 });
       doc.text("Hours", colHours, tableTop, { width: 40, align: "right" });
-      doc.text("Task notes", colTask, tableTop);
+      doc.text("Task notes", colTask, tableTop, { width: RIGHT - colTask });
       doc
-        .moveTo(40, tableTop + 11)
-        .lineTo(555, tableTop + 11)
+        .moveTo(LEFT, tableTop + 11)
+        .lineTo(RIGHT, tableTop + 11)
         .strokeColor("#e2e8f0")
         .lineWidth(0.5)
         .stroke();
 
-      let y = tableTop + 14;
-      for (const k of DAY_KEYS) {
+      let y = tableTop + 15;
+      for (let i = 0; i < DAY_KEYS.length; i += 1) {
+        const k = DAY_KEYS[i];
         const day = t[k] as { hours: number; task: string };
+        const dayIso = start ? addDaysIso(start, i) : null;
+        const dayLabel = dayIso ? `${DAY_LABEL[k]} ${shortDayDate(dayIso)}` : DAY_LABEL[k];
         doc.fontSize(9).fillColor("#0f172a");
-        doc.text(DAY_LABEL[k], colDay, y);
-        doc.text(
-          day.hours ? day.hours.toFixed(2) : "—",
-          colHours,
-          y,
-          { width: 40, align: "right" },
-        );
-        doc
-          .fillColor("#334155")
-          .text(day.task || "—", colTask, y, { width: 410 });
-        y += rowHeight;
-        // If a task wrapped, push y down to where pdfkit advanced.
-        if (doc.y > y) y = doc.y + 2;
+        doc.text(dayLabel, colDay, y, { width: 100 });
+        doc.text(day.hours ? day.hours.toFixed(2) : "—", colHours, y, {
+          width: 40,
+          align: "right",
+        });
+        doc.fillColor("#334155").text(day.task || "—", colTask, y, { width: RIGHT - colTask });
+        // Advance past whichever wrapped further (task notes can be long).
+        y = Math.max(y + 16, doc.y + 2);
       }
       // Total row
       doc
-        .moveTo(40, y + 1)
-        .lineTo(555, y + 1)
+        .moveTo(LEFT, y + 1)
+        .lineTo(RIGHT, y + 1)
         .strokeColor("#e2e8f0")
         .lineWidth(0.5)
         .stroke();
       doc.fontSize(9).fillColor("#0f172a");
-      doc.text("Total", colDay, y + 5);
-      doc.text(
-        (t.totalHours ?? 0).toFixed(2),
-        colHours,
-        y + 5,
-        { width: 40, align: "right" },
-      );
-      doc.y = y + rowHeight + 6;
+      doc.text("Total", colDay, y + 5, { width: 100 });
+      doc.text((t.totalHours ?? 0).toFixed(2), colHours, y + 5, { width: 40, align: "right" });
+      doc.y = y + 22;
+      doc.x = LEFT;
       doc.moveDown(0.5);
     }
 
     // ----- Footer -------------------------------------------------------
     ensureSpace(doc, 30);
     doc
-      .moveTo(40, doc.y)
-      .lineTo(555, doc.y)
+      .moveTo(LEFT, doc.y)
+      .lineTo(RIGHT, doc.y)
       .strokeColor("#cbd5e1")
       .lineWidth(0.5)
       .stroke();
@@ -199,9 +206,7 @@ export function generateTimesheetSummaryPdf(
       .moveDown(0.4)
       .fontSize(8)
       .fillColor("#94a3b8")
-      .text(
-        "Generated by the HTP42 portal. This document is intended for the recipient of the invoice it ships with.",
-      );
+      .text("Generated by the HTP42 portal.", LEFT, doc.y, { width: RIGHT - LEFT });
 
     doc.end();
   });
@@ -217,6 +222,37 @@ function ensureSpace(doc: InstanceType<typeof PDFDocument>, needed: number) {
 function truncate(s: string, n: number): string {
   if (s.length <= n) return s;
   return `${s.slice(0, n - 1)}…`;
+}
+
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+// "04 May 2026" from an ISO yyyy-mm-dd.
+function longDate(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  const [, y, mo, d] = m;
+  return `${d} ${MONTHS[Number(mo) - 1] ?? mo} ${y}`;
+}
+
+// "04.05.26" (dd.mm.yy) from an ISO yyyy-mm-dd.
+function shortDayDate(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  const [, y, mo, d] = m;
+  return `${d}.${mo}.${y.slice(2)}`;
+}
+
+// Add n days to an ISO yyyy-mm-dd, returning ISO. UTC-based so no DST drift.
+function addDaysIso(iso: string, n: number): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  const [, y, mo, d] = m;
+  const dt = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
 }
 
 function formatTodayLong(): string {
