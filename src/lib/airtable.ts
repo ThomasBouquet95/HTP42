@@ -47,6 +47,7 @@ export const FIELDS = {
     lastSignIn: "Last Sign In",
     signInCount: "Sign In Count",
     lastActivity: "Last Activity",
+    activityLog: "Activity Log",
     bankAccountName: "Bank Account Name",
     bankAccountAddress: "Bank Account Address",
     iban: "IBAN",
@@ -757,6 +758,10 @@ export type SignInActivity = {
   // app open). Null = the member has never opened the portal since the
   // heartbeat shipped.
   lastActivity: string | null;
+  // Per-day open counts, keyed by UTC day ("2026-07-01": 3). Pruned to the
+  // most recent ~60 days. Populated going forward from when the activity log
+  // shipped — historical opens before that aren't recorded.
+  activityDays: Record<string, number>;
 };
 
 // Admin: list every member with their sign-in activity. Members who have
@@ -774,6 +779,7 @@ export async function listSignInActivity(): Promise<SignInActivity[]> {
         FIELDS.networkMembers.lastSignIn,
         FIELDS.networkMembers.signInCount,
         FIELDS.networkMembers.lastActivity,
+        FIELDS.networkMembers.activityLog,
       ],
     })
     .all();
@@ -788,7 +794,50 @@ export async function listSignInActivity(): Promise<SignInActivity[]> {
     lastSignIn: (r.get(FIELDS.networkMembers.lastSignIn) as string | undefined) ?? null,
     signInCount: num(r, FIELDS.networkMembers.signInCount),
     lastActivity: (r.get(FIELDS.networkMembers.lastActivity) as string | undefined) ?? null,
+    activityDays: parseActivityLog(r.get(FIELDS.networkMembers.activityLog) as string | undefined),
   }));
+}
+
+// The Activity Log field stores a compact JSON map of UTC-day -> open count.
+// Parsing is defensive: anything malformed just yields an empty map.
+function parseActivityLog(raw: string | undefined): Record<string, number> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      const n = typeof v === "number" ? v : Number(v);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(k) && Number.isFinite(n) && n > 0) {
+        out[k] = Math.round(n);
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function utcDayKey(ms: number): string {
+  const d = new Date(ms);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// Keep only the most recent `keepDays` day-buckets so the JSON stays small.
+function pruneActivityLog(
+  log: Record<string, number>,
+  keepDays: number,
+  nowMs: number,
+): Record<string, number> {
+  const cutoff = utcDayKey(nowMs - keepDays * 24 * 60 * 60 * 1000);
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(log)) {
+    if (k >= cutoff) out[k] = v;
+  }
+  return out;
 }
 
 // Best-effort: bump Last Sign In and Sign In Count for the member who just
@@ -811,6 +860,98 @@ export async function recordSignIn(memberRecordId: string): Promise<void> {
     ]);
   } catch {
     // ignore
+  }
+  // Log today's open so the admin can chart when the member connected. A
+  // fresh SSO sign-in always increments the day's counter.
+  await bumpMemberActivityDay(memberRecordId, true);
+}
+
+// Ensure the "Activity Log" long-text field exists on Network Members.
+// Created lazily via the meta API (same pattern as ensurePaymentInvoicePdfField).
+// Idempotent + cached so we don't hit the meta API on every heartbeat.
+let activityLogFieldReady = false;
+async function ensureMemberActivityLogField(): Promise<boolean> {
+  if (activityLogFieldReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.networkMembers);
+    if (!table) return false;
+    if (table.fields.some((f) => f.name === FIELDS.networkMembers.activityLog)) {
+      activityLogFieldReady = true;
+      return true;
+    }
+    const create = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.airtablePat}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: FIELDS.networkMembers.activityLog,
+          type: "multilineText",
+          description:
+            "Per-day app-open counts as JSON ({\"2026-07-01\": 3}). Maintained by the HTP42 portal; do not edit by hand.",
+        }),
+      },
+    );
+    if (create.ok) activityLogFieldReady = true;
+    return create.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Records that a member opened the app today. `increment` true adds to the
+// day's counter (a genuine sign-in); false only ensures the day is marked
+// present (a heartbeat on a persistent session). Best-effort and throttled:
+// once we've logged a member for a given UTC day in this process, further
+// heartbeats that day are skipped to spare Airtable writes.
+const activityDayLoggedCache = new Map<string, string>();
+async function bumpMemberActivityDay(
+  memberRecordId: string,
+  increment: boolean,
+): Promise<void> {
+  const nowMs = Date.now();
+  const day = utcDayKey(nowMs);
+  if (!increment && activityDayLoggedCache.get(memberRecordId) === day) return;
+  try {
+    const ok = await ensureMemberActivityLogField();
+    if (!ok) return;
+    const r = await base(TABLES.networkMembers).find(memberRecordId);
+    const log = parseActivityLog(
+      r.get(FIELDS.networkMembers.activityLog) as string | undefined,
+    );
+    if (increment) {
+      log[day] = (log[day] ?? 0) + 1;
+    } else {
+      if (log[day]) {
+        // Already recorded today — nothing to write, just mark the cache.
+        activityDayLoggedCache.set(memberRecordId, day);
+        return;
+      }
+      log[day] = 1;
+    }
+    const pruned = pruneActivityLog(log, 60, nowMs);
+    await base(TABLES.networkMembers).update([
+      {
+        id: memberRecordId,
+        fields: { [FIELDS.networkMembers.activityLog]: JSON.stringify(pruned) },
+      },
+    ]);
+    activityDayLoggedCache.set(memberRecordId, day);
+  } catch {
+    // Best-effort; forget the cache so a later heartbeat retries.
+    activityDayLoggedCache.delete(memberRecordId);
   }
 }
 
@@ -841,6 +982,10 @@ export async function recordHeartbeat(
     // On failure forget the cache entry so the next heartbeat retries.
     lastActivityMemoryCache.delete(memberRecordId);
   }
+  // Mark today as an active day (once per member per UTC day) so the admin
+  // activity chart fills in even when a session persists without a fresh
+  // SSO sign-in.
+  await bumpMemberActivityDay(memberRecordId, false);
 }
 
 export type MemberAdminUpdate = MemberProfileUpdate & {

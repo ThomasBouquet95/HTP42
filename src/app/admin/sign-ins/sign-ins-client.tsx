@@ -181,6 +181,9 @@ export function SignInActivityClient({
             <MiniStat label="Last opened" value={fmtDateTime(selectedMember.lastSignIn)} />
             <MiniStat label="Last active" value={fmtDateTime(selectedMember.lastActivity)} />
           </div>
+          <div className="mt-4">
+            <MemberActivityChart activityDays={selectedMember.activityDays} />
+          </div>
         </div>
       ) : (
         <ChartCard
@@ -550,6 +553,53 @@ function ChartCard({
       </div>
     </section>
   );
+}
+
+// Per-member "when did they connect" chart, built from the member's stored
+// per-day open counts (UTC day keys). Shows an empty-state note when we have
+// no history yet, since the log only started collecting recently.
+function MemberActivityChart({ activityDays }: { activityDays: Record<string, number> }) {
+  const buckets = useMemo(() => buildMemberBuckets(activityDays, 30), [activityDays]);
+  const total = buckets.reduce((s, b) => s + b.count, 0);
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Opened by day</h3>
+          <p className="mt-0.5 text-[11px] text-slate-500">
+            Days this member opened the app (last 30 days)
+          </p>
+        </div>
+        <span className="text-[11px] text-slate-400 tabular-nums">{total} opens</span>
+      </div>
+      <div className="mt-3">
+        {total === 0 ? (
+          <div className="flex h-[130px] items-center justify-center rounded-md bg-slate-50 text-center text-[11px] text-slate-400">
+            No connection history recorded yet. This chart fills in as the
+            member opens the app from now on.
+          </div>
+        ) : (
+          <BarChart buckets={buckets} tone="brand" />
+        )}
+      </div>
+    </section>
+  );
+}
+
+// Build the last `days` UTC-day buckets (oldest first) from a day→count map.
+function buildMemberBuckets(days: Record<string, number>, count: number): Bucket[] {
+  const now = new Date();
+  const DAY = 24 * 60 * 60 * 1000;
+  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const buckets: Bucket[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(todayUTC - i * DAY);
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
+      d.getUTCDate(),
+    ).padStart(2, "0")}`;
+    buckets.push({ key, count: days[key] ?? 0 });
+  }
+  return buckets;
 }
 
 function BarChart({ buckets, tone }: { buckets: Bucket[]; tone: "brand" | "emerald" }) {
