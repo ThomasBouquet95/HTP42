@@ -47,6 +47,10 @@ export type TimesheetPdfMeta = {
   staffingCode: string;
   projectCode: string;
   projectName: string;
+  // Optional header overrides. Default to the invoice-attachment wording so
+  // existing callers are unchanged; the admin staffing export passes its own.
+  title?: string;
+  subtitle?: string;
 };
 
 export function generateTimesheetSummaryPdf(
@@ -61,13 +65,14 @@ export function generateTimesheetSummaryPdf(
     doc.on("error", reject);
 
     // ----- Header --------------------------------------------------------
-    doc.fontSize(16).fillColor("#0f172a").text("Timesheet summary", { continued: false });
+    doc.fontSize(16).fillColor("#0f172a").text(meta.title ?? "Timesheet summary", { continued: false });
     doc.moveDown(0.2);
     doc
       .fontSize(10)
       .fillColor("#475569")
       .text(
-        `Attached to the invoice submission from ${meta.memberName} (${meta.memberCode}).`,
+        meta.subtitle ??
+          `Attached to the invoice submission from ${meta.memberName} (${meta.memberCode}).`,
       );
     doc.moveDown(0.5);
 

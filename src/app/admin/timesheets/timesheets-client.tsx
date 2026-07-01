@@ -103,6 +103,36 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
     }
   }
 
+  const [pdfBusyStaffing, setPdfBusyStaffing] = useState<string | null>(null);
+  // Download a PDF summary of all logged timesheets on a staffing — same
+  // layout as the summary attached to member invoices.
+  async function downloadStaffingPdf(staffingId: string, label: string) {
+    if (!staffingId) return;
+    setPdfBusyStaffing(staffingId);
+    try {
+      const res = await fetch(
+        `/api/admin/staffings/${encodeURIComponent(staffingId)}/timesheets-pdf`,
+      );
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? `Could not generate PDF (HTTP ${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `timesheets-${label || staffingId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "PDF failed" });
+    } finally {
+      setPdfBusyStaffing(null);
+    }
+  }
+
   const memberOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const t of rows) {
@@ -352,12 +382,13 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
                 </th>
               ))}
               <th className="text-right px-2 py-1.5 font-medium">Total</th>
+              <th className="px-2 py-1.5" />
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center text-slate-500 py-8 text-xs">
+                <td colSpan={11} className="text-center text-slate-500 py-8 text-xs">
                   No timesheets match these filters.
                 </td>
               </tr>
@@ -394,6 +425,28 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
                   ))}
                   <td className="px-2 py-1.5 text-right tabular-nums font-semibold">
                     {t.totalHours.toFixed(2)}
+                  </td>
+                  <td className="px-2 py-1.5 text-right" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => downloadStaffingPdf(t.staffingRecordId, t.staffingCode)}
+                      disabled={!t.staffingRecordId || pdfBusyStaffing === t.staffingRecordId}
+                      title="Download a PDF of this staffing's timesheets"
+                      aria-label="Download staffing timesheets PDF"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40"
+                    >
+                      {pdfBusyStaffing === t.staffingRecordId ? (
+                        <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                          <path d="M8 2v7m0 0L5.5 6.5M8 9l2.5-2.5" strokeLinecap="round" strokeLinejoin="round" />
+                          <path d="M3 11v1.5A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V11" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </button>
                   </td>
                 </tr>
               ))
@@ -728,12 +781,14 @@ function AdminStatusSelect({
   );
 }
 
+// Mirrors StatusBadge: neutral → amber → blue → solid green across the
+// Draft → Submitted → Invoiced → Paid lifecycle; Deleted is a red tombstone.
 const STATUS_CHIP: Record<TimesheetStatus, string> = {
-  Draft: "bg-slate-100 text-slate-700 border-slate-200",
-  Submitted: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  Invoiced: "bg-violet-50 text-violet-700 border-violet-200",
+  Draft: "bg-slate-100 text-slate-600 border-slate-200",
+  Submitted: "bg-amber-50 text-amber-700 border-amber-200",
+  Invoiced: "bg-blue-50 text-blue-700 border-blue-200",
   Paid: "bg-emerald-600 text-white border-emerald-700",
-  Deleted: "bg-orange-50 text-orange-700 border-orange-200",
+  Deleted: "bg-rose-50 text-rose-700 border-rose-200",
 };
 
 // Multi-select status filter: a toggle chip per status. Active chips use the
