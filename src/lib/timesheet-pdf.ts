@@ -54,10 +54,11 @@ export type TimesheetPdfMeta = {
   staffingCode: string;
   projectCode: string;
   projectName: string;
-  // Optional header overrides. title defaults to "Timesheet summary". Pass
-  // subtitle to show a line under the title; pass "" (or omit) to hide it.
+  // Optional header overrides. title defaults to "Timesheet summary".
+  // consultant, when set, is shown as the first meta line ("Consultant: …").
   title?: string;
   subtitle?: string;
+  consultant?: string;
 };
 
 export function generateTimesheetSummaryPdf(
@@ -72,28 +73,31 @@ export function generateTimesheetSummaryPdf(
     doc.on("error", reject);
 
     // ----- Header --------------------------------------------------------
-    doc.fontSize(16).fillColor("#0f172a").text(meta.title ?? "Timesheet summary", LEFT, doc.y, {
+    // Brand kicker, matching the HTML report header.
+    doc
+      .fontSize(9)
+      .fillColor("#64748b")
+      .text("HTP42 TIMESHEETS", LEFT, doc.y, { characterSpacing: 1, width: RIGHT - LEFT });
+    doc.moveDown(0.15);
+    doc.fontSize(18).fillColor("#0f172a").text(meta.title ?? "Timesheet summary", LEFT, doc.y, {
       width: RIGHT - LEFT,
     });
-    if (meta.subtitle) {
-      doc.moveDown(0.2);
-      doc.fontSize(10).fillColor("#475569").text(meta.subtitle, LEFT, doc.y, {
-        width: RIGHT - LEFT,
-      });
-    }
     doc.moveDown(0.5);
 
     const totalHours = timesheets.reduce((s, t) => s + (t.totalHours ?? 0), 0);
     const totalDays = totalHours / HOURS_PER_DAY;
 
     // Left-hand meta column (constrained width so it never runs under the
-    // totals box). Project first, then Staffing.
+    // totals box). Consultant, then Project, then Staffing.
     const metaTop = doc.y;
     doc.fontSize(9).fillColor("#475569");
+    if (meta.consultant) {
+      doc.text(`Consultant: ${meta.consultant}`, LEFT, metaTop, { width: META_WIDTH });
+    }
     doc.text(
       `Project: ${meta.projectCode || "—"}${meta.projectName ? ` · ${meta.projectName}` : ""}`,
       LEFT,
-      metaTop,
+      meta.consultant ? doc.y : metaTop,
       { width: META_WIDTH },
     );
     doc.text(`Staffing: ${meta.staffingCode || "—"}`, LEFT, doc.y, { width: META_WIDTH });
