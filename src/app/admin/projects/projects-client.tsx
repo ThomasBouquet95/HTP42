@@ -784,8 +784,13 @@ function PaymentScheduleEditor({
 
   return (
     <div className="rounded-md border border-slate-200 bg-slate-50/50 p-3">
-      <div className="flex items-baseline justify-end gap-3">
-        <Button tone="secondary" size="sm" onClick={addRow}>
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-[11px] text-slate-500">
+          {type === "Fixed Price"
+            ? "Milestone-based: when each invoice goes out, against what deliverable."
+            : "Monthly run-rate: planned % of the total invoiced each month."}
+        </p>
+        <Button tone="secondary" size="sm" onClick={addRow} className="shrink-0">
           + Add row
         </Button>
       </div>
