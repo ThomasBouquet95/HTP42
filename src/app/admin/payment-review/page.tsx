@@ -15,8 +15,9 @@ import { PaymentReviewClient, type ReviewBundle } from "./review-client";
 export const dynamic = "force-dynamic";
 
 // Statuses that count as "needs review" for an outflow: the canonical
-// "Under Review" plus any legacy/unknown value the payments list normalizes
-// to Under Review.
+// "Under Review", plus any blank/legacy value outside the canonical set — the
+// payments list renders those as "Under Review" (see effectiveStatus there),
+// so they genuinely still need an admin to triage and set a real status.
 const KNOWN = new Set(["Under Review", "Scheduled", "To be paid", "Paid", "Canceled"]);
 const isUnderReview = (s: string) => (KNOWN.has(s) ? s === "Under Review" : true);
 
