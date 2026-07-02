@@ -159,7 +159,8 @@ export function SummaryClient({
       Invoiced: 1,
       Submitted: 2,
       Draft: 3,
-      Deleted: 4,
+      Cancelled: 4,
+      Deleted: 5,
     };
     return timesheets
       .filter((t) => {

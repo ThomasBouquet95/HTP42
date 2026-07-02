@@ -52,6 +52,10 @@ export type ReviewBundle = {
     endDate: string | null;
     totalHours: number;
     status: string;
+    days: Record<
+      "monday" | "tuesday" | "wednesday" | "thursday" | "friday",
+      { hours: number; task: string }
+    >;
   }>;
   project: { code: string; name: string } | null;
   sowContracts: Array<{
@@ -70,6 +74,39 @@ function money(v: number | null, currency: string): string {
   return `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}${currency ? " " + currency : ""}`;
 }
 
+const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
+const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
+  monday: "Mon",
+  tuesday: "Tue",
+  wednesday: "Wed",
+  thursday: "Thu",
+  friday: "Fri",
+};
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function longDate(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  const [, y, mo, d] = m;
+  return `${d} ${MONTHS[Number(mo) - 1] ?? mo} ${y}`;
+}
+
+function shortDayDate(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  const [, y, mo, d] = m;
+  return `${d}.${mo}.${y.slice(2)}`;
+}
+
+function addDaysIso(iso: string, n: number): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  const [, y, mo, d] = m;
+  const dt = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+}
+
 export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
   const router = useRouter();
   const [rows, setRows] = useState(bundles);
@@ -77,6 +114,15 @@ export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(bundles[0]?.payment.id ?? null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [paidTargetId, setPaidTargetId] = useState<string | null>(null);
+  const [expandedTs, setExpandedTs] = useState<Set<string>>(new Set());
+  function toggleTs(id: string) {
+    setExpandedTs((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -311,35 +357,74 @@ export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
             {selected.timesheets.length === 0 ? (
               <Empty>No logged timesheets found on the associated staffing.</Empty>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead className="text-[10px] uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="py-1 pr-2 text-left font-medium">Week</th>
-                      <th className="py-1 pr-2 text-left font-medium">Status</th>
-                      <th className="py-1 pr-2 text-right font-medium">Hours</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selected.timesheets.map((t) => (
-                      <tr key={t.id} className="border-t border-slate-100">
-                        <td className="py-1 pr-2 whitespace-nowrap">
-                          {t.startDate ?? "—"}
-                          {t.endDate ? ` → ${t.endDate}` : ""}
-                        </td>
-                        <td className="py-1 pr-2 text-slate-500">{t.status}</td>
-                        <td className="py-1 pr-2 text-right tabular-nums">{t.totalHours.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                    <tr className="border-t border-slate-200 font-semibold">
-                      <td className="py-1 pr-2">Total</td>
-                      <td />
-                      <td className="py-1 pr-2 text-right tabular-nums">
-                        {selected.timesheets.reduce((s, t) => s + t.totalHours, 0).toFixed(2)}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div className="divide-y divide-slate-100">
+                <p className="pb-2 text-[11px] text-slate-400">Click a week to see the day-by-day breakdown.</p>
+                {selected.timesheets.map((t) => {
+                  const open = expandedTs.has(t.id);
+                  return (
+                    <div key={t.id}>
+                      <button
+                        type="button"
+                        onClick={() => toggleTs(t.id)}
+                        aria-expanded={open}
+                        className="flex w-full items-center gap-2 py-1.5 text-left text-xs hover:bg-slate-50"
+                      >
+                        <svg
+                          viewBox="0 0 16 16"
+                          className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          aria-hidden
+                        >
+                          <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        <span className="flex-1 whitespace-nowrap">
+                          {t.startDate ? longDate(t.startDate) : "—"}
+                          {t.endDate ? ` → ${longDate(t.endDate)}` : ""}
+                        </span>
+                        <span className="text-[10px] text-slate-500">{t.status}</span>
+                        <span className="w-16 text-right tabular-nums font-medium">
+                          {t.totalHours.toFixed(2)} h
+                        </span>
+                      </button>
+                      {open ? (
+                        <div className="mb-1 rounded-md bg-slate-50 p-2">
+                          <table className="w-full text-xs">
+                            <tbody>
+                              {DAY_KEYS.map((k, i) => {
+                                const d = t.days[k];
+                                const iso = t.startDate ? addDaysIso(t.startDate, i) : null;
+                                return (
+                                  <tr key={k} className="align-top">
+                                    <td className="py-0.5 pr-2 whitespace-nowrap text-slate-600">
+                                      {DAY_LABELS[k]}
+                                      {iso ? (
+                                        <span className="ml-1 text-slate-400">{shortDayDate(iso)}</span>
+                                      ) : null}
+                                    </td>
+                                    <td className="py-0.5 pr-2 text-right tabular-nums w-14">
+                                      {d.hours ? d.hours.toFixed(2) : "—"}
+                                    </td>
+                                    <td className="py-0.5 text-slate-600 whitespace-pre-line demo-blur">
+                                      {d.task || <span className="text-slate-300">—</span>}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+                <div className="flex items-center justify-between py-1.5 text-xs font-semibold">
+                  <span>Total</span>
+                  <span className="tabular-nums">
+                    {selected.timesheets.reduce((s, t) => s + t.totalHours, 0).toFixed(2)} h
+                  </span>
+                </div>
               </div>
             )}
           </Section>
@@ -362,6 +447,7 @@ export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
                     selected.timesheets.reduce((s, t) => s + t.totalHours, 0) / 8
                   ).toFixed(2)} / ${selected.staffing.daysAllocated ?? "—"}`}
                   blur
+                  hint="Logged days = submitted, invoiced and paid timesheet hours ÷ 8. Draft, cancelled and deleted weeks are excluded. Shown against the days allocated on the staffing."
                 />
                 <Field
                   label="Period"
@@ -463,19 +549,46 @@ function Field({
   value,
   mono,
   blur,
+  hint,
 }: {
   label: string;
   value: string;
   mono?: boolean;
   blur?: boolean;
+  hint?: string;
 }) {
   return (
     <div>
-      <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+      <dt className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-slate-400">
+        {label}
+        {hint ? <InfoTip text={hint} /> : null}
+      </dt>
       <dd className={`text-slate-800 ${mono ? "font-mono text-[11px]" : ""} ${blur ? "demo-blur" : ""}`}>
         {value || "—"}
       </dd>
     </div>
+  );
+}
+
+// Small info icon with a modern hover/focus tooltip bubble.
+function InfoTip({ text }: { text: string }) {
+  return (
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        aria-label="More info"
+        className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-slate-300 text-[8px] font-bold text-slate-400 hover:border-slate-400 hover:text-slate-600"
+      >
+        i
+      </button>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 hidden w-52 -translate-x-1/2 rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-normal normal-case tracking-normal text-white shadow-lg group-hover:block group-focus-within:block"
+      >
+        {text}
+        <span className="absolute left-1/2 top-full h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-slate-900" />
+      </span>
+    </span>
   );
 }
 

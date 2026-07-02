@@ -292,19 +292,23 @@ export const SOW_STATUSES: SowStatus[] = ["Not Started", "Draft", "In Progress",
 // One status spans the whole lifecycle of a timesheet:
 //   Draft → Submitted → Invoiced → Paid (Deleted is a terminal opt-out).
 // Members own the Draft → Submitted transition; admins own the Invoiced and
-// Paid steps. The legacy "Billing Status" field is no longer written by the
-// portal; it stays on Airtable for historical records but is ignored on read.
+// Paid steps. "Cancelled" is a soft opt-out (a week that won't be billed)
+// kept visible for the record; like Draft/Deleted it never counts toward
+// logged/billed days. The legacy "Billing Status" field is no longer written
+// by the portal; it stays on Airtable for historical records but is ignored.
 export type TimesheetStatus =
   | "Draft"
   | "Submitted"
   | "Invoiced"
   | "Paid"
+  | "Cancelled"
   | "Deleted";
 export const TIMESHEET_STATUSES: TimesheetStatus[] = [
   "Draft",
   "Submitted",
   "Invoiced",
   "Paid",
+  "Cancelled",
   "Deleted",
 ];
 
@@ -2161,7 +2165,11 @@ export async function updateTimesheetStatus(
 ): Promise<void> {
   const fields: Record<string, unknown> = { [FIELDS.timesheets.status]: status };
   if (submissionDate !== undefined) fields[FIELDS.timesheets.submissionDate] = submissionDate;
-  await base(TABLES.timesheets).update([{ id: recordId, fields: fields as FieldSet }]);
+  // typecast lets Airtable auto-add the single-select choice (e.g. the new
+  // "Cancelled") the first time it's written, instead of rejecting it.
+  await base(TABLES.timesheets).update([{ id: recordId, fields: fields as FieldSet }], {
+    typecast: true,
+  });
 }
 
 // Admin-side timesheet status edit. Allows transitions to any status the
@@ -2172,12 +2180,15 @@ export async function adminUpdateTimesheetStatus(
   recordId: string,
   status: TimesheetStatus,
 ): Promise<void> {
-  await base(TABLES.timesheets).update([
-    {
-      id: recordId,
-      fields: { [FIELDS.timesheets.status]: status } as FieldSet,
-    },
-  ]);
+  await base(TABLES.timesheets).update(
+    [
+      {
+        id: recordId,
+        fields: { [FIELDS.timesheets.status]: status } as FieldSet,
+      },
+    ],
+    { typecast: true },
+  );
 }
 
 // ---------------------------------------------------------------------------

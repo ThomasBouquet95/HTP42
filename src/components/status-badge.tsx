@@ -9,6 +9,7 @@ const styles: Record<TimesheetStatus, string> = {
   Submitted: "bg-amber-50 text-amber-700 border-amber-200",
   Invoiced: "bg-blue-50 text-blue-700 border-blue-200",
   Paid: "bg-emerald-100 text-emerald-800 border-emerald-300",
+  Cancelled: "bg-slate-100 text-slate-500 border-slate-200 line-through",
   Deleted: "bg-rose-50 text-rose-700 border-rose-200",
 };
 

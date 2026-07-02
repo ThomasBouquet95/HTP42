@@ -137,6 +137,13 @@ export default async function PaymentReviewPage() {
         endDate: t.endDate,
         totalHours: t.totalHours,
         status: t.status,
+        days: {
+          monday: { hours: t.monday.hours, task: t.monday.task },
+          tuesday: { hours: t.tuesday.hours, task: t.tuesday.task },
+          wednesday: { hours: t.wednesday.hours, task: t.wednesday.task },
+          thursday: { hours: t.thursday.hours, task: t.thursday.task },
+          friday: { hours: t.friday.hours, task: t.friday.task },
+        },
       })),
       project: project ? { code: project.projectCode, name: project.projectName } : null,
       sowContracts: sow.map((c) => ({

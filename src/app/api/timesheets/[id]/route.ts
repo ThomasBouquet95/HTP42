@@ -78,7 +78,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   return NextResponse.json({ ok: true });
 }
 
-const transitionSchema = z.object({ action: z.enum(["submit", "delete"]) });
+const transitionSchema = z.object({ action: z.enum(["submit", "delete", "cancel"]) });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -100,7 +100,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: true });
   }
 
-  // delete = move to Deleted (cancellation state)
+  // cancel = mark the week as Cancelled (won't be billed). Allowed from Draft
+  // or Submitted; once it's been Invoiced/Paid it's out of the member's hands.
+  if (parsed.data.action === "cancel") {
+    if (existing.status !== "Draft" && existing.status !== "Submitted") {
+      return NextResponse.json(
+        { error: "Only draft or submitted timesheets can be cancelled." },
+        { status: 409 },
+      );
+    }
+    await updateTimesheetStatus(id, "Cancelled");
+    return NextResponse.json({ ok: true });
+  }
+
+  // delete = move to Deleted (hard removal)
   if (existing.status === "Deleted") {
     return NextResponse.json({ error: "Timesheet is already deleted." }, { status: 409 });
   }

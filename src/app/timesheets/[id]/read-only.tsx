@@ -1,8 +1,38 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { TimesheetRecord } from "@/lib/airtable";
 
 export function ReadOnlyTimesheet({ timesheet }: { timesheet: TimesheetRecord }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function cancel() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/timesheets/${encodeURIComponent(timesheet.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "cancel" }),
+      });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? `Could not cancel (HTTP ${res.status})`);
+      }
+      setDone(true);
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not cancel.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const rows = [
     { label: "Monday", day: timesheet.monday },
     { label: "Tuesday", day: timesheet.tuesday },
@@ -50,6 +80,47 @@ export function ReadOnlyTimesheet({ timesheet }: { timesheet: TimesheetRecord })
           <span>Submitted on {timesheet.submissionDate}.</span>
         ) : null}
       </div>
+
+      {/* Members can cancel a submitted week that shouldn't be billed. Once
+          it's been Invoiced or Paid it's out of their hands. */}
+      {timesheet.status === "Submitted" ? (
+        <div className="border-t border-slate-100 pt-3">
+          {done ? (
+            <p className="text-xs text-slate-500">This timesheet has been cancelled.</p>
+          ) : confirming ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-slate-600">
+                Cancel this week? It won&apos;t be billed.
+              </span>
+              <button
+                type="button"
+                onClick={cancel}
+                disabled={busy}
+                className="rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+              >
+                {busy ? "Cancelling…" : "Yes, cancel"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirming(false)}
+                disabled={busy}
+                className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Keep it
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="text-xs font-medium text-slate-500 hover:text-red-600"
+            >
+              Cancel this timesheet
+            </button>
+          )}
+          {error ? <p className="mt-1 text-[11px] text-red-600">{error}</p> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
