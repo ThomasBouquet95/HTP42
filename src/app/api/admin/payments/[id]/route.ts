@@ -6,6 +6,8 @@ import {
   CURRENCIES,
   deletePayment,
   getPaymentById,
+  listClients,
+  listProjects,
   PAYMENT_STATUSES,
   updatePayment,
   updatePaymentStatus,
@@ -228,6 +230,34 @@ async function notifyOutflowPaid(p: PaymentRecord): Promise<void> {
     p.invoiceValue != null
       ? `${p.invoiceValue.toLocaleString("en-US")} ${p.invoiceCurrency || ""}`.trim()
       : "—";
+
+  // Resolve project/client to a readable "Code — Name" via record IDs (the
+  // linked field's display value is just the code, which reads as gibberish
+  // in the email). Best-effort: fall back to whatever codes we have.
+  let projectLabel = p.projectCodes.join(", ");
+  let clientLabel = p.clientCodes.join(", ");
+  try {
+    const [projects, clients] = await Promise.all([listProjects(), listClients()]);
+    const projById = new Map(projects.map((pr) => [pr.id, pr]));
+    const cliById = new Map(clients.map((c) => [c.id, c]));
+    const fmtProject = (id: string) => {
+      const pr = projById.get(id);
+      if (!pr) return "";
+      return pr.projectName ? `${pr.projectCode} — ${pr.projectName}` : pr.projectCode;
+    };
+    const fmtClient = (id: string) => {
+      const c = cliById.get(id);
+      if (!c) return "";
+      return c.clientName ? `${c.clientCode} — ${c.clientName}` : c.clientCode;
+    };
+    const resolvedProjects = p.projectRecordIds.map(fmtProject).filter(Boolean);
+    const resolvedClients = p.clientRecordIds.map(fmtClient).filter(Boolean);
+    if (resolvedProjects.length > 0) projectLabel = resolvedProjects.join(", ");
+    if (resolvedClients.length > 0) clientLabel = resolvedClients.join(", ");
+  } catch (e) {
+    console.error("Could not resolve project/client names for paid email:", e);
+  }
+
   const textLines: string[] = [
     `An outflow payment has just been marked Paid in the HTP42 portal.`,
     ``,
@@ -236,8 +266,8 @@ async function notifyOutflowPaid(p: PaymentRecord): Promise<void> {
     `Amount: ${amountLine}`,
     `Payment date: ${p.paymentDate ?? "—"}`,
     `Invoice date: ${p.invoiceDate ?? "—"}`,
-    p.projectCodes.length > 0 ? `Project: ${p.projectCodes.join(", ")}` : null,
-    p.clientCodes.length > 0 ? `Client: ${p.clientCodes.join(", ")}` : null,
+    projectLabel ? `Project: ${projectLabel}` : null,
+    clientLabel ? `Client: ${clientLabel}` : null,
     p.comment ? `Comment: ${p.comment}` : null,
     ``,
     p.invoiceUrl ? `Invoice URL: ${p.invoiceUrl}` : `Invoice URL: not set`,
@@ -256,12 +286,8 @@ async function notifyOutflowPaid(p: PaymentRecord): Promise<void> {
     `<li><strong>Amount:</strong> ${safe(amountLine)}</li>`,
     `<li><strong>Payment date:</strong> ${safe(p.paymentDate ?? "—")}</li>`,
     `<li><strong>Invoice date:</strong> ${safe(p.invoiceDate ?? "—")}</li>`,
-    p.projectCodes.length > 0
-      ? `<li><strong>Project:</strong> ${safe(p.projectCodes.join(", "))}</li>`
-      : "",
-    p.clientCodes.length > 0
-      ? `<li><strong>Client:</strong> ${safe(p.clientCodes.join(", "))}</li>`
-      : "",
+    projectLabel ? `<li><strong>Project:</strong> ${safe(projectLabel)}</li>` : "",
+    clientLabel ? `<li><strong>Client:</strong> ${safe(clientLabel)}</li>` : "",
     p.comment ? `<li><strong>Comment:</strong> ${safe(p.comment).replace(/\n/g, "<br/>")}</li>` : "",
     `</ul>`,
     p.invoiceUrl
