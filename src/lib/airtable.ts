@@ -1,3 +1,4 @@
+import { cache } from "react";
 import Airtable, { type FieldSet, type Record as AirtableRecord } from "airtable";
 import { env } from "./env";
 
@@ -740,14 +741,19 @@ function memberAdminFromRecord(r: AirtableRecord<FieldSet>): MemberAdminRecord {
   };
 }
 
-export async function listAllMembers(): Promise<MemberAdminRecord[]> {
+// Wrapped in React cache() so repeated calls within one server request (many
+// admin pages assemble several lists that each rebuild this member index)
+// hit Airtable once, not N times. cache() is request-scoped — no staleness.
+export const listAllMembers = cache(async function listAllMembers(): Promise<
+  MemberAdminRecord[]
+> {
   const records = await base(TABLES.networkMembers)
     .select({
       sort: [{ field: FIELDS.networkMembers.memberCode, direction: "asc" }],
     })
     .all();
   return records.map(memberAdminFromRecord);
-}
+});
 
 export type SignInActivity = {
   id: string;
@@ -1139,12 +1145,12 @@ function clientFromRecord(r: AirtableRecord<FieldSet>): ClientRecord {
   };
 }
 
-export async function listClients(): Promise<ClientRecord[]> {
+export const listClients = cache(async function listClients(): Promise<ClientRecord[]> {
   const records = await base(TABLES.clients)
     .select({ sort: [{ field: FIELDS.clients.clientCode, direction: "asc" }] })
     .all();
   return records.map(clientFromRecord);
-}
+});
 
 export async function getClientById(recordId: string): Promise<ClientRecord | null> {
   try {
@@ -1277,12 +1283,12 @@ function projectFromRecord(r: AirtableRecord<FieldSet>): ProjectRecord {
   };
 }
 
-export async function listProjects(): Promise<ProjectRecord[]> {
+export const listProjects = cache(async function listProjects(): Promise<ProjectRecord[]> {
   const records = await base(TABLES.projects)
     .select({ sort: [{ field: FIELDS.projects.projectCode, direction: "asc" }] })
     .all();
   return records.map(projectFromRecord);
-}
+});
 
 export async function getProjectById(recordId: string): Promise<ProjectRecord | null> {
   try {
@@ -1632,7 +1638,9 @@ function invoiceFromRecord(
   };
 }
 
-async function getProjectIndex(): Promise<Map<string, { code: string; name: string }>> {
+const getProjectIndex = cache(async function getProjectIndex(): Promise<
+  Map<string, { code: string; name: string }>
+> {
   const records = await base(TABLES.projects)
     .select({ fields: [FIELDS.projects.projectCode, FIELDS.projects.projectName] })
     .all();
@@ -1645,9 +1653,11 @@ async function getProjectIndex(): Promise<Map<string, { code: string; name: stri
       },
     ]),
   );
-}
+});
 
-async function getMemberIndex(): Promise<Map<string, { code: string; name: string }>> {
+const getMemberIndex = cache(async function getMemberIndex(): Promise<
+  Map<string, { code: string; name: string }>
+> {
   const records = await base(TABLES.networkMembers)
     .select({
       fields: [FIELDS.networkMembers.memberCode, FIELDS.networkMembers.fullName],
@@ -1662,9 +1672,9 @@ async function getMemberIndex(): Promise<Map<string, { code: string; name: strin
       },
     ]),
   );
-}
+});
 
-async function getStaffingIndex(): Promise<
+const getStaffingIndex = cache(async function getStaffingIndex(): Promise<
   Map<string, { code: string; projectCode: string; projectName: string }>
 > {
   const [records, projectNames] = await Promise.all([
@@ -1685,7 +1695,7 @@ async function getStaffingIndex(): Promise<
     });
   }
   return map;
-}
+});
 
 export async function listInvoicesForMember(
   memberRecordId: string,
@@ -1859,7 +1869,9 @@ export async function cascadeInvoicePaidForPayment(payment: PaymentRecord): Prom
   }
 }
 
-async function getProjectNameMap(): Promise<Map<string, string>> {
+const getProjectNameMap = cache(async function getProjectNameMap(): Promise<
+  Map<string, string>
+> {
   const records = await base(TABLES.projects)
     .select({
       fields: [FIELDS.projects.projectCode, FIELDS.projects.projectName],
@@ -1872,7 +1884,7 @@ async function getProjectNameMap(): Promise<Map<string, string>> {
     if (code) map.set(code, name);
   }
   return map;
-}
+});
 
 export async function getStaffingsForMember(
   memberCode: string,
@@ -2216,7 +2228,9 @@ function staffingAdminFromRecord(
   };
 }
 
-async function getDaysUsedByStaffingId(): Promise<Map<string, number>> {
+const getDaysUsedByStaffingId = cache(async function getDaysUsedByStaffingId(): Promise<
+  Map<string, number>
+> {
   // Sum total hours per Project Staffing across officially-logged timesheets
   // (Submitted / Invoiced / Paid), then convert to days at HOURS_PER_DAY = 8.
   // Drafts are work-in-progress and Deleted are tombstones — neither counts.
@@ -2252,14 +2266,14 @@ async function getDaysUsedByStaffingId(): Promise<Map<string, number>> {
     daysByStaffingId.set(id, hours / HOURS_PER_DAY);
   }
   return daysByStaffingId;
-}
+});
 
-async function getMemberCodeMap(): Promise<Map<string, string>> {
+const getMemberCodeMap = cache(async function getMemberCodeMap(): Promise<Map<string, string>> {
   const records = await base(TABLES.networkMembers)
     .select({ fields: [FIELDS.networkMembers.memberCode] })
     .all();
   return new Map(records.map((r) => [r.id, str(r, FIELDS.networkMembers.memberCode)]));
-}
+});
 
 export async function listAllStaffings(): Promise<StaffingAdminRecord[]> {
   const [records, projectNames, memberCodeById, daysUsedByStaffingId] = await Promise.all([
@@ -3321,7 +3335,9 @@ function contractFromRecord(
   };
 }
 
-async function getClientIndex(): Promise<Map<string, { code: string; name: string }>> {
+const getClientIndex = cache(async function getClientIndex(): Promise<
+  Map<string, { code: string; name: string }>
+> {
   const records = await base(TABLES.clients)
     .select({ fields: [FIELDS.clients.clientCode, FIELDS.clients.clientName] })
     .all();
@@ -3334,16 +3350,16 @@ async function getClientIndex(): Promise<Map<string, { code: string; name: strin
       },
     ]),
   );
-}
+});
 
-async function buildLookupMaps(): Promise<LookupMaps> {
+const buildLookupMaps = cache(async function buildLookupMaps(): Promise<LookupMaps> {
   const [memberCodeById, clientById, projectById] = await Promise.all([
     getMemberCodeMap(),
     getClientIndex(),
     getProjectIndex(),
   ]);
   return { memberCodeById, clientById, projectById };
-}
+});
 
 export async function listAllContracts(): Promise<ContractRecord[]> {
   const [records, maps] = await Promise.all([
