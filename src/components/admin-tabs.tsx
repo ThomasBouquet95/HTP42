@@ -19,7 +19,7 @@ type PageKey =
   | "contracts"
   | "documents";
 
-type Page = { key: PageKey; href: string; label: string };
+type Page = { key: PageKey; href: string; label: string; hidden?: boolean };
 type Category = { key: string; label: string; pages: Page[] };
 
 // Two-level admin navigation. Top row = categories, second row =
@@ -56,7 +56,9 @@ const CATEGORIES: Category[] = [
     pages: [
       { key: "cockpit", href: "/admin/cockpit", label: "Cockpit" },
       { key: "payments", href: "/admin/payments", label: "Payments" },
-      { key: "invoices", href: "/admin/invoices", label: "Invoices" },
+      // Invoices kept for category resolution but hidden from the sub-row —
+      // member invoices are reachable from payment links + Documents search.
+      { key: "invoices", href: "/admin/invoices", label: "Invoices", hidden: true },
     ],
   },
   {
@@ -77,7 +79,8 @@ const CATEGORIES: Category[] = [
 export function AdminTabs({ active }: { active: PageKey }) {
   const activeCategory =
     CATEGORIES.find((c) => c.pages.some((p) => p.key === active)) ?? CATEGORIES[0];
-  const showSubRow = activeCategory.pages.length > 1;
+  const visiblePages = activeCategory.pages.filter((p) => !p.hidden);
+  const showSubRow = visiblePages.length > 1;
 
   return (
     <div className="mb-5 space-y-2">
@@ -111,7 +114,7 @@ export function AdminTabs({ active }: { active: PageKey }) {
           categories where it would just duplicate the category tab. */}
       {showSubRow ? (
         <nav className="flex items-center gap-1 border-b border-slate-200 -mb-px overflow-x-auto">
-          {activeCategory.pages.map((p) => {
+          {visiblePages.map((p) => {
             const isActive = p.key === active;
             return (
               <Link

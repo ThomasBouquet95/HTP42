@@ -226,6 +226,13 @@ export function PaymentsClient({
   const projectsById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
   const clientsById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
   const membersById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
+  // PDF URL of each linked member invoice, so a payment auto-created from a
+  // member submission (invoice lives on the member-invoice record, not on the
+  // payment) still surfaces its invoice via the row's download chip.
+  const invoicePdfById = useMemo(
+    () => new Map(memberInvoices.filter((i) => i.pdfUrl).map((i) => [i.id, i.pdfUrl])),
+    [memberInvoices],
+  );
   const projectLabel = (p: PaymentRecord) =>
     p.projectRecordIds.map((id) => projectsById.get(id)?.code).filter(Boolean).join(", ");
   const clientLabel = (p: PaymentRecord) =>
@@ -842,7 +849,12 @@ export function PaymentsClient({
                     <td className="px-2 py-1.5 text-right">
                       <div className="inline-flex items-center gap-1">
                         <DownloadChip
-                          url={p.invoicePdf?.url}
+                          url={
+                            p.invoicePdf?.url ||
+                            p.memberInvoiceRecordIds
+                              .map((id) => invoicePdfById.get(id))
+                              .find(Boolean)
+                          }
                           title={`Open ${p.invoicePdf?.filename || "invoice PDF"}`}
                           emptyTitle="No invoice PDF on file"
                         />
