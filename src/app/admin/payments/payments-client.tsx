@@ -717,6 +717,7 @@ export function PaymentsClient({
         <table className="w-full text-xs">
           <thead className="border-b border-slate-100 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 whitespace-nowrap">
             <tr>
+              <th className="px-2 py-1.5 text-left font-medium">ID</th>
               <th className="px-2 py-1.5 text-left font-medium">
                 <SortHeader label="Direction" sort={sort} colKey="direction" onToggle={toggleSort} />
               </th>
@@ -790,7 +791,7 @@ export function PaymentsClient({
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text-center text-slate-500 py-10">
+                <td colSpan={12} className="text-center text-slate-500 py-10">
                   No payments match these filters.
                 </td>
               </tr>
@@ -807,17 +808,15 @@ export function PaymentsClient({
                     key={p.id}
                     className={`border-t border-slate-100 align-top ${tint.row}`}
                   >
-                    <td className={`px-2 py-1.5 ${tint.cell0}`}><DirectionPill direction={p.direction} /></td>
+                    <td className={`px-2 py-1.5 font-mono text-[11px] text-slate-500 whitespace-nowrap ${tint.cell0}`}>
+                      {p.paymentCode ? `#${p.paymentCode}` : "—"}
+                    </td>
+                    <td className="px-2 py-1.5"><DirectionPill direction={p.direction} /></td>
                     <td className="px-2 py-1.5 hidden md:table-cell">{p.type || "—"}</td>
                     <td className="px-2 py-1.5 font-mono text-xs hidden lg:table-cell">
                       {projectLabel(p) || "—"}
                     </td>
-                    <td className="px-2 py-1.5">
-                      <div className="demo-blur">{counterparty}</div>
-                      {p.paymentCode ? (
-                        <div className="font-mono text-[10px] text-slate-400">#{p.paymentCode}</div>
-                      ) : null}
-                    </td>
+                    <td className="px-2 py-1.5 demo-blur">{counterparty}</td>
                     <td className="px-2 py-1.5 hidden lg:table-cell text-slate-700 demo-blur">
                       {p.invoiceReference || <span className="text-slate-300">—</span>}
                     </td>

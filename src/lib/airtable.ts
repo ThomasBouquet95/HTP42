@@ -2217,8 +2217,9 @@ function staffingAdminFromRecord(
 }
 
 async function getDaysUsedByStaffingId(): Promise<Map<string, number>> {
-  // Sum total hours per Project Staffing across all non-Deleted timesheets,
-  // then convert to days at HOURS_PER_DAY = 8.
+  // Sum total hours per Project Staffing across officially-logged timesheets
+  // (Submitted / Invoiced / Paid), then convert to days at HOURS_PER_DAY = 8.
+  // Drafts are work-in-progress and Deleted are tombstones — neither counts.
   const records = await base(TABLES.timesheets)
     .select({
       fields: [
@@ -2235,7 +2236,7 @@ async function getDaysUsedByStaffingId(): Promise<Map<string, number>> {
   const hoursByStaffingId = new Map<string, number>();
   for (const r of records) {
     const status = str(r, FIELDS.timesheets.status) as TimesheetStatus;
-    if (status === "Deleted") continue;
+    if (status !== "Submitted" && status !== "Invoiced" && status !== "Paid") continue;
     const staffingId = firstLinkedId(r, FIELDS.timesheets.projectStaffing);
     if (!staffingId) continue;
     const hours =
@@ -2652,7 +2653,9 @@ export async function getProjectSummaryByCode(projectCode: string): Promise<Proj
     }
     const acc = memberIndex.get(mid)!;
     acc.timesheets.push({ ...ts, staffingCode: staffingCodeById.get(staffingId) ?? "" });
-    if (ts.status !== "Deleted") {
+    // Actual logged effort counts submitted work only — Drafts are
+    // work-in-progress, Deleted are tombstones.
+    if (ts.status === "Submitted" || ts.status === "Invoiced" || ts.status === "Paid") {
       acc.hoursActualTotal += ts.totalHours;
       acc.daysActualTotal = acc.hoursActualTotal / HOURS_PER_DAY;
     }
@@ -2816,7 +2819,8 @@ export async function listMyProjects(
     const status = (str(t, FIELDS.timesheets.status) as TimesheetStatus) || "Draft";
     if (status === "Submitted") acc.submittedTimesheets += 1;
     else if (status === "Draft") acc.draftTimesheets += 1;
-    if (status === "Deleted") continue;
+    // Actual logged effort counts submitted work only (skip Draft + Deleted).
+    if (status !== "Submitted" && status !== "Invoiced" && status !== "Paid") continue;
     const hours =
       num(t, FIELDS.timesheets.mondayHours) +
       num(t, FIELDS.timesheets.tuesdayHours) +

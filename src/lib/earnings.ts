@@ -172,11 +172,12 @@ export function rollupEarnings({
     if (!best || v.eur > best.eur) best = v;
   }
 
-  // Days billed YTD = sum of all timesheet hours this year / 8.
+  // Days billed YTD = sum of submitted timesheet hours this year / 8.
+  // Drafts are work-in-progress and don't count as billed; Deleted are out.
   const yearPrefix = String(new Date().getFullYear());
   let hoursYtd = 0;
   for (const t of timesheets) {
-    if (t.status === "Deleted") continue;
+    if (t.status !== "Submitted" && t.status !== "Invoiced" && t.status !== "Paid") continue;
     if (t.startDate?.startsWith(yearPrefix)) hoursYtd += t.totalHours;
   }
   const daysBilledYtd = hoursYtd / 8;
