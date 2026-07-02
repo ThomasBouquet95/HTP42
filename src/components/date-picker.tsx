@@ -52,9 +52,12 @@ export function DateField({
   onChange: (v: string) => void;
   placeholder?: string;
 }) {
+  // Label markup mirrors FormField exactly (inline span, no text-xs override)
+  // so DateField lines up on the same baseline as the other inputs when they
+  // share a grid row.
   return (
-    <label className="block text-xs">
-      <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-500">
+    <label className="block">
+      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
         {label}
       </span>
       <div className="mt-1">
