@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DownloadChip } from "@/components/download-chip";
+import { PaidDateModal } from "@/components/paid-date-modal";
 
 export type ReviewBundle = {
   payment: {
@@ -75,6 +76,7 @@ export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
   useEffect(() => setRows(bundles), [bundles]);
   const [selectedId, setSelectedId] = useState<string | null>(bundles[0]?.payment.id ?? null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [paidTargetId, setPaidTargetId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -96,13 +98,13 @@ export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
     }
   }, [rows, selectedId]);
 
-  async function setStatus(id: string, status: string) {
+  async function setStatus(id: string, status: string, paymentDate?: string) {
     setSavingId(id);
     try {
       const res = await fetch(`/api/admin/payments/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ paymentStatus: status }),
+        body: JSON.stringify({ paymentStatus: status, paymentDate }),
       });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
@@ -111,6 +113,7 @@ export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
       // It's no longer under review — drop it from the list.
       setRows((rs) => rs.filter((b) => b.payment.id !== id));
       setToast({ kind: "ok", msg: `Marked ${status}` });
+      setPaidTargetId(null);
       router.refresh();
     } catch (e) {
       setToast({ kind: "error", msg: e instanceof Error ? e.message : "Update failed" });
@@ -229,7 +232,7 @@ export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
               <button
                 type="button"
                 disabled={savingId === selected.payment.id}
-                onClick={() => setStatus(selected.payment.id, "Paid")}
+                onClick={() => setPaidTargetId(selected.payment.id)}
                 className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
               >
                 Mark paid
@@ -411,6 +414,13 @@ export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
           </Section>
         </div>
       ) : null}
+
+      <PaidDateModal
+        open={!!paidTargetId}
+        busy={savingId === paidTargetId}
+        onCancel={() => (savingId ? undefined : setPaidTargetId(null))}
+        onConfirm={(date) => paidTargetId && setStatus(paidTargetId, "Paid", date)}
+      />
 
       {toast ? (
         <div

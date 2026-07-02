@@ -1547,13 +1547,17 @@ export async function createPayment(input: PaymentInput): Promise<string> {
 export async function updatePaymentStatus(
   recordId: string,
   status: PaymentStatus | "",
+  paymentDate?: string | null,
 ): Promise<void> {
   const fields: Record<string, unknown> = {
     [FIELDS.payments.paymentStatus]: status === "" ? null : status,
   };
-  // Keep Payment Date consistent with the lifecycle: if the payment isn't
-  // executed anymore, drop any stale date that might have been set earlier.
-  if (status !== "Paid") {
+  // Payment Date follows the lifecycle: set it when marking Paid (the caller
+  // requires the admin to provide it), and clear it when leaving Paid so no
+  // stale date lingers.
+  if (status === "Paid") {
+    if (paymentDate) fields[FIELDS.payments.paymentDate] = paymentDate;
+  } else {
     fields[FIELDS.payments.paymentDate] = null;
   }
   await base(TABLES.payments).update([{ id: recordId, fields: fields as FieldSet }]);

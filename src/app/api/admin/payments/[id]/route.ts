@@ -36,6 +36,9 @@ const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
 const patchSchema = z.object({
   paymentStatus: z
     .union([z.enum(PAYMENT_STATUSES as [string, ...string[]]), z.literal("")]),
+  // Required when marking a payment Paid — it's the day money moved and it
+  // populates the paid-receipt email.
+  paymentDate: z.union([z.string().trim().min(1), z.null()]).optional(),
 });
 
 export async function PATCH(
@@ -57,7 +60,14 @@ export async function PATCH(
   // Outflow → Paid transition and fire the receipt email exactly once.
   const before = await getPaymentById(id);
   const nextStatus = parsed.data.paymentStatus as PaymentStatus | "";
-  await updatePaymentStatus(id, nextStatus);
+  const paymentDate = parsed.data.paymentDate ?? null;
+  if (nextStatus === "Paid" && !paymentDate) {
+    return NextResponse.json(
+      { error: "A payment date is required to mark a payment as paid." },
+      { status: 400 },
+    );
+  }
+  await updatePaymentStatus(id, nextStatus, paymentDate);
   if (before && shouldNotifyOutflowPaid(before, nextStatus)) {
     // Re-read the record so the email body uses the saved values (the PATCH
     // only carries the status field, the rest stays as it was).
@@ -101,6 +111,9 @@ const schema = z.object({
   beneficiary: z.string().trim().max(200).default(""),
   comment: z.string().max(5000).default(""),
   invoiceUrl: z.string().trim().max(2000).default(""),
+}).refine((d) => d.paymentStatus !== "Paid" || !!d.paymentDate, {
+  message: "A payment date is required to mark a payment as paid.",
+  path: ["paymentDate"],
 });
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {

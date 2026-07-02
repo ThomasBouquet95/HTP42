@@ -6,6 +6,7 @@ import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { DownloadChip } from "@/components/download-chip";
 import { DateField } from "@/components/date-picker";
+import { PaidDateModal } from "@/components/paid-date-modal";
 import type { Currency, PaymentRecord, PaymentStatus } from "@/lib/airtable";
 
 type LinkOpt = { id: string; code: string; name: string };
@@ -261,6 +262,10 @@ export function PaymentsClient({
   // we create/update the payment first, then upload the file against the
   // resulting record id (so it works for brand-new payments too).
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  // Inline "mark paid" needs a compulsory payment date, so a small prompt
+  // collects it before the PATCH.
+  const [paidTarget, setPaidTarget] = useState<{ id: string; label: string } | null>(null);
+  const [markingPaid, setMarkingPaid] = useState(false);
 
   // Unsaved edits = form differs from what we opened with, or a PDF was picked.
   const dirty = useMemo(
@@ -455,6 +460,13 @@ export function PaymentsClient({
   async function updateStatus(id: string, status: string) {
     const previous = rows.find((r) => r.id === id)?.paymentStatus ?? "";
     if (previous === status) return;
+    // Marking Paid requires a payment date — prompt for it instead of an
+    // immediate PATCH.
+    if (status === "Paid") {
+      const row = rows.find((r) => r.id === id);
+      setPaidTarget({ id, label: row?.paymentCode ? `#${row.paymentCode}` : "payment" });
+      return;
+    }
     setRows((rs) =>
       rs.map((r) => (r.id === id ? { ...r, paymentStatus: status as PaymentRecord["paymentStatus"] } : r)),
     );
@@ -484,7 +496,41 @@ export function PaymentsClient({
     }
   }
 
+  // Mark a payment Paid with the compulsory payment date from the prompt.
+  async function markPaid(id: string, date: string) {
+    setMarkingPaid(true);
+    try {
+      const res = await fetch(`/api/admin/payments/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ paymentStatus: "Paid", paymentDate: date }),
+      });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? `Update failed (HTTP ${res.status})`);
+      }
+      setRows((rs) =>
+        rs.map((r) =>
+          r.id === id
+            ? { ...r, paymentStatus: "Paid" as PaymentRecord["paymentStatus"], paymentDate: date }
+            : r,
+        ),
+      );
+      setToast({ kind: "ok", msg: "Marked paid" });
+      setPaidTarget(null);
+      router.refresh();
+    } catch (e) {
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Update failed" });
+    } finally {
+      setMarkingPaid(false);
+    }
+  }
+
   async function submit() {
+    if (form.paymentStatus === "Paid" && !form.paymentDate) {
+      setError("A payment date is required to mark a payment as paid.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -1196,6 +1242,14 @@ export function PaymentsClient({
         confirmTone="danger"
         onCancel={() => setShowDiscard(false)}
         onConfirm={closeModalNow}
+      />
+
+      <PaidDateModal
+        open={!!paidTarget}
+        label={paidTarget?.label}
+        busy={markingPaid}
+        onCancel={() => (markingPaid ? undefined : setPaidTarget(null))}
+        onConfirm={(date) => paidTarget && markPaid(paidTarget.id, date)}
       />
 
       {toast ? (
