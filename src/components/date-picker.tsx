@@ -106,7 +106,7 @@ export function DatePopover({
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex w-full items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 py-1 text-left text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+          className="flex w-full items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-left text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
         >
           <CalendarGlyph />
           {label ? (
@@ -121,7 +121,7 @@ export function DatePopover({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder ?? "e.g. Late May 2026"}
-          className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+          className="block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 pr-8 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
         />
       )}
       {allowFreeText ? (
@@ -330,7 +330,7 @@ export function MonthPopover({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 py-1 text-left text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+        className="flex w-full items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-left text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
       >
         <CalendarGlyph />
         {label ? (

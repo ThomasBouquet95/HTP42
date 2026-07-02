@@ -998,7 +998,7 @@ export function PaymentsClient({
               currencies={currencies}
             />
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 mt-3">
+          <div className="grid gap-3 mt-3">
             <FormSelect
               label="Project"
               value={form.projectId}

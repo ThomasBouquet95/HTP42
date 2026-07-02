@@ -3384,10 +3384,11 @@ export type DocumentRecord = {
 };
 
 export async function listAllDocuments(): Promise<DocumentRecord[]> {
-  const [contracts, members, invoices] = await Promise.all([
+  const [contracts, members, invoices, payments] = await Promise.all([
     listAllContracts(),
     listAllMembers(),
     listAllInvoices(),
+    listPayments(),
   ]);
 
   const docs: DocumentRecord[] = [];
@@ -3468,6 +3469,36 @@ export async function listAllDocuments(): Promise<DocumentRecord[]> {
         i.currency,
         i.comment,
         i.pdf.filename,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+    });
+  }
+
+  // Invoice PDFs attached to payments by an admin (e.g. a new payment with an
+  // uploaded invoice). These live on the payment, not a member invoice, so
+  // they'd otherwise be invisible outside the payment record.
+  for (const p of payments) {
+    if (!p.invoicePdf?.url) continue;
+    const label = p.invoiceReference || p.paymentCode || "Invoice";
+    docs.push({
+      id: `Invoice:payment-${p.id}`,
+      kind: "Invoice",
+      title: label,
+      subtitle: [p.direction, p.type, p.beneficiary].filter(Boolean).join(" · "),
+      date: p.invoiceDate ?? p.dueDate ?? null,
+      url: p.invoicePdf.url,
+      filename: p.invoicePdf.filename || "invoice.pdf",
+      keywords: [
+        p.paymentCode,
+        p.invoiceReference,
+        p.beneficiary,
+        p.type,
+        p.direction,
+        p.invoiceCurrency,
+        p.comment,
+        p.invoicePdf.filename,
       ]
         .filter(Boolean)
         .join(" ")
