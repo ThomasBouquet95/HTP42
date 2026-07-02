@@ -14,6 +14,7 @@ type PageKey =
   | "timesheets"
   | "payments"
   | "cockpit"
+  | "paymentreview"
   | "invoices"
   | "legalcockpit"
   | "contracts"
@@ -56,6 +57,7 @@ const CATEGORIES: Category[] = [
     pages: [
       { key: "cockpit", href: "/admin/cockpit", label: "Cockpit" },
       { key: "payments", href: "/admin/payments", label: "Payments" },
+      { key: "paymentreview", href: "/admin/payment-review", label: "Review" },
       // Invoices kept for category resolution but hidden from the sub-row —
       // member invoices are reachable from payment links + Documents search.
       { key: "invoices", href: "/admin/invoices", label: "Invoices", hidden: true },
