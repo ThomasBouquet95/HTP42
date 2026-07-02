@@ -181,7 +181,7 @@ export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
               <div className="min-w-0">
                 <div className="flex items-center gap-2 text-[11px] text-slate-500">
                   <span className="rounded-md bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] text-white">
-                    {selected.payment.code || "—"}
+                    #{selected.payment.code || "—"}
                   </span>
                   <span className="rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
                     Under review

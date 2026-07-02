@@ -61,6 +61,7 @@ const DEFAULT_FILTERS: Filters = {
 };
 
 type SortKey =
+  | "id"
   | "direction"
   | "type"
   | "project"
@@ -244,7 +245,7 @@ export function PaymentsClient({
     search: initialSearch ?? "",
   });
   const [sort, setSort] = useState<{ key: SortKey | null; dir: SortDir }>({
-    key: "dueDate",
+    key: "id",
     dir: "desc",
   });
   const [editing, setEditing] = useState<PaymentRecord | null>(null);
@@ -324,6 +325,8 @@ export function PaymentsClient({
     const mul = sort.dir === "asc" ? 1 : -1;
     const value = (p: PaymentRecord): string | number => {
       switch (key) {
+        case "id":
+          return p.paymentCode;
         case "direction":
           return p.direction;
         case "type":
@@ -346,7 +349,8 @@ export function PaymentsClient({
       const av = value(a);
       const bv = value(b);
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * mul;
-      return String(av).localeCompare(String(bv)) * mul;
+      // Numeric-aware so codes like #12 sort after #2, not before.
+      return String(av).localeCompare(String(bv), undefined, { numeric: true }) * mul;
     });
   }, [filtered, sort, projectLabel, clientLabel, memberLabel]);
 
@@ -362,7 +366,7 @@ export function PaymentsClient({
     setFilters((prev) => ({ ...prev, [key]: value }));
   }
 
-  const DEFAULT_SORT = { key: "dueDate" as SortKey, dir: "desc" as SortDir };
+  const DEFAULT_SORT = { key: "id" as SortKey, dir: "desc" as SortDir };
   const isFiltered =
     filters.direction !== DEFAULT_FILTERS.direction ||
     filters.status !== DEFAULT_FILTERS.status ||
@@ -717,7 +721,9 @@ export function PaymentsClient({
         <table className="w-full text-xs">
           <thead className="border-b border-slate-100 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 whitespace-nowrap">
             <tr>
-              <th className="px-2 py-1.5 text-left font-medium">ID</th>
+              <th className="px-2 py-1.5 text-left font-medium">
+                <SortHeader label="ID" sort={sort} colKey="id" onToggle={toggleSort} />
+              </th>
               <th className="px-2 py-1.5 text-left font-medium">
                 <SortHeader label="Direction" sort={sort} colKey="direction" onToggle={toggleSort} />
               </th>
