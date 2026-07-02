@@ -812,7 +812,12 @@ export function PaymentsClient({
                     <td className="px-2 py-1.5 font-mono text-xs hidden lg:table-cell">
                       {projectLabel(p) || "—"}
                     </td>
-                    <td className="px-2 py-1.5 demo-blur">{counterparty}</td>
+                    <td className="px-2 py-1.5">
+                      <div className="demo-blur">{counterparty}</div>
+                      {p.paymentCode ? (
+                        <div className="font-mono text-[10px] text-slate-400">#{p.paymentCode}</div>
+                      ) : null}
+                    </td>
                     <td className="px-2 py-1.5 hidden lg:table-cell text-slate-700 demo-blur">
                       {p.invoiceReference || <span className="text-slate-300">—</span>}
                     </td>

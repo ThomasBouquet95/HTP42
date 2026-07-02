@@ -160,7 +160,8 @@ export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
                   </div>
                   <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-slate-500">
                     <span className="truncate font-mono">
-                      {b.invoice?.code || b.payment.invoiceReference || b.payment.code}
+                      #{b.payment.code || "—"}
+                      {b.invoice?.code ? ` · ${b.invoice.code}` : ""}
                     </span>
                     {b.payment.dueDate ? <span className="shrink-0">due {b.payment.dueDate}</span> : null}
                   </div>
@@ -353,10 +354,10 @@ export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
                   blur
                 />
                 <Field
-                  label="Days (used / alloc.)"
-                  value={`${selected.staffing.daysUsed.toFixed(2)} / ${
-                    selected.staffing.daysAllocated ?? "—"
-                  }`}
+                  label="Days (logged / alloc.)"
+                  value={`${(
+                    selected.timesheets.reduce((s, t) => s + t.totalHours, 0) / 8
+                  ).toFixed(2)} / ${selected.staffing.daysAllocated ?? "—"}`}
                   blur
                 />
                 <Field
