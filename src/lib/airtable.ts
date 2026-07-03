@@ -4186,8 +4186,19 @@ export async function sendChatMessage(
 export type OpportunityStage = "Cold" | "In Discussion" | "Advanced";
 export const OPPORTUNITY_STAGES: OpportunityStage[] = ["Cold", "In Discussion", "Advanced"];
 
-export type OpportunityStatus = "Open" | "Won" | "Lost" | "On Hold";
-export const OPPORTUNITY_STATUSES: OpportunityStatus[] = ["Open", "Won", "Lost", "On Hold"];
+export type OpportunityStatus =
+  | "In Progress"
+  | "At Risk"
+  | "On Hold"
+  | "Won"
+  | "Lost";
+export const OPPORTUNITY_STATUSES: OpportunityStatus[] = [
+  "In Progress",
+  "At Risk",
+  "On Hold",
+  "Won",
+  "Lost",
+];
 
 export type OpportunityRecord = {
   id: string;

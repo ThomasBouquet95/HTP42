@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { EditIcon } from "@/components/admin-icons";
+import { DownloadChip } from "@/components/download-chip";
 import { DateRangeChip } from "@/components/date-range-chip";
 import { DatePopover, MonthPopover } from "@/components/date-picker";
 import type {
@@ -26,6 +27,7 @@ type Props = {
   projectTypes: readonly ProjectType[];
   projectStatuses: readonly ProjectStatus[];
   currencies: readonly Currency[];
+  sowByProjectId: Record<string, { url: string; filename: string }>;
 };
 
 type FormState = {
@@ -123,6 +125,7 @@ export function ProjectsAdminClient({
   projectTypes,
   projectStatuses,
   currencies,
+  sowByProjectId,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getUTCFullYear();
@@ -473,13 +476,14 @@ export function ProjectsAdminClient({
               <th className="text-left px-2 py-1.5 font-medium">Status</th>
               <th className="text-left px-2 py-1.5 font-medium hidden xl:table-cell">Dates</th>
               <th className="text-right px-2 py-1.5 font-medium hidden md:table-cell">Total</th>
+              <th className="text-left px-2 py-1.5 font-medium">SOW</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-center text-slate-500 py-10">
+                <td colSpan={9} className="text-center text-slate-500 py-10">
                   No projects match these filters.
                 </td>
               </tr>
@@ -522,6 +526,13 @@ export function ProjectsAdminClient({
                       {p.totalAmount == null
                         ? "—"
                         : `${p.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${p.currency || ""}`.trim()}
+                    </td>
+                    <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
+                      <DownloadChip
+                        url={sowByProjectId[p.id]?.url}
+                        title={`Open ${sowByProjectId[p.id]?.filename || "SOW"}`}
+                        emptyTitle="No SOW on file"
+                      />
                     </td>
                     <td className="px-2 py-1.5 text-right whitespace-nowrap">
                       <button

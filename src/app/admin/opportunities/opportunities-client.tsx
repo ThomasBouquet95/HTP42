@@ -42,7 +42,7 @@ const EMPTY: FormState = {
   title: "",
   clientId: "",
   stage: "Cold",
-  status: "Open",
+  status: "In Progress",
   contact: "",
   estimatedValue: "",
   currency: "",
@@ -80,7 +80,9 @@ export function OpportunitiesClient({
   projectStatuses,
 }: Props) {
   const router = useRouter();
-  const [rows] = useState(opportunities);
+  // Use the server prop directly so a router.refresh() after create/edit shows
+  // the change immediately (a one-shot useState snapshot went stale).
+  const rows = opportunities;
   const [clientFilter, setClientFilter] = useState<string>("All");
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
@@ -116,10 +118,17 @@ export function OpportunitiesClient({
     return m;
   }, [rows]);
 
-  const clientsWithOpps = useMemo(
-    () => clients.filter((c) => clientCounts.has(c.id)),
-    [clients, clientCounts],
-  );
+  // Show every client on the left (even with zero opportunities) so you can
+  // pick one and add its first opportunity. Clients with opportunities float
+  // to the top, then alphabetical.
+  const leftClients = useMemo(() => {
+    return [...clients].sort((a, b) => {
+      const ca = clientCounts.get(a.id) ?? 0;
+      const cb = clientCounts.get(b.id) ?? 0;
+      if (cb !== ca) return cb - ca;
+      return (a.name || a.code).localeCompare(b.name || b.code);
+    });
+  }, [clients, clientCounts]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -253,27 +262,34 @@ export function OpportunitiesClient({
               <span className="text-xs text-slate-400">{rows.length}</span>
             </button>
           </li>
-          {clientsWithOpps.map((c) => (
-            <li key={c.id}>
-              <button
-                type="button"
-                onClick={() => setClientFilter(c.id)}
-                className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left ${
-                  clientFilter === c.id ? "bg-brand-50" : "hover:bg-slate-50"
-                }`}
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-sm text-slate-900 demo-blur">
-                    {c.name || c.code}
+          {leftClients.map((c) => {
+            const count = clientCounts.get(c.id) ?? 0;
+            return (
+              <li key={c.id}>
+                <button
+                  type="button"
+                  onClick={() => setClientFilter(c.id)}
+                  className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left ${
+                    clientFilter === c.id ? "bg-brand-50" : "hover:bg-slate-50"
+                  }`}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm text-slate-900 demo-blur">
+                      {c.name || c.code}
+                    </span>
+                    <span className="block font-mono text-[10px] text-slate-400">{c.code}</span>
                   </span>
-                  <span className="block font-mono text-[10px] text-slate-400">{c.code}</span>
-                </span>
-                <span className="shrink-0 text-xs text-slate-400">{clientCounts.get(c.id)}</span>
-              </button>
-            </li>
-          ))}
-          {clientsWithOpps.length === 0 ? (
-            <li className="px-3 py-3 text-xs text-slate-400">No opportunities yet.</li>
+                  <span
+                    className={`shrink-0 text-xs ${count > 0 ? "text-slate-500" : "text-slate-300"}`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+          {leftClients.length === 0 ? (
+            <li className="px-3 py-3 text-xs text-slate-400">No clients yet.</li>
           ) : null}
         </ul>
       </div>
@@ -585,6 +601,7 @@ function ConvertModal({
     status: "In Progress",
     objective: "",
   });
+  const [sowFile, setSowFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -609,6 +626,7 @@ function ConvertModal({
       status: "In Progress",
       objective: opportunity.description || "",
     });
+    setSowFile(null);
     setError(null);
     const code = client?.code ?? "";
     if (/^[A-Z]{3}$/.test(code)) {
@@ -634,48 +652,36 @@ function ConvertModal({
     setError(null);
     if (!form.projectCode.trim()) return setError("A project code is required.");
     if (!form.projectName.trim()) return setError("A project name is required.");
+    if (!form.type) return setError("Pick a project type.");
+    if (!form.currency) return setError("Pick a currency.");
+    if (form.totalAmount === "" || !(Number(form.totalAmount) > 0))
+      return setError("A total amount is required.");
+    if (!form.startDate) return setError("A start date is required.");
     if (!opportunity.clientRecordIds[0]) return setError("This opportunity has no client to link.");
     setSaving(true);
     try {
-      const res = await fetch("/api/admin/projects", {
+      const fd = new FormData();
+      fd.set("projectCode", form.projectCode.trim());
+      fd.set("projectName", form.projectName.trim());
+      fd.set("type", form.type);
+      fd.set("currency", form.currency);
+      fd.set("totalAmount", form.totalAmount);
+      fd.set("startDate", form.startDate);
+      fd.set("endDate", form.endDate);
+      fd.set("status", form.status);
+      fd.set("objective", form.objective);
+      if (sowFile) fd.set("sow", sowFile);
+      const res = await fetch(`/api/admin/opportunities/${opportunity.id}/convert`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          projectCode: form.projectCode.trim(),
-          projectName: form.projectName.trim(),
-          clientRecordIds: opportunity.clientRecordIds,
-          projectLeaderRecordIds: [],
-          type: form.type,
-          objective: form.objective,
-          startDate: form.startDate || null,
-          endDate: form.endDate || null,
-          currency: form.currency,
-          totalAmount: form.totalAmount === "" ? null : Number(form.totalAmount),
-          fxToEur: null,
-          status: form.status,
-          paymentSchedule: [],
-        }),
+        body: fd,
       });
-      if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? "Could not create the project.");
+      const data = (await res.json().catch(() => ({}))) as { error?: string; warning?: string };
+      if (!res.ok) throw new Error(data.error ?? "Conversion failed.");
+      if (data.warning) {
+        onConverted(data.warning, "error");
+      } else {
+        onConverted(`Project ${form.projectCode.trim()} created from opportunity`);
       }
-      // Mark the opportunity Won + record the created project code.
-      const patch = await fetch(`/api/admin/opportunities/${opportunity.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status: "Won", convertedProject: form.projectCode.trim() }),
-      });
-      if (!patch.ok) {
-        // Project was created but the status update failed — surface it as a
-        // single warning (still closes + refreshes) so the message isn't lost.
-        onConverted(
-          `Project ${form.projectCode.trim()} created, but the opportunity status couldn't be updated.`,
-          "error",
-        );
-        return;
-      }
-      onConverted(`Project ${form.projectCode.trim()} created from opportunity`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Conversion failed.");
     } finally {
@@ -723,7 +729,7 @@ function ConvertModal({
           onChange={(v) => set("projectName", v)}
           required
         />
-        <FormSelect label="Type" value={form.type} onChange={(v) => set("type", v)}>
+        <FormSelect label="Type" value={form.type} onChange={(v) => set("type", v)} required>
           <option value="">—</option>
           {projectTypes.map((t) => (
             <option key={t} value={t}>{t}</option>
@@ -740,14 +746,15 @@ function ConvertModal({
           value={form.totalAmount}
           onChange={(v) => set("totalAmount", v)}
           type="number"
+          required
         />
-        <FormSelect label="Currency" value={form.currency} onChange={(v) => set("currency", v)}>
+        <FormSelect label="Currency" value={form.currency} onChange={(v) => set("currency", v)} required>
           <option value="">—</option>
           {currencies.map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
         </FormSelect>
-        <DateField label="Start date" value={form.startDate} onChange={(v) => set("startDate", v)} placeholder="Pick a date" />
+        <DateField label="Start date *" value={form.startDate} onChange={(v) => set("startDate", v)} placeholder="Pick a date" />
         <DateField label="End date" value={form.endDate} onChange={(v) => set("endDate", v)} placeholder="Pick a date" />
       </div>
       <div className="mt-3">
@@ -757,6 +764,41 @@ function ConvertModal({
           onChange={(v) => set("objective", v)}
           rows={3}
         />
+      </div>
+      {/* SOW upload → creates a linked Client-side contract in Legal. */}
+      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+            SOW (optional)
+          </span>
+          {sowFile ? (
+            <span className="truncate text-[11px] text-slate-500">{sowFile.name}</span>
+          ) : null}
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+            {sowFile ? "Change file" : "Upload SOW PDF"}
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              className="hidden"
+              onChange={(e) => setSowFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+          {sowFile ? (
+            <button
+              type="button"
+              onClick={() => setSowFile(null)}
+              className="text-[11px] text-slate-500 hover:text-red-600"
+            >
+              Remove
+            </button>
+          ) : null}
+        </div>
+        <p className="mt-1.5 text-[11px] text-slate-400">
+          If provided, a signed Client-side SOW contract is created in Legal, linked to this
+          project. PDF, max 5 MB.
+        </p>
       </div>
       <p className="mt-2 text-[11px] text-slate-400">
         You can add project leaders and the payment schedule afterwards in Projects.
@@ -792,8 +834,12 @@ function StatusPill({ status }: { status: string }) {
       ? "bg-emerald-100 text-emerald-800 border-emerald-300"
       : status === "Lost"
       ? "bg-rose-50 text-rose-700 border-rose-200"
+      : status === "At Risk"
+      ? "bg-red-50 text-red-700 border-red-200"
       : status === "On Hold"
       ? "bg-slate-100 text-slate-600 border-slate-200"
+      : status === "In Progress"
+      ? "bg-sky-50 text-sky-700 border-sky-200"
       : "bg-white text-slate-600 border-slate-300";
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${cls}`}>
