@@ -3727,6 +3727,44 @@ export async function attachContractPdf(
   }
 }
 
+// Attach (or replace) a project's SOW: finds the project's existing
+// Client-side SOW contract and replaces its PDF, or creates a new SOW
+// contract linked to the project + client. Keeps Projects and Legal in sync.
+// Returns the resulting PDF ref.
+export async function attachProjectSow(
+  projectId: string,
+  filename: string,
+  base64: string,
+): Promise<{ url: string; filename: string } | null> {
+  const [project, contracts] = await Promise.all([
+    getProjectById(projectId),
+    listAllContracts(),
+  ]);
+  const existing = contracts.find(
+    (c) =>
+      c.projectRecordIds.includes(projectId) &&
+      /sow|statement of work/i.test(c.contractType || ""),
+  );
+  let contractId: string;
+  if (existing) {
+    contractId = existing.id;
+  } else {
+    const today = new Date().toISOString().slice(0, 10);
+    const created = await createContract({
+      side: "Client",
+      contractType: "SOW",
+      clientRecordIds: project?.clientRecordIds ?? [],
+      projectRecordIds: [projectId],
+      projectCode: project?.projectCode ?? "",
+      signatureDate: today,
+    });
+    contractId = created.id;
+  }
+  await attachContractPdf(contractId, filename, base64);
+  const fresh = await getContractById(contractId);
+  return fresh?.pdf ? { url: fresh.pdf.url, filename: fresh.pdf.filename || filename } : null;
+}
+
 // Ensure the "Invoice PDF" attachment field exists on the Payments
 // table. Created lazily via the meta API (the MCP create_field flow
 // needs a manual approval click; the server PAT has schema scope and

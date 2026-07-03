@@ -142,6 +142,10 @@ export function ProjectsAdminClient({
   const [codeLoading, setCodeLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ProjectRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // SOW attach/replace for the project being edited (links to Legal).
+  const [sowUrl, setSowUrl] = useState<string | null>(null);
+  const [sowBusy, setSowBusy] = useState(false);
+  const [sowMsg, setSowMsg] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -181,6 +185,8 @@ export function ProjectsAdminClient({
     setForm(initial);
     setBaseline(initial);
     setError(null);
+    setSowUrl(null);
+    setSowMsg(null);
   }
 
   function openEdit(p: ProjectRecord) {
@@ -190,6 +196,36 @@ export function ProjectsAdminClient({
     setForm(initial);
     setBaseline(initial);
     setError(null);
+    setSowUrl(sowByProjectId[p.id]?.url ?? null);
+    setSowMsg(null);
+  }
+
+  // Immediate SOW attach/replace — creates or updates the project's linked
+  // Client-side SOW contract in Legal and refreshes the chip.
+  async function uploadSow(file: File) {
+    if (!editing) return;
+    setSowBusy(true);
+    setSowMsg(null);
+    try {
+      const fd = new FormData();
+      fd.set("file", file);
+      const res = await fetch(`/api/admin/projects/${editing.id}/sow`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        pdf?: { url: string; filename: string } | null;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error ?? "SOW upload failed.");
+      setSowUrl(data.pdf?.url ?? null);
+      setSowMsg({ kind: "ok", text: "SOW saved to Legal." });
+      router.refresh();
+    } catch (e) {
+      setSowMsg({ kind: "error", text: e instanceof Error ? e.message : "SOW upload failed." });
+    } finally {
+      setSowBusy(false);
+    }
   }
 
   // Guarded close (X, backdrop, Cancel): warn before dropping unsaved edits.
@@ -581,6 +617,55 @@ export function ProjectsAdminClient({
           </>
         }
       >
+        {/* SOW at the top — attach/replace the signed SOW; it lives in Legal
+            as a Client-side contract linked to this project. */}
+        {editing ? (
+          <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                SOW
+              </span>
+              {sowBusy ? (
+                <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+                  <SowSpinner /> Uploading…
+                </span>
+              ) : sowMsg ? (
+                <span
+                  className={`text-[11px] font-medium ${
+                    sowMsg.kind === "ok" ? "text-green-600" : "text-red-600"
+                  }`}
+                >
+                  {sowMsg.text}
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <DownloadChip url={sowUrl ?? undefined} title="Open SOW" emptyTitle="No SOW on file" />
+              <label
+                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 ${
+                  sowBusy ? "pointer-events-none opacity-60" : ""
+                }`}
+              >
+                {sowBusy ? <SowSpinner /> : null}
+                {sowBusy ? "Uploading…" : sowUrl ? "Replace SOW" : "Upload SOW"}
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  className="hidden"
+                  disabled={sowBusy}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) uploadSow(f);
+                    e.currentTarget.value = "";
+                  }}
+                />
+              </label>
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-400">
+              Saved instantly to Legal as a Client-side SOW contract for this project. PDF, max 5 MB.
+            </p>
+          </div>
+        ) : null}
         {/* Identity */}
         <section className="space-y-3">
           <SectionHeader title="Identity" hint="What the project is and who it's for." />
@@ -762,6 +847,15 @@ function SectionHeader({ title, hint }: { title: string; hint?: string }) {
       <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h3>
       {hint ? <p className="mt-0.5 text-xs text-slate-500">{hint}</p> : null}
     </div>
+  );
+}
+
+function SowSpinner() {
+  return (
+    <svg className="h-3.5 w-3.5 animate-spin text-current" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+    </svg>
   );
 }
 
