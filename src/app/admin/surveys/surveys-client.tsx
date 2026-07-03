@@ -233,14 +233,27 @@ export function SurveysClient({
                               {r.recipientEmail}
                             </div>
                           </div>
-                          <div className="shrink-0 text-right">
-                            {r.completedAt ? (
-                              <StarRating value={r.overallGrade} readOnly size={14} />
-                            ) : (
-                              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-100">
-                                Awaiting response
-                              </span>
-                            )}
+                          <div className="flex shrink-0 items-center gap-3">
+                            <div className="text-right">
+                              {r.completedAt ? (
+                                <StarRating value={r.overallGrade} readOnly size={14} />
+                              ) : (
+                                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-100">
+                                  Awaiting response
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteTarget(r)}
+                              className="text-slate-400 hover:text-red-600"
+                              aria-label="Delete survey"
+                              title="Delete survey"
+                            >
+                              <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                                <path d="M3 4h10M6.5 4V2.8a.8.8 0 0 1 .8-.8h1.4a.8.8 0 0 1 .8.8V4m2 0-.5 8.4a1 1 0 0 1-1 .9H5.7a1 1 0 0 1-1-.9L4.2 4M6.7 6.8v4M9.3 6.8v4" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </button>
                           </div>
                         </div>
 
@@ -281,13 +294,6 @@ export function SurveysClient({
                             ) : r.emailSent ? (
                               <span className="text-slate-400">Email sent</span>
                             ) : null}
-                            <button
-                              type="button"
-                              onClick={() => setDeleteTarget(r)}
-                              className="ml-auto text-slate-400 hover:text-red-600"
-                            >
-                              Delete
-                            </button>
                           </div>
                         )}
                       </div>
