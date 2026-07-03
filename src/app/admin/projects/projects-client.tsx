@@ -142,10 +142,13 @@ export function ProjectsAdminClient({
   const [codeLoading, setCodeLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ProjectRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
-  // SOW attach/replace for the project being edited (links to Legal).
+  // SOW attach/replace for the project being edited (links to Legal). On
+  // create there's no record yet, so a picked file is held and uploaded after
+  // the project is saved.
   const [sowUrl, setSowUrl] = useState<string | null>(null);
   const [sowBusy, setSowBusy] = useState(false);
   const [sowMsg, setSowMsg] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [sowFile, setSowFile] = useState<File | null>(null);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -187,6 +190,7 @@ export function ProjectsAdminClient({
     setError(null);
     setSowUrl(null);
     setSowMsg(null);
+    setSowFile(null);
   }
 
   function openEdit(p: ProjectRecord) {
@@ -198,6 +202,7 @@ export function ProjectsAdminClient({
     setError(null);
     setSowUrl(sowByProjectId[p.id]?.url ?? null);
     setSowMsg(null);
+    setSowFile(null);
   }
 
   // Immediate SOW attach/replace — creates or updates the project's linked
@@ -372,6 +377,22 @@ export function ProjectsAdminClient({
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(d.error ?? "Save failed.");
+      }
+      // A new project's SOW is uploaded after creation (needs the record id).
+      if (creating && sowFile) {
+        const data = (await res.json().catch(() => ({}))) as { id?: string };
+        if (data.id) {
+          const fd = new FormData();
+          fd.set("file", sowFile);
+          const up = await fetch(`/api/admin/projects/${data.id}/sow`, {
+            method: "POST",
+            body: fd,
+          });
+          if (!up.ok) {
+            const d = (await up.json().catch(() => ({}))) as { error?: string };
+            throw new Error(d.error ?? "Project created, but the SOW upload failed.");
+          }
+        }
       }
       closeModalNow();
       setToast({ kind: "ok", msg: creating ? "Project created" : "Project saved" });
@@ -618,54 +639,80 @@ export function ProjectsAdminClient({
         }
       >
         {/* SOW at the top — attach/replace the signed SOW; it lives in Legal
-            as a Client-side contract linked to this project. */}
-        {editing ? (
-          <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                SOW
+            as a Client-side contract linked to this project. On edit it saves
+            instantly; on create the picked file uploads after the project is
+            saved. */}
+        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+              SOW <span className="normal-case tracking-normal text-slate-400">(optional)</span>
+            </span>
+            {editing && sowBusy ? (
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+                <SowSpinner /> Uploading…
               </span>
-              {sowBusy ? (
-                <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
-                  <SowSpinner /> Uploading…
-                </span>
-              ) : sowMsg ? (
-                <span
-                  className={`text-[11px] font-medium ${
-                    sowMsg.kind === "ok" ? "text-green-600" : "text-red-600"
-                  }`}
-                >
-                  {sowMsg.text}
-                </span>
-              ) : null}
-            </div>
-            <div className="mt-2 flex items-center gap-2">
-              <DownloadChip url={sowUrl ?? undefined} title="Open SOW" emptyTitle="No SOW on file" />
-              <label
-                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 ${
-                  sowBusy ? "pointer-events-none opacity-60" : ""
+            ) : editing && sowMsg ? (
+              <span
+                className={`text-[11px] font-medium ${
+                  sowMsg.kind === "ok" ? "text-green-600" : "text-red-600"
                 }`}
               >
-                {sowBusy ? <SowSpinner /> : null}
-                {sowBusy ? "Uploading…" : sowUrl ? "Replace SOW" : "Upload SOW"}
-                <input
-                  type="file"
-                  accept="application/pdf,.pdf"
-                  className="hidden"
-                  disabled={sowBusy}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) uploadSow(f);
-                    e.currentTarget.value = "";
-                  }}
-                />
-              </label>
-            </div>
-            <p className="mt-1.5 text-[11px] text-slate-400">
-              Saved instantly to Legal as a Client-side SOW contract for this project. PDF, max 5 MB.
-            </p>
+                {sowMsg.text}
+              </span>
+            ) : !editing && sowFile ? (
+              <span className="text-[11px] font-medium text-brand-700">Uploads when you save</span>
+            ) : null}
           </div>
-        ) : null}
+          <div className="mt-2 flex items-center gap-2">
+            <DownloadChip url={sowUrl ?? undefined} title="Open SOW" emptyTitle="No SOW on file" />
+            <label
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 ${
+                sowBusy ? "pointer-events-none opacity-60" : ""
+              }`}
+            >
+              {editing && sowBusy ? <SowSpinner /> : null}
+              {editing
+                ? sowBusy
+                  ? "Uploading…"
+                  : sowUrl
+                  ? "Replace SOW"
+                  : "Upload SOW"
+                : sowFile
+                ? "Change file"
+                : "Upload SOW"}
+              <input
+                type="file"
+                accept="application/pdf,.pdf"
+                className="hidden"
+                disabled={sowBusy}
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  if (editing) {
+                    if (f) uploadSow(f);
+                  } else {
+                    setSowFile(f);
+                  }
+                  e.currentTarget.value = "";
+                }}
+              />
+            </label>
+            {!editing && sowFile ? (
+              <>
+                <span className="truncate text-[11px] text-slate-500">{sowFile.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setSowFile(null)}
+                  className="text-[11px] text-slate-500 hover:text-red-600"
+                >
+                  Remove
+                </button>
+              </>
+            ) : null}
+          </div>
+          <p className="mt-1.5 text-[11px] text-slate-400">
+            Saved to Legal as a Client-side SOW contract for this project. PDF, max 5 MB.
+          </p>
+        </div>
         {/* Identity */}
         <section className="space-y-3">
           <SectionHeader title="Identity" hint="What the project is and who it's for." />
@@ -1122,7 +1169,7 @@ function TypePill({ type }: { type: ProjectType }) {
       ? "bg-violet-50 text-violet-700 border-violet-200"
       : "bg-amber-50 text-amber-700 border-amber-200";
   return (
-    <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
+    <span className={`inline-flex items-center whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
       {type}
     </span>
   );
