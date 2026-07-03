@@ -508,7 +508,7 @@ export function ProjectsAdminClient({
               <th className="text-left px-2 py-1.5 font-medium">Code</th>
               <th className="text-left px-2 py-1.5 font-medium">Name</th>
               <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Client</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Type</th>
+              <th className="text-center px-2 py-1.5 font-medium hidden lg:table-cell">Type</th>
               <th className="text-left px-2 py-1.5 font-medium">Status</th>
               <th className="text-left px-2 py-1.5 font-medium hidden xl:table-cell">Dates</th>
               <th className="text-right px-2 py-1.5 font-medium hidden md:table-cell">Total</th>
@@ -545,7 +545,7 @@ export function ProjectsAdminClient({
                     <td className="px-2 py-1.5 font-mono hidden md:table-cell demo-blur">
                       {clientNames || p.clientCodes.join(", ") || "—"}
                     </td>
-                    <td className="px-2 py-1.5 hidden lg:table-cell">
+                    <td className="px-2 py-1.5 text-center hidden lg:table-cell">
                       {p.type ? <TypePill type={p.type} /> : "—"}
                     </td>
                     <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
