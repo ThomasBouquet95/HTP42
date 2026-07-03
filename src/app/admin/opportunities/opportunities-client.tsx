@@ -520,12 +520,11 @@ export function OpportunitiesClient({
         projectTypes={projectTypes}
         projectStatuses={projectStatuses}
         onClose={() => setConvertTarget(null)}
-        onConverted={(msg) => {
+        onConverted={(msg, kind = "ok") => {
           setConvertTarget(null);
-          setToast({ kind: "ok", msg });
+          setToast({ kind, msg });
           router.refresh();
         }}
-        onError={(msg) => setToast({ kind: "error", msg })}
       />
 
       {toast ? (
@@ -566,7 +565,6 @@ function ConvertModal({
   projectStatuses,
   onClose,
   onConverted,
-  onError,
 }: {
   opportunity: OpportunityRecord | null;
   clients: LinkOpt[];
@@ -574,8 +572,7 @@ function ConvertModal({
   projectTypes: readonly ProjectType[];
   projectStatuses: readonly ProjectStatus[];
   onClose: () => void;
-  onConverted: (msg: string) => void;
-  onError: (msg: string) => void;
+  onConverted: (msg: string, kind?: "ok" | "error") => void;
 }) {
   const [form, setForm] = useState<ConvertState>({
     projectCode: "",
@@ -670,9 +667,12 @@ function ConvertModal({
         body: JSON.stringify({ status: "Won", convertedProject: form.projectCode.trim() }),
       });
       if (!patch.ok) {
-        // Project was created; surface a soft warning but treat as success.
-        onError("Project created, but the opportunity status couldn't be updated.");
-        onConverted(`Project ${form.projectCode.trim()} created`);
+        // Project was created but the status update failed — surface it as a
+        // single warning (still closes + refreshes) so the message isn't lost.
+        onConverted(
+          `Project ${form.projectCode.trim()} created, but the opportunity status couldn't be updated.`,
+          "error",
+        );
         return;
       }
       onConverted(`Project ${form.projectCode.trim()} created from opportunity`);
