@@ -8,6 +8,7 @@ type PageKey =
   | "networkcockpit"
   | "members"
   | "staffing"
+  | "opportunities"
   | "signins"
   | "clients"
   | "projects"
@@ -47,6 +48,7 @@ const CATEGORIES: Category[] = [
     label: "Projects",
     pages: [
       { key: "projects", href: "/admin/projects", label: "Projects" },
+      { key: "opportunities", href: "/admin/opportunities", label: "Opportunities" },
       { key: "staffing", href: "/admin/staffing", label: "Staffing" },
       { key: "timesheets", href: "/admin/timesheets", label: "Timesheets" },
     ],

@@ -1,0 +1,47 @@
+import { redirect } from "next/navigation";
+import { requireAdminSession } from "@/lib/auth";
+import { AdminTabs } from "@/components/admin-tabs";
+import {
+  CURRENCIES,
+  PROJECT_STATUSES,
+  PROJECT_TYPES,
+  listAllMembers,
+  listClients,
+  listOpportunities,
+} from "@/lib/airtable";
+import { OpportunitiesClient } from "./opportunities-client";
+
+export const dynamic = "force-dynamic";
+
+export default async function AdminOpportunitiesPage() {
+  const session = await requireAdminSession();
+  if (!session) redirect("/dashboard");
+
+  const [opportunities, clients, members] = await Promise.all([
+    listOpportunities(),
+    listClients(),
+    listAllMembers(),
+  ]);
+
+  const openCount = opportunities.filter((o) => o.status !== "Won" && o.status !== "Lost").length;
+
+  return (
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <AdminTabs active="opportunities" />
+      <div className="mb-4 flex items-baseline gap-3">
+        <h1 className="text-base sm:text-lg font-semibold">Opportunities</h1>
+        <span className="text-xs text-slate-500">
+          · {opportunities.length} total · {openCount} open
+        </span>
+      </div>
+      <OpportunitiesClient
+        opportunities={opportunities}
+        clients={clients.map((c) => ({ id: c.id, code: c.clientCode, name: c.clientName }))}
+        members={members.map((m) => ({ id: m.id, code: m.memberCode, name: m.fullName }))}
+        currencies={CURRENCIES}
+        projectTypes={PROJECT_TYPES}
+        projectStatuses={PROJECT_STATUSES}
+      />
+    </main>
+  );
+}

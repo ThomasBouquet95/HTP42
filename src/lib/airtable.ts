@@ -22,6 +22,7 @@ export const TABLES = {
   memberInvoices: "Member Invoices",
   tasks: "Tasks",
   contracts: "Contracts",
+  opportunities: "Opportunities",
   chatConversations: "Chat Conversations",
   chatMessages: "Chat Messages",
 } as const;
@@ -77,6 +78,19 @@ export const FIELDS = {
     country: "Country",
     keyContact: "Key Contact",
     notes: "Notes",
+  },
+  opportunities: {
+    title: "Title",
+    client: "Client",
+    stage: "Stage",
+    status: "Status",
+    statusNote: "Status Note",
+    contact: "Contact",
+    description: "Description",
+    estimatedValue: "Estimated Value",
+    currency: "Currency",
+    expectedStart: "Expected Start",
+    convertedProject: "Converted Project",
   },
   projectStaffing: {
     staffingCode: "Staffing Code",
@@ -4160,4 +4174,234 @@ export async function sendChatMessage(
       : [],
   );
   return messageFromRecord(created, memberById);
+}
+
+// ---------------------------------------------------------------------------
+// Admin: Opportunities (sales pipeline). A lightweight CRM: a potential
+// project tied to a client that can later be converted into a real Project.
+// The table is created lazily via the meta API (like the fields elsewhere)
+// so no manual Airtable setup is needed.
+// ---------------------------------------------------------------------------
+
+export type OpportunityStage = "Cold" | "In Discussion" | "Advanced";
+export const OPPORTUNITY_STAGES: OpportunityStage[] = ["Cold", "In Discussion", "Advanced"];
+
+export type OpportunityStatus = "Open" | "Won" | "Lost" | "On Hold";
+export const OPPORTUNITY_STATUSES: OpportunityStatus[] = ["Open", "Won", "Lost", "On Hold"];
+
+export type OpportunityRecord = {
+  id: string;
+  title: string;
+  clientRecordIds: string[];
+  clientCode: string;
+  clientName: string;
+  stage: OpportunityStage | "";
+  status: OpportunityStatus | "";
+  statusNote: string;
+  contact: string;
+  description: string;
+  estimatedValue: number | null;
+  currency: Currency | "";
+  expectedStart: string | null;
+  convertedProject: string;
+};
+
+export type OpportunityInput = {
+  title: string;
+  clientRecordIds: string[];
+  stage: OpportunityStage | "";
+  status: OpportunityStatus | "";
+  statusNote: string;
+  contact: string;
+  description: string;
+  estimatedValue: number | null;
+  currency: Currency | "";
+  expectedStart: string | null;
+  convertedProject?: string;
+};
+
+function opportunityFromRecord(
+  r: AirtableRecord<FieldSet>,
+  clientById: Map<string, { code: string; name: string }>,
+): OpportunityRecord {
+  const clientRecordIds = linkedIds(r, FIELDS.opportunities.client);
+  const c = clientRecordIds[0] ? clientById.get(clientRecordIds[0]) : undefined;
+  return {
+    id: r.id,
+    title: str(r, FIELDS.opportunities.title),
+    clientRecordIds,
+    clientCode: c?.code ?? "",
+    clientName: c?.name ?? "",
+    stage: (str(r, FIELDS.opportunities.stage) as OpportunityStage) || "",
+    status: (str(r, FIELDS.opportunities.status) as OpportunityStatus) || "",
+    statusNote: str(r, FIELDS.opportunities.statusNote),
+    contact: str(r, FIELDS.opportunities.contact),
+    description: str(r, FIELDS.opportunities.description),
+    estimatedValue: numOrNull(r, FIELDS.opportunities.estimatedValue),
+    currency: (str(r, FIELDS.opportunities.currency) as Currency) || "",
+    expectedStart: dateOrNull(r, FIELDS.opportunities.expectedStart),
+    convertedProject: str(r, FIELDS.opportunities.convertedProject),
+  };
+}
+
+// Create the Opportunities table (with its fields) if it doesn't exist yet.
+// Idempotent + cached. Returns true when the table is present/ready.
+let opportunitiesTableReady = false;
+export async function ensureOpportunitiesSchema(): Promise<boolean> {
+  if (opportunitiesTableReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string }>;
+    };
+    if (data.tables.some((t) => t.name === TABLES.opportunities)) {
+      opportunitiesTableReady = true;
+      return true;
+    }
+    const clientsTable = data.tables.find((t) => t.name === TABLES.clients);
+    const F = FIELDS.opportunities;
+    const fields: Array<Record<string, unknown>> = [
+      { name: F.title, type: "singleLineText" },
+      ...(clientsTable
+        ? [
+            {
+              name: F.client,
+              type: "multipleRecordLinks",
+              options: { linkedTableId: clientsTable.id },
+            },
+          ]
+        : []),
+      {
+        name: F.stage,
+        type: "singleSelect",
+        options: { choices: OPPORTUNITY_STAGES.map((s) => ({ name: s })) },
+      },
+      {
+        name: F.status,
+        type: "singleSelect",
+        options: { choices: OPPORTUNITY_STATUSES.map((s) => ({ name: s })) },
+      },
+      { name: F.statusNote, type: "multilineText" },
+      { name: F.contact, type: "singleLineText" },
+      { name: F.description, type: "multilineText" },
+      { name: F.estimatedValue, type: "number", options: { precision: 2 } },
+      {
+        name: F.currency,
+        type: "singleSelect",
+        options: { choices: (CURRENCIES as readonly string[]).map((c) => ({ name: c })) },
+      },
+      { name: F.expectedStart, type: "date", options: { dateFormat: { name: "iso" } } },
+      { name: F.convertedProject, type: "singleLineText" },
+    ];
+    const create = await fetch(metaUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.airtablePat}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: TABLES.opportunities,
+        description: "Sales pipeline: potential projects that can convert into a Project.",
+        fields,
+      }),
+    });
+    if (create.ok) {
+      opportunitiesTableReady = true;
+      return true;
+    }
+    console.error("Failed to create Opportunities table:", await create.text().catch(() => ""));
+    return false;
+  } catch (e) {
+    console.error("ensureOpportunitiesSchema failed:", e);
+    return false;
+  }
+}
+
+export async function listOpportunities(): Promise<OpportunityRecord[]> {
+  try {
+    const ok = await ensureOpportunitiesSchema();
+    if (!ok) return [];
+    const [records, clientById] = await Promise.all([
+      base(TABLES.opportunities).select().all(),
+      getClientIndex(),
+    ]);
+    return records.map((r) => opportunityFromRecord(r, clientById));
+  } catch (e) {
+    console.error("listOpportunities failed:", e);
+    return [];
+  }
+}
+
+export async function getOpportunityById(recordId: string): Promise<OpportunityRecord | null> {
+  try {
+    const [r, clientById] = await Promise.all([
+      base(TABLES.opportunities).find(recordId),
+      getClientIndex(),
+    ]);
+    return opportunityFromRecord(r, clientById);
+  } catch {
+    return null;
+  }
+}
+
+function opportunityFields(input: OpportunityInput): Record<string, unknown> {
+  const F = FIELDS.opportunities;
+  const fields: Record<string, unknown> = {
+    [F.title]: input.title,
+    [F.client]: input.clientRecordIds,
+    [F.stage]: input.stage === "" ? null : input.stage,
+    [F.status]: input.status === "" ? null : input.status,
+    [F.statusNote]: input.statusNote,
+    [F.contact]: input.contact,
+    [F.description]: input.description,
+    [F.estimatedValue]: input.estimatedValue,
+    [F.currency]: input.currency === "" ? null : input.currency,
+    [F.expectedStart]: input.expectedStart,
+  };
+  if (input.convertedProject !== undefined) {
+    fields[F.convertedProject] = input.convertedProject;
+  }
+  return fields;
+}
+
+export async function createOpportunity(input: OpportunityInput): Promise<string> {
+  await ensureOpportunitiesSchema();
+  const [created] = await base(TABLES.opportunities).create(
+    [{ fields: opportunityFields(input) as FieldSet }],
+    { typecast: true },
+  );
+  return created.id;
+}
+
+export async function updateOpportunity(recordId: string, input: OpportunityInput): Promise<void> {
+  await base(TABLES.opportunities).update(
+    [{ id: recordId, fields: opportunityFields(input) as FieldSet }],
+    { typecast: true },
+  );
+}
+
+// Partial update — used to mark an opportunity Won + stamp the created project.
+export async function patchOpportunity(
+  recordId: string,
+  patch: Partial<{ status: OpportunityStatus | ""; convertedProject: string; statusNote: string }>,
+): Promise<void> {
+  const F = FIELDS.opportunities;
+  const fields: Record<string, unknown> = {};
+  if (patch.status !== undefined) fields[F.status] = patch.status === "" ? null : patch.status;
+  if (patch.convertedProject !== undefined) fields[F.convertedProject] = patch.convertedProject;
+  if (patch.statusNote !== undefined) fields[F.statusNote] = patch.statusNote;
+  if (Object.keys(fields).length === 0) return;
+  await base(TABLES.opportunities).update(
+    [{ id: recordId, fields: fields as FieldSet }],
+    { typecast: true },
+  );
+}
+
+export async function deleteOpportunity(recordId: string): Promise<void> {
+  await base(TABLES.opportunities).destroy([recordId]);
 }
