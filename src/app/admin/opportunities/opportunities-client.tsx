@@ -605,10 +605,35 @@ function ConvertModal({
   const [saving, setSaving] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The code is auto-calculated from client + year; manualCode lets the admin
+  // override it (or type one when the client has no standard 3-letter code).
+  const [manualCode, setManualCode] = useState(false);
 
   const client = opportunity
     ? clients.find((c) => c.id === opportunity.clientRecordIds[0])
     : undefined;
+
+  // Fetch the next free "CLIENT-YEAR-NN" code for this client + start year.
+  async function regenerateCode(startDate: string) {
+    const code = client?.code ?? "";
+    if (!/^[A-Z]{3}$/.test(code)) {
+      setManualCode(true);
+      return;
+    }
+    const year = Number.parseInt((startDate || "").slice(0, 4), 10) || new Date().getFullYear();
+    setSuggesting(true);
+    try {
+      const r = await fetch(
+        `/api/admin/projects/next-code?clientCode=${encodeURIComponent(code)}&year=${year}`,
+      );
+      const d = (r.ok ? await r.json() : null) as { code?: string } | null;
+      if (d?.code) setForm((f) => ({ ...f, projectCode: d.code! }));
+    } catch {
+      // leave whatever's there; admin can switch to manual entry
+    } finally {
+      setSuggesting(false);
+    }
+  }
 
   // Prefill from the opportunity each time the modal opens, and try to
   // auto-suggest a project code from the client + start year.
@@ -628,18 +653,8 @@ function ConvertModal({
     });
     setSowFile(null);
     setError(null);
-    const code = client?.code ?? "";
-    if (/^[A-Z]{3}$/.test(code)) {
-      const year = Number.parseInt((startDate || "").slice(0, 4), 10) || new Date().getFullYear();
-      setSuggesting(true);
-      fetch(`/api/admin/projects/next-code?clientCode=${encodeURIComponent(code)}&year=${year}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d: { code?: string } | null) => {
-          if (d?.code) setForm((f) => (f.projectCode ? f : { ...f, projectCode: d.code! }));
-        })
-        .catch(() => {})
-        .finally(() => setSuggesting(false));
-    }
+    setManualCode(false);
+    void regenerateCode(startDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opportunity?.id]);
 
@@ -715,14 +730,60 @@ function ConvertModal({
         and marks the opportunity as Won. Fill in the details the project needs.
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
-        <FormField
-          label="Project code"
-          value={form.projectCode}
-          onChange={(v) => set("projectCode", v.toUpperCase())}
-          required
-          inputClassName="font-mono uppercase"
-          hint={suggesting ? <span className="text-slate-400">Suggesting…</span> : undefined}
-        />
+        {manualCode ? (
+          <FormField
+            label="Project code"
+            value={form.projectCode}
+            onChange={(v) => set("projectCode", v.toUpperCase())}
+            required
+            inputClassName="font-mono uppercase"
+            hint={
+              <button
+                type="button"
+                onClick={() => {
+                  setManualCode(false);
+                  void regenerateCode(form.startDate);
+                }}
+                className="text-brand-600 hover:text-brand-700"
+              >
+                Use auto code
+              </button>
+            }
+          />
+        ) : (
+          <label className="block">
+            <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+              Project code
+            </span>
+            <div className="mt-1 flex items-center gap-2">
+              <span className="flex-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-800">
+                {suggesting ? "Calculating…" : form.projectCode || "—"}
+              </span>
+              <button
+                type="button"
+                onClick={() => void regenerateCode(form.startDate)}
+                disabled={suggesting}
+                title="Recalculate"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-50"
+              >
+                <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+                  <path d="M13 3v3h-3M3 13v-3h3" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M12.5 6A5 5 0 0 0 3.5 6M3.5 10a5 5 0 0 0 9 0" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div className="mt-1 text-xs text-slate-400">
+              Auto from client + start year.{" "}
+              <button
+                type="button"
+                onClick={() => setManualCode(true)}
+                className="text-brand-600 hover:text-brand-700"
+              >
+                Enter manually
+              </button>
+            </div>
+          </label>
+        )}
         <FormField
           label="Project name"
           value={form.projectName}
