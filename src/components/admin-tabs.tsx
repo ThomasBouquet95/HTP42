@@ -7,6 +7,7 @@ import { DemoModeToggle } from "@/components/demo-mode";
 type PageKey =
   | "networkcockpit"
   | "members"
+  | "memberreviews"
   | "staffing"
   | "opportunities"
   | "signins"
@@ -36,6 +37,7 @@ const CATEGORIES: Category[] = [
     pages: [
       { key: "networkcockpit", href: "/admin/network", label: "Cockpit" },
       { key: "members", href: "/admin/members", label: "Members" },
+      { key: "memberreviews", href: "/admin/member-reviews", label: "Client review" },
       { key: "signins", href: "/admin/sign-ins", label: "App activity" },
     ],
   },

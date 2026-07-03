@@ -38,8 +38,8 @@ export default async function SurveyPage({ params }: { params: Promise<{ token: 
         ) : (
           <>
             <p className="mb-4 text-sm text-slate-600">
-              Rate from 0 to 5 stars (half-stars allowed) and add any comments. It only takes a
-              couple of minutes.
+              Rate from 0 to 5 stars (half-stars allowed) and add any comments. Your feedback
+              won&apos;t be shared with the working team, kept confidential.
             </p>
             <SurveyForm token={token} members={survey.members} />
           </>

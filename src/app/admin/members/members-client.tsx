@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
@@ -392,7 +393,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
             <col />{/* Member rate */}
             <col />{/* HTP42 rate */}
             <col className="w-12" />{/* CV — narrowed */}
-            <col className="w-10" />{/* actions */}
+            <col className="w-20" />{/* actions */}
           </colgroup>
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
@@ -460,10 +461,22 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                   >
                     <DownloadChip url={m.cv?.url} title="Open CV" emptyTitle="No CV on file" />
                   </td>
-                  <td className="px-2 py-1.5 text-right">
-                    <IconButton title="Edit" onClick={() => openEdit(m)}>
-                      <EditIcon />
-                    </IconButton>
+                  <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Link
+                        href={`/admin/member-reviews?member=${encodeURIComponent(m.memberCode)}`}
+                        title="Client reviews"
+                        aria-label="Client reviews"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-amber-600"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+                          <path d="M12 3.5l2.6 5.3 5.9.85-4.25 4.14 1 5.86L12 17l-5.25 2.65 1-5.86L3.5 9.65l5.9-.85z" strokeLinejoin="round" />
+                        </svg>
+                      </Link>
+                      <IconButton title="Edit" onClick={() => openEdit(m)}>
+                        <EditIcon />
+                      </IconButton>
+                    </div>
                   </td>
                 </tr>
               ))
