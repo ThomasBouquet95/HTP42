@@ -11,6 +11,7 @@ type PageKey =
   | "opportunities"
   | "signins"
   | "clients"
+  | "surveys"
   | "projects"
   | "timesheets"
   | "payments"
@@ -41,7 +42,10 @@ const CATEGORIES: Category[] = [
   {
     key: "clients",
     label: "Clients & Partners",
-    pages: [{ key: "clients", href: "/admin/clients", label: "Clients & Partners" }],
+    pages: [
+      { key: "clients", href: "/admin/clients", label: "Clients & Partners" },
+      { key: "surveys", href: "/admin/surveys", label: "Client feedback" },
+    ],
   },
   {
     key: "projects",

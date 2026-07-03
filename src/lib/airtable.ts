@@ -23,6 +23,7 @@ export const TABLES = {
   tasks: "Tasks",
   contracts: "Contracts",
   opportunities: "Opportunities",
+  clientSurveys: "Client Surveys",
   chatConversations: "Chat Conversations",
   chatMessages: "Chat Messages",
 } as const;
@@ -91,6 +92,22 @@ export const FIELDS = {
     currency: "Currency",
     expectedStart: "Expected Start",
     convertedProject: "Converted Project",
+  },
+  clientSurveys: {
+    token: "Token",
+    projectCode: "Project Code",
+    projectName: "Project Name",
+    recipientName: "Recipient Name",
+    recipientEmail: "Recipient Email",
+    sentAt: "Sent At",
+    completedAt: "Completed At",
+    overallGrade: "Overall Grade",
+    overallWentWell: "Overall Went Well",
+    overallImprove: "Overall Improve",
+    membersJson: "Members JSON",
+    memberRatingsJson: "Member Ratings JSON",
+    emailSent: "Email Sent",
+    emailError: "Email Error",
   },
   projectStaffing: {
     staffingCode: "Staffing Code",
@@ -4453,4 +4470,256 @@ export async function patchOpportunity(
 
 export async function deleteOpportunity(recordId: string): Promise<void> {
   await base(TABLES.opportunities).destroy([recordId]);
+}
+
+// ---------------------------------------------------------------------------
+// Client feedback surveys. Each row is one recipient's survey instance,
+// reached by an unguessable token link (no login). One submission per link.
+// A "campaign" is just the set of rows sharing a project; the admin view
+// consolidates by project. The table is created lazily via the meta API.
+// ---------------------------------------------------------------------------
+
+export type SurveyMemberRating = {
+  code: string;
+  name: string;
+  grade: number | null;
+  wentWell: string;
+  improve: string;
+};
+
+export type SurveyTeamMember = { code: string; name: string };
+
+export type SurveyRecord = {
+  id: string;
+  token: string;
+  projectCode: string;
+  projectName: string;
+  recipientName: string;
+  recipientEmail: string;
+  sentAt: string | null;
+  completedAt: string | null;
+  overallGrade: number | null;
+  overallWentWell: string;
+  overallImprove: string;
+  members: SurveyTeamMember[];
+  memberRatings: SurveyMemberRating[];
+  emailSent: boolean;
+  emailError: string;
+};
+
+function parseJsonArray<T>(raw: string): T[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? (v as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function surveyFromRecord(r: AirtableRecord<FieldSet>): SurveyRecord {
+  const F = FIELDS.clientSurveys;
+  return {
+    id: r.id,
+    token: str(r, F.token),
+    projectCode: str(r, F.projectCode),
+    projectName: str(r, F.projectName),
+    recipientName: str(r, F.recipientName),
+    recipientEmail: str(r, F.recipientEmail),
+    sentAt: str(r, F.sentAt) || null,
+    completedAt: str(r, F.completedAt) || null,
+    overallGrade: numOrNull(r, F.overallGrade),
+    overallWentWell: str(r, F.overallWentWell),
+    overallImprove: str(r, F.overallImprove),
+    members: parseJsonArray<SurveyTeamMember>(str(r, F.membersJson)),
+    memberRatings: parseJsonArray<SurveyMemberRating>(str(r, F.memberRatingsJson)),
+    emailSent: r.get(F.emailSent) === true,
+    emailError: str(r, F.emailError),
+  };
+}
+
+let clientSurveysTableReady = false;
+export async function ensureClientSurveysSchema(): Promise<boolean> {
+  if (clientSurveysTableReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { tables: Array<{ name: string }> };
+    if (data.tables.some((t) => t.name === TABLES.clientSurveys)) {
+      clientSurveysTableReady = true;
+      return true;
+    }
+    const F = FIELDS.clientSurveys;
+    const fields: Array<Record<string, unknown>> = [
+      { name: F.token, type: "singleLineText" },
+      { name: F.projectCode, type: "singleLineText" },
+      { name: F.projectName, type: "singleLineText" },
+      { name: F.recipientName, type: "singleLineText" },
+      { name: F.recipientEmail, type: "singleLineText" },
+      { name: F.sentAt, type: "singleLineText" },
+      { name: F.completedAt, type: "singleLineText" },
+      { name: F.overallGrade, type: "number", options: { precision: 1 } },
+      { name: F.overallWentWell, type: "multilineText" },
+      { name: F.overallImprove, type: "multilineText" },
+      { name: F.membersJson, type: "multilineText" },
+      { name: F.memberRatingsJson, type: "multilineText" },
+      { name: F.emailSent, type: "checkbox", options: { color: "greenBright", icon: "check" } },
+      { name: F.emailError, type: "singleLineText" },
+    ];
+    const create = await fetch(metaUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.airtablePat}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: TABLES.clientSurveys,
+        description: "Client feedback surveys — one row per recipient link.",
+        fields,
+      }),
+    });
+    if (create.ok) {
+      clientSurveysTableReady = true;
+      return true;
+    }
+    console.error("Failed to create Client Surveys table:", await create.text().catch(() => ""));
+    return false;
+  } catch (e) {
+    console.error("ensureClientSurveysSchema failed:", e);
+    return false;
+  }
+}
+
+// The staffed team on a project (unique members), for the per-member ratings.
+export async function getProjectTeam(projectCode: string): Promise<SurveyTeamMember[]> {
+  if (!projectCode) return [];
+  const [staffings, members] = await Promise.all([listAllStaffings(), listAllMembers()]);
+  const memberById = new Map(members.map((m) => [m.id, m]));
+  const out = new Map<string, SurveyTeamMember>();
+  for (const s of staffings) {
+    if (s.projectCode !== projectCode) continue;
+    s.memberRecordIds.forEach((id, i) => {
+      const m = memberById.get(id);
+      const code = m?.memberCode ?? s.memberCodes[i] ?? id;
+      const name = m?.fullName ?? code;
+      if (!out.has(code)) out.set(code, { code, name });
+    });
+  }
+  return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function listSurveys(): Promise<SurveyRecord[]> {
+  try {
+    const ok = await ensureClientSurveysSchema();
+    if (!ok) return [];
+    const records = await base(TABLES.clientSurveys).select().all();
+    return records.map(surveyFromRecord);
+  } catch (e) {
+    console.error("listSurveys failed:", e);
+    return [];
+  }
+}
+
+export async function getSurveyByToken(token: string): Promise<SurveyRecord | null> {
+  if (!token) return null;
+  try {
+    await ensureClientSurveysSchema();
+    const records = await base(TABLES.clientSurveys)
+      .select({
+        filterByFormula: `{${FIELDS.clientSurveys.token}} = "${escape(token)}"`,
+        maxRecords: 1,
+      })
+      .firstPage();
+    return records[0] ? surveyFromRecord(records[0]) : null;
+  } catch (e) {
+    console.error("getSurveyByToken failed:", e);
+    return null;
+  }
+}
+
+export type SurveyRecipientInput = {
+  projectCode: string;
+  projectName: string;
+  recipientName: string;
+  recipientEmail: string;
+  members: SurveyTeamMember[];
+};
+
+// Create one survey row (one recipient link) and return the token + id.
+export async function createSurveyRecipient(
+  input: SurveyRecipientInput,
+): Promise<{ id: string; token: string }> {
+  await ensureClientSurveysSchema();
+  // Web Crypto (global in Node 18+) — avoids a node:crypto import that would
+  // break the client bundle, since this module is also imported by client UI.
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  const token = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  const F = FIELDS.clientSurveys;
+  const [created] = await base(TABLES.clientSurveys).create([
+    {
+      fields: {
+        [F.token]: token,
+        [F.projectCode]: input.projectCode,
+        [F.projectName]: input.projectName,
+        [F.recipientName]: input.recipientName,
+        [F.recipientEmail]: input.recipientEmail,
+        [F.sentAt]: new Date().toISOString(),
+        [F.membersJson]: JSON.stringify(input.members),
+      } as FieldSet,
+    },
+  ]);
+  return { id: created.id, token };
+}
+
+export async function markSurveyEmail(
+  recordId: string,
+  result: { ok: true } | { ok: false; error: string },
+): Promise<void> {
+  const F = FIELDS.clientSurveys;
+  await base(TABLES.clientSurveys).update([
+    {
+      id: recordId,
+      fields: (result.ok
+        ? { [F.emailSent]: true, [F.emailError]: "" }
+        : { [F.emailSent]: false, [F.emailError]: result.error.slice(0, 250) }) as FieldSet,
+    },
+  ]);
+}
+
+export type SurveySubmission = {
+  overallGrade: number | null;
+  overallWentWell: string;
+  overallImprove: string;
+  memberRatings: SurveyMemberRating[];
+};
+
+// Submit a survey by token. Returns false if the token is unknown or the
+// survey has already been completed (one submission per link).
+export async function submitSurvey(token: string, sub: SurveySubmission): Promise<boolean> {
+  const existing = await getSurveyByToken(token);
+  if (!existing) return false;
+  if (existing.completedAt) return false;
+  const F = FIELDS.clientSurveys;
+  await base(TABLES.clientSurveys).update([
+    {
+      id: existing.id,
+      fields: {
+        [F.completedAt]: new Date().toISOString(),
+        [F.overallGrade]: sub.overallGrade,
+        [F.overallWentWell]: sub.overallWentWell,
+        [F.overallImprove]: sub.overallImprove,
+        [F.memberRatingsJson]: JSON.stringify(sub.memberRatings),
+      } as FieldSet,
+    },
+  ]);
+  return true;
+}
+
+export async function deleteSurvey(recordId: string): Promise<void> {
+  await base(TABLES.clientSurveys).destroy([recordId]);
 }
