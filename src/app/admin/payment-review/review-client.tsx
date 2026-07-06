@@ -11,11 +11,13 @@ export type ReviewBundle = {
     id: string;
     code: string;
     type: string;
+    status: string;
     amount: number | null;
     currency: string;
     amountEur: number | null;
     dueDate: string | null;
     invoiceDate: string | null;
+    paymentDate: string | null;
     invoiceReference: string;
     beneficiary: string;
     comment: string;
@@ -69,29 +71,12 @@ export type ReviewBundle = {
   }>;
 };
 
-export type PastPayment = {
-  id: string;
-  code: string;
-  status: string;
-  amount: number | null;
-  currency: string;
-  amountEur: number | null;
-  invoiceDate: string | null;
-  paymentDate: string | null;
-  dueDate: string | null;
-  invoiceReference: string;
-  comment: string;
-  invoiceCode: string;
-  invoicePdfUrl: string;
-  projectCode: string;
-};
-
 export type MemberGroup = {
   memberId: string;
   memberName: string;
   memberCode: string;
   underReview: ReviewBundle[];
-  past: PastPayment[];
+  past: ReviewBundle[];
 };
 
 function money(v: number | null, currency: string): string {
@@ -233,26 +218,16 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
         ds.map((g) => {
           const b = g.underReview.find((x) => x.payment.id === id);
           if (!b) return g;
-          const past: PastPayment = {
-            id: b.payment.id,
-            code: b.payment.code,
-            status,
-            amount: b.payment.amount,
-            currency: b.payment.currency,
-            amountEur: b.payment.amountEur,
-            invoiceDate: b.payment.invoiceDate,
-            paymentDate: paymentDate ?? null,
-            dueDate: b.payment.dueDate,
-            invoiceReference: b.payment.invoiceReference,
-            comment: b.payment.comment,
-            invoiceCode: b.invoice?.code ?? "",
-            invoicePdfUrl: b.payment.invoicePdfUrl || b.invoice?.pdfUrl || "",
-            projectCode: b.project?.code ?? "",
+          // Move the same bundle into "past" with its new status/payment date so
+          // the detail (invoice, timesheets, staffing, SOW) is preserved.
+          const moved: ReviewBundle = {
+            ...b,
+            payment: { ...b.payment, status, paymentDate: paymentDate ?? b.payment.paymentDate },
           };
           return {
             ...g,
             underReview: g.underReview.filter((x) => x.payment.id !== id),
-            past: [past, ...g.past],
+            past: [moved, ...g.past],
           };
         }),
       );
@@ -380,17 +355,18 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
                 No past payments yet.
               </div>
             ) : (
-              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                <ul className="divide-y divide-slate-100">
-                  {selected.past.map((p) => (
-                    <PastRow
-                      key={p.id}
-                      p={p}
-                      open={openItems.has(p.id)}
-                      onToggle={() => toggleItem(p.id)}
-                    />
-                  ))}
-                </ul>
+              <div className="space-y-3">
+                {selected.past.map((b) => (
+                  <BundleDetail
+                    key={b.payment.id}
+                    bundle={b}
+                    readOnly
+                    open={openItems.has(b.payment.id)}
+                    onToggle={() => toggleItem(b.payment.id)}
+                    expandedTs={expandedTs}
+                    toggleTs={toggleTs}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -420,93 +396,10 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
   );
 }
 
-function PastRow({
-  p,
-  open,
-  onToggle,
-}: {
-  p: PastPayment;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  const tone = statusTone(p.status);
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-50"
-      >
-        <svg
-          viewBox="0 0 16 16"
-          className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          aria-hidden
-        >
-          <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${TONE_PILL[tone]}`}>
-          {p.status}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-[11px] text-slate-500">
-            <span className="font-mono">#{p.code || "—"}</span>
-            {p.invoiceCode ? <span className="font-mono">· {p.invoiceCode}</span> : null}
-            {p.projectCode ? <span className="truncate">· {p.projectCode}</span> : null}
-          </div>
-          <div className="text-[11px] text-slate-400">
-            {tone === "paid" && p.paymentDate
-              ? `Paid ${longDate(p.paymentDate)}`
-              : p.invoiceDate
-              ? `Invoiced ${longDate(p.invoiceDate)}`
-              : p.dueDate
-              ? `Due ${longDate(p.dueDate)}`
-              : ""}
-          </div>
-        </div>
-        <div className="shrink-0 text-right">
-          <div className="text-xs font-semibold tabular-nums text-slate-800 demo-blur">
-            {money(p.amount, p.currency)}
-          </div>
-          {p.amountEur != null && p.currency !== "EUR" ? (
-            <div className="text-[10px] text-slate-400 demo-blur">
-              ≈ {p.amountEur.toLocaleString("en-US", { maximumFractionDigits: 0 })} EUR
-            </div>
-          ) : null}
-        </div>
-      </button>
-      {open ? (
-        <div className="border-t border-slate-100 bg-slate-50/60 px-3 py-2.5">
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
-            <Field label="Invoice" value={p.invoiceCode || p.invoiceReference} mono />
-            <Field label="Project" value={p.projectCode} mono />
-            <Field label="Amount" value={money(p.amount, p.currency)} blur />
-            <Field label="Invoice date" value={p.invoiceDate ? longDate(p.invoiceDate) : "—"} />
-            <Field label="Payment date" value={p.paymentDate ? longDate(p.paymentDate) : "—"} />
-            <Field label="Due date" value={p.dueDate ? longDate(p.dueDate) : "—"} />
-          </dl>
-          {p.comment ? (
-            <p className="mt-2 rounded-md bg-white p-2 text-[11px] text-slate-600 demo-blur">
-              {p.comment}
-            </p>
-          ) : null}
-          {p.invoicePdfUrl ? (
-            <div className="mt-2">
-              <DownloadChip url={p.invoicePdfUrl} title="Open invoice PDF" />
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </li>
-  );
-}
-
 function BundleDetail({
   bundle: selected,
-  saving,
+  saving = false,
+  readOnly = false,
   open,
   onToggle,
   expandedTs,
@@ -516,17 +409,24 @@ function BundleDetail({
   onCancel,
 }: {
   bundle: ReviewBundle;
-  saving: boolean;
+  saving?: boolean;
+  readOnly?: boolean;
   open: boolean;
   onToggle: () => void;
   expandedTs: Set<string>;
   toggleTs: (id: string) => void;
-  onApprove: () => void;
-  onMarkPaid: () => void;
-  onCancel: () => void;
+  onApprove?: () => void;
+  onMarkPaid?: () => void;
+  onCancel?: () => void;
 }) {
+  const tone = readOnly ? statusTone(selected.payment.status) : "review";
+  const statusLabel = readOnly ? selected.payment.status || "—" : "Under review";
   return (
-    <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/30 p-3">
+    <div
+      className={`space-y-3 rounded-lg border p-3 ${
+        readOnly ? "border-slate-200 bg-white" : "border-amber-200 bg-amber-50/30"
+      }`}
+    >
       {/* Header + actions */}
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -550,8 +450,8 @@ function BundleDetail({
               <span className="rounded-md bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] text-white">
                 #{selected.payment.code || "—"}
               </span>
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
-                Under review
+              <span className={`rounded-full px-2 py-0.5 font-medium ring-1 ${TONE_PILL[tone]}`}>
+                {statusLabel}
               </span>
               {selected.payment.type ? <span>{selected.payment.type}</span> : null}
             </button>
@@ -565,7 +465,11 @@ function BundleDetail({
                 ≈ {selected.payment.amountEur.toLocaleString("en-US", { maximumFractionDigits: 2 })} EUR
               </div>
             ) : null}
-            {selected.payment.dueDate ? (
+            {tone === "paid" && selected.payment.paymentDate ? (
+              <div className="mt-0.5 text-[11px] text-emerald-700">
+                Paid {selected.payment.paymentDate}
+              </div>
+            ) : selected.payment.dueDate ? (
               <div className="mt-0.5 text-[11px] text-slate-500">Due {selected.payment.dueDate}</div>
             ) : null}
           </div>
@@ -575,38 +479,49 @@ function BundleDetail({
             {selected.payment.comment}
           </p>
         ) : null}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            disabled={saving}
-            onClick={onApprove}
-            className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-          >
-            Approve → To be paid
-          </button>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={onMarkPaid}
-            className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
-          >
-            Mark paid
-          </button>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={onCancel}
-            className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <Link
-            href={`/admin/payments?search=${encodeURIComponent(selected.payment.code)}`}
-            className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700"
-          >
-            Open in Payments →
-          </Link>
-        </div>
+        {!readOnly ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onApprove}
+              className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+            >
+              Approve → To be paid
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onMarkPaid}
+              className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+            >
+              Mark paid
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onCancel}
+              className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <Link
+              href={`/admin/payments?search=${encodeURIComponent(selected.payment.code)}`}
+              className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700"
+            >
+              Open in Payments →
+            </Link>
+          </div>
+        ) : (
+          <div className="mt-3 flex justify-end">
+            <Link
+              href={`/admin/payments?search=${encodeURIComponent(selected.payment.code)}`}
+              className="text-xs font-medium text-brand-600 hover:text-brand-700"
+            >
+              Open in Payments →
+            </Link>
+          </div>
+        )}
       </div>
 
       {open ? (

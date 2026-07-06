@@ -14,7 +14,6 @@ import {
 import {
   PaymentReviewClient,
   type MemberGroup,
-  type PastPayment,
   type ReviewBundle,
 } from "./review-client";
 
@@ -95,11 +94,13 @@ export default async function PaymentReviewPage() {
         id: p.id,
         code: p.paymentCode,
         type: p.type,
+        status: p.paymentStatus || "",
         amount: p.invoiceValue,
         currency: p.invoiceCurrency,
         amountEur: p.invoiceValueEur,
         dueDate: p.dueDate,
         invoiceDate: p.invoiceDate,
+        paymentDate: p.paymentDate,
         invoiceReference: p.invoiceReference,
         beneficiary: p.beneficiary,
         comment: p.comment,
@@ -161,26 +162,6 @@ export default async function PaymentReviewPage() {
     };
   }
 
-  function buildPast(p: PaymentRecord): PastPayment {
-    const invoice = p.memberInvoiceRecordIds.map((id) => invoiceById.get(id)).find(Boolean);
-    return {
-      id: p.id,
-      code: p.paymentCode,
-      status: p.paymentStatus || "—",
-      amount: p.invoiceValue,
-      currency: p.invoiceCurrency,
-      amountEur: p.invoiceValueEur,
-      invoiceDate: p.invoiceDate,
-      paymentDate: p.paymentDate,
-      dueDate: p.dueDate,
-      invoiceReference: p.invoiceReference,
-      comment: p.comment,
-      invoiceCode: invoice?.invoiceCode ?? "",
-      invoicePdfUrl: p.invoicePdf?.url ?? invoice?.pdf?.url ?? "",
-      projectCode: invoice?.projectCode || p.projectCodes[0] || "",
-    };
-  }
-
   // One group per network member. Seed from submitted invoices (the user wants
   // every member who has submitted at least one invoice to appear), and also
   // ensure any member carrying an outflow payment shows up so review items are
@@ -215,7 +196,7 @@ export default async function PaymentReviewPage() {
     const m = memberById.get(memberId);
     const g = ensureGroup(memberId, m?.fullName || "", m?.memberCode || p.memberCodes[0] || "");
     if (isUnderReview(p.paymentStatus)) g.underReview.push(buildBundle(p));
-    else g.past.push(buildPast(p));
+    else g.past.push(buildBundle(p));
   }
 
   // Sort each member's past payments newest first (by payment date, then
@@ -225,7 +206,9 @@ export default async function PaymentReviewPage() {
     .map((g) => ({
       ...g,
       past: g.past.sort((a, b) =>
-        (b.paymentDate ?? b.invoiceDate ?? "").localeCompare(a.paymentDate ?? a.invoiceDate ?? ""),
+        (b.payment.paymentDate ?? b.payment.invoiceDate ?? "").localeCompare(
+          a.payment.paymentDate ?? a.payment.invoiceDate ?? "",
+        ),
       ),
     }))
     .sort(
