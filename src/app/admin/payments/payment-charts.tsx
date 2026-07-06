@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PaymentRecord } from "@/lib/airtable";
+import { effectiveEur } from "@/lib/fx";
+
+export { effectiveEur };
 
 // Shared financial-chart toolkit used by the Cockpit page. The data
 // builders are pure; the chart components are client-only (they measure
@@ -20,32 +23,6 @@ export type MonthRow = [string, MonthCell];
 // Canonical statuses we surface in the breakdown. "Paid" = executed,
 // the rest = planned. Order: most-informative (money moved) first.
 const STATUS_ORDER = ["Paid", "To be paid", "Scheduled", "Under Review"] as const;
-
-// Fallback FX rates (foreign currency -> EUR) used ONLY when a payment has a
-// foreign-currency amount but no stored EUR value and no per-row FX rate. Keeps
-// such invoices visible in the charts instead of silently counting as 0.
-// Adjust here if the desk rate drifts materially.
-const DEFAULT_FX_TO_EUR: Record<string, number> = {
-  USD: 0.92,
-  CHF: 1.04,
-};
-
-// The EUR amount a payment should contribute to charts/totals. Prefers the
-// value stored on the record; when that's blank we derive it so invoices
-// entered without an explicit EUR conversion aren't dropped:
-//   - EUR invoices count at face value,
-//   - foreign invoices use their own FX rate when present,
-//   - otherwise fall back to DEFAULT_FX_TO_EUR (face value if the currency is
-//     unknown, so nothing silently disappears).
-export function effectiveEur(p: PaymentRecord): number {
-  if (p.invoiceValueEur != null) return p.invoiceValueEur;
-  const value = p.invoiceValue;
-  if (value == null) return 0;
-  if (p.invoiceCurrency === "EUR" || p.invoiceCurrency === "") return value;
-  if (p.fxRateToEur != null) return value * p.fxRateToEur;
-  const fallback = DEFAULT_FX_TO_EUR[p.invoiceCurrency];
-  return fallback != null ? value * fallback : value;
-}
 
 // Charts always exclude Canceled. "executed" scope further narrows to
 // Paid only.

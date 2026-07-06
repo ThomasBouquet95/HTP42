@@ -1,6 +1,7 @@
 import { cache } from "react";
 import Airtable, { type FieldSet, type Record as AirtableRecord } from "airtable";
 import { env } from "./env";
+import { resolvePaymentEur } from "./fx";
 
 type AirtableBase = ReturnType<Airtable["base"]>;
 
@@ -1546,6 +1547,14 @@ export type PaymentInput = {
 };
 
 function paymentFields(input: PaymentInput): Record<string, unknown> {
+  // Always derive the FX rate + EUR value from the amount and currency at write
+  // time so the stored "Invoice Value EUR" is never left blank (EUR normalizes
+  // to rate 1). This keeps CSV exports/pivots and the cockpit in agreement.
+  const { fxRateToEur, invoiceValueEur } = resolvePaymentEur({
+    currency: input.invoiceCurrency,
+    value: input.invoiceValue,
+    fx: input.fxRateToEur,
+  });
   return {
     [FIELDS.payments.direction]: input.direction === "" ? null : input.direction,
     [FIELDS.payments.type]: input.type,
@@ -1557,8 +1566,8 @@ function paymentFields(input: PaymentInput): Record<string, unknown> {
     [FIELDS.payments.invoiceReference]: input.invoiceReference,
     [FIELDS.payments.invoiceCurrency]: input.invoiceCurrency === "" ? null : input.invoiceCurrency,
     [FIELDS.payments.invoiceValue]: input.invoiceValue,
-    [FIELDS.payments.fxRateToEur]: input.fxRateToEur,
-    [FIELDS.payments.invoiceValueEur]: input.invoiceValueEur,
+    [FIELDS.payments.fxRateToEur]: fxRateToEur,
+    [FIELDS.payments.invoiceValueEur]: invoiceValueEur,
     [FIELDS.payments.paymentTerms]: input.paymentTerms,
     [FIELDS.payments.paymentStatus]: input.paymentStatus === "" ? null : input.paymentStatus,
     // Payment Date should reflect the day money actually moved — only
@@ -1606,6 +1615,44 @@ export async function updatePayment(recordId: string, input: PaymentInput): Prom
 
 export async function deletePayment(recordId: string): Promise<void> {
   await base(TABLES.payments).destroy([recordId]);
+}
+
+// One-time (re-runnable) backfill: recompute the stored FX rate + EUR value for
+// every payment from its amount and currency, so the "Invoice Value EUR" field
+// is never left blank (EUR normalizes to rate 1). New writes are normalized at
+// save time via paymentFields; this repairs rows saved before that. Safe to run
+// repeatedly, only touches rows whose stored values differ from the derived
+// ones. Returns how many rows were scanned and updated.
+export async function backfillPaymentEur(): Promise<{ scanned: number; updated: number }> {
+  const records = await base(TABLES.payments).select().all();
+  const F = FIELDS.payments;
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const updates: { id: string; fields: FieldSet }[] = [];
+  for (const r of records) {
+    const value = numOrNull(r, F.invoiceValue);
+    if (value == null) continue; // nothing to convert
+    const currency = str(r, F.invoiceCurrency);
+    const fx = numOrNull(r, F.fxRateToEur);
+    const resolved = resolvePaymentEur({ currency, value, fx });
+    const desiredFx = resolved.fxRateToEur;
+    const desiredEur = resolved.invoiceValueEur == null ? null : round2(resolved.invoiceValueEur);
+    const curFx = fx;
+    const curEur = numOrNull(r, F.invoiceValueEur);
+    const curEurRounded = curEur == null ? null : round2(curEur);
+    if (curFx === desiredFx && curEurRounded === desiredEur) continue;
+    updates.push({
+      id: r.id,
+      fields: {
+        [F.fxRateToEur]: desiredFx,
+        [F.invoiceValueEur]: desiredEur,
+      } as FieldSet,
+    });
+  }
+  // Airtable caps updates at 10 per request.
+  for (let i = 0; i < updates.length; i += 10) {
+    await base(TABLES.payments).update(updates.slice(i, i + 10));
+  }
+  return { scanned: records.length, updated: updates.length };
 }
 
 // ---------------------------------------------------------------------------
