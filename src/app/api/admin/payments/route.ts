@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
 import { createPayment, CURRENCIES, PAYMENT_STATUSES, type Currency, type PaymentDirection, type PaymentStatus } from "@/lib/airtable";
+import { apiError, zodMessage } from "@/lib/errors";
 
 const nullableNumber = z.union([z.number(), z.null()]).optional();
 const nullableDate = z.union([z.string().trim().min(1), z.null()]).optional();
@@ -37,32 +38,33 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
   const d = parsed.data;
-  const id = await createPayment({
-    direction: d.direction as PaymentDirection | "",
-    type: d.type,
-    projectRecordIds: d.projectRecordIds,
-    clientRecordIds: d.clientRecordIds,
-    memberRecordIds: d.memberRecordIds,
-    memberInvoiceRecordIds: d.memberInvoiceRecordIds,
-    invoiceDate: d.invoiceDate ?? null,
-    invoiceReference: d.invoiceReference,
-    invoiceCurrency: d.invoiceCurrency as Currency | "",
-    invoiceValue: d.invoiceValue ?? null,
-    fxRateToEur: d.fxRateToEur ?? null,
-    invoiceValueEur: d.invoiceValueEur ?? null,
-    paymentTerms: d.paymentTerms,
-    paymentStatus: d.paymentStatus as PaymentStatus | "",
-    paymentDate: d.paymentDate ?? null,
-    dueDate: d.dueDate ?? null,
-    beneficiary: d.beneficiary,
-    comment: d.comment,
-    invoiceUrl: d.invoiceUrl,
-  });
-  return NextResponse.json({ id });
+  try {
+    const id = await createPayment({
+      direction: d.direction as PaymentDirection | "",
+      type: d.type,
+      projectRecordIds: d.projectRecordIds,
+      clientRecordIds: d.clientRecordIds,
+      memberRecordIds: d.memberRecordIds,
+      memberInvoiceRecordIds: d.memberInvoiceRecordIds,
+      invoiceDate: d.invoiceDate ?? null,
+      invoiceReference: d.invoiceReference,
+      invoiceCurrency: d.invoiceCurrency as Currency | "",
+      invoiceValue: d.invoiceValue ?? null,
+      fxRateToEur: d.fxRateToEur ?? null,
+      invoiceValueEur: d.invoiceValueEur ?? null,
+      paymentTerms: d.paymentTerms,
+      paymentStatus: d.paymentStatus as PaymentStatus | "",
+      paymentDate: d.paymentDate ?? null,
+      dueDate: d.dueDate ?? null,
+      beneficiary: d.beneficiary,
+      comment: d.comment,
+      invoiceUrl: d.invoiceUrl,
+    });
+    return NextResponse.json({ id });
+  } catch (e) {
+    return apiError(e, "save the payment");
+  }
 }

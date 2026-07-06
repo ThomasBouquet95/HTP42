@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { uploadMemberAttachment, clearMemberAttachment } from "@/lib/airtable";
+import { apiError } from "@/lib/errors";
 
 const MAX_BYTES = 1 * 1024 * 1024;
 const ALLOWED_TYPES = [
@@ -39,17 +40,18 @@ export async function POST(request: Request) {
       base64,
     );
     return NextResponse.json({ member: updated });
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Upload failed." },
-      { status: 500 },
-    );
+  } catch (e) {
+    return apiError(e, "replace your CV");
   }
 }
 
 export async function DELETE() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
-  const updated = await clearMemberAttachment(session.sub, "cv");
-  return NextResponse.json({ member: updated });
+  try {
+    const updated = await clearMemberAttachment(session.sub, "cv");
+    return NextResponse.json({ member: updated });
+  } catch (e) {
+    return apiError(e, "remove your CV");
+  }
 }

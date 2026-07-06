@@ -18,6 +18,7 @@ import {
 } from "@/lib/airtable";
 import { sendMailViaGraph } from "@/lib/email";
 import { env } from "@/lib/env";
+import { apiError, zodMessage } from "@/lib/errors";
 
 // Recipients copied on every outflow that flips to Paid. These are the
 // accounting inboxes (Qonto receipt bank, Fulll bookkeeping forwarder, and
@@ -53,14 +54,8 @@ export async function PATCH(
   const body = await request.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
-  // Capture the previous state BEFORE the update so we can detect the
-  // Outflow → Paid transition and fire the receipt email exactly once.
-  const before = await getPaymentById(id);
   const nextStatus = parsed.data.paymentStatus as PaymentStatus | "";
   const paymentDate = parsed.data.paymentDate ?? null;
   if (nextStatus === "Paid" && !paymentDate) {
@@ -69,25 +64,32 @@ export async function PATCH(
       { status: 400 },
     );
   }
-  await updatePaymentStatus(id, nextStatus, paymentDate);
-  if (before && shouldNotifyOutflowPaid(before, nextStatus)) {
-    // Re-read the record so the email body uses the saved values (the PATCH
-    // only carries the status field, the rest stays as it was).
-    const after = (await getPaymentById(id)) ?? before;
-    // Best-effort: don't block the response or fail the status flip if the
-    // email machinery is misconfigured / Graph rejects the attachment.
-    void notifyOutflowPaid(after).catch((e) => {
-      console.error("Outflow-paid notification failed:", e);
-    });
+  try {
+    // Capture the previous state BEFORE the update so we can detect the
+    // Outflow → Paid transition and fire the receipt email exactly once.
+    const before = await getPaymentById(id);
+    await updatePaymentStatus(id, nextStatus, paymentDate);
+    if (before && shouldNotifyOutflowPaid(before, nextStatus)) {
+      // Re-read the record so the email body uses the saved values (the PATCH
+      // only carries the status field, the rest stays as it was).
+      const after = (await getPaymentById(id)) ?? before;
+      // Best-effort: don't block the response or fail the status flip if the
+      // email machinery is misconfigured / Graph rejects the attachment.
+      void notifyOutflowPaid(after).catch((e) => {
+        console.error("Outflow-paid notification failed:", e);
+      });
+    }
+    // Carry the billing lifecycle forward: a payment going Paid marks its linked
+    // member invoices Paid and flips their Invoiced timesheets to Paid.
+    if (before && becamePaid(before, nextStatus) && before.memberInvoiceRecordIds.length > 0) {
+      void cascadeInvoicePaidForPayment(before).catch((e) => {
+        console.error("Invoice-paid cascade failed:", e);
+      });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return apiError(e, "update the payment status");
   }
-  // Carry the billing lifecycle forward: a payment going Paid marks its linked
-  // member invoices Paid and flips their Invoiced timesheets to Paid.
-  if (before && becamePaid(before, nextStatus) && before.memberInvoiceRecordIds.length > 0) {
-    void cascadeInvoicePaidForPayment(before).catch((e) => {
-      console.error("Invoice-paid cascade failed:", e);
-    });
-  }
-  return NextResponse.json({ ok: true });
 }
 
 const nullableNumber = z.union([z.number(), z.null()]).optional();
@@ -129,51 +131,52 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
   const d = parsed.data;
   const nextStatus = d.paymentStatus as PaymentStatus | "";
-  await updatePayment(id, {
-    direction: d.direction as PaymentDirection | "",
-    type: d.type,
-    projectRecordIds: d.projectRecordIds,
-    clientRecordIds: d.clientRecordIds,
-    memberRecordIds: d.memberRecordIds,
-    memberInvoiceRecordIds: d.memberInvoiceRecordIds,
-    invoiceDate: d.invoiceDate ?? null,
-    invoiceReference: d.invoiceReference,
-    invoiceCurrency: d.invoiceCurrency as Currency | "",
-    invoiceValue: d.invoiceValue ?? null,
-    fxRateToEur: d.fxRateToEur ?? null,
-    invoiceValueEur: d.invoiceValueEur ?? null,
-    paymentTerms: d.paymentTerms,
-    paymentStatus: nextStatus,
-    paymentDate: d.paymentDate ?? null,
-    dueDate: d.dueDate ?? null,
-    beneficiary: d.beneficiary,
-    comment: d.comment,
-    invoiceUrl: d.invoiceUrl,
-  });
-  if (shouldNotifyOutflowPaid(existing, nextStatus)) {
-    const after = (await getPaymentById(id)) ?? existing;
-    void notifyOutflowPaid(after).catch((e) => {
-      console.error("Outflow-paid notification failed:", e);
+  try {
+    await updatePayment(id, {
+      direction: d.direction as PaymentDirection | "",
+      type: d.type,
+      projectRecordIds: d.projectRecordIds,
+      clientRecordIds: d.clientRecordIds,
+      memberRecordIds: d.memberRecordIds,
+      memberInvoiceRecordIds: d.memberInvoiceRecordIds,
+      invoiceDate: d.invoiceDate ?? null,
+      invoiceReference: d.invoiceReference,
+      invoiceCurrency: d.invoiceCurrency as Currency | "",
+      invoiceValue: d.invoiceValue ?? null,
+      fxRateToEur: d.fxRateToEur ?? null,
+      invoiceValueEur: d.invoiceValueEur ?? null,
+      paymentTerms: d.paymentTerms,
+      paymentStatus: nextStatus,
+      paymentDate: d.paymentDate ?? null,
+      dueDate: d.dueDate ?? null,
+      beneficiary: d.beneficiary,
+      comment: d.comment,
+      invoiceUrl: d.invoiceUrl,
     });
-  }
-  if (becamePaid(existing, nextStatus)) {
-    // Re-read so the cascade uses the just-saved invoice links, not the stale
-    // pre-edit ones (a PUT can change which invoices the payment covers).
-    const after = (await getPaymentById(id)) ?? existing;
-    if (after.memberInvoiceRecordIds.length > 0) {
-      void cascadeInvoicePaidForPayment(after).catch((e) => {
-        console.error("Invoice-paid cascade failed:", e);
+    if (shouldNotifyOutflowPaid(existing, nextStatus)) {
+      const after = (await getPaymentById(id)) ?? existing;
+      void notifyOutflowPaid(after).catch((e) => {
+        console.error("Outflow-paid notification failed:", e);
       });
     }
+    if (becamePaid(existing, nextStatus)) {
+      // Re-read so the cascade uses the just-saved invoice links, not the stale
+      // pre-edit ones (a PUT can change which invoices the payment covers).
+      const after = (await getPaymentById(id)) ?? existing;
+      if (after.memberInvoiceRecordIds.length > 0) {
+        void cascadeInvoicePaidForPayment(after).catch((e) => {
+          console.error("Invoice-paid cascade failed:", e);
+        });
+      }
+    }
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return apiError(e, "save the payment");
   }
-  return NextResponse.json({ ok: true });
 }
 
 // True when a payment crosses into Paid from any other state. Used to trigger
@@ -186,8 +189,12 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const session = await requireAdminSession();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
-  await deletePayment(id);
-  return NextResponse.json({ ok: true });
+  try {
+    await deletePayment(id);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return apiError(e, "delete the payment");
+  }
 }
 
 function shouldNotifyOutflowPaid(

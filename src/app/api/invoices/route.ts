@@ -83,7 +83,12 @@ export async function POST(request: Request) {
   const project = projects.find((p) => p.projectCode === staffing.projectCode);
   if (!project) {
     return NextResponse.json(
-      { error: "Staffing is not linked to a known project." },
+      {
+        error:
+          `This staffing (${staffing.staffingCode}) points at project code "${staffing.projectCode}", ` +
+          `but there is no project with that code in the system. Ask an admin to create that project or ` +
+          `correct the staffing's project code, then try again.`,
+      },
       { status: 400 },
     );
   }

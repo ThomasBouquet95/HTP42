@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { isAdmin } from "@/lib/session";
+import { apiError, zodMessage } from "@/lib/errors";
 import {
   deleteInvoice,
   getInvoiceById,
@@ -28,10 +29,7 @@ export async function PATCH(
   const body = await request.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
   const next = parsed.data.status as InvoiceStatus;
 
@@ -58,9 +56,13 @@ export async function PATCH(
     );
   }
 
-  await updateInvoiceStatus(id, next);
-  const updated = await getInvoiceById(id);
-  return NextResponse.json({ ok: true, invoice: updated });
+  try {
+    await updateInvoiceStatus(id, next);
+    const updated = await getInvoiceById(id);
+    return NextResponse.json({ ok: true, invoice: updated });
+  } catch (e) {
+    return apiError(e, "update the invoice");
+  }
 }
 
 export async function DELETE(
@@ -83,6 +85,10 @@ export async function DELETE(
       { status: 409 },
     );
   }
-  await deleteInvoice(id);
-  return NextResponse.json({ ok: true });
+  try {
+    await deleteInvoice(id);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return apiError(e, "delete the invoice");
+  }
 }

@@ -12,6 +12,7 @@ import {
   type MemberRole,
   type MemberStatus,
 } from "@/lib/airtable";
+import { apiError, zodMessage } from "@/lib/errors";
 
 const nullableNumber = z.union([z.number(), z.null()]).optional();
 
@@ -41,10 +42,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
 
   const d = parsed.data;
@@ -66,21 +64,25 @@ export async function POST(request: Request) {
     );
   }
 
-  const created = await adminCreateMember({
-    memberCode: d.memberCode,
-    fullName: d.fullName,
-    email: d.email,
-    personalEmail: d.personalEmail,
-    status: d.status as MemberStatus,
-    role: d.role as MemberRole | undefined,
-    title: d.title,
-    introduction: d.introduction,
-    country: d.country,
-    phone: d.phone,
-    legalEntity: d.legalEntity,
-    dailyRate: d.dailyRate,
-    htp42DailyRate: d.htp42DailyRate,
-    currency: d.currency as Currency | "" | undefined,
-  });
-  return NextResponse.json({ member: created });
+  try {
+    const created = await adminCreateMember({
+      memberCode: d.memberCode,
+      fullName: d.fullName,
+      email: d.email,
+      personalEmail: d.personalEmail,
+      status: d.status as MemberStatus,
+      role: d.role as MemberRole | undefined,
+      title: d.title,
+      introduction: d.introduction,
+      country: d.country,
+      phone: d.phone,
+      legalEntity: d.legalEntity,
+      dailyRate: d.dailyRate,
+      htp42DailyRate: d.htp42DailyRate,
+      currency: d.currency as Currency | "" | undefined,
+    });
+    return NextResponse.json({ member: created });
+  } catch (e) {
+    return apiError(e, "create the member");
+  }
 }

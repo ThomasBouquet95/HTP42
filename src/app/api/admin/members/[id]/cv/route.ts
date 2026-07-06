@@ -5,6 +5,7 @@ import {
   getMemberById,
   uploadMemberAttachment,
 } from "@/lib/airtable";
+import { apiError } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
@@ -56,10 +57,7 @@ export async function POST(
     );
     return NextResponse.json({ member: updated });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Upload failed." },
-      { status: 500 },
-    );
+    return apiError(err, "replace the CV");
   }
 }
 
@@ -70,6 +68,10 @@ export async function DELETE(
   const session = await requireAdminSession();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
-  const updated = await clearMemberAttachment(id, "cv");
-  return NextResponse.json({ member: updated });
+  try {
+    const updated = await clearMemberAttachment(id, "cv");
+    return NextResponse.json({ member: updated });
+  } catch (e) {
+    return apiError(e, "remove the CV");
+  }
 }

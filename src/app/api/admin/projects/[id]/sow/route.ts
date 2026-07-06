@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/auth";
+import { apiError } from "@/lib/errors";
 import { attachProjectSow, getProjectById } from "@/lib/airtable";
 
 export const runtime = "nodejs";
@@ -32,9 +33,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const pdf = await attachProjectSow(id, file.name || `SOW-${project.projectCode}.pdf`, base64);
     return NextResponse.json({ pdf });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Upload failed." },
-      { status: 500 },
-    );
+    return apiError(e, "attach the SOW");
   }
 }

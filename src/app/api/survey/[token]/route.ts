@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSurveyByToken, submitSurvey, type SurveyMemberRating } from "@/lib/airtable";
+import { zodMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
@@ -28,47 +29,57 @@ const bodySchema = z.object({
 // Public — no auth. The token is the only gate and each link submits once.
 export async function POST(request: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const survey = await getSurveyByToken(token);
-  if (!survey) return NextResponse.json({ error: "This survey link is invalid." }, { status: 404 });
-  if (survey.completedAt) {
-    return NextResponse.json({ error: "This survey has already been submitted." }, { status: 409 });
-  }
 
-  const body = await request.json().catch(() => null);
-  const parsed = bodySchema.safeParse(body);
-  if (!parsed.success) {
+  try {
+    const survey = await getSurveyByToken(token);
+    if (!survey) return NextResponse.json({ error: "This survey link is invalid." }, { status: 404 });
+    if (survey.completedAt) {
+      return NextResponse.json({ error: "This survey has already been submitted." }, { status: 409 });
+    }
+
+    const body = await request.json().catch(() => null);
+    const parsed = bodySchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
+    }
+    const d = parsed.data;
+
+    // Build member ratings from the survey's snapshot team (names are trusted
+    // from the server, not the client), merging in the submitted grades/notes.
+    const byCode = new Map(d.members.map((m) => [m.code, m]));
+    const memberRatings: SurveyMemberRating[] = survey.members.map((m) => {
+      const sub = byCode.get(m.code);
+      return {
+        code: m.code,
+        name: m.name,
+        grade: sub?.grade ?? null,
+        wentWell: sub?.wentWell ?? "",
+        improve: sub?.improve ?? "",
+      };
+    });
+
+    const ok = await submitSurvey(token, {
+      overallGrade: d.overallGrade,
+      overallWentWell: d.overallWentWell,
+      overallImprove: d.overallImprove,
+      memberRatings,
+    });
+    if (!ok) {
+      return NextResponse.json(
+        { error: "This survey has already been submitted." },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    // Public, unauthenticated route: never leak raw internals here.
+    console.error("Failed to submit survey feedback:", e);
     return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid submission." },
-      { status: 400 },
+      {
+        error:
+          "Couldn't save your feedback. Please try again, or contact your HTP42 contact if it keeps happening.",
+      },
+      { status: 500 },
     );
   }
-  const d = parsed.data;
-
-  // Build member ratings from the survey's snapshot team (names are trusted
-  // from the server, not the client), merging in the submitted grades/notes.
-  const byCode = new Map(d.members.map((m) => [m.code, m]));
-  const memberRatings: SurveyMemberRating[] = survey.members.map((m) => {
-    const sub = byCode.get(m.code);
-    return {
-      code: m.code,
-      name: m.name,
-      grade: sub?.grade ?? null,
-      wentWell: sub?.wentWell ?? "",
-      improve: sub?.improve ?? "",
-    };
-  });
-
-  const ok = await submitSurvey(token, {
-    overallGrade: d.overallGrade,
-    overallWentWell: d.overallWentWell,
-    overallImprove: d.overallImprove,
-    memberRatings,
-  });
-  if (!ok) {
-    return NextResponse.json(
-      { error: "This survey has already been submitted." },
-      { status: 409 },
-    );
-  }
-  return NextResponse.json({ ok: true });
 }

@@ -6,6 +6,7 @@ import {
 } from "@/lib/airtable";
 import { env } from "@/lib/env";
 import { sendMailViaGraph } from "@/lib/email";
+import { apiError } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
@@ -54,10 +55,7 @@ export async function POST(
   try {
     await attachContractPdf(id, filename, base64);
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Upload failed" },
-      { status: 500 },
-    );
+    return apiError(e, "upload the contract PDF");
   }
 
   // 2) Notify HTP42's inbox so a paper trail exists outside Airtable.

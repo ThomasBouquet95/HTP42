@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { updateMemberProfile } from "@/lib/airtable";
+import { apiError, zodMessage } from "@/lib/errors";
 
 // All profile fields are optional in the payload. The two flows that hit this
 // endpoint (the main profile form, the bank-account modal) only send what
@@ -32,10 +33,7 @@ export async function PUT(request: Request) {
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
 
   // IBANs are conventionally stored uppercase + without spaces. Normalise on
@@ -43,7 +41,11 @@ export async function PUT(request: Request) {
   const input = { ...parsed.data };
   if (input.iban !== undefined) input.iban = input.iban.replace(/\s+/g, "").toUpperCase();
 
-  const updated = await updateMemberProfile(session.sub, input);
-  if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ member: updated });
+  try {
+    const updated = await updateMemberProfile(session.sub, input);
+    if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ member: updated });
+  } catch (e) {
+    return apiError(e, "update your profile");
+  }
 }

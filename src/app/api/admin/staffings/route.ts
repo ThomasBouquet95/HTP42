@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
+import { apiError, zodMessage } from "@/lib/errors";
 import {
   createStaffing,
   CURRENCIES,
@@ -47,28 +48,29 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
 
   const d = parsed.data;
-  const id = await createStaffing({
-    projectCode: d.projectCode,
-    memberRecordIds: d.memberRecordIds,
-    roleInProject: d.roleInProject,
-    projectRole: d.projectRole as ProjectRole | "",
-    ratePerDay: d.ratePerDay ?? null,
-    currency: d.currency as Currency | "",
-    daysAllocated: d.daysAllocated ?? null,
-    fxToEur: d.fxToEur ?? null,
-    sowReference: d.sowReference,
-    sowStatus: d.sowStatus as SowStatus | "",
-    startDate: d.startDate ?? null,
-    endDate: d.endDate ?? null,
-    status: d.status as StaffingStatus | "",
-    notes: d.notes,
-  });
-  return NextResponse.json({ id });
+  try {
+    const id = await createStaffing({
+      projectCode: d.projectCode,
+      memberRecordIds: d.memberRecordIds,
+      roleInProject: d.roleInProject,
+      projectRole: d.projectRole as ProjectRole | "",
+      ratePerDay: d.ratePerDay ?? null,
+      currency: d.currency as Currency | "",
+      daysAllocated: d.daysAllocated ?? null,
+      fxToEur: d.fxToEur ?? null,
+      sowReference: d.sowReference,
+      sowStatus: d.sowStatus as SowStatus | "",
+      startDate: d.startDate ?? null,
+      endDate: d.endDate ?? null,
+      status: d.status as StaffingStatus | "",
+      notes: d.notes,
+    });
+    return NextResponse.json({ id });
+  } catch (e) {
+    return apiError(e, "save the staffing");
+  }
 }

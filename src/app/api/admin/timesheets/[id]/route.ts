@@ -6,6 +6,7 @@ import {
   adminUpdateTimesheetStatus,
   type TimesheetStatus,
 } from "@/lib/airtable";
+import { apiError, zodMessage } from "@/lib/errors";
 
 const patchSchema = z.object({
   status: z.enum(TIMESHEET_STATUSES as [string, ...string[]]),
@@ -21,11 +22,12 @@ export async function PATCH(
   const body = await request.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
-  await adminUpdateTimesheetStatus(id, parsed.data.status as TimesheetStatus);
-  return NextResponse.json({ ok: true });
+  try {
+    await adminUpdateTimesheetStatus(id, parsed.data.status as TimesheetStatus);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return apiError(e, "update the timesheet status");
+  }
 }

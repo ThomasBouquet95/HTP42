@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { isAdmin } from "@/lib/session";
+import { apiError, zodMessage } from "@/lib/errors";
 import {
   deleteTask,
   getStaffingsForMember,
@@ -62,10 +63,7 @@ export async function PATCH(
   const body = await request.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
   const d = parsed.data;
 
@@ -100,19 +98,23 @@ export async function PATCH(
     );
   }
 
-  await updateTask(id, {
-    title: d.title,
-    description: d.description,
-    status: d.status as TaskStatus | undefined,
-    priority: d.priority as TaskPriority | "" | undefined,
-    dueDate: d.dueDate as string | null | undefined,
-    effortHours: d.effortHours as number | null | undefined,
-    projectRecordId: d.projectRecordId,
-    assigneeRecordIds: d.assigneeRecordIds,
-    visibility: d.visibility as TaskVisibility | undefined,
-  });
-  const updated = await getTaskById(id);
-  return NextResponse.json({ ok: true, task: updated });
+  try {
+    await updateTask(id, {
+      title: d.title,
+      description: d.description,
+      status: d.status as TaskStatus | undefined,
+      priority: d.priority as TaskPriority | "" | undefined,
+      dueDate: d.dueDate as string | null | undefined,
+      effortHours: d.effortHours as number | null | undefined,
+      projectRecordId: d.projectRecordId,
+      assigneeRecordIds: d.assigneeRecordIds,
+      visibility: d.visibility as TaskVisibility | undefined,
+    });
+    const updated = await getTaskById(id);
+    return NextResponse.json({ ok: true, task: updated });
+  } catch (e) {
+    return apiError(e, "save the task");
+  }
 }
 
 export async function DELETE(
@@ -129,6 +131,10 @@ export async function DELETE(
   if (!isAdmin(session) && task.createdByRecordId !== session.sub) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  await deleteTask(id);
-  return NextResponse.json({ ok: true });
+  try {
+    await deleteTask(id);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return apiError(e, "delete the task");
+  }
 }

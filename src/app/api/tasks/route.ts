@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
+import { apiError, zodMessage } from "@/lib/errors";
 import {
   createTask,
   listTasksVisibleTo,
@@ -43,30 +44,9 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
   const d = parsed.data;
-
-  // If a project is set, enforce that the caller is staffed on it (or admin
-  // would, but admin still passes via staffing if linked; otherwise we let
-  // any task without a project through as a personal task).
-  if (d.projectRecordId) {
-    const myStaffings = await getStaffingsForMember(session.memberCode);
-    const allowed = myStaffings.some(
-      (s) => s.id === d.projectRecordId || s.projectCode === d.projectRecordId,
-    );
-    // The form sends a project RECORD ID; we don't know the code without a
-    // round-trip, so do a cheap lookup via staffings (which carry project
-    // codes alongside record ids of the staffing itself).
-    if (!allowed) {
-      // Fall through: this might still be a valid project the member is on
-      // (admins / leaders). We just trust the front-end picker since we'll
-      // also enforce visibility on read.
-    }
-  }
 
   // Shared tasks require a project — the whole point of sharing is to scope
   // visibility to that project's team. Personal tasks may optionally link to
@@ -80,17 +60,39 @@ export async function POST(request: Request) {
     );
   }
 
-  const id = await createTask({
-    title: d.title,
-    description: d.description,
-    status: d.status as TaskStatus,
-    priority: d.priority as TaskPriority | "",
-    dueDate: d.dueDate ?? null,
-    effortHours: d.effortHours ?? null,
-    projectRecordId: d.projectRecordId,
-    assigneeRecordIds: d.assigneeRecordIds,
-    createdByRecordId: session.sub,
-    visibility,
-  });
-  return NextResponse.json({ id });
+  try {
+    // If a project is set, enforce that the caller is staffed on it (or admin
+    // would, but admin still passes via staffing if linked; otherwise we let
+    // any task without a project through as a personal task).
+    if (d.projectRecordId) {
+      const myStaffings = await getStaffingsForMember(session.memberCode);
+      const allowed = myStaffings.some(
+        (s) => s.id === d.projectRecordId || s.projectCode === d.projectRecordId,
+      );
+      // The form sends a project RECORD ID; we don't know the code without a
+      // round-trip, so do a cheap lookup via staffings (which carry project
+      // codes alongside record ids of the staffing itself).
+      if (!allowed) {
+        // Fall through: this might still be a valid project the member is on
+        // (admins / leaders). We just trust the front-end picker since we'll
+        // also enforce visibility on read.
+      }
+    }
+
+    const id = await createTask({
+      title: d.title,
+      description: d.description,
+      status: d.status as TaskStatus,
+      priority: d.priority as TaskPriority | "",
+      dueDate: d.dueDate ?? null,
+      effortHours: d.effortHours ?? null,
+      projectRecordId: d.projectRecordId,
+      assigneeRecordIds: d.assigneeRecordIds,
+      createdByRecordId: session.sub,
+      visibility,
+    });
+    return NextResponse.json({ id });
+  } catch (e) {
+    return apiError(e, "save the task");
+  }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
+import { apiError, zodMessage } from "@/lib/errors";
 import {
   deleteProject,
   getProjectById,
@@ -28,13 +29,14 @@ export async function PATCH(
   const body = await request.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
-  await updateProjectStatus(id, parsed.data.status as ProjectStatus | "");
-  return NextResponse.json({ ok: true });
+  try {
+    await updateProjectStatus(id, parsed.data.status as ProjectStatus | "");
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return apiError(e, "update the project status");
+  }
 }
 
 const nullableNumber = z.union([z.number(), z.null()]).optional();
@@ -83,39 +85,44 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
 
   const d = parsed.data;
-  await updateProject(id, {
-    projectCode: d.projectCode,
-    projectName: d.projectName,
-    clientRecordIds: d.clientRecordIds,
-    projectLeaderRecordIds: d.projectLeaderRecordIds,
-    type: d.type as ProjectType | "",
-    objective: d.objective,
-    startDate: d.startDate ?? null,
-    endDate: d.endDate ?? null,
-    currency: d.currency as Currency | "",
-    totalAmount: d.totalAmount ?? null,
-    fxToEur: d.fxToEur ?? null,
-    status: d.status as ProjectStatus | "",
-    paymentSchedule: d.paymentSchedule.map((e) =>
-      e.kind === "milestone"
-        ? { kind: "milestone" as const, milestone: e.milestone, percent: e.percent, date: e.date ?? null }
-        : { kind: "month" as const, month: e.month, percent: e.percent },
-    ),
-  });
-  return NextResponse.json({ ok: true });
+  try {
+    await updateProject(id, {
+      projectCode: d.projectCode,
+      projectName: d.projectName,
+      clientRecordIds: d.clientRecordIds,
+      projectLeaderRecordIds: d.projectLeaderRecordIds,
+      type: d.type as ProjectType | "",
+      objective: d.objective,
+      startDate: d.startDate ?? null,
+      endDate: d.endDate ?? null,
+      currency: d.currency as Currency | "",
+      totalAmount: d.totalAmount ?? null,
+      fxToEur: d.fxToEur ?? null,
+      status: d.status as ProjectStatus | "",
+      paymentSchedule: d.paymentSchedule.map((e) =>
+        e.kind === "milestone"
+          ? { kind: "milestone" as const, milestone: e.milestone, percent: e.percent, date: e.date ?? null }
+          : { kind: "month" as const, month: e.month, percent: e.percent },
+      ),
+    });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return apiError(e, "save the project");
+  }
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await requireAdminSession();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
-  await deleteProject(id);
-  return NextResponse.json({ ok: true });
+  try {
+    await deleteProject(id);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return apiError(e, "delete the project");
+  }
 }

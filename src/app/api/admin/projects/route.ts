@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
+import { apiError, zodMessage } from "@/lib/errors";
 import {
   createProject,
   PROJECT_STATUSES,
@@ -53,31 +54,32 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
 
   const d = parsed.data;
-  const id = await createProject({
-    projectCode: d.projectCode,
-    projectName: d.projectName,
-    clientRecordIds: d.clientRecordIds,
-    projectLeaderRecordIds: d.projectLeaderRecordIds,
-    type: d.type as ProjectType | "",
-    objective: d.objective,
-    startDate: d.startDate ?? null,
-    endDate: d.endDate ?? null,
-    currency: d.currency as Currency | "",
-    totalAmount: d.totalAmount ?? null,
-    fxToEur: d.fxToEur ?? null,
-    status: d.status as ProjectStatus | "",
-    paymentSchedule: d.paymentSchedule.map((e) =>
-      e.kind === "milestone"
-        ? { kind: "milestone" as const, milestone: e.milestone, percent: e.percent, date: e.date ?? null }
-        : { kind: "month" as const, month: e.month, percent: e.percent },
-    ),
-  });
-  return NextResponse.json({ id });
+  try {
+    const id = await createProject({
+      projectCode: d.projectCode,
+      projectName: d.projectName,
+      clientRecordIds: d.clientRecordIds,
+      projectLeaderRecordIds: d.projectLeaderRecordIds,
+      type: d.type as ProjectType | "",
+      objective: d.objective,
+      startDate: d.startDate ?? null,
+      endDate: d.endDate ?? null,
+      currency: d.currency as Currency | "",
+      totalAmount: d.totalAmount ?? null,
+      fxToEur: d.fxToEur ?? null,
+      status: d.status as ProjectStatus | "",
+      paymentSchedule: d.paymentSchedule.map((e) =>
+        e.kind === "milestone"
+          ? { kind: "milestone" as const, milestone: e.milestone, percent: e.percent, date: e.date ?? null }
+          : { kind: "month" as const, month: e.month, percent: e.percent },
+      ),
+    });
+    return NextResponse.json({ id });
+  } catch (e) {
+    return apiError(e, "save the project");
+  }
 }

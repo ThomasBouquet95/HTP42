@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
+import { apiError, zodMessage } from "@/lib/errors";
 import { createClient, findClientByCode } from "@/lib/airtable";
 
 const CODE = /^[A-Z]{3}$/;
@@ -25,20 +26,21 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
 
-  const clash = await findClientByCode(parsed.data.clientCode);
-  if (clash) {
-    return NextResponse.json(
-      { error: `Client code ${parsed.data.clientCode} is already in use.` },
-      { status: 409 },
-    );
-  }
+  try {
+    const clash = await findClientByCode(parsed.data.clientCode);
+    if (clash) {
+      return NextResponse.json(
+        { error: `Client code ${parsed.data.clientCode} is already in use.` },
+        { status: 409 },
+      );
+    }
 
-  const id = await createClient(parsed.data);
-  return NextResponse.json({ id });
+    const id = await createClient(parsed.data);
+    return NextResponse.json({ id });
+  } catch (e) {
+    return apiError(e, "save the client");
+  }
 }

@@ -9,6 +9,7 @@ import {
 } from "@/lib/airtable";
 import { env } from "@/lib/env";
 import { sendMailViaGraph } from "@/lib/email";
+import { apiError, zodMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
@@ -31,44 +32,42 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
   const { projectCode, recipients } = parsed.data;
 
-  const [projects, members] = await Promise.all([listProjects(), getProjectTeam(projectCode)]);
-  const project = projects.find((p) => p.projectCode === projectCode);
-  if (!project) return NextResponse.json({ error: "Unknown project." }, { status: 400 });
-  const projectName = project.projectName;
+  try {
+    const [projects, members] = await Promise.all([listProjects(), getProjectTeam(projectCode)]);
+    const project = projects.find((p) => p.projectCode === projectCode);
+    if (!project) return NextResponse.json({ error: "Unknown project." }, { status: 400 });
+    const projectName = project.projectName;
 
-  let sent = 0;
-  const failures: string[] = [];
-  for (const r of recipients) {
-    try {
-      const { id, token } = await createSurveyRecipient({
-        projectCode,
-        projectName,
-        recipientName: r.name,
-        recipientEmail: r.email,
-        members,
-      });
-      const link = `${env.appUrl}/survey/${token}`;
-      const who = r.name || "there";
-      const subject = `Your feedback on ${projectCode}${projectName ? ` — ${projectName}` : ""}`;
-      const text = [
-        `Hi ${who},`,
-        ``,
-        `We'd love your feedback on our work${projectName ? ` on ${projectName}` : ""}.`,
-        `It takes a couple of minutes and covers the overall engagement and each team member.`,
-        ``,
-        `Open your survey: ${link}`,
-        ``,
-        `Thank you,`,
-        `HTP42`,
-      ].join("\n");
-      const html = `
+    let sent = 0;
+    const failures: string[] = [];
+    for (const r of recipients) {
+      try {
+        const { id, token } = await createSurveyRecipient({
+          projectCode,
+          projectName,
+          recipientName: r.name,
+          recipientEmail: r.email,
+          members,
+        });
+        const link = `${env.appUrl}/survey/${token}`;
+        const who = r.name || "there";
+        const subject = `Your feedback on ${projectCode}${projectName ? ` — ${projectName}` : ""}`;
+        const text = [
+          `Hi ${who},`,
+          ``,
+          `We'd love your feedback on our work${projectName ? ` on ${projectName}` : ""}.`,
+          `It takes a couple of minutes and covers the overall engagement and each team member.`,
+          ``,
+          `Open your survey: ${link}`,
+          ``,
+          `Thank you,`,
+          `HTP42`,
+        ].join("\n");
+        const html = `
         <p>Hi ${escapeHtml(who)},</p>
         <p>We'd love your feedback on our work${
           projectName ? ` on <strong>${escapeHtml(projectName)}</strong>` : ""
@@ -77,16 +76,21 @@ export async function POST(request: Request) {
         <p style="font-size:12px;color:#64748b">Or paste this link: ${link}</p>
         <p>Thank you,<br/>HTP42</p>
       `;
-      const res = await sendMailViaGraph({ to: r.email, subject, textBody: text, htmlBody: html });
-      await markSurveyEmail(id, res.ok ? { ok: true } : { ok: false, error: res.error });
-      if (!res.ok) failures.push(`${r.email}: ${res.error}`);
-      sent += 1;
-    } catch (e) {
-      failures.push(`${r.email}: ${e instanceof Error ? e.message : "create failed"}`);
+        const res = await sendMailViaGraph({ to: r.email, subject, textBody: text, htmlBody: html });
+        await markSurveyEmail(id, res.ok ? { ok: true } : { ok: false, error: res.error });
+        if (!res.ok) failures.push(`${r.email}: ${res.error}`);
+        sent += 1;
+      } catch (e) {
+        failures.push(
+          `${r.email}: ${e instanceof Error ? e.message : "could not create the survey recipient"}`,
+        );
+      }
     }
-  }
 
-  return NextResponse.json({ created: sent, failures });
+    return NextResponse.json({ created: sent, failures });
+  } catch (e) {
+    return apiError(e, "send the surveys");
+  }
 }
 
 function escapeHtml(s: string): string {

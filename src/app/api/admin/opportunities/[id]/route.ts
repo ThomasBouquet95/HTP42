@@ -12,6 +12,7 @@ import {
   type OpportunityStatus,
 } from "@/lib/airtable";
 import { opportunitySchema } from "../schema";
+import { apiError, zodMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
@@ -24,10 +25,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const body = await request.json().catch(() => null);
   const parsed = opportunitySchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
   const d = parsed.data;
   try {
@@ -45,10 +43,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     });
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Save failed." },
-      { status: 500 },
-    );
+    return apiError(e, "save the opportunity");
   }
 }
 
@@ -69,10 +64,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const body = await request.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
   try {
     await patchOpportunity(id, {
@@ -82,10 +74,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     });
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Update failed." },
-      { status: 500 },
-    );
+    return apiError(e, "update the opportunity");
   }
 }
 
@@ -99,9 +88,6 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     await deleteOpportunity(id);
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Delete failed." },
-      { status: 500 },
-    );
+    return apiError(e, "delete the opportunity");
   }
 }

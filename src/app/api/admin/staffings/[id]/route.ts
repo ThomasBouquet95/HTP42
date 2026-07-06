@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
+import { apiError, zodMessage } from "@/lib/errors";
 import {
   CURRENCIES,
   deleteStaffing,
@@ -30,13 +31,14 @@ export async function PATCH(
   const body = await request.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
-  await updateStaffingStatus(id, parsed.data.status as StaffingStatus | "");
-  return NextResponse.json({ ok: true });
+  try {
+    await updateStaffingStatus(id, parsed.data.status as StaffingStatus | "");
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return apiError(e, "update the staffing status");
+  }
 }
 
 const nullableNumber = z.union([z.number(), z.null()]).optional();
@@ -76,36 +78,41 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
 
   const d = parsed.data;
-  await updateStaffing(id, {
-    projectCode: d.projectCode,
-    memberRecordIds: d.memberRecordIds,
-    roleInProject: d.roleInProject,
-    projectRole: d.projectRole as ProjectRole | "",
-    ratePerDay: d.ratePerDay ?? null,
-    currency: d.currency as Currency | "",
-    daysAllocated: d.daysAllocated ?? null,
-    fxToEur: d.fxToEur ?? null,
-    sowReference: d.sowReference,
-    sowStatus: d.sowStatus as SowStatus | "",
-    startDate: d.startDate ?? null,
-    endDate: d.endDate ?? null,
-    status: d.status as StaffingStatus | "",
-    notes: d.notes,
-  });
-  return NextResponse.json({ ok: true });
+  try {
+    await updateStaffing(id, {
+      projectCode: d.projectCode,
+      memberRecordIds: d.memberRecordIds,
+      roleInProject: d.roleInProject,
+      projectRole: d.projectRole as ProjectRole | "",
+      ratePerDay: d.ratePerDay ?? null,
+      currency: d.currency as Currency | "",
+      daysAllocated: d.daysAllocated ?? null,
+      fxToEur: d.fxToEur ?? null,
+      sowReference: d.sowReference,
+      sowStatus: d.sowStatus as SowStatus | "",
+      startDate: d.startDate ?? null,
+      endDate: d.endDate ?? null,
+      status: d.status as StaffingStatus | "",
+      notes: d.notes,
+    });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return apiError(e, "save the staffing");
+  }
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await requireAdminSession();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
-  await deleteStaffing(id);
-  return NextResponse.json({ ok: true });
+  try {
+    await deleteStaffing(id);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return apiError(e, "delete the staffing");
+  }
 }

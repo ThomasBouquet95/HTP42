@@ -6,6 +6,7 @@ import {
   getContractById,
   updateContractFields,
 } from "@/lib/airtable";
+import { apiError, zodMessage } from "@/lib/errors";
 
 // Partial PATCH for admin-editable contract fields. Every field is
 // optional. Only the keys the client sends get written, so editing one
@@ -58,21 +59,15 @@ export async function PATCH(
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
   try {
     await updateContractFields(id, parsed.data);
+    const after = (await getContractById(id)) ?? existing;
+    return NextResponse.json({ ok: true, contract: after });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Update failed" },
-      { status: 500 },
-    );
+    return apiError(e, "save the contract");
   }
-  const after = (await getContractById(id)) ?? existing;
-  return NextResponse.json({ ok: true, contract: after });
 }
 
 // Hard-delete a contract row. Admin-only; no soft-delete because the
@@ -91,11 +86,8 @@ export async function DELETE(
 
   try {
     await deleteContract(id);
+    return NextResponse.json({ ok: true });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Delete failed" },
-      { status: 500 },
-    );
+    return apiError(e, "delete the contract");
   }
-  return NextResponse.json({ ok: true });
 }

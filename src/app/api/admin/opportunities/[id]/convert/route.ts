@@ -13,6 +13,7 @@ import {
   type ProjectStatus,
   type ProjectType,
 } from "@/lib/airtable";
+import { apiError } from "@/lib/errors";
 
 export const runtime = "nodejs";
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -100,10 +101,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       paymentSchedule: [],
     });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Could not create the project." },
-      { status: 500 },
-    );
+    return apiError(e, "convert the opportunity to a project");
   }
 
   // 2) Optional SOW contract linked to the client + project (best-effort).
@@ -122,7 +120,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       await attachContractPdf(contract.id, sowName, sowBase64);
     } catch (e) {
       console.error("SOW contract creation failed during convert:", e);
-      sowWarning = "The project was created, but the SOW upload failed — add it in Legal.";
+      sowWarning = "The project was created, but the SOW upload failed. Add it in Legal.";
     }
   }
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
+import { apiError, zodMessage } from "@/lib/errors";
 import {
   adminDeleteMember,
   adminUpdateMember,
@@ -29,12 +30,13 @@ export async function PATCH(
   const body = await request.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
-  await adminUpdateMemberStatus(id, parsed.data.status as MemberStatus);
+  try {
+    await adminUpdateMemberStatus(id, parsed.data.status as MemberStatus);
+  } catch (e) {
+    return apiError(e, "update the member's status");
+  }
   return NextResponse.json({ ok: true });
 }
 
@@ -67,52 +69,58 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
 
   const d = parsed.data;
 
-  if (d.email !== undefined) {
-    const clash = await findMemberByEmail(d.email, id);
-    if (clash) {
+  try {
+    if (d.email !== undefined) {
+      const clash = await findMemberByEmail(d.email, id);
+      if (clash) {
+        return NextResponse.json(
+          { error: `Email ${d.email} is already used by ${clash.fullName || "another member"}.` },
+          { status: 409 },
+        );
+      }
+    }
+
+    if (d.memberCode !== undefined) {
+      const clash = await findMemberByCode(d.memberCode, id);
+      if (clash) {
+        return NextResponse.json(
+          { error: `Member code ${d.memberCode} is already used by ${clash.fullName || "another member"}.` },
+          { status: 409 },
+        );
+      }
+    }
+
+    const updated = await adminUpdateMember(id, {
+      memberCode: d.memberCode,
+      fullName: d.fullName,
+      email: d.email,
+      personalEmail: d.personalEmail,
+      introduction: d.introduction,
+      country: d.country,
+      phone: d.phone,
+      legalEntity: d.legalEntity,
+      title: d.title,
+      role: d.role as MemberRole | undefined,
+      status: d.status as MemberStatus | undefined,
+      dailyRate: d.dailyRate,
+      htp42DailyRate: d.htp42DailyRate,
+      currency: d.currency as Currency | "" | undefined,
+    });
+    if (!updated) {
       return NextResponse.json(
-        { error: `Email ${d.email} is already in use.` },
-        { status: 409 },
+        { error: "That member no longer exists — it may have been deleted. Refresh and try again." },
+        { status: 404 },
       );
     }
+    return NextResponse.json({ member: updated });
+  } catch (e) {
+    return apiError(e, "save the member");
   }
-
-  if (d.memberCode !== undefined) {
-    const clash = await findMemberByCode(d.memberCode, id);
-    if (clash) {
-      return NextResponse.json(
-        { error: `Member code ${d.memberCode} is already in use.` },
-        { status: 409 },
-      );
-    }
-  }
-
-  const updated = await adminUpdateMember(id, {
-    memberCode: d.memberCode,
-    fullName: d.fullName,
-    email: d.email,
-    personalEmail: d.personalEmail,
-    introduction: d.introduction,
-    country: d.country,
-    phone: d.phone,
-    legalEntity: d.legalEntity,
-    title: d.title,
-    role: d.role as MemberRole | undefined,
-    status: d.status as MemberStatus | undefined,
-    dailyRate: d.dailyRate,
-    htp42DailyRate: d.htp42DailyRate,
-    currency: d.currency as Currency | "" | undefined,
-  });
-  if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ member: updated });
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -126,6 +134,10 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
       { status: 400 },
     );
   }
-  await adminDeleteMember(id);
+  try {
+    await adminDeleteMember(id);
+  } catch (e) {
+    return apiError(e, "delete the member");
+  }
   return NextResponse.json({ ok: true });
 }

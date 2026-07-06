@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/auth";
 import { deleteSurvey } from "@/lib/airtable";
+import { apiError } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
@@ -12,9 +13,6 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     await deleteSurvey(id);
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Delete failed." },
-      { status: 500 },
-    );
+    return apiError(e, "delete the survey");
   }
 }

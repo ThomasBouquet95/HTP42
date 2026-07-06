@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
 import { createContract } from "@/lib/airtable";
+import { apiError, zodMessage } from "@/lib/errors";
 
 // Create a brand-new contract. The body is the same shape as the PATCH
 // schema but every field is genuinely optional — the admin can save a
@@ -41,18 +42,12 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const parsed = schema.safeParse(body ?? {});
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
   try {
     const contract = await createContract(parsed.data);
     return NextResponse.json({ ok: true, contract });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Create failed" },
-      { status: 500 },
-    );
+    return apiError(e, "save the contract");
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
+import { apiError, zodMessage } from "@/lib/errors";
 import {
   deleteClient,
   findClientByCode,
@@ -34,30 +35,35 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid payload" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
 
-  if (parsed.data.clientCode !== existing.clientCode) {
-    const clash = await findClientByCode(parsed.data.clientCode, id);
-    if (clash) {
-      return NextResponse.json(
-        { error: `Client code ${parsed.data.clientCode} is already in use.` },
-        { status: 409 },
-      );
+  try {
+    if (parsed.data.clientCode !== existing.clientCode) {
+      const clash = await findClientByCode(parsed.data.clientCode, id);
+      if (clash) {
+        return NextResponse.json(
+          { error: `Client code ${parsed.data.clientCode} is already in use.` },
+          { status: 409 },
+        );
+      }
     }
-  }
 
-  await updateClient(id, parsed.data);
-  return NextResponse.json({ ok: true });
+    await updateClient(id, parsed.data);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return apiError(e, "update the client");
+  }
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await requireAdminSession();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
-  await deleteClient(id);
-  return NextResponse.json({ ok: true });
+  try {
+    await deleteClient(id);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return apiError(e, "delete the client");
+  }
 }

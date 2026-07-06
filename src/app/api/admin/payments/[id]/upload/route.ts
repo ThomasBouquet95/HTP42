@@ -7,6 +7,7 @@ import {
 } from "@/lib/airtable";
 import { env } from "@/lib/env";
 import { sendMailViaGraph } from "@/lib/email";
+import { apiError } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
@@ -54,10 +55,7 @@ export async function POST(
     await ensurePaymentInvoicePdfField();
     await attachPaymentPdf(id, filename, base64);
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Upload failed" },
-      { status: 500 },
-    );
+    return apiError(e, "upload the invoice PDF");
   }
 
   // Notify the finance inbox — same destination as contract + member-
