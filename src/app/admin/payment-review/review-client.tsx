@@ -423,12 +423,12 @@ function BundleDetail({
   const statusLabel = readOnly ? selected.payment.status || "—" : "Under review";
   return (
     <div
-      className={`space-y-3 rounded-lg border p-3 ${
-        readOnly ? "border-slate-200 bg-white" : "border-amber-200 bg-amber-50/30"
+      className={`overflow-hidden rounded-lg border bg-white ${
+        readOnly ? "border-slate-200" : "border-amber-300 ring-1 ring-amber-100"
       }`}
     >
       {/* Header + actions */}
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <button
@@ -457,12 +457,12 @@ function BundleDetail({
             </button>
           </div>
           <div className="text-right">
-            <div className="text-2xl font-semibold tabular-nums text-slate-900 demo-blur">
+            <div className="text-xl font-semibold tabular-nums text-slate-900 demo-blur">
               {money(selected.payment.amount, selected.payment.currency)}
             </div>
-            {selected.payment.amountEur != null ? (
+            {selected.payment.amountEur != null && selected.payment.currency !== "EUR" ? (
               <div className="text-[11px] text-slate-400 demo-blur">
-                ≈ {selected.payment.amountEur.toLocaleString("en-US", { maximumFractionDigits: 2 })} EUR
+                ≈ {selected.payment.amountEur.toLocaleString("en-US", { maximumFractionDigits: 0 })} EUR
               </div>
             ) : null}
             {tone === "paid" && selected.payment.paymentDate ? (
@@ -475,7 +475,7 @@ function BundleDetail({
           </div>
         </div>
         {selected.payment.comment ? (
-          <p className="mt-3 rounded-md bg-slate-50 p-2.5 text-xs text-slate-600 demo-blur">
+          <p className="mt-2 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-600 demo-blur">
             {selected.payment.comment}
           </p>
         ) : null}
@@ -525,7 +525,7 @@ function BundleDetail({
       </div>
 
       {open ? (
-        <>
+        <div className="divide-y divide-slate-100 border-t border-slate-100">
       {/* Invoice */}
       <Section title="Invoice">
         {selected.payment.invoicePdfUrl || selected.invoice?.pdfUrl ? (
@@ -724,7 +724,7 @@ function BundleDetail({
           <Empty>No project associated with this payment.</Empty>
         )}
       </Section>
-        </>
+        </div>
       ) : null}
     </div>
   );
@@ -740,7 +740,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4">
+    <section className="px-4 py-3">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</h3>
         {action}
