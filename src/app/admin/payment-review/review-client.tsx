@@ -69,6 +69,31 @@ export type ReviewBundle = {
   }>;
 };
 
+export type PastPayment = {
+  id: string;
+  code: string;
+  status: string;
+  amount: number | null;
+  currency: string;
+  amountEur: number | null;
+  invoiceDate: string | null;
+  paymentDate: string | null;
+  dueDate: string | null;
+  invoiceReference: string;
+  comment: string;
+  invoiceCode: string;
+  invoicePdfUrl: string;
+  projectCode: string;
+};
+
+export type MemberGroup = {
+  memberId: string;
+  memberName: string;
+  memberCode: string;
+  underReview: ReviewBundle[];
+  past: PastPayment[];
+};
+
 function money(v: number | null, currency: string): string {
   if (v == null) return "—";
   return `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}${currency ? " " + currency : ""}`;
@@ -107,14 +132,40 @@ function addDaysIso(iso: string, n: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
-export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
+// Buckets a stored status into a visual family the admin reads at a glance.
+type StatusTone = "paid" | "approved" | "cancelled" | "review" | "other";
+function statusTone(status: string): StatusTone {
+  const s = status.toLowerCase();
+  if (s === "paid") return "paid";
+  if (s === "to be paid" || s === "scheduled") return "approved";
+  if (s === "canceled" || s === "cancelled") return "cancelled";
+  if (s === "under review") return "review";
+  return "other";
+}
+const TONE_PILL: Record<StatusTone, string> = {
+  paid: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  approved: "bg-blue-50 text-blue-700 ring-blue-200",
+  cancelled: "bg-slate-100 text-slate-500 ring-slate-200 line-through",
+  review: "bg-amber-50 text-amber-700 ring-amber-200",
+  other: "bg-slate-50 text-slate-600 ring-slate-200",
+};
+
+export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
   const router = useRouter();
-  const [rows, setRows] = useState(bundles);
-  useEffect(() => setRows(bundles), [bundles]);
-  const [selectedId, setSelectedId] = useState<string | null>(bundles[0]?.payment.id ?? null);
+  const [data, setData] = useState(groups);
+  useEffect(() => setData(groups), [groups]);
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(groups[0]?.memberId ?? null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [paidTargetId, setPaidTargetId] = useState<string | null>(null);
   const [expandedTs, setExpandedTs] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   function toggleTs(id: string) {
     setExpandedTs((prev) => {
       const next = new Set(prev);
@@ -123,26 +174,29 @@ export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
       return next;
     });
   }
-  const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 4000);
-    return () => clearTimeout(t);
-  }, [toast]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return data;
+    return data.filter(
+      (g) =>
+        g.memberName.toLowerCase().includes(q) || g.memberCode.toLowerCase().includes(q),
+    );
+  }, [data, search]);
 
   const selected = useMemo(
-    () => rows.find((b) => b.payment.id === selectedId) ?? null,
-    [rows, selectedId],
+    () => data.find((g) => g.memberId === selectedId) ?? null,
+    [data, selectedId],
   );
 
-  // Keep a valid selection as rows change (e.g. after approving one).
+  // Keep a valid selection as the (filtered) list changes.
   useEffect(() => {
-    if (rows.length === 0) {
+    if (data.length === 0) {
       setSelectedId(null);
-    } else if (!rows.some((b) => b.payment.id === selectedId)) {
-      setSelectedId(rows[0].payment.id);
+    } else if (!data.some((g) => g.memberId === selectedId)) {
+      setSelectedId(data[0].memberId);
     }
-  }, [rows, selectedId]);
+  }, [data, selectedId]);
 
   async function setStatus(id: string, status: string, paymentDate?: string) {
     setSavingId(id);
@@ -156,8 +210,35 @@ export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(d.error ?? `Update failed (HTTP ${res.status})`);
       }
-      // It's no longer under review — drop it from the list.
-      setRows((rs) => rs.filter((b) => b.payment.id !== id));
+      // Optimistically move the payment out of "under review" into "past" for
+      // its member; router.refresh() then reconciles with the server.
+      setData((ds) =>
+        ds.map((g) => {
+          const b = g.underReview.find((x) => x.payment.id === id);
+          if (!b) return g;
+          const past: PastPayment = {
+            id: b.payment.id,
+            code: b.payment.code,
+            status,
+            amount: b.payment.amount,
+            currency: b.payment.currency,
+            amountEur: b.payment.amountEur,
+            invoiceDate: b.payment.invoiceDate,
+            paymentDate: paymentDate ?? null,
+            dueDate: b.payment.dueDate,
+            invoiceReference: b.payment.invoiceReference,
+            comment: b.payment.comment,
+            invoiceCode: b.invoice?.code ?? "",
+            invoicePdfUrl: b.payment.invoicePdfUrl || b.invoice?.pdfUrl || "",
+            projectCode: b.project?.code ?? "",
+          };
+          return {
+            ...g,
+            underReview: g.underReview.filter((x) => x.payment.id !== id),
+            past: [past, ...g.past],
+          };
+        }),
+      );
       setToast({ kind: "ok", msg: `Marked ${status}` });
       setPaidTargetId(null);
       router.refresh();
@@ -168,336 +249,127 @@ export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
     }
   }
 
-  if (rows.length === 0) {
+  if (data.length === 0) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-10 text-center">
-        <div className="text-sm font-medium text-slate-800">Nothing to review</div>
+        <div className="text-sm font-medium text-slate-800">No members yet</div>
         <p className="mt-1 text-xs text-slate-500">
-          No outflow payments are under review right now.
+          No network member has submitted an invoice through the app yet.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-      {/* Master list */}
-      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden self-start">
-        <div className="border-b border-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Under review · {rows.length}
+    <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+      {/* Member list */}
+      <div className="self-start overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="border-b border-slate-100 p-2">
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search members…"
+            className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+          />
         </div>
-        <ul className="max-h-[70vh] divide-y divide-slate-100 overflow-y-auto">
-          {rows.map((b) => {
-            const active = b.payment.id === selectedId;
-            return (
-              <li key={b.payment.id}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(b.payment.id)}
-                  aria-pressed={active}
-                  className={`block w-full px-3 py-2.5 text-left transition-colors ${
-                    active ? "bg-brand-50" : "hover:bg-slate-50"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium text-slate-900 demo-blur">
-                      {b.memberName || b.memberCode || "—"}
-                    </span>
-                    <span className="shrink-0 text-xs font-semibold tabular-nums text-slate-700 demo-blur">
-                      {money(b.payment.amount, b.payment.currency)}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                    <span className="truncate font-mono">
-                      #{b.payment.code || "—"}
-                      {b.invoice?.code ? ` · ${b.invoice.code}` : ""}
-                    </span>
-                    {b.payment.dueDate ? <span className="shrink-0">due {b.payment.dueDate}</span> : null}
-                  </div>
-                </button>
-              </li>
-            );
-          })}
+        <ul className="max-h-[72vh] divide-y divide-slate-100 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <li className="p-6 text-center text-xs text-slate-400">No members match.</li>
+          ) : (
+            filtered.map((g) => {
+              const active = g.memberId === selectedId;
+              return (
+                <li key={g.memberId}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(g.memberId)}
+                    aria-pressed={active}
+                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors ${
+                      active ? "bg-brand-50" : "hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div
+                        className={`truncate text-sm font-medium demo-blur ${active ? "text-brand-800" : "text-slate-900"}`}
+                      >
+                        {g.memberName || g.memberCode || "—"}
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {g.past.length} past payment{g.past.length === 1 ? "" : "s"}
+                      </div>
+                    </div>
+                    {g.underReview.length > 0 ? (
+                      <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-200">
+                        {g.underReview.length} to review
+                      </span>
+                    ) : null}
+                  </button>
+                </li>
+              );
+            })
+          )}
         </ul>
       </div>
 
       {/* Detail */}
       {selected ? (
-        <div className="space-y-3">
-          {/* Header + actions */}
-          <div className="rounded-lg border border-slate-200 bg-white p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                  <span className="rounded-md bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] text-white">
-                    #{selected.payment.code || "—"}
-                  </span>
-                  <span className="rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
-                    Under review
-                  </span>
-                  {selected.payment.type ? <span>{selected.payment.type}</span> : null}
-                </div>
-                <h2 className="mt-1.5 text-lg font-semibold text-slate-900 demo-blur">
-                  {selected.memberName || selected.memberCode || "—"}
-                </h2>
-                <div className="mt-0.5 text-xs text-slate-500 demo-blur">
-                  {selected.memberCode}
-                  {selected.payment.beneficiary && selected.payment.beneficiary !== selected.memberName
-                    ? ` · ${selected.payment.beneficiary}`
-                    : ""}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-2xl font-semibold tabular-nums text-slate-900 demo-blur">
-                  {money(selected.payment.amount, selected.payment.currency)}
-                </div>
-                {selected.payment.amountEur != null ? (
-                  <div className="text-[11px] text-slate-400 demo-blur">
-                    ≈ {selected.payment.amountEur.toLocaleString("en-US", { maximumFractionDigits: 2 })} EUR
-                  </div>
-                ) : null}
-                {selected.payment.dueDate ? (
-                  <div className="mt-0.5 text-[11px] text-slate-500">Due {selected.payment.dueDate}</div>
-                ) : null}
-              </div>
-            </div>
-            {selected.payment.comment ? (
-              <p className="mt-3 rounded-md bg-slate-50 p-2.5 text-xs text-slate-600 demo-blur">
-                {selected.payment.comment}
-              </p>
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900 demo-blur">
+              {selected.memberName || selected.memberCode || "—"}
+            </h2>
+            {selected.memberCode ? (
+              <div className="text-xs text-slate-500 demo-blur">{selected.memberCode}</div>
             ) : null}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={savingId === selected.payment.id}
-                onClick={() => setStatus(selected.payment.id, "To be paid")}
-                className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-              >
-                Approve → To be paid
-              </button>
-              <button
-                type="button"
-                disabled={savingId === selected.payment.id}
-                onClick={() => setPaidTargetId(selected.payment.id)}
-                className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
-              >
-                Mark paid
-              </button>
-              <button
-                type="button"
-                disabled={savingId === selected.payment.id}
-                onClick={() => setStatus(selected.payment.id, "Canceled")}
-                className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <Link
-                href={`/admin/payments?search=${encodeURIComponent(selected.payment.code)}`}
-                className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700"
-              >
-                Open in Payments →
-              </Link>
-            </div>
           </div>
 
-          {/* Invoice */}
-          <Section title="Invoice">
-            {selected.payment.invoicePdfUrl || selected.invoice?.pdfUrl ? (
-              <div className="flex items-center gap-3">
-                <DownloadChip
-                  url={selected.payment.invoicePdfUrl || selected.invoice?.pdfUrl}
-                  title="Open invoice PDF"
-                />
-                <div className="min-w-0 text-xs text-slate-600">
-                  <div className="font-mono text-[11px] text-slate-800">
-                    {selected.invoice?.code || selected.payment.invoiceReference || "Invoice"}
-                  </div>
-                  <div className="text-slate-500 demo-blur">
-                    {money(
-                      selected.invoice?.amount ?? selected.payment.amount,
-                      selected.invoice?.currency || selected.payment.currency,
-                    )}
-                    {selected.invoice?.submissionDate
-                      ? ` · submitted ${selected.invoice.submissionDate.slice(0, 10)}`
-                      : ""}
-                  </div>
-                </div>
-                {selected.payment.invoiceUrl ? (
-                  <a
-                    href={selected.payment.invoiceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700"
-                  >
-                    External link ↗
-                  </a>
-                ) : null}
+          {/* Under review */}
+          <div>
+            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Under review · {selected.underReview.length}
+            </h3>
+            {selected.underReview.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
+                Nothing under review for this member.
               </div>
             ) : (
-              <Empty>No invoice PDF attached to this payment or its linked invoice.</Empty>
-            )}
-          </Section>
-
-          {/* Timesheets */}
-          <Section
-            title="Timesheets"
-            action={
-              selected.staffing ? (
-                <a
-                  href={`/print/staffing/${encodeURIComponent(selected.staffing.id)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-medium text-brand-600 hover:text-brand-700"
-                >
-                  Download PDF ↗
-                </a>
-              ) : null
-            }
-          >
-            {selected.timesheets.length === 0 ? (
-              <Empty>No logged timesheets found on the associated staffing.</Empty>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                <p className="pb-2 text-[11px] text-slate-400">Click a week to see the day-by-day breakdown.</p>
-                {selected.timesheets.map((t) => {
-                  const open = expandedTs.has(t.id);
-                  return (
-                    <div key={t.id}>
-                      <button
-                        type="button"
-                        onClick={() => toggleTs(t.id)}
-                        aria-expanded={open}
-                        className="flex w-full items-center gap-2 py-1.5 text-left text-xs hover:bg-slate-50"
-                      >
-                        <svg
-                          viewBox="0 0 16 16"
-                          className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          aria-hidden
-                        >
-                          <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                        <span className="flex-1 whitespace-nowrap">
-                          {t.startDate ? longDate(t.startDate) : "—"}
-                          {t.endDate ? ` → ${longDate(t.endDate)}` : ""}
-                        </span>
-                        <span className="text-[10px] text-slate-500">{t.status}</span>
-                        <span className="w-16 text-right tabular-nums font-medium">
-                          {t.totalHours.toFixed(2)} h
-                        </span>
-                      </button>
-                      {open ? (
-                        <div className="mb-1 rounded-md bg-slate-50 p-2">
-                          <table className="w-full text-xs">
-                            <tbody>
-                              {DAY_KEYS.map((k, i) => {
-                                const d = t.days[k];
-                                const iso = t.startDate ? addDaysIso(t.startDate, i) : null;
-                                return (
-                                  <tr key={k} className="align-top">
-                                    <td className="py-0.5 pr-2 whitespace-nowrap text-slate-600">
-                                      {DAY_LABELS[k]}
-                                      {iso ? (
-                                        <span className="ml-1 text-slate-400">{shortDayDate(iso)}</span>
-                                      ) : null}
-                                    </td>
-                                    <td className="py-0.5 pr-2 text-right tabular-nums w-14">
-                                      {d.hours ? d.hours.toFixed(2) : "—"}
-                                    </td>
-                                    <td className="py-0.5 text-slate-600 whitespace-pre-line demo-blur">
-                                      {d.task || <span className="text-slate-300">—</span>}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-                <div className="flex items-center justify-between py-1.5 text-xs font-semibold">
-                  <span>Total</span>
-                  <span className="tabular-nums">
-                    {selected.timesheets.reduce((s, t) => s + t.totalHours, 0).toFixed(2)} h
-                  </span>
-                </div>
+              <div className="space-y-3">
+                {selected.underReview.map((b) => (
+                  <BundleDetail
+                    key={b.payment.id}
+                    bundle={b}
+                    saving={savingId === b.payment.id}
+                    expandedTs={expandedTs}
+                    toggleTs={toggleTs}
+                    onApprove={() => setStatus(b.payment.id, "To be paid")}
+                    onMarkPaid={() => setPaidTargetId(b.payment.id)}
+                    onCancel={() => setStatus(b.payment.id, "Canceled")}
+                  />
+                ))}
               </div>
             )}
-          </Section>
+          </div>
 
-          {/* Staffing */}
-          <Section title="Staffing">
-            {selected.staffing ? (
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
-                <Field label="Code" value={selected.staffing.code} mono />
-                <Field label="Project role" value={selected.staffing.projectRole} />
-                <Field label="Job title" value={selected.staffing.role} />
-                <Field
-                  label="Rate / day"
-                  value={money(selected.staffing.ratePerDay, selected.staffing.currency)}
-                  blur
-                />
-                <Field
-                  label="Days (logged / alloc.)"
-                  value={`${(
-                    selected.timesheets.reduce((s, t) => s + t.totalHours, 0) / 8
-                  ).toFixed(2)} / ${selected.staffing.daysAllocated ?? "—"}`}
-                  blur
-                  hint="Logged days = submitted, invoiced and paid timesheet hours ÷ 8. Draft, cancelled and deleted weeks are excluded. Shown against the days allocated on the staffing."
-                />
-                <Field
-                  label="Period"
-                  value={
-                    selected.staffing.startDate || selected.staffing.endDate
-                      ? `${selected.staffing.startDate ?? "—"} → ${selected.staffing.endDate ?? "—"}`
-                      : "—"
-                  }
-                />
-              </dl>
-            ) : (
-              <Empty>This payment isn&apos;t linked to a staffing (no invoice link).</Empty>
-            )}
-          </Section>
-
-          {/* Project + SOW */}
-          <Section title="Project & SOW">
-            {selected.project ? (
-              <div className="text-xs">
-                <div className="mb-2">
-                  <span className="font-mono text-[11px] text-slate-500">{selected.project.code}</span>{" "}
-                  <span className="text-slate-800 demo-blur">{selected.project.name}</span>
-                </div>
-                {selected.sowContracts.length === 0 ? (
-                  <Empty>No contract linked to this project.</Empty>
-                ) : (
-                  <ul className="divide-y divide-slate-100">
-                    {selected.sowContracts.map((c) => (
-                      <li key={c.id} className="flex items-center gap-3 py-1.5">
-                        <DownloadChip url={c.pdfUrl} title="Open contract PDF" emptyTitle="No PDF" />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-slate-800">
-                            {c.type}
-                            {c.side ? <span className="text-slate-400"> · {c.side}</span> : null}
-                          </div>
-                          <div className="text-[11px] text-slate-500">
-                            {c.signatureDate ? `Signed ${c.signatureDate}` : "No signature date"}
-                            {c.expiryDate ? ` · expires ${c.expiryDate}` : ""}
-                          </div>
-                        </div>
-                        <ValidityChip validity={c.validity} />
-                      </li>
-                    ))}
-                  </ul>
-                )}
+          {/* Past payments */}
+          <div>
+            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Past payments · {selected.past.length}
+            </h3>
+            {selected.past.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
+                No past payments yet.
               </div>
             ) : (
-              <Empty>No project associated with this payment.</Empty>
+              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                <ul className="divide-y divide-slate-100">
+                  {selected.past.map((p) => (
+                    <PastRow key={p.id} p={p} />
+                  ))}
+                </ul>
+              </div>
             )}
-          </Section>
+          </div>
         </div>
       ) : null}
 
@@ -520,6 +392,334 @@ export function PaymentReviewClient({ bundles }: { bundles: ReviewBundle[] }) {
           {toast.msg}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function PastRow({ p }: { p: PastPayment }) {
+  const tone = statusTone(p.status);
+  return (
+    <li className="flex items-center gap-3 px-3 py-2.5">
+      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${TONE_PILL[tone]}`}>
+        {p.status}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 text-[11px] text-slate-500">
+          <span className="font-mono">#{p.code || "—"}</span>
+          {p.invoiceCode ? <span className="font-mono">· {p.invoiceCode}</span> : null}
+          {p.projectCode ? <span className="truncate">· {p.projectCode}</span> : null}
+        </div>
+        <div className="text-[11px] text-slate-400">
+          {tone === "paid" && p.paymentDate
+            ? `Paid ${longDate(p.paymentDate)}`
+            : p.invoiceDate
+            ? `Invoiced ${longDate(p.invoiceDate)}`
+            : p.dueDate
+            ? `Due ${longDate(p.dueDate)}`
+            : ""}
+        </div>
+      </div>
+      <div className="shrink-0 text-right">
+        <div className="text-xs font-semibold tabular-nums text-slate-800 demo-blur">
+          {money(p.amount, p.currency)}
+        </div>
+        {p.amountEur != null && p.currency !== "EUR" ? (
+          <div className="text-[10px] text-slate-400 demo-blur">
+            ≈ {p.amountEur.toLocaleString("en-US", { maximumFractionDigits: 0 })} EUR
+          </div>
+        ) : null}
+      </div>
+      {p.invoicePdfUrl ? (
+        <DownloadChip url={p.invoicePdfUrl} title="Open invoice PDF" />
+      ) : null}
+    </li>
+  );
+}
+
+function BundleDetail({
+  bundle: selected,
+  saving,
+  expandedTs,
+  toggleTs,
+  onApprove,
+  onMarkPaid,
+  onCancel,
+}: {
+  bundle: ReviewBundle;
+  saving: boolean;
+  expandedTs: Set<string>;
+  toggleTs: (id: string) => void;
+  onApprove: () => void;
+  onMarkPaid: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/30 p-3">
+      {/* Header + actions */}
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+              <span className="rounded-md bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] text-white">
+                #{selected.payment.code || "—"}
+              </span>
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
+                Under review
+              </span>
+              {selected.payment.type ? <span>{selected.payment.type}</span> : null}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-2xl font-semibold tabular-nums text-slate-900 demo-blur">
+              {money(selected.payment.amount, selected.payment.currency)}
+            </div>
+            {selected.payment.amountEur != null ? (
+              <div className="text-[11px] text-slate-400 demo-blur">
+                ≈ {selected.payment.amountEur.toLocaleString("en-US", { maximumFractionDigits: 2 })} EUR
+              </div>
+            ) : null}
+            {selected.payment.dueDate ? (
+              <div className="mt-0.5 text-[11px] text-slate-500">Due {selected.payment.dueDate}</div>
+            ) : null}
+          </div>
+        </div>
+        {selected.payment.comment ? (
+          <p className="mt-3 rounded-md bg-slate-50 p-2.5 text-xs text-slate-600 demo-blur">
+            {selected.payment.comment}
+          </p>
+        ) : null}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={saving}
+            onClick={onApprove}
+            className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+          >
+            Approve → To be paid
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={onMarkPaid}
+            className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+          >
+            Mark paid
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={onCancel}
+            className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <Link
+            href={`/admin/payments?search=${encodeURIComponent(selected.payment.code)}`}
+            className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700"
+          >
+            Open in Payments →
+          </Link>
+        </div>
+      </div>
+
+      {/* Invoice */}
+      <Section title="Invoice">
+        {selected.payment.invoicePdfUrl || selected.invoice?.pdfUrl ? (
+          <div className="flex items-center gap-3">
+            <DownloadChip
+              url={selected.payment.invoicePdfUrl || selected.invoice?.pdfUrl}
+              title="Open invoice PDF"
+            />
+            <div className="min-w-0 text-xs text-slate-600">
+              <div className="font-mono text-[11px] text-slate-800">
+                {selected.invoice?.code || selected.payment.invoiceReference || "Invoice"}
+              </div>
+              <div className="text-slate-500 demo-blur">
+                {money(
+                  selected.invoice?.amount ?? selected.payment.amount,
+                  selected.invoice?.currency || selected.payment.currency,
+                )}
+                {selected.invoice?.submissionDate
+                  ? ` · submitted ${selected.invoice.submissionDate.slice(0, 10)}`
+                  : ""}
+              </div>
+            </div>
+            {selected.payment.invoiceUrl ? (
+              <a
+                href={selected.payment.invoiceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700"
+              >
+                External link ↗
+              </a>
+            ) : null}
+          </div>
+        ) : (
+          <Empty>No invoice PDF attached to this payment or its linked invoice.</Empty>
+        )}
+      </Section>
+
+      {/* Timesheets */}
+      <Section
+        title="Timesheets"
+        action={
+          selected.staffing ? (
+            <a
+              href={`/print/staffing/${encodeURIComponent(selected.staffing.id)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs font-medium text-brand-600 hover:text-brand-700"
+            >
+              Download PDF ↗
+            </a>
+          ) : null
+        }
+      >
+        {selected.timesheets.length === 0 ? (
+          <Empty>No logged timesheets found on the associated staffing.</Empty>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            <p className="pb-2 text-[11px] text-slate-400">Click a week to see the day-by-day breakdown.</p>
+            {selected.timesheets.map((t) => {
+              const open = expandedTs.has(t.id);
+              return (
+                <div key={t.id}>
+                  <button
+                    type="button"
+                    onClick={() => toggleTs(t.id)}
+                    aria-expanded={open}
+                    className="flex w-full items-center gap-2 py-1.5 text-left text-xs hover:bg-slate-50"
+                  >
+                    <svg
+                      viewBox="0 0 16 16"
+                      className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      aria-hidden
+                    >
+                      <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <span className="flex-1 whitespace-nowrap">
+                      {t.startDate ? longDate(t.startDate) : "—"}
+                      {t.endDate ? ` → ${longDate(t.endDate)}` : ""}
+                    </span>
+                    <span className="text-[10px] text-slate-500">{t.status}</span>
+                    <span className="w-16 text-right tabular-nums font-medium">
+                      {t.totalHours.toFixed(2)} h
+                    </span>
+                  </button>
+                  {open ? (
+                    <div className="mb-1 rounded-md bg-slate-50 p-2">
+                      <table className="w-full text-xs">
+                        <tbody>
+                          {DAY_KEYS.map((k, i) => {
+                            const d = t.days[k];
+                            const iso = t.startDate ? addDaysIso(t.startDate, i) : null;
+                            return (
+                              <tr key={k} className="align-top">
+                                <td className="py-0.5 pr-2 whitespace-nowrap text-slate-600">
+                                  {DAY_LABELS[k]}
+                                  {iso ? (
+                                    <span className="ml-1 text-slate-400">{shortDayDate(iso)}</span>
+                                  ) : null}
+                                </td>
+                                <td className="py-0.5 pr-2 text-right tabular-nums w-14">
+                                  {d.hours ? d.hours.toFixed(2) : "—"}
+                                </td>
+                                <td className="py-0.5 text-slate-600 whitespace-pre-line demo-blur">
+                                  {d.task || <span className="text-slate-300">—</span>}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+            <div className="flex items-center justify-between py-1.5 text-xs font-semibold">
+              <span>Total</span>
+              <span className="tabular-nums">
+                {selected.timesheets.reduce((s, t) => s + t.totalHours, 0).toFixed(2)} h
+              </span>
+            </div>
+          </div>
+        )}
+      </Section>
+
+      {/* Staffing */}
+      <Section title="Staffing">
+        {selected.staffing ? (
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+            <Field label="Code" value={selected.staffing.code} mono />
+            <Field label="Project role" value={selected.staffing.projectRole} />
+            <Field label="Job title" value={selected.staffing.role} />
+            <Field
+              label="Rate / day"
+              value={money(selected.staffing.ratePerDay, selected.staffing.currency)}
+              blur
+            />
+            <Field
+              label="Days (logged / alloc.)"
+              value={`${(
+                selected.timesheets.reduce((s, t) => s + t.totalHours, 0) / 8
+              ).toFixed(2)} / ${selected.staffing.daysAllocated ?? "—"}`}
+              blur
+              hint="Logged days = submitted, invoiced and paid timesheet hours ÷ 8. Draft, cancelled and deleted weeks are excluded. Shown against the days allocated on the staffing."
+            />
+            <Field
+              label="Period"
+              value={
+                selected.staffing.startDate || selected.staffing.endDate
+                  ? `${selected.staffing.startDate ?? "—"} → ${selected.staffing.endDate ?? "—"}`
+                  : "—"
+              }
+            />
+          </dl>
+        ) : (
+          <Empty>This payment isn&apos;t linked to a staffing (no invoice link).</Empty>
+        )}
+      </Section>
+
+      {/* Project + SOW */}
+      <Section title="Project & SOW">
+        {selected.project ? (
+          <div className="text-xs">
+            <div className="mb-2">
+              <span className="font-mono text-[11px] text-slate-500">{selected.project.code}</span>{" "}
+              <span className="text-slate-800 demo-blur">{selected.project.name}</span>
+            </div>
+            {selected.sowContracts.length === 0 ? (
+              <Empty>No contract linked to this project.</Empty>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {selected.sowContracts.map((c) => (
+                  <li key={c.id} className="flex items-center gap-3 py-1.5">
+                    <DownloadChip url={c.pdfUrl} title="Open contract PDF" emptyTitle="No PDF" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-slate-800">
+                        {c.type}
+                        {c.side ? <span className="text-slate-400"> · {c.side}</span> : null}
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        {c.signatureDate ? `Signed ${c.signatureDate}` : "No signature date"}
+                        {c.expiryDate ? ` · expires ${c.expiryDate}` : ""}
+                      </div>
+                    </div>
+                    <ValidityChip validity={c.validity} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : (
+          <Empty>No project associated with this payment.</Empty>
+        )}
+      </Section>
     </div>
   );
 }

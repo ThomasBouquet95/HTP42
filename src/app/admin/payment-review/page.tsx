@@ -9,8 +9,14 @@ import {
   listAllTimesheets,
   listPayments,
   listProjects,
+  type PaymentRecord,
 } from "@/lib/airtable";
-import { PaymentReviewClient, type ReviewBundle } from "./review-client";
+import {
+  PaymentReviewClient,
+  type MemberGroup,
+  type PastPayment,
+  type ReviewBundle,
+} from "./review-client";
 
 export const dynamic = "force-dynamic";
 
@@ -61,21 +67,19 @@ export default async function PaymentReviewPage() {
     }
   }
 
-  const underReview = payments.filter(
-    (p) => p.direction === "Outflow" && isUnderReview(p.paymentStatus),
-  );
+  // Resolve which member a payment belongs to (its linked member, else the
+  // member on the linked invoice).
+  function resolveMemberId(p: PaymentRecord): string {
+    const invoice = p.memberInvoiceRecordIds.map((id) => invoiceById.get(id)).find(Boolean);
+    return p.memberRecordIds[0] ?? invoice?.memberRecordId ?? "";
+  }
 
-  const bundles: ReviewBundle[] = underReview.map((p) => {
-    const invoice = p.memberInvoiceRecordIds
-      .map((id) => invoiceById.get(id))
-      .find(Boolean);
-    const memberId = p.memberRecordIds[0] ?? invoice?.memberRecordId ?? "";
+  function buildBundle(p: PaymentRecord): ReviewBundle {
+    const invoice = p.memberInvoiceRecordIds.map((id) => invoiceById.get(id)).find(Boolean);
+    const memberId = resolveMemberId(p);
     const member = memberId ? memberById.get(memberId) : undefined;
-    const staffing = invoice?.staffingRecordId
-      ? staffingById.get(invoice.staffingRecordId)
-      : undefined;
+    const staffing = invoice?.staffingRecordId ? staffingById.get(invoice.staffingRecordId) : undefined;
 
-    // Resolve the project: prefer the staffing's project, else the payment's.
     const projectCode = staffing?.projectCode || invoice?.projectCode || p.projectCodes[0] || "";
     const project = projectCode ? projectByCode.get(projectCode) : undefined;
     const projectId = project?.id ?? p.projectRecordIds[0] ?? "";
@@ -84,7 +88,6 @@ export default async function PaymentReviewPage() {
     const timesheetsSorted = [...tsRows].sort((a, b) =>
       (a.startDate ?? "").localeCompare(b.startDate ?? ""),
     );
-
     const sow = projectId ? (contractsByProjectId.get(projectId) ?? []) : [];
 
     return {
@@ -156,7 +159,82 @@ export default async function PaymentReviewPage() {
         pdfUrl: c.pdf?.url ?? "",
       })),
     };
-  });
+  }
+
+  function buildPast(p: PaymentRecord): PastPayment {
+    const invoice = p.memberInvoiceRecordIds.map((id) => invoiceById.get(id)).find(Boolean);
+    return {
+      id: p.id,
+      code: p.paymentCode,
+      status: p.paymentStatus || "—",
+      amount: p.invoiceValue,
+      currency: p.invoiceCurrency,
+      amountEur: p.invoiceValueEur,
+      invoiceDate: p.invoiceDate,
+      paymentDate: p.paymentDate,
+      dueDate: p.dueDate,
+      invoiceReference: p.invoiceReference,
+      comment: p.comment,
+      invoiceCode: invoice?.invoiceCode ?? "",
+      invoicePdfUrl: p.invoicePdf?.url ?? invoice?.pdf?.url ?? "",
+      projectCode: invoice?.projectCode || p.projectCodes[0] || "",
+    };
+  }
+
+  // One group per network member. Seed from submitted invoices (the user wants
+  // every member who has submitted at least one invoice to appear), and also
+  // ensure any member carrying an outflow payment shows up so review items are
+  // never hidden.
+  const groupMap = new Map<string, MemberGroup>();
+  function ensureGroup(memberId: string, name: string, code: string): MemberGroup {
+    let g = groupMap.get(memberId);
+    if (!g) {
+      g = { memberId, memberName: name, memberCode: code, underReview: [], past: [] };
+      groupMap.set(memberId, g);
+    } else {
+      if (!g.memberName && name) g.memberName = name;
+      if (!g.memberCode && code) g.memberCode = code;
+    }
+    return g;
+  }
+
+  for (const inv of invoices) {
+    if (!inv.memberRecordId) continue;
+    const m = memberById.get(inv.memberRecordId);
+    ensureGroup(
+      inv.memberRecordId,
+      m?.fullName || inv.memberName || "",
+      m?.memberCode || inv.memberCode || "",
+    );
+  }
+
+  for (const p of payments) {
+    if (p.direction !== "Outflow") continue;
+    const memberId = resolveMemberId(p);
+    if (!memberId) continue;
+    const m = memberById.get(memberId);
+    const g = ensureGroup(memberId, m?.fullName || "", m?.memberCode || p.memberCodes[0] || "");
+    if (isUnderReview(p.paymentStatus)) g.underReview.push(buildBundle(p));
+    else g.past.push(buildPast(p));
+  }
+
+  // Sort each member's past payments newest first (by payment date, then
+  // invoice date), and order members: those with items under review first, then
+  // by name.
+  const groups = [...groupMap.values()]
+    .map((g) => ({
+      ...g,
+      past: g.past.sort((a, b) =>
+        (b.paymentDate ?? b.invoiceDate ?? "").localeCompare(a.paymentDate ?? a.invoiceDate ?? ""),
+      ),
+    }))
+    .sort(
+      (a, b) =>
+        b.underReview.length - a.underReview.length ||
+        (a.memberName || a.memberCode).localeCompare(b.memberName || b.memberCode),
+    );
+
+  const totalUnderReview = groups.reduce((n, g) => n + g.underReview.length, 0);
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
@@ -164,10 +242,10 @@ export default async function PaymentReviewPage() {
       <div className="mb-4 flex items-baseline gap-3">
         <h1 className="text-base sm:text-lg font-semibold">Review payments</h1>
         <span className="text-xs text-slate-500">
-          · {bundles.length} outflow{bundles.length === 1 ? "" : "s"} under review
+          · {totalUnderReview} under review · {groups.length} member{groups.length === 1 ? "" : "s"}
         </span>
       </div>
-      <PaymentReviewClient bundles={bundles} />
+      <PaymentReviewClient groups={groups} />
     </main>
   );
 }
