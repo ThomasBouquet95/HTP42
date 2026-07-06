@@ -106,16 +106,6 @@ export function AdminInvoicesClient({
     });
   }, [rows, filters]);
 
-  const totalsByCurrency = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const r of filtered) {
-      if (r.amount == null) continue;
-      const key = r.currency || "—";
-      m.set(key, (m.get(key) ?? 0) + r.amount);
-    }
-    return [...m.entries()].sort((a, b) => b[1] - a[1]);
-  }, [filtered]);
-
   function exportCsv() {
     const headers = [
       "Submitted",
@@ -234,20 +224,6 @@ export function AdminInvoicesClient({
           >
             Export CSV
           </button>
-          <div className="ml-auto flex flex-wrap items-center gap-2 text-xs text-slate-600">
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium">
-              {filtered.length} invoice{filtered.length === 1 ? "" : "s"}
-            </span>
-            {totalsByCurrency.map(([c, sum]) => (
-              <span
-                key={`tot-${c}`}
-                className="rounded-full bg-slate-100 px-2 py-0.5 font-medium tabular-nums demo-blur"
-                title="Sum of all invoice amounts in view"
-              >
-                Σ {sum.toLocaleString("en-US", { maximumFractionDigits: 2 })} {c}
-              </span>
-            ))}
-          </div>
         </div>
       </div>
 

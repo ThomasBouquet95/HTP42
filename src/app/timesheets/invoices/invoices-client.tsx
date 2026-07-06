@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { MemberInvoiceRecord } from "@/lib/airtable";
+import { formatFriendlyDate } from "@/components/date-picker";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 
@@ -27,10 +28,12 @@ export function InvoicesClient({
   invoices,
   staffings,
   timesheets,
+  paymentDateByInvoiceId,
 }: {
   invoices: MemberInvoiceRecord[];
   staffings: StaffingOpt[];
   timesheets: TimesheetOpt[];
+  paymentDateByInvoiceId: Record<string, string>;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(invoices);
@@ -135,6 +138,11 @@ export function InvoicesClient({
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     <StatusPill status={inv.status} />
+                    {inv.status === "Paid" && paymentDateByInvoiceId[inv.id] ? (
+                      <div className="mt-0.5 text-[10px] text-emerald-700">
+                        Paid {formatFriendlyDate(paymentDateByInvoiceId[inv.id])}
+                      </div>
+                    ) : null}
                     {inv.emailError ? (
                       <div
                         className="mt-0.5 text-[9px] uppercase tracking-wide text-amber-700"

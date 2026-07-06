@@ -4,6 +4,7 @@ import {
   getStaffingsForMember,
   getTimesheetsForMember,
   listInvoicesForMember,
+  listPayments,
 } from "@/lib/airtable";
 import { TimesheetsTabs } from "@/components/timesheets-tabs";
 import { InvoicesClient } from "./invoices-client";
@@ -14,11 +15,27 @@ export default async function InvoicesPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const [invoices, staffings, timesheets] = await Promise.all([
+  const [invoices, staffings, timesheets, payments] = await Promise.all([
     listInvoicesForMember(session.sub),
     getStaffingsForMember(session.memberCode),
     getTimesheetsForMember(session.memberCode),
+    listPayments(),
   ]);
+
+  // The payment date lives on the Payment that settles a member invoice, not on
+  // the invoice itself. Build a map for this member's own invoices so they can
+  // see when a paid invoice was actually paid. Only their invoice ids are used,
+  // so no other member's payment data is exposed.
+  const myInvoiceIds = new Set(invoices.map((i) => i.id));
+  const paymentDateByInvoiceId: Record<string, string> = {};
+  for (const p of payments) {
+    if (!p.paymentDate) continue;
+    for (const invId of p.memberInvoiceRecordIds) {
+      if (myInvoiceIds.has(invId) && !paymentDateByInvoiceId[invId]) {
+        paymentDateByInvoiceId[invId] = p.paymentDate;
+      }
+    }
+  }
 
   // Members invoice against a specific staffing line, which keeps the picker
   // scoped to the user's own engagements (incl. their internal pro-bono
@@ -57,6 +74,7 @@ export default async function InvoicesPage() {
         invoices={invoices}
         staffings={pickerStaffings}
         timesheets={invoiceableTimesheets}
+        paymentDateByInvoiceId={paymentDateByInvoiceId}
       />
     </main>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 // Shared date picker used across the admin (contracts, projects, …). A
 // button opens a month grid (same visual shape as CalendarRange) so admins
@@ -89,16 +90,40 @@ export function DatePopover({
     toIsoDate(value) || !value ? "picker" : "text",
   );
   const ref = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  // The calendar renders in a portal (fixed position) so it can't be clipped by
+  // a scrolling/overflow-hidden modal body. We track its on-screen position.
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   useEffect(() => {
     if (!open) return;
+    const PANEL_W = 264;
+    const PANEL_H = 320;
+    function reposition() {
+      const el = ref.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - r.bottom;
+      const top = spaceBelow >= PANEL_H + 8 ? r.bottom + 4 : Math.max(8, r.top - PANEL_H - 4);
+      let left = align === "right" ? r.right - PANEL_W : r.left;
+      left = Math.max(8, Math.min(left, window.innerWidth - PANEL_W - 8));
+      setPos({ top, left });
+    }
+    reposition();
     function onDocClick(e: MouseEvent) {
-      if (!ref.current) return;
-      if (ref.current.contains(e.target as Node)) return;
+      const t = e.target as Node;
+      if (ref.current?.contains(t)) return;
+      if (panelRef.current?.contains(t)) return;
       setOpen(false);
     }
     document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [open, align]);
 
   const iso = toIsoDate(value);
   const label = iso ? formatFriendlyDate(iso) : value.trim();
@@ -140,25 +165,28 @@ export function DatePopover({
           {mode === "picker" ? "txt" : "cal"}
         </button>
       ) : null}
-      {open && mode === "picker" ? (
-        <div
-          className={`absolute z-50 mt-1 rounded-md border border-slate-200 bg-white p-2 shadow-lg ${
-            align === "right" ? "right-0" : "left-0"
-          }`}
-        >
-          <SingleDateCalendar
-            value={iso ?? ""}
-            onPick={(s) => {
-              onChange(s);
-              setOpen(false);
-            }}
-            onClear={() => {
-              onChange("");
-              setOpen(false);
-            }}
-          />
-        </div>
-      ) : null}
+      {open && mode === "picker" && pos
+        ? createPortal(
+            <div
+              ref={panelRef}
+              style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 60 }}
+              className="rounded-md border border-slate-200 bg-white p-2 shadow-lg"
+            >
+              <SingleDateCalendar
+                value={iso ?? ""}
+                onPick={(s) => {
+                  onChange(s);
+                  setOpen(false);
+                }}
+                onClear={() => {
+                  onChange("");
+                  setOpen(false);
+                }}
+              />
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
