@@ -38,6 +38,7 @@ const CATEGORIES: Category[] = [
       { key: "networkcockpit", href: "/admin/network", label: "Cockpit" },
       { key: "members", href: "/admin/members", label: "Members" },
       { key: "memberreviews", href: "/admin/member-reviews", label: "Client review" },
+      { key: "invoices", href: "/admin/invoices", label: "Member invoices" },
       { key: "signins", href: "/admin/sign-ins", label: "App activity" },
     ],
   },
@@ -66,9 +67,6 @@ const CATEGORIES: Category[] = [
       { key: "cockpit", href: "/admin/cockpit", label: "Cockpit" },
       { key: "payments", href: "/admin/payments", label: "Payments" },
       { key: "paymentreview", href: "/admin/payment-review", label: "Review" },
-      // Invoices kept for category resolution but hidden from the sub-row —
-      // member invoices are reachable from payment links + Documents search.
-      { key: "invoices", href: "/admin/invoices", label: "Invoices", hidden: true },
     ],
   },
   {

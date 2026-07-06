@@ -80,11 +80,15 @@ export async function PATCH(
       });
     }
     // Carry the billing lifecycle forward: a payment going Paid marks its linked
-    // member invoices Paid and flips their Invoiced timesheets to Paid.
+    // member invoices Paid and flips their Invoiced timesheets to Paid. Awaited
+    // (not fire-and-forget) so it reliably completes before the serverless
+    // function can be frozen after the response.
     if (before && becamePaid(before, nextStatus) && before.memberInvoiceRecordIds.length > 0) {
-      void cascadeInvoicePaidForPayment(before).catch((e) => {
+      try {
+        await cascadeInvoicePaidForPayment(before);
+      } catch (e) {
         console.error("Invoice-paid cascade failed:", e);
-      });
+      }
     }
     return NextResponse.json({ ok: true });
   } catch (e) {
@@ -168,9 +172,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       // pre-edit ones (a PUT can change which invoices the payment covers).
       const after = (await getPaymentById(id)) ?? existing;
       if (after.memberInvoiceRecordIds.length > 0) {
-        void cascadeInvoicePaidForPayment(after).catch((e) => {
+        try {
+          await cascadeInvoicePaidForPayment(after);
+        } catch (e) {
           console.error("Invoice-paid cascade failed:", e);
-        });
+        }
       }
     }
     return NextResponse.json({ ok: true });
