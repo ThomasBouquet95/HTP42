@@ -512,7 +512,7 @@ function BundleDetail({
               Open in Payments →
             </Link>
           </div>
-        ) : (
+        ) : open ? (
           <div className="mt-3 flex justify-end">
             <Link
               href={`/admin/payments?search=${encodeURIComponent(selected.payment.code)}`}
@@ -521,7 +521,7 @@ function BundleDetail({
               Open in Payments →
             </Link>
           </div>
-        )}
+        ) : null}
       </div>
 
       {open ? (
