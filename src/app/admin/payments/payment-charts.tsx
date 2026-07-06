@@ -21,6 +21,32 @@ export type MonthRow = [string, MonthCell];
 // the rest = planned. Order: most-informative (money moved) first.
 const STATUS_ORDER = ["Paid", "To be paid", "Scheduled", "Under Review"] as const;
 
+// Fallback FX rates (foreign currency -> EUR) used ONLY when a payment has a
+// foreign-currency amount but no stored EUR value and no per-row FX rate. Keeps
+// such invoices visible in the charts instead of silently counting as 0.
+// Adjust here if the desk rate drifts materially.
+const DEFAULT_FX_TO_EUR: Record<string, number> = {
+  USD: 0.92,
+  CHF: 1.04,
+};
+
+// The EUR amount a payment should contribute to charts/totals. Prefers the
+// value stored on the record; when that's blank we derive it so invoices
+// entered without an explicit EUR conversion aren't dropped:
+//   - EUR invoices count at face value,
+//   - foreign invoices use their own FX rate when present,
+//   - otherwise fall back to DEFAULT_FX_TO_EUR (face value if the currency is
+//     unknown, so nothing silently disappears).
+export function effectiveEur(p: PaymentRecord): number {
+  if (p.invoiceValueEur != null) return p.invoiceValueEur;
+  const value = p.invoiceValue;
+  if (value == null) return 0;
+  if (p.invoiceCurrency === "EUR" || p.invoiceCurrency === "") return value;
+  if (p.fxRateToEur != null) return value * p.fxRateToEur;
+  const fallback = DEFAULT_FX_TO_EUR[p.invoiceCurrency];
+  return fallback != null ? value * fallback : value;
+}
+
 // Charts always exclude Canceled. "executed" scope further narrows to
 // Paid only.
 function chartRows(payments: PaymentRecord[], scope: ChartScope): PaymentRecord[] {
@@ -36,7 +62,7 @@ export function buildTotals(payments: PaymentRecord[]) {
   let outflowEur = 0;
   for (const p of payments) {
     if (p.paymentStatus === "Canceled") continue;
-    const eur = p.invoiceValueEur ?? 0;
+    const eur = effectiveEur(p);
     if (p.direction === "Inflow") inflowEur += eur;
     else if (p.direction === "Outflow") outflowEur += eur;
   }
@@ -51,7 +77,7 @@ export function buildMonthly(payments: PaymentRecord[], scope: ChartScope): Mont
     const cur =
       map.get(key) ??
       { inflowExecuted: 0, inflowPlanned: 0, outflowExecuted: 0, outflowPlanned: 0 };
-    const eur = p.invoiceValueEur ?? 0;
+    const eur = effectiveEur(p);
     const executed = p.paymentStatus === "Paid";
     if (p.direction === "Inflow") {
       if (executed) cur.inflowExecuted += eur;
@@ -75,7 +101,7 @@ export function buildStatusBreakdown(payments: PaymentRecord[], scope: ChartScop
   for (const p of chartRows(payments, scope)) {
     const status = p.paymentStatus;
     if (!status || !(status in inflow)) continue;
-    const eur = p.invoiceValueEur ?? 0;
+    const eur = effectiveEur(p);
     if (p.direction === "Inflow") inflow[status] += eur;
     else if (p.direction === "Outflow") outflow[status] += eur;
   }
