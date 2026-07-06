@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/admin/payments/backfill-eur", "schedule": "0 3 * * *" }
+  ]
+}

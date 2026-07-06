@@ -217,7 +217,6 @@ export function PaymentsClient({
   const [rows, setRows] = useState<PaymentRecord[]>(payments);
   useEffect(() => setRows(payments), [payments]);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
-  const [recomputing, setRecomputing] = useState(false);
   const [toast, setToast] = useState<{ kind: "error" | "ok"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -614,28 +613,6 @@ export function PaymentsClient({
     }
   }
 
-  async function recomputeEur() {
-    setRecomputing(true);
-    try {
-      const res = await fetch("/api/admin/payments/backfill-eur", { method: "POST" });
-      const data = (await res.json().catch(() => ({}))) as {
-        updated?: number;
-        scanned?: number;
-        error?: string;
-      };
-      if (!res.ok) throw new Error(data.error ?? "Could not recompute EUR values.");
-      setToast({
-        kind: "ok",
-        msg: `Recomputed EUR on ${data.updated ?? 0} of ${data.scanned ?? 0} payments.`,
-      });
-      router.refresh();
-    } catch (e) {
-      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Could not recompute EUR values." });
-    } finally {
-      setRecomputing(false);
-    }
-  }
-
   function exportCsv() {
     const header = [
       "Payment Code",
@@ -775,18 +752,6 @@ export function PaymentsClient({
                 <path d="M8 2v8m0 0L5 7m3 3 3-3M3 12v1.5A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5V12" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               Export
-            </button>
-            <button
-              type="button"
-              onClick={recomputeEur}
-              disabled={recomputing}
-              title="Recompute and store the EUR value for every payment (EUR at rate 1, foreign via FX or the default desk rate). Makes the raw Airtable column match the cockpit."
-              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
-            >
-              <svg viewBox="0 0 16 16" className={`h-3.5 w-3.5 ${recomputing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-                <path d="M13 8a5 5 0 1 1-1.46-3.54M13 2.5V5h-2.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              {recomputing ? "Recomputing…" : "Recompute EUR"}
             </button>
             <button
               type="button"
