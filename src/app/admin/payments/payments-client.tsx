@@ -7,7 +7,6 @@ import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-c
 import { DownloadChip } from "@/components/download-chip";
 import { DateField } from "@/components/date-picker";
 import { PaidDateModal } from "@/components/paid-date-modal";
-import { effectiveEur } from "./payment-charts";
 import type { Currency, PaymentRecord, PaymentStatus } from "@/lib/airtable";
 
 type LinkOpt = { id: string; code: string; name: string };
@@ -651,7 +650,6 @@ export function PaymentsClient({
       "Invoice Value",
       "FX to EUR",
       "Invoice Value EUR",
-      "Value EUR (used in charts)",
       "Payment Terms",
       "Payment Status",
       "Payment Date",
@@ -673,7 +671,6 @@ export function PaymentsClient({
         p.invoiceValue == null ? "" : String(p.invoiceValue),
         p.fxRateToEur == null ? "" : String(p.fxRateToEur),
         p.invoiceValueEur == null ? "" : p.invoiceValueEur.toFixed(2),
-        p.paymentStatus === "Canceled" ? "0.00" : effectiveEur(p).toFixed(2),
         p.paymentTerms,
         p.paymentStatus,
         p.paymentDate ?? "",

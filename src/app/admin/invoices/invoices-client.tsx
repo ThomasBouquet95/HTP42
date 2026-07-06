@@ -127,6 +127,7 @@ export function AdminInvoicesClient({
       "Project Name",
       "Amount",
       "Currency",
+      "Status",
       "Payment",
       "Comment",
       "PDF",
@@ -142,6 +143,7 @@ export function AdminInvoicesClient({
       r.projectName,
       r.amount != null ? String(r.amount) : "",
       r.currency,
+      r.status || "",
       paymentByInvoiceId[r.id]?.code ?? "",
       r.comment,
       r.pdf?.url ?? "",
@@ -259,6 +261,7 @@ export function AdminInvoicesClient({
               <th className="text-left px-3 py-2 font-medium">Member</th>
               <th className="text-left px-3 py-2 font-medium">Staffing</th>
               <th className="text-right px-3 py-2 font-medium">Amount</th>
+              <th className="text-left px-3 py-2 font-medium">Status</th>
               <th className="text-left px-3 py-2 font-medium">Payment</th>
               <th className="text-left px-3 py-2 font-medium">PDF</th>
               <th className="text-left px-3 py-2 font-medium">Comment</th>
@@ -267,7 +270,7 @@ export function AdminInvoicesClient({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-center text-slate-500 py-10">
+                <td colSpan={9} className="text-center text-slate-500 py-10">
                   No invoices match these filters.
                 </td>
               </tr>
@@ -324,6 +327,9 @@ export function AdminInvoicesClient({
                         : "—"}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
+                      <InvoiceStatusBadge status={r.status} />
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
                       {payment ? (
                         <Link
                           href={`/admin/payments?search=${encodeURIComponent(payment.code)}`}
@@ -373,6 +379,21 @@ export function AdminInvoicesClient({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function InvoiceStatusBadge({ status }: { status: string }) {
+  if (!status) return <span className="text-slate-300">—</span>;
+  const cls =
+    status === "Paid"
+      ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
+      : status === "Cancelled"
+      ? "bg-slate-100 text-slate-500 ring-slate-200 line-through"
+      : "bg-amber-50 text-amber-700 ring-amber-100"; // To be paid
+  return (
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${cls}`}>
+      {status}
+    </span>
   );
 }
 
