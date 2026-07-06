@@ -18,6 +18,8 @@ type SendArgs = {
   // Either a single address or a list — single mail, multiple recipients all
   // visible to each other (use sparingly: this is To:, not Bcc:).
   to: string | string[];
+  // Optional CC recipients, also visible to everyone on the mail.
+  cc?: string | string[];
   subject: string;
   textBody: string;
   htmlBody?: string;
@@ -49,6 +51,7 @@ async function getAppToken(): Promise<string> {
 
 export async function sendMailViaGraph({
   to,
+  cc,
   subject,
   textBody,
   htmlBody,
@@ -60,12 +63,15 @@ export async function sendMailViaGraph({
       return { ok: false, error: "INVOICE_SENDER_UPN is not configured" };
     }
     const token = await getAppToken();
-    const recipients = (Array.isArray(to) ? to : [to])
-      .map((addr) => addr.trim())
-      .filter(Boolean);
+    const clean = (v: string | string[] | undefined) =>
+      (Array.isArray(v) ? v : v ? [v] : []).map((addr) => addr.trim()).filter(Boolean);
+    const recipients = clean(to);
     if (recipients.length === 0) {
       return { ok: false, error: "No recipients" };
     }
+    // Don't duplicate an address in CC if it's already a To recipient.
+    const toLower = new Set(recipients.map((a) => a.toLowerCase()));
+    const ccRecipients = clean(cc).filter((a) => !toLower.has(a.toLowerCase()));
     const body = {
       message: {
         subject,
@@ -74,6 +80,9 @@ export async function sendMailViaGraph({
           content: htmlBody ?? textBody,
         },
         toRecipients: recipients.map((address) => ({
+          emailAddress: { address },
+        })),
+        ccRecipients: ccRecipients.map((address) => ({
           emailAddress: { address },
         })),
         attachments: (attachments ?? []).map((a) => ({

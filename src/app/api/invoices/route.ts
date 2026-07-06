@@ -323,6 +323,9 @@ export async function POST(request: Request) {
 
     const sendResult = await sendMailViaGraph({
       to: env.invoiceRecipient,
+      // Copy the submitting member on their own invoice, using their @htp42.com
+      // login address (never a personal email).
+      cc: session.email || undefined,
       subject,
       textBody: text,
       htmlBody: html,
