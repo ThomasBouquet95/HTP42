@@ -159,6 +159,17 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [paidTargetId, setPaidTargetId] = useState<string | null>(null);
   const [expandedTs, setExpandedTs] = useState<Set<string>>(new Set());
+  // Which payment cards are expanded. Defaults (set per selected member below):
+  // under-review items open, past items collapsed.
+  const [openItems, setOpenItems] = useState<Set<string>>(new Set());
+  function toggleItem(id: string) {
+    setOpenItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -188,6 +199,12 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
     () => data.find((g) => g.memberId === selectedId) ?? null,
     [data, selectedId],
   );
+
+  // On (re)selecting a member, default under-review cards open and past ones
+  // collapsed. User toggles persist until the selection or data changes.
+  useEffect(() => {
+    setOpenItems(new Set(selected?.underReview.map((b) => b.payment.id) ?? []));
+  }, [selected]);
 
   // Keep a valid selection as the (filtered) list changes.
   useEffect(() => {
@@ -340,6 +357,8 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
                     key={b.payment.id}
                     bundle={b}
                     saving={savingId === b.payment.id}
+                    open={openItems.has(b.payment.id)}
+                    onToggle={() => toggleItem(b.payment.id)}
                     expandedTs={expandedTs}
                     toggleTs={toggleTs}
                     onApprove={() => setStatus(b.payment.id, "To be paid")}
@@ -364,7 +383,12 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
               <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
                 <ul className="divide-y divide-slate-100">
                   {selected.past.map((p) => (
-                    <PastRow key={p.id} p={p} />
+                    <PastRow
+                      key={p.id}
+                      p={p}
+                      open={openItems.has(p.id)}
+                      onToggle={() => toggleItem(p.id)}
+                    />
                   ))}
                 </ul>
               </div>
@@ -396,41 +420,85 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
   );
 }
 
-function PastRow({ p }: { p: PastPayment }) {
+function PastRow({
+  p,
+  open,
+  onToggle,
+}: {
+  p: PastPayment;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const tone = statusTone(p.status);
   return (
-    <li className="flex items-center gap-3 px-3 py-2.5">
-      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${TONE_PILL[tone]}`}>
-        {p.status}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 text-[11px] text-slate-500">
-          <span className="font-mono">#{p.code || "—"}</span>
-          {p.invoiceCode ? <span className="font-mono">· {p.invoiceCode}</span> : null}
-          {p.projectCode ? <span className="truncate">· {p.projectCode}</span> : null}
-        </div>
-        <div className="text-[11px] text-slate-400">
-          {tone === "paid" && p.paymentDate
-            ? `Paid ${longDate(p.paymentDate)}`
-            : p.invoiceDate
-            ? `Invoiced ${longDate(p.invoiceDate)}`
-            : p.dueDate
-            ? `Due ${longDate(p.dueDate)}`
-            : ""}
-        </div>
-      </div>
-      <div className="shrink-0 text-right">
-        <div className="text-xs font-semibold tabular-nums text-slate-800 demo-blur">
-          {money(p.amount, p.currency)}
-        </div>
-        {p.amountEur != null && p.currency !== "EUR" ? (
-          <div className="text-[10px] text-slate-400 demo-blur">
-            ≈ {p.amountEur.toLocaleString("en-US", { maximumFractionDigits: 0 })} EUR
+    <li>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-50"
+      >
+        <svg
+          viewBox="0 0 16 16"
+          className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          aria-hidden
+        >
+          <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${TONE_PILL[tone]}`}>
+          {p.status}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-[11px] text-slate-500">
+            <span className="font-mono">#{p.code || "—"}</span>
+            {p.invoiceCode ? <span className="font-mono">· {p.invoiceCode}</span> : null}
+            {p.projectCode ? <span className="truncate">· {p.projectCode}</span> : null}
           </div>
-        ) : null}
-      </div>
-      {p.invoicePdfUrl ? (
-        <DownloadChip url={p.invoicePdfUrl} title="Open invoice PDF" />
+          <div className="text-[11px] text-slate-400">
+            {tone === "paid" && p.paymentDate
+              ? `Paid ${longDate(p.paymentDate)}`
+              : p.invoiceDate
+              ? `Invoiced ${longDate(p.invoiceDate)}`
+              : p.dueDate
+              ? `Due ${longDate(p.dueDate)}`
+              : ""}
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="text-xs font-semibold tabular-nums text-slate-800 demo-blur">
+            {money(p.amount, p.currency)}
+          </div>
+          {p.amountEur != null && p.currency !== "EUR" ? (
+            <div className="text-[10px] text-slate-400 demo-blur">
+              ≈ {p.amountEur.toLocaleString("en-US", { maximumFractionDigits: 0 })} EUR
+            </div>
+          ) : null}
+        </div>
+      </button>
+      {open ? (
+        <div className="border-t border-slate-100 bg-slate-50/60 px-3 py-2.5">
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+            <Field label="Invoice" value={p.invoiceCode || p.invoiceReference} mono />
+            <Field label="Project" value={p.projectCode} mono />
+            <Field label="Amount" value={money(p.amount, p.currency)} blur />
+            <Field label="Invoice date" value={p.invoiceDate ? longDate(p.invoiceDate) : "—"} />
+            <Field label="Payment date" value={p.paymentDate ? longDate(p.paymentDate) : "—"} />
+            <Field label="Due date" value={p.dueDate ? longDate(p.dueDate) : "—"} />
+          </dl>
+          {p.comment ? (
+            <p className="mt-2 rounded-md bg-white p-2 text-[11px] text-slate-600 demo-blur">
+              {p.comment}
+            </p>
+          ) : null}
+          {p.invoicePdfUrl ? (
+            <div className="mt-2">
+              <DownloadChip url={p.invoicePdfUrl} title="Open invoice PDF" />
+            </div>
+          ) : null}
+        </div>
       ) : null}
     </li>
   );
@@ -439,6 +507,8 @@ function PastRow({ p }: { p: PastPayment }) {
 function BundleDetail({
   bundle: selected,
   saving,
+  open,
+  onToggle,
   expandedTs,
   toggleTs,
   onApprove,
@@ -447,6 +517,8 @@ function BundleDetail({
 }: {
   bundle: ReviewBundle;
   saving: boolean;
+  open: boolean;
+  onToggle: () => void;
   expandedTs: Set<string>;
   toggleTs: (id: string) => void;
   onApprove: () => void;
@@ -459,7 +531,22 @@ function BundleDetail({
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded={open}
+              className="flex items-center gap-2 text-[11px] text-slate-500 hover:text-slate-700"
+            >
+              <svg
+                viewBox="0 0 16 16"
+                className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                aria-hidden
+              >
+                <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
               <span className="rounded-md bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] text-white">
                 #{selected.payment.code || "—"}
               </span>
@@ -467,7 +554,7 @@ function BundleDetail({
                 Under review
               </span>
               {selected.payment.type ? <span>{selected.payment.type}</span> : null}
-            </div>
+            </button>
           </div>
           <div className="text-right">
             <div className="text-2xl font-semibold tabular-nums text-slate-900 demo-blur">
@@ -522,6 +609,8 @@ function BundleDetail({
         </div>
       </div>
 
+      {open ? (
+        <>
       {/* Invoice */}
       <Section title="Invoice">
         {selected.payment.invoicePdfUrl || selected.invoice?.pdfUrl ? (
@@ -720,6 +809,8 @@ function BundleDetail({
           <Empty>No project associated with this payment.</Empty>
         )}
       </Section>
+        </>
+      ) : null}
     </div>
   );
 }
