@@ -15,12 +15,24 @@ export type ProjectOpt = {
   fxToEur: number | null;
 };
 export type MemberOpt = { id: string; code: string; name: string };
+export type StaffingOpt = {
+  id: string;
+  projectId: string;
+  code: string;
+  memberName: string;
+  daysUsed: number;
+};
 export type RetributionRow = {
   id: string;
   projectRecordId: string;
   category: string;
   otherDescription: string;
+  amountType: string; // "Percentage" | "Per day worked"
   percent: number | null; // whole-number percent, e.g. 5 or 5.5
+  dailyAmount: number | null;
+  workedStaffingId: string;
+  workedName: string;
+  workedDays: number | null;
   costBasis: string;
   memberRecordId: string;
   memberKey: string; // stable grouping key (member id, or a legacy-code key)
@@ -28,18 +40,26 @@ export type RetributionRow = {
   memberCode: string;
 };
 
+const PER_DAY = "Per day worked";
+
 type FormState = {
+  amountType: string;
   category: string;
   otherDescription: string;
   percent: string;
+  dailyAmount: string;
+  workedStaffingId: string;
   costBasis: string;
   memberRecordId: string;
 };
 
 const EMPTY: FormState = {
+  amountType: "Percentage",
   category: "",
   otherDescription: "",
   percent: "",
+  dailyAmount: "",
+  workedStaffingId: "",
   costBasis: "Part of project price",
   memberRecordId: "",
 };
@@ -52,6 +72,10 @@ function pct(n: number | null): string {
   if (n == null) return "—";
   return `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;
 }
+function days(n: number | null): string {
+  if (n == null) return "—";
+  return `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} d`;
+}
 function categoryLabel(r: { category: string; otherDescription: string }): string {
   if (r.category === "Other") return r.otherDescription ? `Other · ${r.otherDescription}` : "Other";
   return r.category || "—";
@@ -60,15 +84,19 @@ function categoryLabel(r: { category: string; otherDescription: string }): strin
 export function RetributionClient({
   projects,
   members,
+  staffings,
   rows,
   categories,
   bases,
+  amountTypes,
 }: {
   projects: ProjectOpt[];
   members: MemberOpt[];
+  staffings: StaffingOpt[];
   rows: RetributionRow[];
   categories: string[];
   bases: string[];
+  amountTypes: string[];
 }) {
   const router = useRouter();
   const [data, setData] = useState(rows);
@@ -112,20 +140,30 @@ export function RetributionClient({
     () => projects.find((p) => p.id === selectedId) ?? null,
     [projects, selectedId],
   );
-
+  const projectStaffings = useMemo(
+    () => staffings.filter((s) => s.projectId === selectedId),
+    [staffings, selectedId],
+  );
   const projectRows = useMemo(
     () => data.filter((r) => r.projectRecordId === selectedId),
     [data, selectedId],
   );
 
-  // Amount per row = percent/100 x project total (project currency).
+  // Amount per row: percentage x project total, or daily rate x worked days.
   const amountOf = (r: RetributionRow): number | null => {
+    if (r.amountType === PER_DAY) {
+      if (r.dailyAmount == null || r.workedDays == null) return null;
+      return r.dailyAmount * r.workedDays;
+    }
     if (r.percent == null || !project || project.totalAmount == null) return null;
     return (r.percent / 100) * project.totalAmount;
   };
 
   const perPerson = useMemo(() => {
-    const m = new Map<string, { key: string; name: string; code: string; amount: number; hasNull: boolean; percent: number }>();
+    const m = new Map<
+      string,
+      { key: string; name: string; code: string; amount: number; hasNull: boolean }
+    >();
     for (const r of projectRows) {
       const e = m.get(r.memberKey) ?? {
         key: r.memberKey,
@@ -133,12 +171,10 @@ export function RetributionClient({
         code: r.memberCode,
         amount: 0,
         hasNull: false,
-        percent: 0,
       };
       const a = amountOf(r);
       if (a == null) e.hasNull = true;
       else e.amount += a;
-      e.percent += r.percent ?? 0;
       m.set(r.memberKey, e);
     }
     return [...m.values()].sort((a, b) => b.amount - a.amount);
@@ -151,8 +187,10 @@ export function RetributionClient({
     let amount = 0;
     let anyNull = false;
     for (const r of projectRows) {
-      if (r.costBasis === "On top") onTop += r.percent ?? 0;
-      else partOf += r.percent ?? 0;
+      if (r.amountType !== PER_DAY) {
+        if (r.costBasis === "On top") onTop += r.percent ?? 0;
+        else partOf += r.percent ?? 0;
+      }
       const a = amountOf(r);
       if (a == null) anyNull = true;
       else amount += a;
@@ -173,9 +211,12 @@ export function RetributionClient({
     setCreating(false);
     setError(null);
     setForm({
+      amountType: r.amountType || "Percentage",
       category: r.category,
       otherDescription: r.otherDescription,
       percent: r.percent == null ? "" : String(r.percent),
+      dailyAmount: r.dailyAmount == null ? "" : String(r.dailyAmount),
+      workedStaffingId: r.workedStaffingId,
       costBasis: r.costBasis || "Part of project price",
       memberRecordId: r.memberRecordId,
     });
@@ -191,6 +232,9 @@ export function RetributionClient({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  const isPerDay = form.amountType === PER_DAY;
+  const selectedStaffing = projectStaffings.find((s) => s.id === form.workedStaffingId);
+
   async function submit() {
     if (!project) return;
     setError(null);
@@ -198,17 +242,26 @@ export function RetributionClient({
     if (form.category === "Other" && !form.otherDescription.trim())
       return setError("Describe the 'Other' category.");
     if (!form.memberRecordId) return setError("Pick a member.");
-    const percentNum = Number(form.percent);
-    if (form.percent.trim() === "" || !Number.isFinite(percentNum) || percentNum < 0)
-      return setError("Enter a valid percentage.");
+    if (isPerDay) {
+      const daily = Number(form.dailyAmount);
+      if (form.dailyAmount.trim() === "" || !Number.isFinite(daily) || daily <= 0)
+        return setError("Enter a valid daily amount.");
+      if (!form.workedStaffingId) return setError("Pick the consultant whose days count.");
+    } else {
+      const p = Number(form.percent);
+      if (form.percent.trim() === "" || !Number.isFinite(p) || p < 0)
+        return setError("Enter a valid percentage.");
+    }
     setSaving(true);
     try {
       const payload = {
         projectRecordId: project.id,
         category: form.category,
-        // Only carry a description for the "Other" category.
         otherDescription: form.category === "Other" ? form.otherDescription.trim() : "",
-        percent: percentNum,
+        amountType: form.amountType,
+        percent: isPerDay ? undefined : Number(form.percent),
+        dailyAmount: isPerDay ? Number(form.dailyAmount) : undefined,
+        workedStaffingId: isPerDay ? form.workedStaffingId : "",
         costBasis: form.costBasis,
         memberRecordId: form.memberRecordId,
         memberCode: members.find((m) => m.id === form.memberRecordId)?.code ?? "",
@@ -250,6 +303,19 @@ export function RetributionClient({
   }
 
   const modalOpen = creating || !!editing;
+
+  // Live amount preview in the modal.
+  const previewAmount: number | null = (() => {
+    if (!project) return null;
+    if (isPerDay) {
+      const daily = Number(form.dailyAmount);
+      if (!Number.isFinite(daily) || !selectedStaffing) return null;
+      return daily * selectedStaffing.daysUsed;
+    }
+    const p = Number(form.percent);
+    if (!Number.isFinite(p) || project.totalAmount == null) return null;
+    return (p / 100) * project.totalAmount;
+  })();
 
   return (
     <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
@@ -321,8 +387,8 @@ export function RetributionClient({
                     <>Project total {money(project.totalAmount, project.currency)}</>
                   ) : (
                     <span className="text-amber-700">
-                      No project total set — amounts can&apos;t be computed until you set it on the
-                      project.
+                      No project total set — percentage amounts can&apos;t be computed until you set
+                      it on the project.
                     </span>
                   )}
                 </div>
@@ -339,7 +405,7 @@ export function RetributionClient({
                   <tr>
                     <th className="px-3 py-2 text-left font-medium">Category</th>
                     <th className="px-3 py-2 text-left font-medium">Member</th>
-                    <th className="px-3 py-2 text-right font-medium">%</th>
+                    <th className="px-3 py-2 text-left font-medium">Rate</th>
                     <th className="px-3 py-2 text-left font-medium">Basis</th>
                     <th className="px-3 py-2 text-right font-medium">Amount</th>
                     <th className="px-3 py-2" />
@@ -359,7 +425,20 @@ export function RetributionClient({
                         <td className="px-3 py-2 demo-blur">
                           {r.memberName || r.memberCode || "—"}
                         </td>
-                        <td className="px-3 py-2 text-right tabular-nums">{pct(r.percent)}</td>
+                        <td className="px-3 py-2 tabular-nums">
+                          {r.amountType === PER_DAY ? (
+                            <span className="demo-blur">
+                              {money(r.dailyAmount, project.currency)}/day × {days(r.workedDays)}
+                              {r.workedName ? (
+                                <span className="ml-1 text-[10px] text-slate-400 demo-blur">
+                                  ({r.workedName})
+                                </span>
+                              ) : null}
+                            </span>
+                          ) : (
+                            pct(r.percent)
+                          )}
+                        </td>
                         <td className="px-3 py-2">
                           <BasisPill basis={r.costBasis} />
                         </td>
@@ -386,11 +465,9 @@ export function RetributionClient({
                       <td className="px-3 py-2" colSpan={2}>
                         Total
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {pct(totals.partOf + totals.onTop)}
-                      </td>
-                      <td className="px-3 py-2 text-[10px] text-slate-500">
+                      <td className="px-3 py-2 text-[10px] text-slate-500" colSpan={2}>
                         {pct(totals.partOf)} in price · {pct(totals.onTop)} on top
+                        <span className="text-slate-400"> (percentage rows)</span>
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums demo-blur">
                         {money(totals.anyNull ? null : totals.amount, project.currency)}
@@ -404,7 +481,7 @@ export function RetributionClient({
 
             {totals.partOf > 100 ? (
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-                Heads up: the &quot;part of project price&quot; allocations add up to{" "}
+                Heads up: the &quot;part of project price&quot; percentage allocations add up to{" "}
                 {pct(totals.partOf)}, which is more than 100% of the project price.
               </div>
             ) : null}
@@ -419,9 +496,8 @@ export function RetributionClient({
                   <ul className="divide-y divide-slate-100">
                     {perPerson.map((p) => (
                       <li key={p.key} className="flex items-center gap-3 px-3 py-2.5">
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm text-slate-800 demo-blur">{p.name}</div>
-                          <div className="text-[11px] text-slate-400">{pct(p.percent)} of project</div>
+                        <div className="min-w-0 flex-1 truncate text-sm text-slate-800 demo-blur">
+                          {p.name}
                         </div>
                         <div className="shrink-0 text-right text-sm font-semibold tabular-nums text-slate-900 demo-blur">
                           {money(p.hasNull ? null : p.amount, project.currency)}
@@ -454,6 +530,30 @@ export function RetributionClient({
           </>
         }
       >
+        {/* Amount-type toggle */}
+        <div className="mb-3">
+          <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+            How is it calculated?
+          </span>
+          <div className="mt-1 inline-flex rounded-md border border-slate-300 p-0.5">
+            {amountTypes.map((t) => {
+              const active = form.amountType === t;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => update("amountType", t)}
+                  className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                    active ? "bg-brand-600 text-white" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  {t === PER_DAY ? "Per day worked" : "Percentage"}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="grid gap-3 sm:grid-cols-2">
           <FormSelect label="Category" value={form.category} onChange={(v) => update("category", v)} required>
             <option value="">Select…</option>
@@ -464,7 +564,7 @@ export function RetributionClient({
             ))}
           </FormSelect>
           <FormSelect
-            label="Member"
+            label="Member (receives it)"
             value={form.memberRecordId}
             onChange={(v) => update("memberRecordId", v)}
             required
@@ -477,6 +577,7 @@ export function RetributionClient({
             ))}
           </FormSelect>
         </div>
+
         {form.category === "Other" ? (
           <div className="mt-3">
             <FormField
@@ -488,14 +589,43 @@ export function RetributionClient({
             />
           </div>
         ) : null}
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <FormField
-            label="Percentage (%)"
-            value={form.percent}
-            onChange={(v) => update("percent", v)}
-            type="number"
-            required
-          />
+
+        {isPerDay ? (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <FormField
+              label={`Amount per day${project?.currency ? ` (${project.currency})` : ""}`}
+              value={form.dailyAmount}
+              onChange={(v) => update("dailyAmount", v)}
+              type="number"
+              required
+            />
+            <FormSelect
+              label="Consultant (whose days)"
+              value={form.workedStaffingId}
+              onChange={(v) => update("workedStaffingId", v)}
+              required
+            >
+              <option value="">Select…</option>
+              {projectStaffings.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.memberName} · {days(s.daysUsed)}
+                </option>
+              ))}
+            </FormSelect>
+          </div>
+        ) : (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <FormField
+              label="Percentage (%)"
+              value={form.percent}
+              onChange={(v) => update("percent", v)}
+              type="number"
+              required
+            />
+          </div>
+        )}
+
+        <div className="mt-3">
           <FormSelect label="Basis" value={form.costBasis} onChange={(v) => update("costBasis", v)}>
             {bases.map((b) => (
               <option key={b} value={b}>
@@ -504,13 +634,25 @@ export function RetributionClient({
             ))}
           </FormSelect>
         </div>
-        {project && form.percent.trim() !== "" && Number.isFinite(Number(form.percent)) ? (
-          <p className="mt-3 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-600 demo-blur">
-            {project.totalAmount != null
-              ? `≈ ${money((Number(form.percent) / 100) * project.totalAmount, project.currency)} on a project total of ${money(project.totalAmount, project.currency)}.`
-              : "Set the project total to see the computed amount."}
+
+        {isPerDay && projectStaffings.length === 0 ? (
+          <p className="mt-3 rounded-md bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
+            No consultants are staffed on this project yet, so there are no logged days to bill
+            against.
           </p>
         ) : null}
+
+        {previewAmount != null ? (
+          <p className="mt-3 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-600 demo-blur">
+            ≈ {money(previewAmount, project?.currency ?? "")}
+            {isPerDay && selectedStaffing
+              ? ` (${money(Number(form.dailyAmount), project?.currency ?? "")}/day × ${days(selectedStaffing.daysUsed)})`
+              : project?.totalAmount != null
+              ? ` on a project total of ${money(project.totalAmount, project.currency)}`
+              : ""}
+          </p>
+        ) : null}
+
         {error ? (
           <div className="mt-3 rounded-md bg-red-50 p-2.5 text-xs text-red-700">{error}</div>
         ) : null}

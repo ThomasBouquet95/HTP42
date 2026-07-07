@@ -120,6 +120,9 @@ export const FIELDS = {
     member: "Member",
     costBasis: "Cost Basis",
     otherDescription: "Other Description",
+    amountType: "Amount Type",
+    dailyAmount: "Daily Amount",
+    workedStaffing: "Worked Staffing",
   },
   projectStaffing: {
     staffingCode: "Staffing Code",
@@ -4811,13 +4814,24 @@ export const RETRIBUTION_CATEGORIES: RetributionCategory[] = [
 export type RetributionBasis = "Part of project price" | "On top";
 export const RETRIBUTION_BASES: RetributionBasis[] = ["Part of project price", "On top"];
 
+// How a row's amount is derived: a percentage of the project price, or a daily
+// rate multiplied by the worked consultant's logged days.
+export type RetributionAmountType = "Percentage" | "Per day worked";
+export const RETRIBUTION_AMOUNT_TYPES: RetributionAmountType[] = ["Percentage", "Per day worked"];
+
 export type RetributionRecord = {
   id: string;
   projectRecordId: string;
   category: RetributionCategory | "";
   otherDescription: string;
+  amountType: RetributionAmountType | "";
   // Decimal fraction as stored by Airtable's percent field (0.05 = 5%).
   percentage: number | null;
+  // Per-day rate (project currency) when amountType is "Per day worked".
+  dailyAmount: number | null;
+  // The staffing (a consultant on the project) whose logged days drive the
+  // per-day amount.
+  workedStaffingId: string;
   costBasis: RetributionBasis | "";
   memberRecordId: string;
   // Legacy free-text recipient (usually a member code) — used as a display
@@ -4829,7 +4843,10 @@ export type RetributionInput = {
   projectRecordId: string;
   category: RetributionCategory | "";
   otherDescription: string;
+  amountType: RetributionAmountType | "";
   percentage: number | null; // decimal fraction
+  dailyAmount: number | null;
+  workedStaffingId: string;
   costBasis: RetributionBasis | "";
   memberRecordId: string;
   recipient: string; // kept in sync with the member code for the legacy field
@@ -4842,7 +4859,11 @@ function retributionFromRecord(r: AirtableRecord<FieldSet>): RetributionRecord {
     projectRecordId: firstLinkedId(r, F.project),
     category: (str(r, F.category) as RetributionCategory) || "",
     otherDescription: str(r, F.otherDescription),
+    // Rows created before Amount Type existed are percentage-based.
+    amountType: (str(r, F.amountType) as RetributionAmountType) || "Percentage",
     percentage: numOrNull(r, F.percentage),
+    dailyAmount: numOrNull(r, F.dailyAmount),
+    workedStaffingId: firstLinkedId(r, F.workedStaffing),
     costBasis: (str(r, F.costBasis) as RetributionBasis) || "",
     memberRecordId: firstLinkedId(r, F.member),
     recipient: str(r, F.recipient),
@@ -4868,6 +4889,7 @@ export async function ensureRetributionSchema(): Promise<boolean> {
     const table = data.tables.find((t) => t.name === TABLES.projectRetribution);
     if (!table) return false; // table is expected to pre-exist in the base
     const membersTable = data.tables.find((t) => t.name === TABLES.networkMembers);
+    const staffingTable = data.tables.find((t) => t.name === TABLES.projectStaffing);
     const F = FIELDS.projectRetribution;
     const existing = new Set(table.fields.map((f) => f.name));
     const toCreate: Array<Record<string, unknown>> = [];
@@ -4893,6 +4915,27 @@ export async function ensureRetributionSchema(): Promise<boolean> {
     }
     if (!existing.has(F.otherDescription)) {
       toCreate.push({ name: F.otherDescription, type: "singleLineText" });
+    }
+    if (!existing.has(F.amountType)) {
+      toCreate.push({
+        name: F.amountType,
+        type: "singleSelect",
+        options: { choices: [{ name: "Percentage" }, { name: "Per day worked" }] },
+      });
+    }
+    if (!existing.has(F.dailyAmount)) {
+      toCreate.push({ name: F.dailyAmount, type: "number", options: { precision: 2 } });
+    }
+    if (!existing.has(F.workedStaffing)) {
+      if (!staffingTable) {
+        console.error("ensureRetributionSchema: Project Staffing table not found; cannot create Worked Staffing link");
+        return false;
+      }
+      toCreate.push({
+        name: F.workedStaffing,
+        type: "multipleRecordLinks",
+        options: { linkedTableId: staffingTable.id },
+      });
     }
     let allOk = true;
     for (const field of toCreate) {
@@ -4937,11 +4980,17 @@ export async function listRetributions(): Promise<RetributionRecord[]> {
 
 function retributionFields(input: RetributionInput): Record<string, unknown> {
   const F = FIELDS.projectRetribution;
+  const isPerDay = input.amountType === "Per day worked";
   return {
     [F.project]: input.projectRecordId ? [input.projectRecordId] : [],
     [F.category]: input.category === "" ? null : input.category,
     [F.otherDescription]: input.otherDescription || null,
-    [F.percentage]: input.percentage,
+    [F.amountType]: input.amountType === "" ? null : input.amountType,
+    // Only the fields relevant to the chosen mode are stored; the other is
+    // cleared so a mode switch never leaves a stale value behind.
+    [F.percentage]: isPerDay ? null : input.percentage,
+    [F.dailyAmount]: isPerDay ? input.dailyAmount : null,
+    [F.workedStaffing]: isPerDay && input.workedStaffingId ? [input.workedStaffingId] : [],
     [F.costBasis]: input.costBasis === "" ? null : input.costBasis,
     [F.member]: input.memberRecordId ? [input.memberRecordId] : [],
     [F.recipient]: input.recipient || null,
