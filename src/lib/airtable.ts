@@ -140,9 +140,11 @@ export const FIELDS = {
     endDate: "End Date",
     status: "Status",
     notes: "Notes",
+    timesheets: "Timesheets",
   },
   timesheets: {
     timesheetCode: "Timesheet Code",
+    id: "Id",
     memberCode: "Member Code",
     projectStaffing: "Project Staffing",
     submissionDate: "Submission Date",
@@ -2241,8 +2243,29 @@ function toAirtableFields(input: TimesheetInput): FieldSet {
   } as FieldSet;
 }
 
+// Per-staffing sequence number for a new timesheet — the trailing "_N" in the
+// Timesheet Code formula. Previously set by an Airtable automation that counted
+// the timesheets linked to the staffing; we replicate that here (count of the
+// staffing's existing timesheets + 1) so the automation can be removed. Timesheets
+// are soft-deleted (status), so the link count is monotonic and numbers don't
+// collide. Best-effort: falls back to 1 if the staffing can't be read.
+async function nextTimesheetSeq(staffingRecordId: string): Promise<number> {
+  if (!staffingRecordId) return 1;
+  try {
+    const staffing = await base(TABLES.projectStaffing).find(staffingRecordId);
+    const links = staffing.get(FIELDS.projectStaffing.timesheets);
+    return (Array.isArray(links) ? links.length : 0) + 1;
+  } catch (e) {
+    console.error("nextTimesheetSeq failed:", e);
+    return 1;
+  }
+}
+
 export async function createTimesheet(input: TimesheetInput): Promise<string> {
-  const [created] = await base(TABLES.timesheets).create([{ fields: toAirtableFields(input) }]);
+  const fields = toAirtableFields(input);
+  // Assign the per-staffing sequence number (drives the Timesheet Code suffix).
+  fields[FIELDS.timesheets.id] = await nextTimesheetSeq(input.staffingRecordId);
+  const [created] = await base(TABLES.timesheets).create([{ fields }]);
   return created.id;
 }
 
