@@ -23,6 +23,14 @@ export default async function AdminRetributionPage() {
   ]);
 
   const projectOpts: ProjectOpt[] = projects
+    .slice()
+    // Latest project first: by start date descending (projects with no start
+    // date fall to the bottom), then by code descending as a tiebreak.
+    .sort(
+      (a, b) =>
+        (b.startDate ?? "").localeCompare(a.startDate ?? "") ||
+        b.projectCode.localeCompare(a.projectCode),
+    )
     .map((p) => ({
       id: p.id,
       code: p.projectCode,
@@ -30,8 +38,7 @@ export default async function AdminRetributionPage() {
       totalAmount: p.totalAmount,
       currency: p.currency,
       fxToEur: p.fxToEur,
-    }))
-    .sort((a, b) => a.code.localeCompare(b.code));
+    }));
 
   const memberOpts = members
     .map((m) => ({ id: m.id, code: m.memberCode, name: m.fullName || m.memberCode }))
