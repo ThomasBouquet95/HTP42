@@ -6,7 +6,7 @@ import {
   type RetributionCategory,
 } from "@/lib/airtable";
 import { apiError, zodMessage } from "@/lib/errors";
-import { retributionSchema } from "./schema";
+import { retributionSchema, validateRetributionLinks } from "./schema";
 
 export const runtime = "nodejs";
 
@@ -20,6 +20,8 @@ export async function POST(request: Request) {
   }
   const d = parsed.data;
   try {
+    const linkError = await validateRetributionLinks(d.projectRecordId, d.memberRecordId);
+    if (linkError) return NextResponse.json({ error: linkError }, { status: 400 });
     const id = await createRetribution({
       projectRecordId: d.projectRecordId,
       category: d.category as RetributionCategory,

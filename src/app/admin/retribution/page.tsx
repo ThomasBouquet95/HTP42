@@ -53,7 +53,9 @@ export default async function AdminRetributionPage() {
       otherDescription: r.otherDescription,
       percent: r.percentage == null ? null : Math.round(r.percentage * 1000000) / 10000, // decimal -> %
       costBasis: r.costBasis,
-      memberRecordId: r.memberRecordId,
+      // Resolved member id (from link or legacy code) so the edit modal
+      // prefills the member even for legacy rows; blank if unresolved.
+      memberRecordId: m?.id ?? "",
       memberKey,
       memberName: m?.name ?? r.recipient ?? "",
       memberCode: m?.code ?? r.recipient ?? "",

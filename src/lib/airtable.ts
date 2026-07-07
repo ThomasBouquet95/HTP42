@@ -4871,7 +4871,11 @@ export async function ensureRetributionSchema(): Promise<boolean> {
     const F = FIELDS.projectRetribution;
     const existing = new Set(table.fields.map((f) => f.name));
     const toCreate: Array<Record<string, unknown>> = [];
-    if (!existing.has(F.member) && membersTable) {
+    if (!existing.has(F.member)) {
+      if (!membersTable) {
+        console.error("ensureRetributionSchema: Network Members table not found; cannot create Member link");
+        return false;
+      }
       toCreate.push({
         name: F.member,
         type: "multipleRecordLinks",
@@ -4918,8 +4922,11 @@ export async function ensureRetributionSchema(): Promise<boolean> {
 
 export async function listRetributions(): Promise<RetributionRecord[]> {
   try {
-    const ok = await ensureRetributionSchema();
-    if (!ok) return [];
+    // Best-effort schema ensure, but don't gate the read on it: the table and
+    // its rows already exist, and reading missing (not-yet-created) fields just
+    // yields empty values. Gating reads here would blank the page on a
+    // transient meta-API hiccup or a read-only PAT.
+    await ensureRetributionSchema();
     const records = await base(TABLES.projectRetribution).select().all();
     return records.map(retributionFromRecord);
   } catch (e) {
