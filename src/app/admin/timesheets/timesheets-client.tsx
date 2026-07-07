@@ -7,6 +7,7 @@ import { TIMESHEET_STATUSES } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
 import { formatWeekRange, parseIsoDate, toIsoDate } from "@/lib/dates";
 import { WeekChip } from "@/components/week-chip";
+import { DatePopover } from "@/components/date-picker";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
@@ -223,6 +224,21 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
     URL.revokeObjectURL(url);
   }
 
+  // Open a printable (Save-as-PDF) report of the currently filtered timesheets.
+  // The active filters are passed to the print route, which re-applies them
+  // server-side and auto-opens the print dialog (same pattern as the staffing
+  // PDF). Like the CSV, it covers the Submitted/Invoiced/Paid lifecycle.
+  function exportPdf() {
+    const p = new URLSearchParams();
+    if (filters.status.length > 0) p.set("status", filters.status.join(","));
+    if (filters.memberCode !== "All") p.set("member", filters.memberCode);
+    if (filters.projectCode !== "All") p.set("project", filters.projectCode);
+    if (filters.staffingId !== "All") p.set("staffing", filters.staffingId);
+    if (filters.from) p.set("from", filters.from);
+    if (filters.to) p.set("to", filters.to);
+    window.open(`/print/timesheets?${p.toString()}`, "_blank", "noopener");
+  }
+
   const openTimesheet = openId ? rows.find((r) => r.id === openId) ?? null : null;
 
   return (
@@ -280,8 +296,8 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
               })),
             ]}
           />
-          <DateInput label="From" value={filters.from} onChange={(v) => update("from", v)} />
-          <DateInput label="To" value={filters.to} onChange={(v) => update("to", v)} />
+          <FilterDate label="From" value={filters.from} onChange={(v) => update("from", v)} />
+          <FilterDate label="To" value={filters.to} onChange={(v) => update("to", v)} />
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
@@ -308,6 +324,14 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
               className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
             >
               Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={exportPdf}
+              disabled={filtered.length === 0}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Export PDF
             </button>
           </div>
         </div>
@@ -830,7 +854,10 @@ function Select({
   );
 }
 
-function DateInput({
+// From/To filters use the app's calendar popover (same one used across the
+// admin) rather than the browser's native date input, for a consistent look.
+// Calendar-only (no free-text) so the value stays a comparable ISO date.
+function FilterDate({
   label,
   value,
   onChange,
@@ -842,12 +869,7 @@ function DateInput({
   return (
     <label className="block text-sm">
       <span className="block text-slate-600 mb-1">{label}</span>
-      <input
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5"
-      />
+      <DatePopover value={value} onChange={onChange} placeholder="Any date" allowFreeText={false} />
     </label>
   );
 }
