@@ -25,6 +25,7 @@ export const TABLES = {
   contracts: "Contracts",
   opportunities: "Opportunities",
   clientSurveys: "Client Surveys",
+  projectRetribution: "Project Retribution",
   chatConversations: "Chat Conversations",
   chatMessages: "Chat Messages",
 } as const;
@@ -109,6 +110,16 @@ export const FIELDS = {
     memberRatingsJson: "Member Ratings JSON",
     emailSent: "Email Sent",
     emailError: "Email Error",
+  },
+  projectRetribution: {
+    retributionCode: "Retribution Code",
+    project: "Project",
+    category: "Category",
+    percentage: "Percentage",
+    recipient: "Recipient",
+    member: "Member",
+    costBasis: "Cost Basis",
+    otherDescription: "Other Description",
   },
   projectStaffing: {
     staffingCode: "Staffing Code",
@@ -4769,4 +4780,184 @@ export async function submitSurvey(token: string, sub: SurveySubmission): Promis
 
 export async function deleteSurvey(recordId: string): Promise<void> {
   await base(TABLES.clientSurveys).destroy([recordId]);
+}
+
+// ---------------------------------------------------------------------------
+// Project Retribution — internal commission split per project.
+// Each row: a category (Admin / Door Opening / Selling / Sourcing / Staffing /
+// Other), a percentage, a cost basis (part of the project price vs on top of
+// it), and the member who receives it. The monetary amount is derived on read
+// from the project's Total Amount (percentage x total), so it tracks the live
+// project value; the cost basis is a classification and does not change the
+// figure (it will matter once retribution feeds margin/payments, out of scope).
+// ---------------------------------------------------------------------------
+
+export type RetributionCategory =
+  | "Admin"
+  | "Door Opening"
+  | "Selling"
+  | "Sourcing"
+  | "Staffing"
+  | "Other";
+export const RETRIBUTION_CATEGORIES: RetributionCategory[] = [
+  "Admin",
+  "Door Opening",
+  "Selling",
+  "Sourcing",
+  "Staffing",
+  "Other",
+];
+
+export type RetributionBasis = "Part of project price" | "On top";
+export const RETRIBUTION_BASES: RetributionBasis[] = ["Part of project price", "On top"];
+
+export type RetributionRecord = {
+  id: string;
+  projectRecordId: string;
+  category: RetributionCategory | "";
+  otherDescription: string;
+  // Decimal fraction as stored by Airtable's percent field (0.05 = 5%).
+  percentage: number | null;
+  costBasis: RetributionBasis | "";
+  memberRecordId: string;
+  // Legacy free-text recipient (usually a member code) — used as a display
+  // fallback for rows created before the Member link existed.
+  recipient: string;
+};
+
+export type RetributionInput = {
+  projectRecordId: string;
+  category: RetributionCategory | "";
+  otherDescription: string;
+  percentage: number | null; // decimal fraction
+  costBasis: RetributionBasis | "";
+  memberRecordId: string;
+  recipient: string; // kept in sync with the member code for the legacy field
+};
+
+function retributionFromRecord(r: AirtableRecord<FieldSet>): RetributionRecord {
+  const F = FIELDS.projectRetribution;
+  return {
+    id: r.id,
+    projectRecordId: firstLinkedId(r, F.project),
+    category: (str(r, F.category) as RetributionCategory) || "",
+    otherDescription: str(r, F.otherDescription),
+    percentage: numOrNull(r, F.percentage),
+    costBasis: (str(r, F.costBasis) as RetributionBasis) || "",
+    memberRecordId: firstLinkedId(r, F.member),
+    recipient: str(r, F.recipient),
+  };
+}
+
+// The Project Retribution table already exists in the base; we lazily add the
+// fields the portal needs (Member link, Cost Basis, Other Description) via the
+// meta API. Idempotent + cached.
+let retributionSchemaReady = false;
+export async function ensureRetributionSchema(): Promise<boolean> {
+  if (retributionSchemaReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.projectRetribution);
+    if (!table) return false; // table is expected to pre-exist in the base
+    const membersTable = data.tables.find((t) => t.name === TABLES.networkMembers);
+    const F = FIELDS.projectRetribution;
+    const existing = new Set(table.fields.map((f) => f.name));
+    const toCreate: Array<Record<string, unknown>> = [];
+    if (!existing.has(F.member) && membersTable) {
+      toCreate.push({
+        name: F.member,
+        type: "multipleRecordLinks",
+        options: { linkedTableId: membersTable.id },
+      });
+    }
+    if (!existing.has(F.costBasis)) {
+      toCreate.push({
+        name: F.costBasis,
+        type: "singleSelect",
+        options: {
+          choices: [{ name: "Part of project price" }, { name: "On top" }],
+        },
+      });
+    }
+    if (!existing.has(F.otherDescription)) {
+      toCreate.push({ name: F.otherDescription, type: "singleLineText" });
+    }
+    let allOk = true;
+    for (const field of toCreate) {
+      const create = await fetch(
+        `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${env.airtablePat}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(field),
+        },
+      );
+      if (!create.ok) {
+        console.error("ensureRetributionSchema field create failed:", await create.text().catch(() => ""));
+        allOk = false;
+      }
+    }
+    if (allOk) retributionSchemaReady = true;
+    return allOk;
+  } catch (e) {
+    console.error("ensureRetributionSchema failed:", e);
+    return false;
+  }
+}
+
+export async function listRetributions(): Promise<RetributionRecord[]> {
+  try {
+    const ok = await ensureRetributionSchema();
+    if (!ok) return [];
+    const records = await base(TABLES.projectRetribution).select().all();
+    return records.map(retributionFromRecord);
+  } catch (e) {
+    console.error("listRetributions failed:", e);
+    return [];
+  }
+}
+
+function retributionFields(input: RetributionInput): Record<string, unknown> {
+  const F = FIELDS.projectRetribution;
+  return {
+    [F.project]: input.projectRecordId ? [input.projectRecordId] : [],
+    [F.category]: input.category === "" ? null : input.category,
+    [F.otherDescription]: input.otherDescription || null,
+    [F.percentage]: input.percentage,
+    [F.costBasis]: input.costBasis === "" ? null : input.costBasis,
+    [F.member]: input.memberRecordId ? [input.memberRecordId] : [],
+    [F.recipient]: input.recipient || null,
+  };
+}
+
+export async function createRetribution(input: RetributionInput): Promise<string> {
+  await ensureRetributionSchema();
+  const [created] = await base(TABLES.projectRetribution).create(
+    [{ fields: retributionFields(input) as FieldSet }],
+    { typecast: true },
+  );
+  return created.id;
+}
+
+export async function updateRetribution(id: string, input: RetributionInput): Promise<void> {
+  await ensureRetributionSchema();
+  await base(TABLES.projectRetribution).update(
+    [{ id, fields: retributionFields(input) as FieldSet }],
+    { typecast: true },
+  );
+}
+
+export async function deleteRetribution(id: string): Promise<void> {
+  await base(TABLES.projectRetribution).destroy([id]);
 }
