@@ -634,8 +634,8 @@ function RelatedInvoices({
                 {inv.submissionDate ? (
                   <span className="text-slate-400">{inv.submissionDate.slice(0, 10)}</span>
                 ) : null}
-                {/* Right: invoice status + the settling payment. */}
-                <div className="ml-auto flex shrink-0 items-center gap-2">
+                {/* Status + the settling payment, kept inline on the left. */}
+                <div className="flex shrink-0 items-center gap-2">
                   {inv.status ? (
                     <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
                       {inv.status}

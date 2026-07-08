@@ -623,14 +623,13 @@ export function ContractsAdminClient({
                   <Fragment key={c.id}>
                   <tr
                     aria-expanded={open}
-                    className={`border-t align-middle ${
+                    onClick={() => toggleRow(c.id)}
+                    className={`border-t align-middle cursor-pointer ${
                       flagged
                         ? "border-red-200 bg-red-50 ring-1 ring-inset ring-red-200"
                         : "border-slate-100 hover:bg-slate-50"
                     }`}
-                    title={
-                      flagged ? "Expired MSA / SoW — review the row." : undefined
-                    }
+                    title={flagged ? "Expired MSA / SoW — review the row." : "Click to expand"}
                   >
                     <td
                       className="px-1 py-1.5 text-center cursor-pointer"
@@ -671,7 +670,7 @@ export function ContractsAdminClient({
                     <td className="px-2 py-1.5 text-center">
                       <ValidityPill validity={c.validity} />
                     </td>
-                    <td className="px-2 py-1.5 text-center">
+                    <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
                       <span className="inline-flex justify-center">
                         <DownloadChip
                           url={c.pdf?.url}
@@ -680,7 +679,7 @@ export function ContractsAdminClient({
                         />
                       </span>
                     </td>
-                    <td className="px-2 py-1.5 text-center">
+                    <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         onClick={() => setOpenId(c.id)}

@@ -243,13 +243,14 @@ export function ClientsAdminClient({ clients }: Props) {
               <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Industry</th>
               <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Country</th>
               <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Key contact</th>
+              <th className="text-left px-2 py-1.5 font-medium">DES</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="text-center text-slate-500 py-10">
+                <td colSpan={8} className="text-center text-slate-500 py-10">
                   No clients match this search.
                 </td>
               </tr>
@@ -267,6 +268,9 @@ export function ClientsAdminClient({ clients }: Props) {
                   <td className="px-2 py-1.5 hidden md:table-cell demo-blur">{c.industry || "—"}</td>
                   <td className="px-2 py-1.5 hidden md:table-cell demo-blur">{c.country || "—"}</td>
                   <td className="px-2 py-1.5 hidden lg:table-cell demo-blur">{c.keyContact || "—"}</td>
+                  <td className="px-2 py-1.5">
+                    <DesPill value={c.subjectToDes} />
+                  </td>
                   <td className="px-2 py-1.5 text-right">
                     <IconButton title="Edit" onClick={() => openEdit(c)}>
                       <EditIcon />
@@ -408,6 +412,19 @@ function KindPill({ kind }: { kind: ClientKind }) {
       className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
     >
       {kind}
+    </span>
+  );
+}
+
+function DesPill({ value }: { value: "Yes" | "No" | "" }) {
+  if (!value) return <span className="text-slate-300">—</span>;
+  const cls =
+    value === "Yes"
+      ? "bg-amber-50 text-amber-700 ring-amber-200"
+      : "bg-slate-100 text-slate-600 ring-slate-200";
+  return (
+    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ${cls}`}>
+      {value}
     </span>
   );
 }
