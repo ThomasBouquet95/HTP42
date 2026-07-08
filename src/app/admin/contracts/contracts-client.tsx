@@ -1533,25 +1533,29 @@ function Select(
 ) {
   if (props.renderAs === "search") {
     return (
-      <label className="block text-sm">
-        <span className="block text-slate-600 mb-1">{props.label}</span>
+      <label className="block">
+        <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+          {props.label}
+        </span>
         <input
           type="search"
           value={props.value}
           onChange={(e) => props.onChange(e.target.value)}
           placeholder={props.placeholder}
-          className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+          className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
         />
       </label>
     );
   }
   return (
-    <label className="block text-sm">
-      <span className="block text-slate-600 mb-1">{props.label}</span>
+    <label className="block">
+      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+        {props.label}
+      </span>
       <select
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
-        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
       >
         {props.options.map((o) => (
           <option key={o.value} value={o.value}>

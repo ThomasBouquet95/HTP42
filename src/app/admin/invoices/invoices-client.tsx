@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { DownloadChip } from "@/components/download-chip";
+import { DateField } from "@/components/date-picker";
 import type { MemberInvoiceRecord } from "@/lib/airtable";
 
 type Filters = {
@@ -194,8 +195,8 @@ export function AdminInvoicesClient({
               })),
             ]}
           />
-          <DateInput label="From" value={filters.from} onChange={(v) => update("from", v)} />
-          <DateInput label="To" value={filters.to} onChange={(v) => update("to", v)} />
+          <DateField label="From" value={filters.from} onChange={(v) => update("from", v)} allowFreeText={false} />
+          <DateField label="To" value={filters.to} onChange={(v) => update("to", v)} allowFreeText={false} />
           <label className="block">
             <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
               Search
@@ -392,7 +393,7 @@ function Select({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -400,30 +401,6 @@ function Select({
           </option>
         ))}
       </select>
-    </label>
-  );
-}
-
-function DateInput({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <label className="block">
-      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-        {label}
-      </span>
-      <input
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
-      />
     </label>
   );
 }

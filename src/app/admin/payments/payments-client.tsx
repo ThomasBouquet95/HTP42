@@ -1185,18 +1185,22 @@ export function PaymentsClient({
               onChange={(v) => updateField("dueDate", v)}
               placeholder="Pick a date"
             />
-            <FormField
-              label={form.direction === "Inflow" ? "Receipt date" : "Payment date"}
-              value={form.paymentStatus === "Paid" ? form.paymentDate : ""}
-              onChange={(v) => updateField("paymentDate", v)}
-              type="date"
-              readOnly={form.paymentStatus !== "Paid"}
-              hint={
-                form.paymentStatus !== "Paid"
-                  ? "Available once the status is set to Paid."
-                  : undefined
-              }
-            />
+            {form.paymentStatus === "Paid" ? (
+              <DateField
+                label={form.direction === "Inflow" ? "Receipt date" : "Payment date"}
+                value={form.paymentDate}
+                onChange={(v) => updateField("paymentDate", v)}
+                placeholder="Pick a date"
+              />
+            ) : (
+              <FormField
+                label={form.direction === "Inflow" ? "Receipt date" : "Payment date"}
+                value=""
+                onChange={() => {}}
+                readOnly
+                hint="Available once the status is set to Paid."
+              />
+            )}
           </div>
         </FormSection>
 

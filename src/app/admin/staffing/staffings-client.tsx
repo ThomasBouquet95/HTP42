@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { DateField } from "@/components/date-picker";
 import { EditIcon, IconButton } from "@/components/admin-icons";
 import type {
   Currency,
@@ -559,17 +560,15 @@ export function StaffingsAdminClient({
             onChange={(v) => updateField("fxToEur", v)}
             type="number"
           />
-          <FormField
+          <DateField
             label="Start date"
             value={form.startDate}
             onChange={(v) => updateField("startDate", v)}
-            type="date"
           />
-          <FormField
+          <DateField
             label="End date"
             value={form.endDate}
             onChange={(v) => updateField("endDate", v)}
-            type="date"
           />
           <FormField
             label="SOW reference"

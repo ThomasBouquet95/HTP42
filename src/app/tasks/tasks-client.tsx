@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { TaskPriority, TaskRecord, TaskStatus, TaskVisibility } from "@/lib/airtable";
 import { TASK_PRIORITIES, TASK_STATUSES } from "@/lib/airtable";
 import { ConfirmDialog } from "@/components/modal";
+import { DateField } from "@/components/date-picker";
 
 type ProjectOpt = { id: string; code: string; name: string };
 type MemberOpt = { id: string; code: string; name: string; photoUrl: string | null };
@@ -1359,7 +1360,7 @@ function TaskModal({
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as TaskStatus)}
-                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
               >
                 {TASK_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -1375,7 +1376,7 @@ function TaskModal({
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as TaskPriority | "")}
-                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
               >
                 <option value="">—</option>
                 {TASK_PRIORITIES.map((p) => (
@@ -1385,17 +1386,11 @@ function TaskModal({
                 ))}
               </select>
             </label>
-            <label className="block">
-              <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-                Due date
-              </span>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
-              />
-            </label>
+            <DateField
+              label="Due date"
+              value={dueDate}
+              onChange={(v) => setDueDate(v)}
+            />
             <label className="block">
               <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
                 Effort (h)
@@ -1419,7 +1414,7 @@ function TaskModal({
             <select
               value={projectId}
               onChange={(e) => setProjectId(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs disabled:bg-slate-50"
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 disabled:bg-slate-50"
               disabled={!isOwner}
             >
               <option value="">{isPersonal ? "No project" : "Pick a project…"}</option>
@@ -1686,7 +1681,7 @@ function Select({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>

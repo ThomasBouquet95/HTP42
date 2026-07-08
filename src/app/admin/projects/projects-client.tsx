@@ -8,7 +8,7 @@ import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-c
 import { EditIcon } from "@/components/admin-icons";
 import { DownloadChip } from "@/components/download-chip";
 import { DateRangeChip } from "@/components/date-range-chip";
-import { DatePopover, MonthPopover } from "@/components/date-picker";
+import { DateField, DatePopover, MonthPopover } from "@/components/date-picker";
 import type {
   ClientRecord,
   Currency,
@@ -769,17 +769,15 @@ export function ProjectsAdminClient({
                 <option key={s} value={s}>{s}</option>
               ))}
             </FormSelect>
-            <FormField
+            <DateField
               label="Start date"
               value={form.startDate}
               onChange={(v) => updateField("startDate", v)}
-              type="date"
             />
-            <FormField
+            <DateField
               label="End date"
               value={form.endDate}
               onChange={(v) => updateField("endDate", v)}
-              type="date"
             />
           </div>
         </section>
@@ -1225,12 +1223,14 @@ function Select({
   options: { value: string; label: string }[];
 }) {
   return (
-    <label className="block text-sm">
-      <span className="block text-slate-600 mb-1">{label}</span>
+    <label className="block">
+      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+        {label}
+      </span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5"
+        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>
