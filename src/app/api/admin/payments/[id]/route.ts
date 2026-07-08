@@ -20,14 +20,13 @@ import { sendMailViaGraph } from "@/lib/email";
 import { env } from "@/lib/env";
 import { apiError, zodMessage } from "@/lib/errors";
 
-// Recipients copied on every outflow that flips to Paid. These are the
-// accounting inboxes (Qonto receipt bank, Fulll bookkeeping forwarder, and
-// the company's own invoice inbox) — finance asked us to route paid-supplier
-// receipts to all three so each side can reconcile independently.
-const OUTFLOW_PAID_RECEIPTS_TO = [
-  "receipts-ukcbzgcdo9a6@inbox.qonto.com",
+// Accounting inboxes always CC'd when a payment is marked Paid: the Fulll
+// bookkeeping forwarder and the Qonto receipt bank, so each can reconcile
+// independently. The To recipient is the company invoices inbox
+// (env.invoiceRecipient).
+const PAID_RECAP_CC = [
   "factures+cHEA-072a8f@m.fulll.io",
-  "invoices@htp42.com",
+  "receipts-ukcbzgcdo9a6@inbox.qonto.com",
 ];
 
 // Maximum size we'll attach inline via the Graph sendMail endpoint. Graph
@@ -69,15 +68,17 @@ export async function PATCH(
     // Outflow → Paid transition and fire the receipt email exactly once.
     const before = await getPaymentById(id);
     await updatePaymentStatus(id, nextStatus, paymentDate);
-    if (before && shouldNotifyOutflowPaid(before, nextStatus)) {
+    if (before && becamePaid(before, nextStatus)) {
       // Re-read the record so the email body uses the saved values (the PATCH
-      // only carries the status field, the rest stays as it was).
+      // only carries the status field, the rest stays as it was). Awaited so it
+      // reliably sends before the serverless function can freeze; a failure is
+      // logged but never blocks the status flip.
       const after = (await getPaymentById(id)) ?? before;
-      // Best-effort: don't block the response or fail the status flip if the
-      // email machinery is misconfigured / Graph rejects the attachment.
-      void notifyOutflowPaid(after).catch((e) => {
-        console.error("Outflow-paid notification failed:", e);
-      });
+      try {
+        await notifyPaymentPaid(after);
+      } catch (e) {
+        console.error("Payment-paid notification failed:", e);
+      }
     }
     // Carry the billing lifecycle forward: a payment going Paid marks its linked
     // member invoices Paid and flips their Invoiced timesheets to Paid. Awaited
@@ -161,11 +162,13 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       comment: d.comment,
       invoiceUrl: d.invoiceUrl,
     });
-    if (shouldNotifyOutflowPaid(existing, nextStatus)) {
+    if (becamePaid(existing, nextStatus)) {
       const after = (await getPaymentById(id)) ?? existing;
-      void notifyOutflowPaid(after).catch((e) => {
-        console.error("Outflow-paid notification failed:", e);
-      });
+      try {
+        await notifyPaymentPaid(after);
+      } catch (e) {
+        console.error("Payment-paid notification failed:", e);
+      }
     }
     if (becamePaid(existing, nextStatus)) {
       // Re-read so the cascade uses the just-saved invoice links, not the stale
@@ -203,40 +206,43 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   }
 }
 
-function shouldNotifyOutflowPaid(
-  before: PaymentRecord,
-  nextStatus: PaymentStatus | "",
-): boolean {
-  // Only Outflow payments. Only the Scheduled/Awaiting → Paid transition;
-  // an already-Paid record getting re-saved must NOT re-send the email.
-  return (
-    before.direction === "Outflow" &&
-    nextStatus === "Paid" &&
-    before.paymentStatus !== "Paid"
-  );
-}
-
-async function notifyOutflowPaid(p: PaymentRecord): Promise<void> {
+// Recap email sent to the invoices inbox (with the accounting inboxes CC'd)
+// whenever ANY payment — inflow or outflow — is marked Paid, from the payments
+// list, the edit modal, or the review page (all hit this route).
+async function notifyPaymentPaid(p: PaymentRecord): Promise<void> {
   const label =
     p.invoiceReference ||
     p.beneficiary ||
     p.paymentCode ||
     p.projectCodes.join(", ") ||
     p.id;
-  const subject = `[HTP42] Outflow paid: ${label}`;
+  const heading =
+    p.direction === "Inflow"
+      ? "Inflow received"
+      : p.direction === "Outflow"
+      ? "Outflow paid"
+      : "Payment recorded";
+  const subject = `[HTP42] ${heading}: ${label}`;
+  const introText =
+    p.direction === "Inflow"
+      ? "An inflow (client payment) has just been marked received in the HTP42 portal."
+      : p.direction === "Outflow"
+      ? "An outflow payment has just been marked paid in the HTP42 portal."
+      : "A payment has just been marked paid in the HTP42 portal.";
 
-  // Try to grab the PDF from the invoice URL. Failures here shouldn't block
-  // the email — finance will still get the metadata + link.
+  // Attach the invoice PDF — prefer the uploaded attachment, else the invoice
+  // URL. Failures here shouldn't block the email; the metadata still goes out.
+  const pdfSource = p.invoicePdf?.url || p.invoiceUrl || "";
   let attachment:
     | { filename: string; contentType: string; base64: string }
     | null = null;
   let pdfFailure: string | null = null;
-  if (p.invoiceUrl) {
-    const fetched = await fetchInvoicePdf(p.invoiceUrl, label);
+  if (pdfSource) {
+    const fetched = await fetchInvoicePdf(pdfSource, label);
     if (fetched.ok) attachment = fetched.attachment;
     else pdfFailure = fetched.error;
   } else {
-    pdfFailure = "No invoice URL on the payment.";
+    pdfFailure = "No invoice PDF or URL on the payment.";
   }
 
   const amountLine =
@@ -272,7 +278,7 @@ async function notifyOutflowPaid(p: PaymentRecord): Promise<void> {
   }
 
   const textLines: string[] = [
-    `An outflow payment has just been marked Paid in the HTP42 portal.`,
+    introText,
     ``,
     `Reference: ${p.invoiceReference || "—"}`,
     `Beneficiary: ${p.beneficiary || "—"}`,
@@ -292,7 +298,7 @@ async function notifyOutflowPaid(p: PaymentRecord): Promise<void> {
   const safe = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const htmlLines = [
-    `<p>An outflow payment has just been marked <strong>Paid</strong> in the HTP42 portal.</p>`,
+    `<p>${safe(introText)}</p>`,
     `<ul>`,
     `<li><strong>Reference:</strong> ${safe(p.invoiceReference || "—")}</li>`,
     `<li><strong>Beneficiary:</strong> ${safe(p.beneficiary || "—")}</li>`,
@@ -313,14 +319,15 @@ async function notifyOutflowPaid(p: PaymentRecord): Promise<void> {
   ].filter(Boolean);
 
   const result = await sendMailViaGraph({
-    to: OUTFLOW_PAID_RECEIPTS_TO,
+    to: env.invoiceRecipient,
+    cc: PAID_RECAP_CC,
     subject,
     textBody: textLines.join("\n"),
     htmlBody: htmlLines.join(""),
     attachments: attachment ? [attachment] : [],
   });
   if (!result.ok) {
-    console.error("Outflow-paid email failed:", result.error);
+    console.error("Payment-paid email failed:", result.error);
   }
 }
 
