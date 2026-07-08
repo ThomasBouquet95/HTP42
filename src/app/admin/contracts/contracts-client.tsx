@@ -1268,6 +1268,9 @@ function OverviewView({
                 const memberSows =
                   contractsByProjectAndSide.get(`${p.id}|Network`)?.filter((c) => isType(c, "SOW")) ?? [];
                 const clientStatus = slotStatus(clientSows, onOpenContract);
+                // Internal projects (INT-*) have no external client, so no
+                // client SOW is expected — show a dash instead of a RAG pill.
+                const isInternal = /^INT[-_ ]/i.test(p.code) || p.code.toUpperCase() === "INT";
                 const staffedMembers = projectMemberIds.get(p.code) ?? new Set<string>();
                 const totalStaffed = staffedMembers.size;
                 // Per-member SOW breakdown — one row per staffed member
@@ -1329,11 +1332,17 @@ function OverviewView({
                         {p.status || "—"}
                       </td>
                       <td className="px-3 py-1.5 text-center">
-                        <RagPill
-                          rag={clientStatus.rag}
-                          label={clientStatus.label}
-                          onClick={clientStatus.open}
-                        />
+                        {isInternal ? (
+                          <span className="text-slate-300" title="Internal project — no client SOW">
+                            —
+                          </span>
+                        ) : (
+                          <RagPill
+                            rag={clientStatus.rag}
+                            label={clientStatus.label}
+                            onClick={clientStatus.open}
+                          />
+                        )}
                       </td>
                       <td className="px-3 py-1.5 text-center">
                         <button
