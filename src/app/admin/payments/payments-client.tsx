@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
@@ -9,7 +9,7 @@ import { DateField } from "@/components/date-picker";
 import { PaidDateModal } from "@/components/paid-date-modal";
 import type { Currency, PaymentRecord, PaymentStatus } from "@/lib/airtable";
 
-type LinkOpt = { id: string; code: string; name: string };
+type LinkOpt = { id: string; code: string; name: string; subjectToDes?: "Yes" | "No" | "" };
 
 type MemberInvoiceOpt = {
   id: string;
@@ -217,6 +217,15 @@ export function PaymentsClient({
   const [rows, setRows] = useState<PaymentRecord[]>(payments);
   useEffect(() => setRows(payments), [payments]);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  function toggleRow(id: string) {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [toast, setToast] = useState<{ kind: "error" | "ok"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -241,6 +250,14 @@ export function PaymentsClient({
     p.clientRecordIds.map((id) => clientsById.get(id)?.name || clientsById.get(id)?.code).filter(Boolean).join(", ");
   const memberLabel = (p: PaymentRecord) =>
     p.memberRecordIds.map((id) => membersById.get(id)?.name || membersById.get(id)?.code).filter(Boolean).join(", ");
+  // DES status for a payment, from its linked client(s): "Yes" if any client is
+  // subject, else "No" if any is explicitly not, else "" (unknown / no client).
+  const desForPayment = (p: PaymentRecord): "Yes" | "No" | "" => {
+    const vals = p.clientRecordIds.map((id) => clientsById.get(id)?.subjectToDes).filter(Boolean);
+    if (vals.includes("Yes")) return "Yes";
+    if (vals.includes("No")) return "No";
+    return "";
+  };
   const [filters, setFilters] = useState<Filters>({
     ...DEFAULT_FILTERS,
     search: initialSearch ?? "",
@@ -769,6 +786,7 @@ export function PaymentsClient({
         <table className="w-full text-xs">
           <thead className="border-b border-slate-100 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 whitespace-nowrap">
             <tr>
+              <th className="w-6 px-1 py-1.5" />
               <th className="px-2 py-1.5 text-left font-medium">
                 <SortHeader label="ID" sort={sort} colKey="id" onToggle={toggleSort} />
               </th>
@@ -845,7 +863,7 @@ export function PaymentsClient({
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={12} className="text-center text-slate-500 py-10">
+                <td colSpan={13} className="text-center text-slate-500 py-10">
                   No payments match these filters.
                 </td>
               </tr>
@@ -857,11 +875,27 @@ export function PaymentsClient({
                     : memberLabel(p) || p.beneficiary || "—";
                 const status = effectiveStatus(p.paymentStatus);
                 const tint = paymentRowTint(status);
+                const open = expandedRows.has(p.id);
                 return (
+                  <Fragment key={p.id}>
                   <tr
-                    key={p.id}
-                    className={`border-t border-slate-100 align-top ${tint.row}`}
+                    onClick={() => toggleRow(p.id)}
+                    aria-expanded={open}
+                    className={`border-t border-slate-100 align-top cursor-pointer ${tint.row}`}
+                    title="Click for full payment details"
                   >
+                    <td className="px-1 py-1.5 text-center">
+                      <svg
+                        viewBox="0 0 16 16"
+                        className={`inline h-3 w-3 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        aria-hidden
+                      >
+                        <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </td>
                     <td className={`px-2 py-1.5 font-mono text-[11px] text-slate-500 whitespace-nowrap ${tint.cell0}`}>
                       {p.paymentCode ? `#${p.paymentCode}` : "—"}
                     </td>
@@ -904,7 +938,7 @@ export function PaymentsClient({
                         saving={savingIds.has(p.id)}
                       />
                     </td>
-                    <td className="px-2 py-1.5 text-right">
+                    <td className="px-2 py-1.5 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="inline-flex items-center gap-1">
                         <DownloadChip
                           url={
@@ -928,6 +962,26 @@ export function PaymentsClient({
                       </div>
                     </td>
                   </tr>
+                  {open ? (
+                    <tr className="border-t border-slate-100 bg-slate-50/60">
+                      <td />
+                      <td colSpan={12} className="px-3 py-3">
+                        <PaymentDetails
+                          p={p}
+                          projectLabel={projectLabel(p)}
+                          clientLabel={clientLabel(p)}
+                          memberLabel={memberLabel(p)}
+                          des={desForPayment(p)}
+                          invoicePdfUrl={
+                            p.invoicePdf?.url ||
+                            p.memberInvoiceRecordIds.map((id) => invoicePdfById.get(id)).find(Boolean) ||
+                            ""
+                          }
+                        />
+                      </td>
+                    </tr>
+                  ) : null}
+                  </Fragment>
                 );
               })
             )}
@@ -1426,6 +1480,103 @@ function EditIcon() {
         strokeLinecap="round"
       />
     </svg>
+  );
+}
+
+// Full detail shown when a payment row is expanded.
+function PaymentDetails({
+  p,
+  projectLabel,
+  clientLabel,
+  memberLabel,
+  des,
+  invoicePdfUrl,
+}: {
+  p: PaymentRecord;
+  projectLabel: string;
+  clientLabel: string;
+  memberLabel: string;
+  des: "Yes" | "No" | "";
+  invoicePdfUrl: string;
+}) {
+  const money = (v: number | null, ccy: string) =>
+    v == null ? "—" : `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}${ccy ? " " + ccy : ""}`;
+  return (
+    <div className="space-y-3">
+      {/* Top badges: direction + DES flag from the linked client. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <DirectionPill direction={p.direction} />
+        {p.type ? <span className="text-[11px] text-slate-500">{p.type}</span> : null}
+        <span className="ml-auto" />
+        <span
+          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${
+            des === "Yes"
+              ? "bg-amber-50 text-amber-700 ring-amber-200"
+              : des === "No"
+              ? "bg-slate-100 text-slate-600 ring-slate-200"
+              : "bg-slate-50 text-slate-400 ring-slate-200"
+          }`}
+          title="Whether the linked client's services must be reported on the DES"
+        >
+          Subject to DES: {des || "not set"}
+        </span>
+      </div>
+
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+        <PField label="Project" value={projectLabel} mono />
+        <PField label="Client" value={clientLabel} blur />
+        <PField label="Member" value={memberLabel} blur />
+        <PField label="Beneficiary" value={p.beneficiary} blur />
+        <PField label="Invoice ref" value={p.invoiceReference} />
+        <PField label="Invoice date" value={p.invoiceDate ?? ""} />
+        <PField label="Due date" value={p.dueDate ?? ""} />
+        <PField label="Payment date" value={p.paymentStatus === "Paid" ? p.paymentDate ?? "" : ""} />
+        <PField label="Payment terms" value={p.paymentTerms} />
+        <PField label="Amount" value={money(p.invoiceValue, p.invoiceCurrency)} blur />
+        <PField label="FX to EUR" value={p.fxRateToEur == null ? "" : String(p.fxRateToEur)} blur />
+        <PField label="Amount EUR" value={money(p.invoiceValueEur, "EUR")} blur />
+      </dl>
+
+      {p.comment ? (
+        <p className="rounded-md bg-white p-2 text-[11px] text-slate-600 demo-blur">{p.comment}</p>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-3 text-[11px]">
+        {invoicePdfUrl ? (
+          <a
+            href={invoicePdfUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 font-medium text-brand-600 hover:bg-slate-50"
+          >
+            Invoice PDF ↗
+          </a>
+        ) : (
+          <span className="text-slate-400">No invoice PDF</span>
+        )}
+        {p.invoiceUrl ? (
+          <a
+            href={p.invoiceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-brand-600 hover:text-brand-700"
+          >
+            Invoice URL ↗
+          </a>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function PField({ label, value, mono, blur }: { label: string; value: string; mono?: boolean; blur?: boolean }) {
+  return (
+    <div>
+      <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+      <dd className={`text-slate-800 ${mono ? "font-mono text-[11px]" : ""} ${blur ? "demo-blur" : ""}`}>
+        {value || "—"}
+      </dd>
+    </div>
   );
 }
 

@@ -42,7 +42,12 @@ export default async function AdminPaymentsPage({
         <PaymentsClient
           payments={payments}
           projects={projects.map((p) => ({ id: p.id, code: p.projectCode, name: p.projectName }))}
-          clients={clients.map((c) => ({ id: c.id, code: c.clientCode, name: c.clientName }))}
+          clients={clients.map((c) => ({
+            id: c.id,
+            code: c.clientCode,
+            name: c.clientName,
+            subjectToDes: c.subjectToDes,
+          }))}
           members={members.map((m) => ({ id: m.id, code: m.memberCode, name: m.fullName }))}
           memberInvoices={invoices.map((i) => ({
             id: i.id,
