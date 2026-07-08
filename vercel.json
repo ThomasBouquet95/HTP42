@@ -1,5 +1,6 @@
 {
   "crons": [
-    { "path": "/api/admin/payments/backfill-eur", "schedule": "0 3 * * *" }
+    { "path": "/api/admin/payments/backfill-eur", "schedule": "0 3 * * *" },
+    { "path": "/api/admin/vendor-invoices/import", "schedule": "0 5 * * *" }
   ]
 }

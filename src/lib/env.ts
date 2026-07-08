@@ -47,4 +47,14 @@ export const env = {
   get anthropicApiKey() {
     return process.env.ANTHROPIC_API_KEY ?? "";
   },
+  // Shared mailbox that receives paid IT / vendor invoices. The nightly
+  // importer reads PDF attachments from here via Microsoft Graph (the Azure
+  // app needs Mail.Read application permission granted for this mailbox).
+  get itInvoiceMailbox() {
+    return process.env.IT_INVOICE_MAILBOX ?? "billing@NETORGFT14090071.onmicrosoft.com";
+  },
+  // Internal project code every imported IT invoice is filed under.
+  get itInvoiceProjectCode() {
+    return process.env.IT_INVOICE_PROJECT_CODE ?? "INT-IT";
+  },
 };

@@ -26,6 +26,10 @@ type SendArgs = {
   attachments?: Attachment[];
 };
 
+export async function getGraphAppToken(): Promise<string> {
+  return getAppToken();
+}
+
 async function getAppToken(): Promise<string> {
   const { tenantId, clientId, clientSecret } = env.azure;
   const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;

@@ -1,0 +1,337 @@
+"use client";
+
+import { Fragment, useState } from "react";
+import { useRouter } from "next/navigation";
+import { DownloadChip } from "@/components/download-chip";
+import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import type { VendorInvoiceRecord, VendorInvoiceStatus } from "@/lib/airtable";
+
+type Props = {
+  invoices: VendorInvoiceRecord[];
+  mailbox: string;
+  projectCode: string;
+};
+
+const money = (v: number | null, ccy: string) =>
+  v == null ? "—" : `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}${ccy ? " " + ccy : ""}`;
+
+// "2026-07-08T09:12:00Z" or "2026-07-08" -> "8 Jul 2026"
+function prettyDate(raw: string): string {
+  if (!raw) return "—";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+export function VendorInvoicesClient({ invoices, mailbox, projectCode }: Props) {
+  const router = useRouter();
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<string>("");
+
+  function toggle(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function runImport() {
+    setImporting(true);
+    setImportMsg("");
+    try {
+      const res = await fetch("/api/admin/vendor-invoices/import", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setImportMsg(data.error || "Import failed.");
+        return;
+      }
+      if (data.error) {
+        // Mailbox reachable check failed (e.g. Mail.Read not granted yet).
+        setImportMsg(`Could not read the mailbox: ${data.error}`);
+        return;
+      }
+      const parts = [`${data.imported ?? 0} imported`];
+      if (data.skipped) parts.push(`${data.skipped} already on file`);
+      if (Array.isArray(data.errors) && data.errors.length) parts.push(`${data.errors.length} errored`);
+      setImportMsg(parts.join(" · "));
+      if ((data.imported ?? 0) > 0) router.refresh();
+    } catch {
+      setImportMsg("Import failed — please retry.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  const totalEur = invoices.reduce((s, i) => s + (i.amountEur ?? 0), 0);
+
+  return (
+    <div className="space-y-4">
+      {/* Import bar. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2.5">
+        <div className="text-xs text-slate-600">
+          Paid IT invoices are imported automatically each night from{" "}
+          <span className="font-mono text-[11px] text-slate-800">{mailbox}</span> and filed under{" "}
+          <span className="font-mono text-[11px] text-slate-800">{projectCode}</span>.
+        </div>
+        <div className="flex items-center gap-3">
+          {importMsg ? <span className="text-xs text-slate-500">{importMsg}</span> : null}
+          <Button tone="primary" size="sm" onClick={runImport} disabled={importing}>
+            {importing ? "Importing…" : "Import now"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="text-xs text-slate-500">
+        Total on file:{" "}
+        <span className="demo-blur font-medium text-slate-700">{money(totalEur, "EUR")}</span>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-slate-200">
+        <table className="min-w-full text-xs">
+          <thead className="bg-slate-50 text-slate-500">
+            <tr>
+              <th className="w-6 px-1 py-1.5" />
+              <th className="px-2 py-1.5 text-left font-medium">Vendor</th>
+              <th className="px-2 py-1.5 text-left font-medium">Invoice #</th>
+              <th className="px-2 py-1.5 text-left font-medium">Date</th>
+              <th className="px-2 py-1.5 text-right font-medium">Amount</th>
+              <th className="px-2 py-1.5 text-center font-medium">Status</th>
+              <th className="px-2 py-1.5 text-center font-medium">PDF</th>
+            </tr>
+          </thead>
+          <tbody>
+            {invoices.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="py-6 text-center text-slate-500">
+                  No IT invoices on file yet. They import automatically each night, or use “Import now”.
+                </td>
+              </tr>
+            ) : (
+              invoices.map((inv) => {
+                const open = expanded.has(inv.id);
+                return (
+                  <Fragment key={inv.id}>
+                    <tr
+                      onClick={() => toggle(inv.id)}
+                      aria-expanded={open}
+                      className="cursor-pointer border-t border-slate-100 align-middle hover:bg-slate-50/60"
+                      title="Click for full details"
+                    >
+                      <td className="px-1 py-1.5 text-center">
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 12 12"
+                          fill="none"
+                          className={`inline text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+                        >
+                          <path
+                            d="M4.5 3 7.5 6 4.5 9"
+                            stroke="currentColor"
+                            strokeWidth="1.4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </td>
+                      <td className="px-2 py-1.5 demo-blur font-medium text-slate-800">
+                        {inv.vendor || <span className="text-slate-400">Unknown vendor</span>}
+                      </td>
+                      <td className="px-2 py-1.5 demo-blur text-slate-600">{inv.invoiceNumber || "—"}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap text-slate-600">{prettyDate(inv.invoiceDate)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums demo-blur text-slate-700">
+                        {money(inv.amount, inv.currency)}
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        <StatusPill status={inv.status} />
+                      </td>
+                      <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        <DownloadChip url={inv.pdf?.url} title="Open invoice PDF" emptyTitle="No PDF" />
+                      </td>
+                    </tr>
+                    {open ? (
+                      <tr className="border-t border-slate-100 bg-slate-50/60">
+                        <td />
+                        <td colSpan={6} className="px-3 py-3">
+                          <InvoiceDetail invoice={inv} onChanged={() => router.refresh()} />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ status }: { status: VendorInvoiceStatus }) {
+  if (status === "Needs Review") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+        Needs review
+      </span>
+    );
+  }
+  if (status === "Filed") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+        Filed
+      </span>
+    );
+  }
+  return <span className="text-slate-300">—</span>;
+}
+
+function InvoiceDetail({
+  invoice,
+  onChanged,
+}: {
+  invoice: VendorInvoiceRecord;
+  onChanged: () => void;
+}) {
+  const [vendor, setVendor] = useState(invoice.vendor);
+  const [invoiceNumber, setInvoiceNumber] = useState(invoice.invoiceNumber);
+  const [invoiceDate, setInvoiceDate] = useState(invoice.invoiceDate);
+  const [amount, setAmount] = useState(invoice.amount == null ? "" : String(invoice.amount));
+  const [currency, setCurrency] = useState(invoice.currency || "EUR");
+  const [projectCode, setProjectCode] = useState(invoice.projectCode);
+  const [status, setStatus] = useState<VendorInvoiceStatus>(invoice.status || "Needs Review");
+  const [notes, setNotes] = useState(invoice.notes);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/vendor-invoices/${invoice.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vendor,
+          invoiceNumber,
+          invoiceDate,
+          amount: amount.trim() === "" ? null : Number(amount),
+          currency,
+          projectCode,
+          status,
+          notes,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Could not save.");
+        return;
+      }
+      onChanged();
+    } catch {
+      setError("Could not save — please retry.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove() {
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/vendor-invoices/${invoice.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Could not delete.");
+        return;
+      }
+      onChanged();
+    } catch {
+      setError("Could not delete — please retry.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <FormField label="Vendor" value={vendor} onChange={setVendor} inputClassName="demo-blur" />
+        <FormField label="Invoice number" value={invoiceNumber} onChange={setInvoiceNumber} inputClassName="demo-blur" />
+        <FormField label="Invoice date" value={invoiceDate} onChange={setInvoiceDate} type="date" />
+        <FormField label="Amount" value={amount} onChange={setAmount} type="number" inputClassName="demo-blur" />
+        <FormSelect label="Currency" value={currency} onChange={setCurrency}>
+          <option value="EUR">EUR</option>
+          <option value="USD">USD</option>
+          <option value="CHF">CHF</option>
+          <option value="GBP">GBP</option>
+        </FormSelect>
+        <FormField label="Project code" value={projectCode} onChange={setProjectCode} />
+        <FormSelect
+          label="Status"
+          value={status}
+          onChange={(v) => setStatus(v as VendorInvoiceStatus)}
+        >
+          <option value="Needs Review">Needs review</option>
+          <option value="Filed">Filed</option>
+        </FormSelect>
+      </div>
+
+      <FormTextarea label="Notes" value={notes} onChange={setNotes} rows={2} />
+
+      {/* Source email — read only, so you can trace where it came from. */}
+      <dl className="grid grid-cols-1 gap-x-4 gap-y-1 rounded-md bg-white px-3 py-2 text-xs ring-1 ring-slate-100 sm:grid-cols-3">
+        <Field label="From" value={invoice.emailFrom || "—"} />
+        <Field label="Received" value={prettyDate(invoice.receivedAt)} />
+        <Field label="Amount (EUR)" value={money(invoice.amountEur, "EUR")} blur />
+        <Field label="Email subject" value={invoice.emailSubject || "—"} className="sm:col-span-3" />
+      </dl>
+
+      {error ? <div className="text-xs text-red-600">{error}</div> : null}
+
+      <div className="flex items-center justify-between gap-2">
+        {confirmDelete ? (
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-600">Delete this invoice record?</span>
+            <Button tone="danger" size="sm" onClick={remove} disabled={saving}>
+              Yes, delete
+            </Button>
+            <Button tone="ghost" size="sm" onClick={() => setConfirmDelete(false)} disabled={saving}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button tone="ghost" size="sm" onClick={() => setConfirmDelete(true)} disabled={saving}>
+            Delete
+          </Button>
+        )}
+        <Button tone="primary" size="sm" onClick={save} disabled={saving}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  blur,
+  className,
+}: {
+  label: string;
+  value: string;
+  blur?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+      <dd className={`text-slate-700 ${blur ? "demo-blur" : ""}`}>{value}</dd>
+    </div>
+  );
+}

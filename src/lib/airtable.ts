@@ -28,6 +28,7 @@ export const TABLES = {
   projectRetribution: "Project Retribution",
   chatConversations: "Chat Conversations",
   chatMessages: "Chat Messages",
+  vendorInvoices: "Vendor Invoices",
 } as const;
 
 export const FIELDS = {
@@ -283,6 +284,22 @@ export const FIELDS = {
     // for DM conversations is the empty Title — so the formula matches
     // nothing. Storing the id as plain text sidesteps it.
     conversationId: "Conversation Id",
+  },
+  vendorInvoices: {
+    vendor: "Vendor",
+    invoiceNumber: "Invoice Number",
+    invoiceDate: "Invoice Date",
+    amount: "Amount",
+    currency: "Currency",
+    amountEur: "Amount EUR",
+    projectCode: "Project Code",
+    status: "Status",
+    pdf: "PDF",
+    messageId: "Message Id",
+    emailSubject: "Email Subject",
+    emailFrom: "From",
+    receivedAt: "Received At",
+    notes: "Notes",
   },
 } as const;
 
@@ -5090,4 +5107,252 @@ export async function updateRetribution(id: string, input: RetributionInput): Pr
 
 export async function deleteRetribution(id: string): Promise<void> {
   await base(TABLES.projectRetribution).destroy([id]);
+}
+
+// ---------------------------------------------------------------------------
+// Vendor invoices (paid IT bills). These arrive by email already paid — this
+// is record-keeping, not a payment workflow. A nightly importer reads PDF
+// attachments from a shared mailbox and files one row per invoice, deduping
+// by the email's Message Id. The table is created lazily via the meta API.
+// ---------------------------------------------------------------------------
+
+export type VendorInvoiceStatus = "Needs Review" | "Filed" | "";
+
+export type VendorInvoiceRecord = {
+  id: string;
+  vendor: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  amount: number | null;
+  currency: string;
+  amountEur: number | null;
+  projectCode: string;
+  status: VendorInvoiceStatus;
+  messageId: string;
+  emailSubject: string;
+  emailFrom: string;
+  receivedAt: string;
+  notes: string;
+  pdf: AttachmentRef | null;
+  createdTime: string;
+};
+
+function vendorInvoiceFromRecord(r: AirtableRecord<FieldSet>): VendorInvoiceRecord {
+  const F = FIELDS.vendorInvoices;
+  return {
+    id: r.id,
+    vendor: str(r, F.vendor),
+    invoiceNumber: str(r, F.invoiceNumber),
+    invoiceDate: str(r, F.invoiceDate),
+    amount: numOrNull(r, F.amount),
+    currency: str(r, F.currency),
+    amountEur: numOrNull(r, F.amountEur),
+    projectCode: str(r, F.projectCode),
+    status: (str(r, F.status) as VendorInvoiceStatus) || "",
+    messageId: str(r, F.messageId),
+    emailSubject: str(r, F.emailSubject),
+    emailFrom: str(r, F.emailFrom),
+    receivedAt: str(r, F.receivedAt),
+    notes: str(r, F.notes),
+    pdf: firstAttachment(r, F.pdf),
+    createdTime: (r as unknown as { _rawJson?: { createdTime?: string } })._rawJson?.createdTime ?? "",
+  };
+}
+
+let vendorInvoicesTableReady = false;
+export async function ensureVendorInvoicesSchema(): Promise<boolean> {
+  if (vendorInvoicesTableReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { tables: Array<{ name: string }> };
+    if (data.tables.some((t) => t.name === TABLES.vendorInvoices)) {
+      vendorInvoicesTableReady = true;
+      return true;
+    }
+    const F = FIELDS.vendorInvoices;
+    const fields: Array<Record<string, unknown>> = [
+      { name: F.vendor, type: "singleLineText" },
+      { name: F.invoiceNumber, type: "singleLineText" },
+      { name: F.invoiceDate, type: "singleLineText" },
+      { name: F.amount, type: "number", options: { precision: 2 } },
+      { name: F.currency, type: "singleLineText" },
+      { name: F.amountEur, type: "number", options: { precision: 2 } },
+      { name: F.projectCode, type: "singleLineText" },
+      {
+        name: F.status,
+        type: "singleSelect",
+        options: { choices: [{ name: "Needs Review" }, { name: "Filed" }] },
+      },
+      { name: F.pdf, type: "multipleAttachments" },
+      { name: F.messageId, type: "singleLineText" },
+      { name: F.emailSubject, type: "singleLineText" },
+      { name: F.emailFrom, type: "singleLineText" },
+      { name: F.receivedAt, type: "singleLineText" },
+      { name: F.notes, type: "multilineText" },
+    ];
+    const create = await fetch(metaUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.airtablePat}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: TABLES.vendorInvoices,
+        description: "Paid IT / vendor invoices imported from the billing mailbox — for the record.",
+        fields,
+      }),
+    });
+    if (create.ok) {
+      vendorInvoicesTableReady = true;
+      return true;
+    }
+    console.error("Failed to create Vendor Invoices table:", await create.text().catch(() => ""));
+    return false;
+  } catch (e) {
+    console.error("ensureVendorInvoicesSchema failed:", e);
+    return false;
+  }
+}
+
+export async function listVendorInvoices(): Promise<VendorInvoiceRecord[]> {
+  try {
+    const ok = await ensureVendorInvoicesSchema();
+    if (!ok) return [];
+    const records = await base(TABLES.vendorInvoices).select().all();
+    const rows = records.map(vendorInvoiceFromRecord);
+    // Newest first — by received date when known, else Airtable creation time.
+    rows.sort((a, b) => {
+      const ka = a.receivedAt || a.createdTime;
+      const kb = b.receivedAt || b.createdTime;
+      return kb.localeCompare(ka);
+    });
+    return rows;
+  } catch (e) {
+    console.error("listVendorInvoices failed:", e);
+    return [];
+  }
+}
+
+export async function getVendorInvoiceById(id: string): Promise<VendorInvoiceRecord | null> {
+  try {
+    await ensureVendorInvoicesSchema();
+    const r = await base(TABLES.vendorInvoices).find(id);
+    return vendorInvoiceFromRecord(r);
+  } catch {
+    return null;
+  }
+}
+
+// Dedup key for the importer — has this email already been filed?
+export async function vendorInvoiceMessageIds(): Promise<Set<string>> {
+  try {
+    const ok = await ensureVendorInvoicesSchema();
+    if (!ok) return new Set();
+    const records = await base(TABLES.vendorInvoices)
+      .select({ fields: [FIELDS.vendorInvoices.messageId] })
+      .all();
+    const ids = new Set<string>();
+    for (const r of records) {
+      const id = str(r, FIELDS.vendorInvoices.messageId);
+      if (id) ids.add(id);
+    }
+    return ids;
+  } catch (e) {
+    console.error("vendorInvoiceMessageIds failed:", e);
+    return new Set();
+  }
+}
+
+export type VendorInvoiceInput = {
+  vendor: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  amount: number | null;
+  currency: string;
+  projectCode: string;
+  status: VendorInvoiceStatus;
+  messageId: string;
+  emailSubject: string;
+  emailFrom: string;
+  receivedAt: string;
+  notes: string;
+};
+
+function vendorInvoiceFields(input: Partial<VendorInvoiceInput>): Record<string, unknown> {
+  const F = FIELDS.vendorInvoices;
+  const out: Record<string, unknown> = {};
+  if (input.vendor !== undefined) out[F.vendor] = input.vendor;
+  if (input.invoiceNumber !== undefined) out[F.invoiceNumber] = input.invoiceNumber;
+  if (input.invoiceDate !== undefined) out[F.invoiceDate] = input.invoiceDate;
+  if (input.currency !== undefined) out[F.currency] = input.currency;
+  if (input.projectCode !== undefined) out[F.projectCode] = input.projectCode;
+  if (input.status !== undefined) out[F.status] = input.status === "" ? null : input.status;
+  if (input.messageId !== undefined) out[F.messageId] = input.messageId;
+  if (input.emailSubject !== undefined) out[F.emailSubject] = input.emailSubject;
+  if (input.emailFrom !== undefined) out[F.emailFrom] = input.emailFrom;
+  if (input.receivedAt !== undefined) out[F.receivedAt] = input.receivedAt;
+  if (input.notes !== undefined) out[F.notes] = input.notes;
+  // Amount + EUR move together: whenever the amount or currency is touched,
+  // recompute the EUR figure so the record-keeping total stays consistent.
+  if (input.amount !== undefined || input.currency !== undefined) {
+    const amount = input.amount ?? null;
+    const { invoiceValueEur } = resolvePaymentEur({
+      currency: input.currency ?? "EUR",
+      value: amount,
+      fx: null,
+    });
+    out[F.amount] = amount;
+    out[F.amountEur] = invoiceValueEur;
+  }
+  return out;
+}
+
+export async function createVendorInvoice(input: VendorInvoiceInput): Promise<string> {
+  await ensureVendorInvoicesSchema();
+  const [created] = await base(TABLES.vendorInvoices).create(
+    [{ fields: vendorInvoiceFields(input) as FieldSet }],
+    { typecast: true },
+  );
+  return created.id;
+}
+
+export async function updateVendorInvoice(
+  id: string,
+  patch: Partial<VendorInvoiceInput>,
+): Promise<void> {
+  await ensureVendorInvoicesSchema();
+  await base(TABLES.vendorInvoices).update(
+    [{ id, fields: vendorInvoiceFields(patch) as FieldSet }],
+    { typecast: true },
+  );
+}
+
+export async function deleteVendorInvoice(id: string): Promise<void> {
+  await base(TABLES.vendorInvoices).destroy([id]);
+}
+
+// Attach a PDF to a Vendor Invoices row via Airtable's content endpoint.
+export async function attachVendorInvoicePdf(
+  recordId: string,
+  filename: string,
+  base64: string,
+): Promise<void> {
+  const url = `https://content.airtable.com/v0/${env.airtableBaseId}/${recordId}/${encodeURIComponent(FIELDS.vendorInvoices.pdf)}/uploadAttachment`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.airtablePat}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ contentType: "application/pdf", filename, file: base64 }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Airtable upload failed (${res.status}): ${text}`);
+  }
 }
