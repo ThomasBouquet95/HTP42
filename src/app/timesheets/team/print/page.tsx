@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { getLedProjects, getProjectSummaryByCode, type ProjectSummary, type ProjectTeamMember } from "@/lib/airtable";
 import { formatWeekRange, formatHumanDate } from "@/lib/dates";
 import { PrintTrigger } from "./print-trigger";
+import { PRINT_CSS } from "@/lib/print-styles";
 
 export const dynamic = "force-dynamic";
 
@@ -236,55 +237,3 @@ function MemberSection({ member: m }: { member: ProjectTeamMember }) {
   );
 }
 
-const PRINT_CSS = `
-  :root { color-scheme: light; }
-  body { margin: 0; background: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #0f172a; }
-  .page { max-width: 1100px; margin: 0 auto; padding: 32px; background: white; }
-  .report-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 20px; }
-  .brand { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; }
-  h1 { font-size: 22px; margin: 4px 0 10px; }
-  .meta { font-size: 12px; color: #334155; line-height: 1.7; }
-  .summary-boxes { display: flex; gap: 10px; flex-shrink: 0; }
-  .stat-box { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; text-align: center; min-width: 72px; }
-  .stat-box.accent { background: #eff8ff; border-color: #bae0fd; }
-  .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; }
-  .stat-value { font-size: 20px; font-weight: 700; color: #0f172a; margin-top: 2px; }
-  .stat-value.warn { color: #b45309; }
-  .progress-bar-wrap { margin-bottom: 20px; }
-  .progress-bar-labels { display: flex; justify-content: space-between; font-size: 11px; color: #64748b; margin-bottom: 4px; }
-  .progress-bar-track { height: 6px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
-  .progress-bar-fill { height: 100%; background: #1e91f9; border-radius: 999px; }
-  .progress-bar-fill.over { background: #f59e0b; }
-  .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: #334155; margin: 0 0 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px; }
-  th, td { padding: 5px 7px; text-align: left; border-bottom: 1px solid #f1f5f9; }
-  th { font-weight: 600; color: #475569; background: #f8fafc; }
-  .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .bold { font-weight: 600; }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: #475569; }
-  .muted { color: #94a3b8; }
-  .warn { color: #b45309; }
-  .total-row td { border-top: 1px solid #cbd5e1; background: #f8fafc; }
-  .member-section { margin-bottom: 20px; page-break-inside: avoid; }
-  .member-header { font-size: 13px; font-weight: 600; color: #1e3a5f; border-left: 3px solid #1e91f9; padding: 4px 8px; background: #f0f9ff; margin-bottom: 8px; }
-  .timesheet { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; page-break-inside: avoid; }
-  .ts-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-  .ts-title { font-weight: 600; font-size: 12px; }
-  .ts-sub { font-size: 11px; color: #64748b; }
-  .ts-table { margin-bottom: 0; }
-  .ts-table th { background: transparent; }
-  .day-cell { color: #475569; font-size: 11px; white-space: nowrap; }
-  .status { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
-  .status-draft { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
-  .status-submitted { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
-  .status-deleted { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
-  .page-break-before { page-break-before: auto; }
-  .report-footer { margin-top: 32px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 12px; }
-  @page { margin: 12mm; size: A4; }
-  @media print {
-    body { background: white; }
-    .no-print { display: none !important; }
-    .page { max-width: none; padding: 0; }
-    .member-section { page-break-inside: avoid; }
-  }
-`;

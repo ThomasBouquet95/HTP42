@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { getTimesheetsForMember, type TimesheetRecord } from "@/lib/airtable";
 import { formatWeekRange, parseIsoDate, toIsoDate } from "@/lib/dates";
 import { PrintTrigger } from "./print-trigger";
+import { PRINT_CSS } from "@/lib/print-styles";
 
 export const dynamic = "force-dynamic";
 
@@ -280,46 +281,3 @@ function describeFilters(sp: {
   return parts.join(" · ");
 }
 
-const PRINT_CSS = `
-  :root { color-scheme: light; }
-  body { margin: 0; background: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #0f172a; }
-  .page { max-width: 960px; margin: 0 auto; padding: 32px; background: white; }
-  .report-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 24px; }
-  .brand { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; }
-  h1 { font-size: 24px; margin: 4px 0 12px; }
-  .meta { font-size: 12px; color: #334155; line-height: 1.6; }
-  .total-box { border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 16px; text-align: right; min-width: 160px; }
-  .total-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; }
-  .total-value { font-size: 28px; font-weight: 700; color: #1d4ed8; margin-top: 2px; }
-  .total-sub { font-size: 12px; color: #64748b; }
-  .breakdowns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
-  .panel { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; }
-  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: #334155; margin: 0 0 8px; }
-  .section-title { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: #334155; margin: 0 0 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  table.small { font-size: 12px; }
-  th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #f1f5f9; }
-  th { font-weight: 600; color: #475569; background: #f8fafc; }
-  .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .timesheet { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; page-break-inside: avoid; }
-  .ts-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; gap: 12px; }
-  .ts-title { font-weight: 600; font-size: 14px; }
-  .ts-sub { font-size: 12px; color: #64748b; margin-top: 2px; }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: #475569; }
-  .status { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
-  .status-draft { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
-  .status-submitted { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
-  .status-deleted { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
-  .ts-table th { background: transparent; border-bottom: 1px solid #e2e8f0; }
-  .ts-table .total-row td { border-top: 1px solid #cbd5e1; font-weight: 600; background: #f8fafc; }
-  .muted { color: #94a3b8; }
-  .empty { font-size: 12px; color: #64748b; padding: 12px 0; }
-  .report-footer { margin-top: 32px; text-align: center; font-size: 11px; color: #94a3b8; }
-  @page { margin: 14mm; }
-  @media print {
-    body { background: white; }
-    .no-print { display: none !important; }
-    .page { max-width: none; padding: 0; }
-    .breakdowns { grid-template-columns: 1fr 1fr; }
-  }
-`;

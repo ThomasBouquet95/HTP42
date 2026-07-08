@@ -5,19 +5,12 @@ import { useRouter } from "next/navigation";
 import type { AdminTimesheetRecord, MemberInvoiceRecord, TimesheetStatus } from "@/lib/airtable";
 import { TIMESHEET_STATUSES } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
-import { formatWeekRange, parseIsoDate, toIsoDate } from "@/lib/dates";
+import { parseIsoDate, toIsoDate } from "@/lib/dates";
 import { WeekChip } from "@/components/week-chip";
 import { DateField } from "@/components/date-picker";
 import { FormSelect } from "@/components/form-controls";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
-const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
-  monday: "Monday",
-  tuesday: "Tuesday",
-  wednesday: "Wednesday",
-  thursday: "Thursday",
-  friday: "Friday",
-};
 
 // Statuses the admin can pick from the inline row dropdown. We exclude
 // "Deleted" so admins don't accidentally tombstone a row from the listing —
@@ -56,12 +49,29 @@ const DEFAULT_FILTERS: Filters = {
   to: "",
 };
 
+type PaymentLink = { id: string; code: string; status: string };
 type Props = {
   timesheets: AdminTimesheetRecord[];
   invoices: MemberInvoiceRecord[];
+  paymentByInvoiceId: Record<string, PaymentLink>;
 };
 
-export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
+// Invoices tied to a timesheet: same staffing first, else same member+project
+// (covers invoices created before the staffing link existed).
+function relatedInvoicesFor(
+  t: AdminTimesheetRecord,
+  invoices: MemberInvoiceRecord[],
+): MemberInvoiceRecord[] {
+  const byStaffing = invoices.filter(
+    (i) => i.staffingRecordId && i.staffingRecordId === t.staffingRecordId,
+  );
+  if (byStaffing.length > 0) return byStaffing;
+  return invoices.filter(
+    (i) => i.memberRecordId === t.memberRecordId && i.projectCode && i.projectCode === t.projectCode,
+  );
+}
+
+export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId }: Props) {
   const router = useRouter();
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   // Local mirror so an inline Status change feels instant even before the
@@ -69,8 +79,7 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
   const [rows, setRows] = useState<AdminTimesheetRecord[]>(timesheets);
   useEffect(() => setRows(timesheets), [timesheets]);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
-  const [openId, setOpenId] = useState<string | null>(null);
-  // Rows expanded inline to show the day-by-day comments.
+  // Rows expanded inline to show the day-by-day comments + related invoices.
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   function toggleRow(id: string) {
     setExpandedRows((prev) => {
@@ -249,8 +258,6 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
     if (filters.to) p.set("to", filters.to);
     window.open(`/print/timesheets?${p.toString()}`, "_blank", "noopener");
   }
-
-  const openTimesheet = openId ? rows.find((r) => r.id === openId) ?? null : null;
 
   return (
     <div className="space-y-4">
@@ -473,32 +480,19 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
                     {t.totalHours.toFixed(2)}
                   </td>
                   <td className="px-2 py-1.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                    <div className="inline-flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setOpenId(t.id)}
-                        title="Open the full timesheet (comments, invoices)"
-                        aria-label="Full timesheet"
-                        className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-brand-50 hover:text-brand-700"
-                      >
-                        <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-                          <path d="M6 2H3.5A1.5 1.5 0 002 3.5V6M10 2h2.5A1.5 1.5 0 0114 3.5V6M14 10v2.5a1.5 1.5 0 01-1.5 1.5H10M6 14H3.5A1.5 1.5 0 012 12.5V10" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openStaffingPrint(t.staffingRecordId)}
-                        disabled={!t.staffingRecordId}
-                        title="Open a printable PDF of this staffing's timesheets"
-                        aria-label="Staffing timesheets PDF"
-                        className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40"
-                      >
-                        <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-                          <path d="M8 2v7m0 0L5.5 6.5M8 9l2.5-2.5" strokeLinecap="round" strokeLinejoin="round" />
-                          <path d="M3 11v1.5A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V11" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openStaffingPrint(t.staffingRecordId)}
+                      disabled={!t.staffingRecordId}
+                      title="Open a printable PDF of this staffing's timesheets"
+                      aria-label="Staffing timesheets PDF"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40"
+                    >
+                      <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                        <path d="M8 2v7m0 0L5.5 6.5M8 9l2.5-2.5" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M3 11v1.5A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V11" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
                   </td>
                 </tr>
                 {open ? (
@@ -525,6 +519,11 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
                           ))}
                         </tbody>
                       </table>
+
+                      <RelatedInvoices
+                        invoices={relatedInvoicesFor(t, invoices)}
+                        paymentByInvoiceId={paymentByInvoiceId}
+                      />
                     </td>
                   </tr>
                 ) : null}
@@ -535,24 +534,6 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
           </tbody>
         </table>
       </div>
-
-      {openTimesheet ? (
-        <TimesheetAdminModal
-          timesheet={openTimesheet}
-          invoices={invoices}
-          saving={savingIds.has(openTimesheet.id)}
-          onStatusChange={(v) => updateStatus(openTimesheet.id, v)}
-          onClose={() => setOpenId(null)}
-          onShowMember={() => {
-            update("memberCode", openTimesheet.memberCode);
-            setOpenId(null);
-          }}
-          onShowProject={() => {
-            update("projectCode", openTimesheet.projectCode);
-            setOpenId(null);
-          }}
-        />
-      ) : null}
 
       {toast ? (
         <div
@@ -605,212 +586,74 @@ function ActiveFilterChips({
   );
 }
 
-// Full-timesheet modal for admins: day-by-day hours + task comments, status
-// editor, related invoices on the same staffing, and one-click pivots to
-// "all timesheets from this member / this project".
-function TimesheetAdminModal({
-  timesheet: t,
+// Related invoices for an expanded timesheet row: the invoices on the same
+// staffing, each linked to the payment that settles it (when there is one).
+function RelatedInvoices({
   invoices,
-  saving,
-  onStatusChange,
-  onClose,
-  onShowMember,
-  onShowProject,
+  paymentByInvoiceId,
 }: {
-  timesheet: AdminTimesheetRecord;
   invoices: MemberInvoiceRecord[];
-  saving: boolean;
-  onStatusChange: (v: TimesheetStatus) => void;
-  onClose: () => void;
-  onShowMember: () => void;
-  onShowProject: () => void;
+  paymentByInvoiceId: Record<string, PaymentLink>;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = "";
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
-
-  // Related invoices: tightest match first (same staffing), then fall back
-  // to the same member + project for invoices created before the staffing
-  // link existed.
-  const related = useMemo(() => {
-    const byStaffing = invoices.filter(
-      (i) => i.staffingRecordId && i.staffingRecordId === t.staffingRecordId,
-    );
-    if (byStaffing.length > 0) return byStaffing;
-    return invoices.filter(
-      (i) =>
-        i.memberRecordId === t.memberRecordId &&
-        i.projectCode &&
-        i.projectCode === t.projectCode,
-    );
-  }, [invoices, t]);
-
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-slate-900/60 px-3 py-6 sm:items-center sm:py-10"
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-              <span className="rounded-md bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] text-white">
-                {t.timesheetCode}
-              </span>
-              <span>{formatWeekRange(t.startDate, t.endDate)}</span>
-              {t.submissionDate ? <span>· Submitted {t.submissionDate}</span> : null}
-            </div>
-            <h2 className="mt-1 truncate text-base font-semibold text-slate-900 demo-blur">
-              {t.memberName || t.memberCode}
-            </h2>
-            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-              <span className="font-mono">{t.memberCode}</span>
-              <span>·</span>
-              <span className="font-mono">{t.staffingCode}</span>
-              <span className="truncate demo-blur">{t.projectName || t.projectCode}</span>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <AdminStatusSelect
-              value={t.status}
-              disabled={saving || t.status === "Deleted"}
-              onChange={onStatusChange}
-            />
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Day-by-day with comments */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="text-left px-4 py-1.5 font-medium w-28">Day</th>
-                <th className="text-right px-3 py-1.5 font-medium w-16">Hours</th>
-                <th className="text-left px-3 py-1.5 font-medium">Comment</th>
-              </tr>
-            </thead>
-            <tbody>
-              {DAY_KEYS.map((k) => (
-                <tr key={k} className="border-t border-slate-100">
-                  <td className="px-4 py-1.5 font-medium text-slate-700">{DAY_LABELS[k]}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">
-                    {t[k].hours ? t[k].hours.toFixed(2) : <span className="text-slate-300">—</span>}
-                  </td>
-                  <td className="px-3 py-1.5 text-slate-700 whitespace-pre-line demo-blur">
-                    {t[k].task || <span className="text-slate-300">—</span>}
-                  </td>
-                </tr>
-              ))}
-              <tr className="border-t border-slate-200 bg-slate-50">
-                <td className="px-4 py-1.5 font-semibold text-slate-700">Total</td>
-                <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-900">
-                  {t.totalHours.toFixed(2)}
-                </td>
-                <td />
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        {/* Related invoices */}
-        <div className="border-t border-slate-200 px-5 py-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Related invoices
-          </div>
-          {related.length === 0 ? (
-            <p className="mt-1.5 text-xs text-slate-500">
-              No invoices yet on this staffing.
-            </p>
-          ) : (
-            <ul className="mt-1.5 divide-y divide-slate-100">
-              {related.slice(0, 5).map((inv) => (
-                <li key={inv.id} className="flex items-center justify-between gap-3 py-1.5 text-xs">
-                  <div className="min-w-0">
-                    <span className="font-mono text-[11px] text-slate-700">{inv.invoiceCode || "—"}</span>
-                    {inv.submissionDate ? (
-                      <span className="ml-2 text-slate-500">
-                        {inv.submissionDate.slice(0, 10)}
-                      </span>
-                    ) : null}
-                    {inv.status ? (
-                      <span className="ml-2 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
-                        {inv.status}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-3">
-                    <span className="font-semibold tabular-nums text-slate-900">
-                      {inv.amount != null
-                        ? `${inv.amount.toLocaleString("en-US")} ${inv.currency || ""}`.trim()
-                        : "—"}
-                    </span>
-                    {inv.pdf?.url ? (
-                      <a
-                        href={inv.pdf.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-brand-600 hover:text-brand-700 font-medium"
-                      >
-                        PDF
-                      </a>
-                    ) : null}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {/* Footer pivots */}
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-b-2xl border-t border-slate-200 bg-slate-50 px-5 py-3">
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={onShowMember}
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-100"
-            >
-              All timesheets · {t.memberCode}
-            </button>
-            <button
-              type="button"
-              onClick={onShowProject}
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-100"
-            >
-              All timesheets · {t.projectCode || "project"}
-            </button>
-          </div>
-          <a
-            href="/admin/payments"
-            className="text-xs font-medium text-brand-600 hover:text-brand-700"
-          >
-            Open payments →
-          </a>
-        </div>
+    <div className="mt-3 border-t border-slate-100 pt-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+        Related invoices
       </div>
+      {invoices.length === 0 ? (
+        <p className="mt-1 text-[11px] text-slate-400">No invoices on this staffing yet.</p>
+      ) : (
+        <ul className="mt-1 divide-y divide-slate-100">
+          {invoices.map((inv) => {
+            const payment = paymentByInvoiceId[inv.id];
+            return (
+              <li key={inv.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5 text-[11px]">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="font-mono text-slate-700">{inv.invoiceCode || "—"}</span>
+                  {inv.submissionDate ? (
+                    <span className="text-slate-400">{inv.submissionDate.slice(0, 10)}</span>
+                  ) : null}
+                  {inv.status ? (
+                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                      {inv.status}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <span className="font-semibold tabular-nums text-slate-900 demo-blur">
+                    {inv.amount != null
+                      ? `${inv.amount.toLocaleString("en-US")} ${inv.currency || ""}`.trim()
+                      : "—"}
+                  </span>
+                  {inv.pdf?.url ? (
+                    <a
+                      href={inv.pdf.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-brand-600 hover:text-brand-700"
+                    >
+                      PDF
+                    </a>
+                  ) : null}
+                  {payment ? (
+                    <a
+                      href={`/admin/payments?search=${encodeURIComponent(payment.code)}`}
+                      className="inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-1.5 py-0.5 font-mono text-[10px] text-brand-700 hover:bg-brand-100"
+                      title={`Open payment${payment.status ? ` (${payment.status})` : ""}`}
+                    >
+                      Payment #{payment.code}
+                      {payment.status ? <span className="font-sans text-slate-500">· {payment.status}</span> : null}
+                      <span aria-hidden>↗</span>
+                    </a>
+                  ) : (
+                    <span className="text-slate-300">no payment yet</span>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

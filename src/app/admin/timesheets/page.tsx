@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
-import { listAllInvoices, listAllTimesheets } from "@/lib/airtable";
+import { listAllInvoices, listAllTimesheets, listPayments } from "@/lib/airtable";
 import { AdminTimesheetsClient } from "./timesheets-client";
 
 export const dynamic = "force-dynamic";
@@ -10,12 +10,24 @@ export default async function AdminTimesheetsPage() {
   const session = await requireAdminSession();
   if (!session) redirect("/dashboard");
 
-  // Invoices ride along so the timesheet detail modal can show "related
-  // invoices" (same staffing) without an extra client fetch.
-  const [timesheets, invoices] = await Promise.all([
+  // Invoices ride along so an expanded timesheet row can show "related
+  // invoices" (same staffing); payments let each invoice link to the payment
+  // that settles it.
+  const [timesheets, invoices, payments] = await Promise.all([
     listAllTimesheets(),
     listAllInvoices(),
+    listPayments(),
   ]);
+
+  // Map member-invoice id -> the payment referencing it.
+  const paymentByInvoiceId: Record<string, { id: string; code: string; status: string }> = {};
+  for (const p of payments) {
+    for (const invId of p.memberInvoiceRecordIds) {
+      if (!paymentByInvoiceId[invId]) {
+        paymentByInvoiceId[invId] = { id: p.id, code: p.paymentCode, status: p.paymentStatus || "" };
+      }
+    }
+  }
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
@@ -26,7 +38,11 @@ export default async function AdminTimesheetsPage() {
             · {timesheets.length} across all members
           </span>
         </div>
-        <AdminTimesheetsClient timesheets={timesheets} invoices={invoices} />
+        <AdminTimesheetsClient
+          timesheets={timesheets}
+          invoices={invoices}
+          paymentByInvoiceId={paymentByInvoiceId}
+        />
     </main>
   );
 }
