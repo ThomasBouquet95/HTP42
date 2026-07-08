@@ -17,6 +17,7 @@ type FormState = {
   country: string;
   keyContact: string;
   notes: string;
+  subjectToDes: "Yes" | "No" | "";
 };
 
 const EMPTY: FormState = {
@@ -27,6 +28,7 @@ const EMPTY: FormState = {
   country: "",
   keyContact: "",
   notes: "",
+  subjectToDes: "",
 };
 
 function fromRecord(c: ClientRecord): FormState {
@@ -38,6 +40,7 @@ function fromRecord(c: ClientRecord): FormState {
     country: c.country,
     keyContact: c.keyContact,
     notes: c.notes,
+    subjectToDes: c.subjectToDes,
   };
 }
 
@@ -339,8 +342,17 @@ export function ClientsAdminClient({ clients }: Props) {
             label="Key contact"
             value={form.keyContact}
             onChange={(v) => updateField("keyContact", v)}
-            className="sm:col-span-2"
           />
+          <FormSelect
+            label="Subject to DES"
+            value={form.subjectToDes}
+            onChange={(v) => updateField("subjectToDes", v as "Yes" | "No" | "")}
+            hint="EU services declaration applies to this client."
+          >
+            <option value="">—</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+          </FormSelect>
         </div>
         <div className="mt-3">
           <FormTextarea

@@ -607,33 +607,39 @@ function RelatedInvoices({
           {invoices.map((inv) => {
             const payment = paymentByInvoiceId[inv.id];
             return (
-              <li key={inv.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5 text-[11px]">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span className="font-mono text-slate-700">{inv.invoiceCode || "—"}</span>
-                  {inv.submissionDate ? (
-                    <span className="text-slate-400">{inv.submissionDate.slice(0, 10)}</span>
-                  ) : null}
+              <li key={inv.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-[11px]">
+                {/* Left: amount, PDF, then the invoice code + date. */}
+                <span className="w-24 shrink-0 font-semibold tabular-nums text-slate-900 demo-blur">
+                  {inv.amount != null
+                    ? `${inv.amount.toLocaleString("en-US")} ${inv.currency || ""}`.trim()
+                    : "—"}
+                </span>
+                {inv.pdf?.url ? (
+                  <a
+                    href={inv.pdf.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 font-medium text-brand-600 hover:bg-slate-50"
+                  >
+                    <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                      <path d="M9 2H4.5A1.5 1.5 0 003 3.5v9A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V6z" strokeLinejoin="round" />
+                      <path d="M9 2v4h4" strokeLinejoin="round" />
+                    </svg>
+                    PDF
+                  </a>
+                ) : (
+                  <span className="w-12 shrink-0 text-slate-300">no PDF</span>
+                )}
+                <span className="font-mono text-slate-600">{inv.invoiceCode || "—"}</span>
+                {inv.submissionDate ? (
+                  <span className="text-slate-400">{inv.submissionDate.slice(0, 10)}</span>
+                ) : null}
+                {/* Right: invoice status + the settling payment. */}
+                <div className="ml-auto flex shrink-0 items-center gap-2">
                   {inv.status ? (
                     <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
                       {inv.status}
                     </span>
-                  ) : null}
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <span className="font-semibold tabular-nums text-slate-900 demo-blur">
-                    {inv.amount != null
-                      ? `${inv.amount.toLocaleString("en-US")} ${inv.currency || ""}`.trim()
-                      : "—"}
-                  </span>
-                  {inv.pdf?.url ? (
-                    <a
-                      href={inv.pdf.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-medium text-brand-600 hover:text-brand-700"
-                    >
-                      PDF
-                    </a>
                   ) : null}
                   {payment ? (
                     <a

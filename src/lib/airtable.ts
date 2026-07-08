@@ -81,6 +81,7 @@ export const FIELDS = {
     country: "Country",
     keyContact: "Key Contact",
     notes: "Notes",
+    subjectToDes: "Subject to DES",
   },
   opportunities: {
     title: "Title",
@@ -452,6 +453,9 @@ export type ClientRecord = {
   country: string;
   keyContact: string;
   notes: string;
+  // Whether services to this client must be reported on the DES (Déclaration
+  // Européenne de Services). "" = not set.
+  subjectToDes: "Yes" | "No" | "";
 };
 
 // Payment-schedule entries. Discriminated by project type:
@@ -1194,10 +1198,12 @@ function clientFromRecord(r: AirtableRecord<FieldSet>): ClientRecord {
     country: str(r, FIELDS.clients.country),
     keyContact: str(r, FIELDS.clients.keyContact),
     notes: str(r, FIELDS.clients.notes),
+    subjectToDes: (str(r, FIELDS.clients.subjectToDes) as "Yes" | "No") || "",
   };
 }
 
 export const listClients = cache(async function listClients(): Promise<ClientRecord[]> {
+  await ensureClientsSchema();
   const records = await base(TABLES.clients)
     .select({ sort: [{ field: FIELDS.clients.clientCode, direction: "asc" }] })
     .all();
@@ -1221,6 +1227,7 @@ export type ClientInput = {
   country: string;
   keyContact: string;
   notes: string;
+  subjectToDes: "Yes" | "No" | "";
 };
 
 function clientFields(input: ClientInput): Record<string, unknown> {
@@ -1232,10 +1239,53 @@ function clientFields(input: ClientInput): Record<string, unknown> {
     [FIELDS.clients.country]: input.country,
     [FIELDS.clients.keyContact]: input.keyContact,
     [FIELDS.clients.notes]: input.notes,
+    [FIELDS.clients.subjectToDes]: input.subjectToDes === "" ? null : input.subjectToDes,
   };
 }
 
+// The Clients table pre-exists; lazily add the "Subject to DES" single-select
+// (Yes/No) so writes can set it. Idempotent + cached.
+let clientsSchemaReady = false;
+export async function ensureClientsSchema(): Promise<boolean> {
+  if (clientsSchemaReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.clients);
+    if (!table) return false;
+    if (table.fields.some((f) => f.name === FIELDS.clients.subjectToDes)) {
+      clientsSchemaReady = true;
+      return true;
+    }
+    const create = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: FIELDS.clients.subjectToDes,
+          type: "singleSelect",
+          options: { choices: [{ name: "Yes" }, { name: "No" }] },
+        }),
+      },
+    );
+    if (create.ok) clientsSchemaReady = true;
+    return create.ok;
+  } catch (e) {
+    console.error("ensureClientsSchema failed:", e);
+    return false;
+  }
+}
+
 export async function createClient(input: ClientInput): Promise<string> {
+  await ensureClientsSchema();
   const [created] = await base(TABLES.clients).create(
     [{ fields: clientFields(input) as FieldSet }],
     { typecast: true },
@@ -1244,6 +1294,7 @@ export async function createClient(input: ClientInput): Promise<string> {
 }
 
 export async function updateClient(recordId: string, input: ClientInput): Promise<void> {
+  await ensureClientsSchema();
   await base(TABLES.clients).update(
     [{ id: recordId, fields: clientFields(input) as FieldSet }],
     { typecast: true },
