@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
@@ -132,6 +132,15 @@ export function ProjectsAdminClient({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(DEFAULT_STATUS_FILTER);
   const [typeFilter, setTypeFilter] = useState<"All" | ProjectType>("All");
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  function toggleRow(id: string) {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [editing, setEditing] = useState<ProjectRecord | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm(currentYear));
@@ -526,6 +535,7 @@ export function ProjectsAdminClient({
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
+              <th className="w-6 px-1 py-1.5" />
               <th className="text-left px-2 py-1.5 font-medium">Code</th>
               <th className="text-left px-2 py-1.5 font-medium">Name</th>
               <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Client</th>
@@ -540,7 +550,7 @@ export function ProjectsAdminClient({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="text-center text-slate-500 py-10">
+                <td colSpan={10} className="text-center text-slate-500 py-10">
                   No projects match these filters.
                 </td>
               </tr>
@@ -551,11 +561,33 @@ export function ProjectsAdminClient({
                   .filter(Boolean)
                   .join(", ");
                 const tint = projectRowTint(p.status);
+                const open = expandedRows.has(p.id);
                 return (
+                  <Fragment key={p.id}>
                   <tr
-                    key={p.id}
-                    className={`border-t border-slate-100 ${tint}`}
+                    onClick={() => toggleRow(p.id)}
+                    aria-expanded={open}
+                    className={`border-t border-slate-100 cursor-pointer ${tint}`}
+                    title="Click for full project details"
                   >
+                    <td
+                      className="px-1 py-1.5 text-center"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleRow(p.id);
+                      }}
+                    >
+                      <svg
+                        viewBox="0 0 16 16"
+                        className={`inline h-3 w-3 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        aria-hidden
+                      >
+                        <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </td>
                     <td className="px-2 py-1.5 font-mono text-xs">{p.projectCode}</td>
                     <td className="px-2 py-1.5">
                       <div className="demo-blur">{p.projectName}</div>
@@ -591,7 +623,10 @@ export function ProjectsAdminClient({
                         emptyTitle="No SOW on file"
                       />
                     </td>
-                    <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                    <td
+                      className="px-2 py-1.5 text-right whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <button
                         type="button"
                         onClick={() => openEdit(p)}
@@ -603,6 +638,19 @@ export function ProjectsAdminClient({
                       </button>
                     </td>
                   </tr>
+                  {open ? (
+                    <tr className="border-t border-slate-100 bg-slate-50/60">
+                      <td />
+                      <td colSpan={9} className="px-3 py-3">
+                        <ProjectDetails
+                          p={p}
+                          clientNames={clientNames || p.clientCodes.join(", ")}
+                          sow={sowByProjectId[p.id]}
+                        />
+                      </td>
+                    </tr>
+                  ) : null}
+                  </Fragment>
                 );
               })
             )}
@@ -1159,6 +1207,76 @@ function PercentInput({
 // uniform with /admin/timesheets.
 function projectRowTint(_status: string): string {
   return "hover:bg-slate-50";
+}
+
+// Full detail shown when a project row is expanded — surfaces every field
+// on the record without opening the edit modal.
+function ProjectDetails({
+  p,
+  clientNames,
+  sow,
+}: {
+  p: ProjectRecord;
+  clientNames: string;
+  sow?: { url: string; filename: string };
+}) {
+  const money = (v: number | null, ccy: string) =>
+    v == null ? "—" : `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}${ccy ? " " + ccy : ""}`;
+  return (
+    <div className="space-y-3">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+        <Field label="Project code" value={p.projectCode} mono />
+        <Field label="Name" value={p.projectName} blur />
+        <Field label="Client" value={clientNames} blur />
+        <Field label="Project leaders" value={p.projectLeaderCodes.join(", ")} />
+        <Field label="Type" value={p.type} />
+        <Field label="Status" value={p.status} />
+        <Field label="Currency" value={p.currency} />
+        <Field label="Total amount" value={money(p.totalAmount, p.currency)} blur />
+        <Field label="FX to EUR" value={p.fxToEur == null ? "" : String(p.fxToEur)} />
+        <Field label="Total amount EUR" value={money(p.totalAmountEur, "EUR")} blur />
+        <Field label="Start date" value={p.startDate ?? ""} />
+        <Field label="End date" value={p.endDate ?? ""} />
+      </dl>
+
+      {p.objective ? (
+        <div>
+          <dt className="text-[10px] uppercase tracking-wide text-slate-400">Objective</dt>
+          <dd className="mt-0.5 whitespace-pre-wrap text-xs text-slate-700 demo-blur">{p.objective}</dd>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-2 text-[11px]">
+        <span className="text-[10px] uppercase tracking-wide text-slate-400">SOW</span>
+        <DownloadChip
+          url={sow?.url}
+          title={`Open ${sow?.filename || "SOW"}`}
+          emptyTitle="No SOW on file"
+        />
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  mono,
+  blur,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  blur?: boolean;
+}) {
+  return (
+    <div>
+      <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+      <dd className={`text-slate-800 ${mono ? "font-mono text-[11px]" : ""} ${blur ? "demo-blur" : ""}`}>
+        {value || "—"}
+      </dd>
+    </div>
+  );
 }
 
 function TypePill({ type }: { type: ProjectType }) {

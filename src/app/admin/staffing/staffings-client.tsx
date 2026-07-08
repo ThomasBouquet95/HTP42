@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
@@ -150,6 +150,15 @@ export function StaffingsAdminClient({
   const [statusFilter, setStatusFilter] = useState<"All" | StaffingStatus>("All");
   const [memberOpen, setMemberOpen] = useState<MemberOpt | null>(null);
   const membersById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  function toggleRow(id: string) {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [toast, setToast] = useState<{ kind: "error" | "ok"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -344,6 +353,7 @@ export function StaffingsAdminClient({
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
+              <th className="w-6 px-1 py-1.5" />
               <th className="text-left px-2 py-1.5 font-medium">Staffing</th>
               <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Project</th>
               <th className="text-left px-2 py-1.5 font-medium">Member</th>
@@ -362,22 +372,45 @@ export function StaffingsAdminClient({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text-center text-slate-500 py-10">
+                <td colSpan={12} className="text-center text-slate-500 py-10">
                   No staffings match these filters.
                 </td>
               </tr>
             ) : (
-              filtered.map((s) => (
+              filtered.map((s) => {
+                const open = expandedRows.has(s.id);
+                const memberNames = s.memberRecordIds
+                  .map((mid, i) => membersById.get(mid)?.name || membersById.get(mid)?.code || s.memberCodes[i] || mid)
+                  .join(", ");
+                return (
+                <Fragment key={s.id}>
                 <tr
-                  key={s.id}
-                  className="border-t border-slate-100 hover:bg-slate-50 align-top"
+                  onClick={() => toggleRow(s.id)}
+                  aria-expanded={open}
+                  className="border-t border-slate-100 hover:bg-slate-50 align-top cursor-pointer"
+                  title="Click for full staffing details"
                 >
+                  <td
+                    className="px-1 py-1.5 text-center"
+                    onClick={(e) => { e.stopPropagation(); toggleRow(s.id); }}
+                  >
+                    <svg
+                      viewBox="0 0 16 16"
+                      className={`inline h-3 w-3 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      aria-hidden
+                    >
+                      <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </td>
                   <td className="px-2 py-1.5 font-mono text-xs">{s.staffingCode || "—"}</td>
                   <td className="px-2 py-1.5 hidden md:table-cell">
                     <div className="font-mono text-xs text-slate-500">{s.projectCode}</div>
                     <div>{s.projectName || "—"}</div>
                   </td>
-                  <td className="px-2 py-1.5">
+                  <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                     <div className="flex flex-wrap items-center gap-1">
                       {s.memberRecordIds.length === 0 ? (
                         <span className="text-slate-400">—</span>
@@ -433,20 +466,30 @@ export function StaffingsAdminClient({
                       ? "—"
                       : `${s.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${s.currency || ""}`.trim()}
                   </td>
-                  <td className="px-2 py-1.5 whitespace-nowrap">
+                  <td className="px-2 py-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     <StaffingStatusSelect
                       value={s.status}
                       statuses={staffingStatuses}
                       onChange={(next) => updateStatus(s.id, next)}
                     />
                   </td>
-                  <td className="px-2 py-1.5 text-right">
+                  <td className="px-2 py-1.5 text-right" onClick={(e) => e.stopPropagation()}>
                     <IconButton title="Edit" onClick={() => openEdit(s)}>
                       <EditIcon />
                     </IconButton>
                   </td>
                 </tr>
-              ))
+                {open ? (
+                  <tr className="border-t border-slate-100 bg-slate-50/60">
+                    <td />
+                    <td colSpan={11} className="px-3 py-3">
+                      <StaffingDetails s={s} memberLabel={memberNames} />
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -786,5 +829,49 @@ function ProjectRolePill({ role }: { role: string }) {
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${cls}`}>
       {role}
     </span>
+  );
+}
+
+// Full detail shown when a staffing row is expanded — surfaces every field
+// without opening the edit modal.
+function StaffingDetails({ s, memberLabel }: { s: StaffingAdminRecord; memberLabel: string }) {
+  const money = (v: number | null, ccy: string) =>
+    v == null ? "—" : `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}${ccy ? " " + ccy : ""}`;
+  return (
+    <div className="space-y-3">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+        <Field label="Staffing" value={s.staffingCode} mono />
+        <Field label="Project" value={[s.projectCode, s.projectName].filter(Boolean).join(" · ")} />
+        <Field label="Member" value={memberLabel} blur />
+        <Field label="Job title on project" value={s.roleInProject} />
+        <Field label="Project role" value={s.projectRole} />
+        <Field label="Rate per day" value={money(s.ratePerDay, s.currency)} blur />
+        <Field label="Currency" value={s.currency} mono />
+        <Field label="Days allocated" value={s.daysAllocated == null ? "" : String(s.daysAllocated)} blur />
+        <Field label="Days used" value={s.daysUsed > 0 ? s.daysUsed.toFixed(2) : ""} blur />
+        <Field label="Total amount" value={money(s.totalAmount, s.currency)} blur />
+        <Field label="Total amount EUR" value={money(s.totalAmountEur, "EUR")} blur />
+        <Field label="SOW reference" value={s.sowReference} />
+        <Field label="SOW status" value={s.sowStatus} />
+        <Field label="Start date" value={s.startDate ?? ""} />
+        <Field label="End date" value={s.endDate ?? ""} />
+        <Field label="Status" value={s.status} />
+      </dl>
+
+      {s.notes ? (
+        <p className="rounded-md bg-white p-2 text-[11px] text-slate-600">{s.notes}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function Field({ label, value, mono, blur }: { label: string; value: string; mono?: boolean; blur?: boolean }) {
+  return (
+    <div>
+      <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+      <dd className={`text-slate-800 ${mono ? "font-mono text-[11px]" : ""} ${blur ? "demo-blur" : ""}`}>
+        {value || "—"}
+      </dd>
+    </div>
   );
 }

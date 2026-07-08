@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
@@ -98,6 +99,15 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
   const [cvMsg, setCvMsg] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [baseline, setBaseline] = useState<FormState>(EMPTY);
   const [showDiscard, setShowDiscard] = useState(false);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  function toggleRow(id: string) {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   // Whether the text fields have unsaved edits. CV changes are persisted
   // immediately by their own endpoint, so they don't count toward "dirty".
@@ -383,6 +393,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full table-fixed text-xs">
           <colgroup>
+            <col className="w-6" />{/* expand chevron */}
             <col className="w-10" />{/* avatar */}
             <col className="w-[8%]" />{/* Code */}
             <col />{/* Name */}
@@ -397,6 +408,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
           </colgroup>
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
+              <th className="w-6 px-1 py-1.5" />
               <th className="px-2 py-1.5 font-medium w-9" />
               <th className="text-left px-2 py-1.5 font-medium">Code</th>
               <th className="text-left px-2 py-1.5 font-medium">Name</th>
@@ -413,13 +425,39 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text-center text-slate-500 py-10">
+                <td colSpan={12} className="text-center text-slate-500 py-10">
                   No members match this search.
                 </td>
               </tr>
             ) : (
-              filtered.map((m) => (
-                <tr key={m.id} className="border-t border-slate-100 hover:bg-slate-50">
+              filtered.map((m) => {
+                const open = expandedRows.has(m.id);
+                return (
+                <Fragment key={m.id}>
+                <tr
+                  onClick={() => toggleRow(m.id)}
+                  aria-expanded={open}
+                  className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
+                  title="Click for full member details"
+                >
+                  <td
+                    className="px-1 py-1.5 text-center"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleRow(m.id);
+                    }}
+                  >
+                    <svg
+                      viewBox="0 0 16 16"
+                      className={`inline h-3 w-3 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      aria-hidden
+                    >
+                      <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </td>
                   <td className="px-2 py-1.5">
                     <div className="h-7 w-7 rounded-full overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-semibold text-slate-600">
                       {m.photo ? (
@@ -437,7 +475,7 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                   </td>
                   <td className="px-2 py-1.5 text-slate-600 hidden md:table-cell demo-blur">{m.email}</td>
                   <td className="px-2 py-1.5 hidden lg:table-cell">{m.role || "—"}</td>
-                  <td className="px-2 py-1.5">
+                  <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                     <MemberStatusSelect
                       value={m.status}
                       statuses={statuses}
@@ -479,7 +517,63 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                     </div>
                   </td>
                 </tr>
-              ))
+                {open ? (
+                  <tr className="border-t border-slate-100 bg-slate-50/60">
+                    <td />
+                    <td colSpan={11} className="px-3 py-3">
+                      <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+                        <Field label="Member code" mono>
+                          {m.memberCode || "—"}
+                        </Field>
+                        <Field label="Full name" blur>
+                          {m.fullName || "—"}
+                        </Field>
+                        <Field label="Login email" blur>
+                          {m.email || "—"}
+                        </Field>
+                        <Field label="Personal email" blur>
+                          {m.personalEmail || "—"}
+                        </Field>
+                        <Field label="Role">{m.role || "—"}</Field>
+                        <Field label="Status">{m.status || "—"}</Field>
+                        <Field label="Title">{m.title || "—"}</Field>
+                        <Field label="Country">{m.country || "—"}</Field>
+                        <Field label="Phone" blur>
+                          {m.phone || "—"}
+                        </Field>
+                        <Field label="Legal entity">{m.legalEntity || "—"}</Field>
+                        <Field label="Member rate" blur>
+                          {m.dailyRate == null
+                            ? "—"
+                            : `${m.dailyRate.toLocaleString("en-US")} ${m.currency || ""}`.trim()}
+                        </Field>
+                        <Field label="HTP42 rate" blur>
+                          {m.htp42DailyRate == null
+                            ? "—"
+                            : `${m.htp42DailyRate.toLocaleString("en-US")} ${m.currency || ""}`.trim()}
+                        </Field>
+                        <Field label="Currency">{m.currency || "—"}</Field>
+                      </dl>
+                      <div className="mt-3">
+                        <dt className="text-[10px] uppercase tracking-wide text-slate-400">
+                          Introduction
+                        </dt>
+                        <dd className="mt-0.5 whitespace-pre-line text-slate-700">
+                          {m.introduction || "—"}
+                        </dd>
+                      </div>
+                      <div className="mt-3">
+                        <dt className="text-[10px] uppercase tracking-wide text-slate-400">CV</dt>
+                        <dd className="mt-0.5" onClick={(e) => e.stopPropagation()}>
+                          <DownloadChip url={m.cv?.url} title="Open CV" emptyTitle="No CV on file" />
+                        </dd>
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -708,6 +802,29 @@ function Spinner() {
         d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
       />
     </svg>
+  );
+}
+
+function Field({
+  label,
+  children,
+  mono,
+  blur,
+}: {
+  label: string;
+  children: ReactNode;
+  mono?: boolean;
+  blur?: boolean;
+}) {
+  return (
+    <div>
+      <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+      <dd
+        className={`text-slate-700 ${mono ? "font-mono text-[11px]" : ""} ${blur ? "demo-blur" : ""}`}
+      >
+        {children}
+      </dd>
+    </div>
   );
 }
 

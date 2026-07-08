@@ -117,6 +117,17 @@ export function ContractsAdminClient({
     if (id) setOpenId(id);
   }, [searchParams]);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  // Rows whose inline detail panel is expanded, so an admin can read every
+  // field of a contract without opening the edit modal.
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  function toggleRow(id: string) {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -581,6 +592,7 @@ export function ContractsAdminClient({
         <table className="w-full table-fixed text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
+              <th className="w-6 px-1 py-1.5" />
               <th className="px-2 py-1.5 font-medium text-center">Side</th>
               <th className="px-2 py-1.5 font-medium text-center">Type</th>
               <th className="text-left px-2 py-1.5 font-medium">Counterparty</th>
@@ -595,7 +607,7 @@ export function ContractsAdminClient({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="text-center text-slate-500 py-10 text-xs">
+                <td colSpan={10} className="text-center text-slate-500 py-10 text-xs">
                   No contracts match these filters.
                 </td>
               </tr>
@@ -606,9 +618,11 @@ export function ContractsAdminClient({
                   isCriticalType(c.contractType) &&
                   validityBucket(c.validity) === "Expired";
                 const counterparty = counterpartyLabel(c);
+                const open = expandedRows.has(c.id);
                 return (
+                  <Fragment key={c.id}>
                   <tr
-                    key={c.id}
+                    aria-expanded={open}
                     className={`border-t align-middle ${
                       flagged
                         ? "border-red-200 bg-red-50 ring-1 ring-inset ring-red-200"
@@ -618,6 +632,24 @@ export function ContractsAdminClient({
                       flagged ? "Expired MSA / SoW — review the row." : undefined
                     }
                   >
+                    <td
+                      className="px-1 py-1.5 text-center cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleRow(c.id);
+                      }}
+                    >
+                      <svg
+                        viewBox="0 0 16 16"
+                        className={`inline h-3 w-3 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        aria-hidden
+                      >
+                        <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </td>
                     <td className="px-2 py-1.5 text-center">
                       <SidePill side={side} />
                     </td>
@@ -660,6 +692,15 @@ export function ContractsAdminClient({
                       </button>
                     </td>
                   </tr>
+                  {open ? (
+                    <tr className="border-t border-slate-100 bg-slate-50/60">
+                      <td />
+                      <td colSpan={9} className="px-3 py-3">
+                        <ContractDetails c={c} />
+                      </td>
+                    </tr>
+                  ) : null}
+                  </Fragment>
                 );
               })
             )}
@@ -1373,6 +1414,94 @@ function OverviewView({
 
 function Dash() {
   return <span className="text-slate-300">—</span>;
+}
+
+// Inline expandable detail panel for a contract row — surfaces every field
+// on the record so an admin can scan the full contract without opening the
+// edit modal. Read-only: editing still happens in ContractDetailModal.
+function ContractDetails({ c }: { c: ContractRecord }) {
+  const side = resolveSide(c);
+  const clientLabel =
+    c.clientNames.filter(Boolean).join(", ") || c.clientCodes.join(", ");
+  const memberLabel = c.memberCodes.join(", ");
+  const projectLabel = c.projectCodes.join(", ") || c.projectCode;
+  const bucket = validityBucket(c.validity);
+  const validityLabel = bucket === "Expiry Missing" ? "Expiry missing" : bucket;
+  return (
+    <div className="space-y-3">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+        <Field label="Side" value={side} />
+        <Field label="Contract type" value={c.contractType} />
+        {c.otherDescription ? (
+          <Field label="Other description" value={c.otherDescription} />
+        ) : null}
+        <Field label="Client" value={clientLabel} blur />
+        <Field label="Network member" value={memberLabel} blur />
+        <Field label="Project" value={projectLabel} mono />
+        <Field label="Signatory 1" value={c.signatory1.name} blur />
+        <Field label="Signatory 1 role" value={c.signatory1.role} />
+        <Field label="Signatory 1 company" value={c.signatory1.company} blur />
+        <Field label="Signatory 1 date" value={formatFriendlyDate(c.signatory1.date)} />
+        <Field label="Signatory 2" value={c.signatory2.name} blur />
+        <Field label="Signatory 2 role" value={c.signatory2.role} />
+        <Field label="Signatory 2 company" value={c.signatory2.company} blur />
+        <Field label="Signatory 2 date" value={formatFriendlyDate(c.signatory2.date)} />
+        <Field label="Signature date" value={formatFriendlyDate(c.signatureDate)} />
+        <Field label="Expiry date" value={formatFriendlyDate(c.expiryDate)} />
+        <Field label="Status" value={c.stage} />
+        <Field label="Validity" value={validityLabel} />
+      </dl>
+
+      {c.keyTerms ? (
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-slate-400">Key terms</div>
+          <p className="whitespace-pre-line text-[11px] text-slate-600">{c.keyTerms}</p>
+        </div>
+      ) : null}
+      {c.comment ? (
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-slate-400">Comment</div>
+          <p className="whitespace-pre-line text-[11px] text-slate-600 demo-blur">{c.comment}</p>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-3 text-[11px]">
+        {c.pdf?.url ? (
+          <a
+            href={c.pdf.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 font-medium text-brand-600 hover:bg-slate-50"
+          >
+            Contract PDF ↗
+          </a>
+        ) : (
+          <span className="text-slate-400">No PDF on file</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  mono,
+  blur,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  blur?: boolean;
+}) {
+  return (
+    <div>
+      <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+      <dd className={`text-slate-800 ${mono ? "font-mono text-[11px]" : ""} ${blur ? "demo-blur" : ""}`}>
+        {value || "—"}
+      </dd>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
