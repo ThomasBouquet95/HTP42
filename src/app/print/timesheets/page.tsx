@@ -6,6 +6,13 @@ import { PrintTrigger } from "./print-trigger";
 export const dynamic = "force-dynamic";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
+const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
+  monday: "Mon",
+  tuesday: "Tue",
+  wednesday: "Wed",
+  thursday: "Thu",
+  friday: "Fri",
+};
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // Printable (Save-as-PDF) report of the timesheets currently filtered in the
@@ -136,46 +143,58 @@ export default async function TimesheetsPrintPage({
         {rows.length === 0 ? (
           <div className="empty">No timesheets match these filters.</div>
         ) : (
-          <table className="list">
-            <thead>
-              <tr>
-                <th>Member</th>
-                <th>Project</th>
-                <th>Week</th>
-                <th className="num">Mon</th>
-                <th className="num">Tue</th>
-                <th className="num">Wed</th>
-                <th className="num">Thu</th>
-                <th className="num">Fri</th>
-                <th className="num">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((t) => (
-                <tr key={t.id}>
-                  <td>
-                    <div>{t.memberName || t.memberCode}</div>
-                    <div className="muted mono">{t.memberCode}</div>
-                  </td>
-                  <td>
-                    <div>{t.projectName || t.projectCode || "—"}</div>
-                    <div className="muted mono">{t.staffingCode}</div>
-                  </td>
-                  <td className="nowrap">{weekRange(t)}</td>
-                  {DAY_KEYS.map((k) => (
-                    <td key={k} className="num">
-                      {t[k].hours ? t[k].hours.toFixed(2) : "—"}
-                    </td>
-                  ))}
-                  <td className="num strong">{t.totalHours.toFixed(2)}</td>
-                </tr>
-              ))}
-              <tr className="total-row">
-                <td colSpan={8}>Total</td>
-                <td className="num">{total.toFixed(2)}</td>
-              </tr>
-            </tbody>
-          </table>
+          <section>
+            {rows.map((t) => {
+              const start = t.startDate;
+              return (
+                <article key={t.id} className="timesheet">
+                  <div className="ts-head">
+                    <div className="ts-who">
+                      <span className="ts-member">{t.memberName || t.memberCode}</span>
+                      <span className="ts-sub">
+                        {t.memberCode} · {t.projectCode || "—"}
+                        {t.projectName ? ` · ${t.projectName}` : ""} · {t.staffingCode}
+                      </span>
+                    </div>
+                    <div className="ts-week">
+                      {weekRange(t)} · <strong>{t.totalHours.toFixed(2)} h</strong>
+                    </div>
+                  </div>
+                  <table className="ts-table">
+                    <thead>
+                      <tr>
+                        <th>Day</th>
+                        <th className="num">Hours</th>
+                        <th>Task / comment</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {DAY_KEYS.map((k, i) => {
+                        const dayIso = start ? addDaysIso(start, i) : null;
+                        return (
+                          <tr key={k}>
+                            <td className="nowrap">
+                              {DAY_LABELS[k]}
+                              {dayIso ? <span className="muted" style={{ marginLeft: 6 }}>{shortDayDate(dayIso)}</span> : null}
+                            </td>
+                            <td className="num">{t[k].hours ? t[k].hours.toFixed(2) : "—"}</td>
+                            <td style={{ whiteSpace: "pre-line" }}>
+                              {t[k].task || <span className="muted">—</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      <tr className="total-row">
+                        <td>Total</td>
+                        <td className="num">{t.totalHours.toFixed(2)}</td>
+                        <td />
+                      </tr>
+                    </tbody>
+                  </table>
+                </article>
+              );
+            })}
+          </section>
         )}
 
         <footer className="report-footer">HTP42 Timesheets · Generated {generatedAt}</footer>
@@ -199,6 +218,13 @@ function longDate(iso: string | null): string {
   return `${d} ${MONTHS[Number(mo) - 1] ?? mo} ${y}`;
 }
 
+function shortDayDate(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  const [, y, mo, d] = m;
+  return `${d}.${mo}.${y.slice(2)}`;
+}
+
 function addDaysIso(iso: string, n: number): string {
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return iso;
@@ -220,15 +246,18 @@ const PRINT_CSS = `
   .total-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; }
   .total-value { font-size: 28px; font-weight: 700; color: #1d4ed8; margin-top: 2px; }
   .total-sub { font-size: 12px; color: #64748b; }
-  table.list { width: 100%; border-collapse: collapse; font-size: 12px; }
-  table.list th, table.list td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
-  table.list th { font-weight: 600; color: #475569; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .strong { font-weight: 700; }
   .nowrap { white-space: nowrap; }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
   .muted { color: #94a3b8; }
-  .total-row td { border-top: 2px solid #cbd5e1; font-weight: 700; background: #f8fafc; }
+  .timesheet { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; page-break-inside: avoid; }
+  .ts-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 8px; }
+  .ts-member { font-weight: 600; font-size: 14px; }
+  .ts-sub { margin-left: 8px; font-size: 11px; color: #64748b; }
+  .ts-week { font-size: 12px; color: #334155; white-space: nowrap; }
+  table.ts-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.ts-table th, table.ts-table td { padding: 5px 8px; text-align: left; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  table.ts-table th { font-weight: 600; color: #475569; border-bottom: 1px solid #e2e8f0; }
+  table.ts-table .total-row td { border-top: 1px solid #cbd5e1; font-weight: 600; background: #f8fafc; }
   .empty { font-size: 13px; color: #64748b; padding: 24px 0; text-align: center; }
   .report-footer { margin-top: 32px; text-align: center; font-size: 11px; color: #94a3b8; }
   @page { margin: 12mm; }

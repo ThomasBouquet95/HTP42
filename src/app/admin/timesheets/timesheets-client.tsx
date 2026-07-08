@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AdminTimesheetRecord, MemberInvoiceRecord, TimesheetStatus } from "@/lib/airtable";
 import { TIMESHEET_STATUSES } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
 import { formatWeekRange, parseIsoDate, toIsoDate } from "@/lib/dates";
 import { WeekChip } from "@/components/week-chip";
-import { DatePopover } from "@/components/date-picker";
+import { DateField } from "@/components/date-picker";
+import { FormSelect } from "@/components/form-controls";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
@@ -69,6 +70,16 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
   useEffect(() => setRows(timesheets), [timesheets]);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [openId, setOpenId] = useState<string | null>(null);
+  // Rows expanded inline to show the day-by-day comments.
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  function toggleRow(id: string) {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -246,58 +257,74 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
       {/* Filter bar */}
       <div className="bg-white rounded-lg border border-slate-200 p-4">
         <div className="mb-3">
-          <span className="block text-sm text-slate-600 mb-1">Status</span>
-          <StatusMultiSelect
-            selected={filters.status}
-            onToggle={(s) =>
-              update(
-                "status",
-                filters.status.includes(s)
-                  ? filters.status.filter((x) => x !== s)
-                  : [...filters.status, s],
-              )
-            }
-          />
+          <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+            Status
+          </span>
+          <div className="mt-1">
+            <StatusMultiSelect
+              selected={filters.status}
+              onToggle={(s) =>
+                update(
+                  "status",
+                  filters.status.includes(s)
+                    ? filters.status.filter((x) => x !== s)
+                    : [...filters.status, s],
+                )
+              }
+            />
+          </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <Select
+          <FormSelect
             label="Member"
             value={filters.memberCode}
             onChange={(v) => update("memberCode", v)}
-            options={[
-              { value: "All", label: "All members" },
-              ...memberOptions.map(([code, name]) => ({
-                value: code,
-                label: `${code} · ${name}`,
-              })),
-            ]}
-          />
-          <Select
+          >
+            <option value="All">All members</option>
+            {memberOptions.map(([code, name]) => (
+              <option key={code} value={code}>
+                {code} · {name}
+              </option>
+            ))}
+          </FormSelect>
+          <FormSelect
             label="Project"
             value={filters.projectCode}
             onChange={(v) => update("projectCode", v)}
-            options={[
-              { value: "All", label: "All projects" },
-              ...projectOptions.map(([code, name]) => ({
-                value: code,
-                label: name && name !== code ? `${code} · ${name}` : code,
-              })),
-            ]}
-          />
-          <Select
+          >
+            <option value="All">All projects</option>
+            {projectOptions.map(([code, name]) => (
+              <option key={code} value={code}>
+                {name && name !== code ? `${code} · ${name}` : code}
+              </option>
+            ))}
+          </FormSelect>
+          <FormSelect
             label="Staffing"
             value={filters.staffingId}
             onChange={(v) => update("staffingId", v)}
-            options={[
-              { value: "All", label: "All staffings" },
-              ...staffingOptions.map(([id, v]) => ({
-                value: id,
-                label: `${v.code} · ${v.project}`,
-              })),
-            ]}
+          >
+            <option value="All">All staffings</option>
+            {staffingOptions.map(([id, v]) => (
+              <option key={id} value={id}>
+                {v.code} · {v.project}
+              </option>
+            ))}
+          </FormSelect>
+          <DateField
+            label="From"
+            value={filters.from}
+            onChange={(v) => update("from", v)}
+            placeholder="Any date"
+            allowFreeText={false}
           />
-          <FilterDate label="From" value={filters.from} onChange={(v) => update("from", v)} />
-          <FilterDate label="To" value={filters.to} onChange={(v) => update("to", v)} />
+          <DateField
+            label="To"
+            value={filters.to}
+            onChange={(v) => update("to", v)}
+            placeholder="Any date"
+            allowFreeText={false}
+          />
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
@@ -374,6 +401,7 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
+              <th className="w-6 px-1 py-1.5" />
               <th className="text-left px-2 py-1.5 font-medium whitespace-nowrap">Week</th>
               <th className="text-left px-2 py-1.5 font-medium">Member</th>
               <th className="text-left px-2 py-1.5 font-medium">Staffing</th>
@@ -390,18 +418,34 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text-center text-slate-500 py-8 text-xs">
+                <td colSpan={12} className="text-center text-slate-500 py-8 text-xs">
                   No timesheets match these filters.
                 </td>
               </tr>
             ) : (
-              filtered.map((t) => (
+              filtered.map((t) => {
+                const open = expandedRows.has(t.id);
+                const dates = dayIsos(t.startDate);
+                return (
+                <Fragment key={t.id}>
                 <tr
-                  key={t.id}
-                  onClick={() => setOpenId(t.id)}
+                  onClick={() => toggleRow(t.id)}
+                  aria-expanded={open}
                   className="border-t border-slate-100 align-top cursor-pointer hover:bg-slate-50"
-                  title="Click for the full timesheet"
+                  title="Click to show the day-by-day comments"
                 >
+                  <td className="px-1 py-1.5 text-center">
+                    <svg
+                      viewBox="0 0 16 16"
+                      className={`inline h-3 w-3 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      aria-hidden
+                    >
+                      <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </td>
                   <td className="px-2 py-1.5 whitespace-nowrap">
                     <WeekChip startIso={t.startDate} endIso={t.endDate} />
                   </td>
@@ -428,23 +472,65 @@ export function AdminTimesheetsClient({ timesheets, invoices }: Props) {
                   <td className="px-2 py-1.5 text-right tabular-nums font-semibold">
                     {t.totalHours.toFixed(2)}
                   </td>
-                  <td className="px-2 py-1.5 text-right" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      onClick={() => openStaffingPrint(t.staffingRecordId)}
-                      disabled={!t.staffingRecordId}
-                      title="Open a printable PDF of this staffing's timesheets"
-                      aria-label="Staffing timesheets PDF"
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40"
-                    >
-                      <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-                        <path d="M8 2v7m0 0L5.5 6.5M8 9l2.5-2.5" strokeLinecap="round" strokeLinejoin="round" />
-                        <path d="M3 11v1.5A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V11" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </button>
+                  <td className="px-2 py-1.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                    <div className="inline-flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setOpenId(t.id)}
+                        title="Open the full timesheet (comments, invoices)"
+                        aria-label="Full timesheet"
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-brand-50 hover:text-brand-700"
+                      >
+                        <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                          <path d="M6 2H3.5A1.5 1.5 0 002 3.5V6M10 2h2.5A1.5 1.5 0 0114 3.5V6M14 10v2.5a1.5 1.5 0 01-1.5 1.5H10M6 14H3.5A1.5 1.5 0 012 12.5V10" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openStaffingPrint(t.staffingRecordId)}
+                        disabled={!t.staffingRecordId}
+                        title="Open a printable PDF of this staffing's timesheets"
+                        aria-label="Staffing timesheets PDF"
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40"
+                      >
+                        <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                          <path d="M8 2v7m0 0L5.5 6.5M8 9l2.5-2.5" strokeLinecap="round" strokeLinejoin="round" />
+                          <path d="M3 11v1.5A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V11" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                    </div>
                   </td>
                 </tr>
-              ))
+                {open ? (
+                  <tr className="border-t border-slate-100 bg-slate-50/60">
+                    <td />
+                    <td colSpan={11} className="px-3 py-2">
+                      <table className="w-full text-xs">
+                        <tbody>
+                          {DAY_KEYS.map((k) => (
+                            <tr key={k} className="align-top">
+                              <td className="w-28 py-0.5 pr-2 whitespace-nowrap text-slate-600">
+                                {k.slice(0, 3).replace(/^./, (c) => c.toUpperCase())}
+                                {dates[k] ? (
+                                  <span className="ml-1 text-slate-400">{dates[k]}</span>
+                                ) : null}
+                              </td>
+                              <td className="w-14 py-0.5 pr-3 text-right tabular-nums">
+                                {t[k].hours ? t[k].hours.toFixed(2) : <span className="text-slate-300">—</span>}
+                              </td>
+                              <td className="py-0.5 whitespace-pre-line text-slate-700 demo-blur">
+                                {t[k].task || <span className="text-slate-300">—</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -825,54 +911,6 @@ function StatusMultiSelect({
   );
 }
 
-function Select({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <label className="block text-sm">
-      <span className="block text-slate-600 mb-1">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-// From/To filters use the app's calendar popover (same one used across the
-// admin) rather than the browser's native date input, for a consistent look.
-// Calendar-only (no free-text) so the value stays a comparable ISO date.
-function FilterDate({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <label className="block text-sm">
-      <span className="block text-slate-600 mb-1">{label}</span>
-      <DatePopover value={value} onChange={onChange} placeholder="Any date" allowFreeText={false} />
-    </label>
-  );
-}
 
 type BreakdownRow = {
   key: string;

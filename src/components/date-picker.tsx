@@ -47,11 +47,13 @@ export function DateField({
   value,
   onChange,
   placeholder,
+  allowFreeText = true,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  allowFreeText?: boolean;
 }) {
   // Label markup mirrors FormField exactly (inline span, no text-xs override)
   // so DateField lines up on the same baseline as the other inputs when they
@@ -62,7 +64,12 @@ export function DateField({
         {label}
       </span>
       <div className="mt-1">
-        <DatePopover value={value} onChange={onChange} placeholder={placeholder} />
+        <DatePopover
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          allowFreeText={allowFreeText}
+        />
       </div>
     </label>
   );
