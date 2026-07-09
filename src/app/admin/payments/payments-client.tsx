@@ -53,7 +53,7 @@ type Filters = {
 };
 
 const DEFAULT_FILTERS: Filters = {
-  direction: "All",
+  direction: "Inflow",
   status: "All",
   currency: "All",
   dueFrom: "",
@@ -698,7 +698,7 @@ export function PaymentsClient({
             aria-label="Filter payments by direction"
             className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5"
           >
-            {(["All", "Inflow", "Outflow"] as const).map((d) => {
+            {(["Inflow", "Outflow", "All"] as const).map((d) => {
               const active = filters.direction === d;
               const label = d === "All" ? "All" : d === "Inflow" ? "Inflows" : "Outflows";
               return (
