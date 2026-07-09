@@ -4,6 +4,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DownloadChip } from "@/components/download-chip";
 import { DateField, formatFriendlyDate } from "@/components/date-picker";
+import { SearchInput } from "@/components/search-input";
+import { Button, ButtonLink } from "@/components/form-controls";
 import {
   CONTRACT_SIDES,
   CONTRACT_STATUSES,
@@ -570,20 +572,12 @@ export function ContractsAdminClient({
                 projects.find((p) => p.id === id)?.code ?? "Project"
               }
             />
-            <button
-              type="button"
-              onClick={() => setFilters(DEFAULT_FILTERS)}
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
-            >
+            <Button tone="secondary" size="sm" onClick={() => setFilters(DEFAULT_FILTERS)}>
               Reset
-            </button>
-            <button
-              type="button"
-              onClick={() => setNewOpen(true)}
-              className="rounded-md bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700"
-            >
+            </Button>
+            <Button tone="primary" size="sm" onClick={() => setNewOpen(true)}>
               + New contract
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -607,7 +601,7 @@ export function ContractsAdminClient({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center text-slate-500 py-10 text-xs">
+                <td colSpan={10} className="text-center text-slate-500 py-10">
                   No contracts match these filters.
                 </td>
               </tr>
@@ -1153,15 +1147,15 @@ function OverviewView({
         <table className="w-full table-fixed text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-3 py-1.5 font-medium w-1/2">Client</th>
-              <th className="text-center px-3 py-1.5 font-medium">NDA</th>
-              <th className="text-center px-3 py-1.5 font-medium">MSA</th>
+              <th className="text-left px-2 py-1.5 font-medium w-1/2">Client</th>
+              <th className="text-center px-2 py-1.5 font-medium">NDA</th>
+              <th className="text-center px-2 py-1.5 font-medium">MSA</th>
             </tr>
           </thead>
           <tbody>
             {activeClients.length === 0 ? (
               <tr>
-                <td colSpan={3} className="text-center text-slate-500 py-6 text-xs">
+                <td colSpan={3} className="text-center text-slate-500 py-10">
                   No active clients.
                 </td>
               </tr>
@@ -1172,7 +1166,7 @@ function OverviewView({
                 const msas = all.filter((c) => isType(c, "MSA"));
                 return (
                   <tr key={cl.id} className="border-t border-slate-100 align-middle">
-                    <td className="px-3 py-1.5 demo-blur">
+                    <td className="px-2 py-1.5 demo-blur">
                       <div className="truncate">
                         <span className="font-mono text-[10px] text-slate-500">
                           {cl.code}
@@ -1180,10 +1174,10 @@ function OverviewView({
                         {cl.name}
                       </div>
                     </td>
-                    <td className="px-3 py-1.5 text-center">
+                    <td className="px-2 py-1.5 text-center">
                       <SlotPill contracts={ndas} onOpen={onOpenContract} />
                     </td>
-                    <td className="px-3 py-1.5 text-center">
+                    <td className="px-2 py-1.5 text-center">
                       <SlotPill contracts={msas} onOpen={onOpenContract} />
                     </td>
                   </tr>
@@ -1202,14 +1196,14 @@ function OverviewView({
         <table className="w-full table-fixed text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-3 py-1.5 font-medium w-2/3">Member</th>
-              <th className="text-center px-3 py-1.5 font-medium">MSA</th>
+              <th className="text-left px-2 py-1.5 font-medium w-2/3">Member</th>
+              <th className="text-center px-2 py-1.5 font-medium">MSA</th>
             </tr>
           </thead>
           <tbody>
             {activeMembers.length === 0 ? (
               <tr>
-                <td colSpan={2} className="text-center text-slate-500 py-6 text-xs">
+                <td colSpan={2} className="text-center text-slate-500 py-10">
                   No active members.
                 </td>
               </tr>
@@ -1219,7 +1213,7 @@ function OverviewView({
                 const msas = all.filter((c) => isType(c, "MSA"));
                 return (
                   <tr key={m.id} className="border-t border-slate-100 align-middle">
-                    <td className="px-3 py-1.5 demo-blur">
+                    <td className="px-2 py-1.5 demo-blur">
                       <div className="truncate">
                         <span className="font-mono text-[10px] text-slate-500">
                           {m.code}
@@ -1227,7 +1221,7 @@ function OverviewView({
                         {m.name}
                       </div>
                     </td>
-                    <td className="px-3 py-1.5 text-center">
+                    <td className="px-2 py-1.5 text-center">
                       <SlotPill contracts={msas} onOpen={onOpenContract} />
                     </td>
                   </tr>
@@ -1247,17 +1241,17 @@ function OverviewView({
         <table className="w-full table-fixed text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-3 py-1.5 font-medium w-2/5">Project</th>
-              <th className="text-left px-3 py-1.5 font-medium">Client</th>
-              <th className="text-left px-3 py-1.5 font-medium whitespace-nowrap">Status</th>
-              <th className="text-center px-3 py-1.5 font-medium">Client SOW</th>
-              <th className="text-center px-3 py-1.5 font-medium">Member SOW(s)</th>
+              <th className="text-left px-2 py-1.5 font-medium w-2/5">Project</th>
+              <th className="text-left px-2 py-1.5 font-medium">Client</th>
+              <th className="text-left px-2 py-1.5 font-medium whitespace-nowrap">Status</th>
+              <th className="text-center px-2 py-1.5 font-medium">Client SOW</th>
+              <th className="text-center px-2 py-1.5 font-medium">Member SOW(s)</th>
             </tr>
           </thead>
           <tbody>
             {orderedProjects.length === 0 ? (
               <tr>
-                <td colSpan={5} className="text-center text-slate-500 py-6 text-xs">
+                <td colSpan={5} className="text-center text-slate-500 py-10">
                   No projects on file.
                 </td>
               </tr>
@@ -1317,7 +1311,7 @@ function OverviewView({
                         p.status === "Completed" ? "text-slate-400" : ""
                       }`}
                     >
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-1.5">
                         <div className="truncate">
                           <span className="font-mono text-[10px] text-slate-500">
                             {p.code}
@@ -1325,13 +1319,13 @@ function OverviewView({
                           {p.name}
                         </div>
                       </td>
-                      <td className="px-3 py-1.5 demo-blur">
+                      <td className="px-2 py-1.5 demo-blur">
                         <div className="truncate">{clientName}</div>
                       </td>
-                      <td className="px-3 py-1.5 whitespace-nowrap text-[11px] text-slate-600">
+                      <td className="px-2 py-1.5 whitespace-nowrap text-[11px] text-slate-600">
                         {p.status || "—"}
                       </td>
-                      <td className="px-3 py-1.5 text-center">
+                      <td className="px-2 py-1.5 text-center">
                         {isInternal ? (
                           <span className="text-slate-300" title="Internal project — no client SOW">
                             —
@@ -1344,7 +1338,7 @@ function OverviewView({
                           />
                         )}
                       </td>
-                      <td className="px-3 py-1.5 text-center">
+                      <td className="px-2 py-1.5 text-center">
                         <button
                           type="button"
                           onClick={
@@ -1385,7 +1379,7 @@ function OverviewView({
                     </tr>
                     {expanded && expandable ? (
                       <tr className="border-t border-slate-100 bg-slate-50/60">
-                        <td colSpan={5} className="px-3 py-2">
+                        <td colSpan={5} className="px-2 py-1.5">
                           <div className="space-y-1">
                             {memberBreakdown.map((b) => (
                               <div
@@ -1674,12 +1668,11 @@ function Select(
         <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
           {props.label}
         </span>
-        <input
-          type="search"
+        <SearchInput
           value={props.value}
-          onChange={(e) => props.onChange(e.target.value)}
+          onChange={props.onChange}
           placeholder={props.placeholder}
-          className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+          className="mt-1 w-full"
         />
       </label>
     );
@@ -2040,14 +2033,14 @@ function NewContractDialog({
           >
             Or start blank
           </button>
-          <button
-            type="button"
+          <Button
+            tone="secondary"
+            size="sm"
             onClick={onClose}
             disabled={busy || mode !== "choose"}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
             Cancel
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -2266,22 +2259,23 @@ function ContractDetailModal({
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <a
+                <ButtonLink
                   href={c.pdf.url}
+                  tone="secondary"
+                  size="sm"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="rounded-md border border-brand-300 bg-white px-2.5 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50"
                 >
                   Download
-                </a>
-                <button
-                  type="button"
+                </ButtonLink>
+                <Button
+                  tone="secondary"
+                  size="sm"
                   onClick={() => fileRef.current?.click()}
                   disabled={uploading || saving}
-                  className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   {uploading ? "Uploading…" : "Replace"}
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
@@ -2294,14 +2288,14 @@ function ContractDetailModal({
                   Upload the signed contract — finance gets an email copy.
                 </div>
               </div>
-              <button
-                type="button"
+              <Button
+                tone="primary"
+                size="sm"
                 onClick={() => fileRef.current?.click()}
                 disabled={uploading || saving}
-                className="rounded-md bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
               >
                 {uploading ? "Uploading…" : "Upload PDF"}
-              </button>
+              </Button>
             </div>
           )}
           <input
@@ -2430,7 +2424,7 @@ function ContractDetailModal({
                       : ""
                   }
                   onChange={(e) => set("stage", e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                  className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
                 >
                   <option value="">—</option>
                   {CONTRACT_STATUSES.map((s) => (
@@ -2520,13 +2514,14 @@ function ContractDetailModal({
                 }}
               />
             ) : (
-              <button
-                type="button"
+              <Button
+                tone="secondary"
+                size="sm"
                 onClick={() => setShowSecondSignatory(true)}
-                className="rounded-md border border-dashed border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                className="border-dashed"
               >
                 + Add a second signatory
-              </button>
+              </Button>
             )}
           </section>
 
@@ -2551,7 +2546,7 @@ function ContractDetailModal({
               onChange={(e) => set("comment", e.target.value)}
               rows={3}
               placeholder="e.g. waiting on client legal sign-off"
-              className="block w-full resize-y rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs leading-snug focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 whitespace-pre-line"
+              className="block w-full resize-y rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs leading-snug focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 whitespace-pre-line"
             />
           </section>
 
@@ -2560,8 +2555,9 @@ function ContractDetailModal({
         {/* Footer: Delete on the left, Cancel + Save on the right. */}
         <div className="flex items-center justify-between gap-3 rounded-b-2xl border-t border-slate-200 bg-slate-50 px-5 py-3">
           <div className="flex items-center gap-2">
-            <button
-              type="button"
+            <Button
+              tone="danger"
+              size="sm"
               onClick={async () => {
                 if (
                   window.confirm(
@@ -2572,10 +2568,9 @@ function ContractDetailModal({
                 }
               }}
               disabled={saving}
-              className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
             >
               Delete
-            </button>
+            </Button>
             <span className="text-[11px] text-slate-500">
               {isDirty
                 ? `${Object.keys(patchPreview).length} unsaved change${
@@ -2585,22 +2580,17 @@ function ContractDetailModal({
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={requestClose}
-              disabled={saving}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
+            <Button tone="secondary" size="sm" onClick={requestClose} disabled={saving}>
               Cancel
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              tone="primary"
+              size="sm"
               onClick={() => onSave(patchPreview)}
               disabled={saving || !isDirty}
-              className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save changes"}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -2710,7 +2700,7 @@ function BulletTextarea({
       onPaste={handlePaste}
       rows={rows}
       placeholder={placeholder}
-      className="block w-full resize-y rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs leading-snug focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 whitespace-pre-line"
+      className="block w-full resize-y rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs leading-snug focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 whitespace-pre-line"
     />
   );
 }
@@ -2799,7 +2789,7 @@ function TextField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className={`mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 ${
+        className={`mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 ${
           sensitive ? "demo-blur" : ""
         }`}
       />
@@ -2830,7 +2820,7 @@ function TextareaField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={3}
-        className={`mt-1 block w-full resize-y rounded-md border border-slate-300 bg-white px-2 py-1 text-xs leading-snug focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 whitespace-pre-line ${
+        className={`mt-1 block w-full resize-y rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs leading-snug focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 whitespace-pre-line ${
           sensitive ? "demo-blur" : ""
         }`}
       />
