@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { DownloadChip } from "@/components/download-chip";
 import { DateField } from "@/components/date-picker";
+import { SearchInput } from "@/components/search-input";
+import { FilterBar, FilterSelect } from "@/components/filters";
 import { StatusPill } from "@/components/badge";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
@@ -272,66 +274,53 @@ export function AdminInvoicesClient({
     <div className="space-y-4">
       {/* Filters */}
       <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-          <Select
+        <FilterBar>
+          <FilterSelect
             label="Member"
             value={filters.memberCode}
             onChange={(v) => update("memberCode", v)}
-            options={[
-              { value: "All", label: "All members" },
-              ...memberOptions.map(([code, name]) => ({
-                value: code,
-                label: `${code} · ${name}`,
-              })),
-            ]}
+            allLabel="All members"
+            options={memberOptions.map(([code, name]) => ({
+              value: code,
+              label: `${code} · ${name}`,
+            }))}
           />
-          <Select
+          <FilterSelect
             label="Project"
             value={filters.projectCode}
             onChange={(v) => update("projectCode", v)}
-            options={[
-              { value: "All", label: "All projects" },
-              ...projectOptions.map(([code, name]) => ({
-                value: code,
-                label: name && name !== code ? `${code} · ${name}` : code,
-              })),
-            ]}
+            allLabel="All projects"
+            options={projectOptions.map(([code, name]) => ({
+              value: code,
+              label: name && name !== code ? `${code} · ${name}` : code,
+            }))}
           />
-          <Select
+          <FilterSelect
             label="Staffing"
             value={filters.staffingId}
             onChange={(v) => update("staffingId", v)}
-            options={[
-              { value: "All", label: "All staffings" },
-              ...staffingOptions.map(([id, v]) => ({
-                value: id,
-                label: `${v.code} · ${v.projectName || v.projectCode}`,
-              })),
-            ]}
+            allLabel="All staffings"
+            options={staffingOptions.map(([id, v]) => ({
+              value: id,
+              label: `${v.code} · ${v.projectName || v.projectCode}`,
+            }))}
           />
           <DateField label="From" value={filters.from} onChange={(v) => update("from", v)} allowFreeText={false} />
           <DateField label="To" value={filters.to} onChange={(v) => update("to", v)} allowFreeText={false} />
-          <label className="block">
-            <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-              Search
-            </span>
-            <input
-              type="search"
-              value={filters.search}
-              onChange={(e) => update("search", e.target.value)}
-              placeholder="code, member, project, comment…"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-            />
-          </label>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <SearchInput
+            value={filters.search}
+            onChange={(v) => update("search", v)}
+            placeholder="Search code, member, project, comment…"
+            ariaLabel="Search invoices"
+            className="w-full sm:w-56"
+          />
           <Button tone="secondary" size="sm" onClick={reset}>
             Reset filters
           </Button>
           <Button tone="secondary" size="sm" onClick={exportCsv}>
             Export CSV
           </Button>
-        </div>
+        </FilterBar>
       </div>
 
       {/* Table */}
@@ -681,37 +670,6 @@ function PField({ label, value, mono, blur }: { label: string; value: string; mo
         {value || "—"}
       </dd>
     </div>
-  );
-}
-
-function Select({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <label className="block">
-      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-        {label}
-      </span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }
 
