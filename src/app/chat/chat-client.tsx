@@ -1149,7 +1149,7 @@ function MessageActions({
                   }
                 }}
                 disabled={rewriting}
-                className="flex w-full items-center justify-between gap-2 border-t border-slate-100 px-3 py-1.5 text-left text-violet-700 hover:bg-violet-50 disabled:opacity-60"
+                className="flex w-full items-center justify-between gap-2 border-t border-slate-100 px-3 py-1.5 text-left text-brand-700 hover:bg-brand-50 disabled:opacity-60"
                 title="Fix grammar and spelling with AI, changing as few words as possible"
               >
                 <span className="inline-flex items-center gap-1.5">
@@ -1157,7 +1157,7 @@ function MessageActions({
                   {rewriting ? "Rewriting…" : "Fix grammar (AI)"}
                 </span>
                 {rewriting ? (
-                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-violet-300 border-t-violet-700" />
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-brand-300 border-t-brand-700" />
                 ) : null}
               </button>
               {rewriteError ? (

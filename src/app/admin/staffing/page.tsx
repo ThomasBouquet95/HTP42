@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
+import { PageHeader } from "@/components/page-header";
 import {
   CURRENCIES,
   listAllMembers,
@@ -27,12 +28,10 @@ export default async function AdminStaffingPage() {
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <AdminTabs active="staffing" />
-        <div className="mb-4 flex items-baseline gap-3">
-          <h1 className="text-base sm:text-lg font-semibold">Project Staffing</h1>
-          <span className="text-xs text-slate-500">
-            · {staffings.length} staffing{staffings.length === 1 ? "" : "s"}
-          </span>
-        </div>
+        <PageHeader
+          title="Project Staffing"
+          subtitle={`· ${staffings.length} staffing${staffings.length === 1 ? "" : "s"}`}
+        />
         <StaffingsAdminClient
           staffings={staffings}
           projects={projects.map((p) => ({ code: p.projectCode, name: p.projectName }))}

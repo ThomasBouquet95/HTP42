@@ -29,12 +29,10 @@ export default async function AdminOpportunitiesPage() {
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <AdminTabs active="opportunities" />
-      <div className="mb-4 flex items-baseline gap-3">
-        <h1 className="text-base sm:text-lg font-semibold">Opportunities</h1>
-        <span className="text-xs text-slate-500">
-          · {opportunities.length} total · {openCount} open
-        </span>
-      </div>
+      <PageHeader
+        title="Opportunities"
+        subtitle={`· ${opportunities.length} total · ${openCount} open`}
+      />
       <OpportunitiesClient
         opportunities={opportunities}
         clients={clients.map((c) => ({ id: c.id, code: c.clientCode, name: c.clientName }))}
