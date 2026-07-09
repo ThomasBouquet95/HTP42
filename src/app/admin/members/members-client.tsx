@@ -517,6 +517,16 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                       <IconButton title="Edit" onClick={() => openEdit(m)}>
                         <EditIcon />
                       </IconButton>
+                      <Link
+                        href={`/admin/members/${m.id}`}
+                        title="Open member page"
+                        aria-label="Open member page"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-brand-700"
+                      >
+                        <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                          <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </Link>
                     </div>
                   </td>
                 </tr>
