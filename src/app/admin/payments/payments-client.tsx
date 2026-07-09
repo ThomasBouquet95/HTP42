@@ -808,6 +808,43 @@ export function PaymentsClient({
             </Button>
           </div>
         </div>
+        {/* Filter row — quick dropdowns for the common facets. */}
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-3 py-2">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+            Filters
+          </span>
+          <BarSelect
+            label="Project"
+            value={filters.project}
+            onChange={(v) => update("project", v)}
+            allLabel="All projects"
+            options={projectOptions.map((c) => ({ value: c, label: c }))}
+          />
+          <BarSelect
+            label="Counterparty"
+            value={filters.counterparty}
+            onChange={(v) => update("counterparty", v)}
+            allLabel="All counterparties"
+            options={counterpartyOptions.map((c) => ({ value: c, label: c }))}
+          />
+          <BarSelect
+            label="Status"
+            value={filters.status}
+            onChange={(v) => update("status", v)}
+            allLabel="All statuses"
+            options={statusOptions.map((s) => ({
+              value: s,
+              label: filters.direction === "Inflow" ? statusLabel(s, "Inflow") : s,
+            }))}
+          />
+          <BarSelect
+            label="Currency"
+            value={filters.currency}
+            onChange={(v) => update("currency", v)}
+            allLabel="All currencies"
+            options={currencyOptions.map((c) => ({ value: c, label: c }))}
+          />
+        </div>
         <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 whitespace-nowrap">
@@ -823,34 +860,10 @@ export function PaymentsClient({
                 <SortHeader label="Type" sort={sort} colKey="type" onToggle={toggleSort} />
               </th>
               <th className="px-2 py-1.5 text-left font-medium hidden lg:table-cell">
-                <HeaderFilterSelect
-                  label="Project"
-                  value={filters.project}
-                  onChange={(v) => update("project", v)}
-                  options={[
-                    { value: "All", label: "Project" },
-                    ...projectOptions.map((c) => ({ value: c, label: c })),
-                  ]}
-                  active={filters.project !== "All"}
-                  sort={sort}
-                  colKey="project"
-                  onToggle={toggleSort}
-                />
+                <SortHeader label="Project" sort={sort} colKey="project" onToggle={toggleSort} />
               </th>
               <th className="px-2 py-1.5 text-left font-medium">
-                <HeaderFilterSelect
-                  label="Counterparty"
-                  value={filters.counterparty}
-                  onChange={(v) => update("counterparty", v)}
-                  options={[
-                    { value: "All", label: "Counterparty" },
-                    ...counterpartyOptions.map((c) => ({ value: c, label: c })),
-                  ]}
-                  active={filters.counterparty !== "All"}
-                  sort={sort}
-                  colKey="counterparty"
-                  onToggle={toggleSort}
-                />
+                <SortHeader label="Counterparty" sort={sort} colKey="counterparty" onToggle={toggleSort} />
               </th>
               <th className="px-2 py-1.5 text-left font-medium hidden lg:table-cell">Invoice ref</th>
               <th className="px-2 py-1.5 text-left font-medium hidden md:table-cell">
@@ -880,33 +893,8 @@ export function PaymentsClient({
               <th className="px-2 py-1.5 text-right font-medium">
                 <SortHeader label="Amount" sort={sort} colKey="amount" onToggle={toggleSort} align="right" />
               </th>
-              <th className="px-2 py-1.5 text-left font-medium">
-                <HeaderFilterSelect
-                  label="Currency"
-                  value={filters.currency}
-                  onChange={(v) => update("currency", v)}
-                  options={[
-                    { value: "All", label: "Currency" },
-                    ...currencyOptions.map((c) => ({ value: c, label: c })),
-                  ]}
-                  active={filters.currency !== "All"}
-                />
-              </th>
-              <th className="px-2 py-1.5 text-left font-medium hidden lg:table-cell">
-                <HeaderFilterSelect
-                  label="Status"
-                  value={filters.status}
-                  onChange={(v) => update("status", v)}
-                  options={[
-                    { value: "All", label: "Status" },
-                    ...statusOptions.map((s) => ({
-                      value: s,
-                      label: filters.direction === "Inflow" ? statusLabel(s, "Inflow") : s,
-                    })),
-                  ]}
-                  active={filters.status !== "All"}
-                />
-              </th>
+              <th className="px-2 py-1.5 text-left font-medium">Currency</th>
+              <th className="px-2 py-1.5 text-left font-medium hidden lg:table-cell">Status</th>
               <th />
             </tr>
           </thead>
@@ -1911,65 +1899,43 @@ function SortHeader({
   );
 }
 
-function HeaderFilterSelect({
+// Labeled dropdown for the payments filter row. Compact, form-control styled,
+// with an "All …" reset option and a brand ring when a value is active.
+function BarSelect({
   label,
   value,
   onChange,
   options,
-  active,
-  align,
-  sort,
-  colKey,
-  onToggle,
+  allLabel,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
-  active: boolean;
-  align?: "right";
-  sort?: { key: SortKey | null; dir: "asc" | "desc" };
-  colKey?: SortKey;
-  onToggle?: (key: SortKey) => void;
+  allLabel: string;
 }) {
-  const state = sort && colKey && sort.key === colKey ? sort.dir : null;
+  const active = value !== "All";
   return (
-    <span
-      className={`inline-flex items-center gap-1 ${align === "right" ? "ml-auto justify-end" : ""}`}
-    >
-      {colKey && onToggle ? (
-        <button
-          type="button"
-          onClick={() => onToggle(colKey)}
-          className="uppercase tracking-wide hover:text-slate-900"
-          aria-label={`Sort by ${label}`}
-        >
-          <SortIcon state={state} />
-        </button>
-      ) : null}
+    <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+      <span className="uppercase tracking-wide">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`appearance-none truncate rounded-md border border-transparent bg-transparent px-1 py-0 pr-3 text-[10px] font-medium uppercase tracking-wide whitespace-nowrap focus:outline-none focus:ring-1 focus:ring-brand-600 ${
-          active ? "text-brand-700" : "text-slate-500 hover:text-slate-900"
+        className={`max-w-[12rem] rounded-md border bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 ${
+          active ? "border-brand-300 text-brand-800" : "border-slate-300 text-slate-700"
         }`}
-        style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'><path fill='none' stroke='%2394a3b8' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round' d='M2 3l2 2 2-2'/></svg>\")",
-          backgroundRepeat: "no-repeat",
-          backgroundPosition: "right 2px center",
-          backgroundSize: "8px 8px",
-        }}
       >
+        <option value="All">{allLabel}</option>
         {options.map((o) => (
-          <option key={o.value} value={o.value} className="normal-case tracking-normal text-slate-700">
-            {o.value === "All" ? label : o.label}
+          <option key={o.value} value={o.value}>
+            {o.label}
           </option>
         ))}
       </select>
-    </span>
+    </label>
   );
 }
+
 
 function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
