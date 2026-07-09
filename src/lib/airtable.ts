@@ -5391,9 +5391,15 @@ export async function createPaymentForVendorInvoice(
   vendorInvoiceId: string,
   input: PaymentInput,
 ): Promise<string> {
-  const paymentId = await createPayment(input);
-  await updateVendorInvoice(vendorInvoiceId, { paymentId });
-  return paymentId;
+  // typecast: true so the "Expense"/"Outflow"/"Paid" single-select values are
+  // auto-added if those choices don't exist yet on the Payments table (the
+  // plain createPayment omits typecast and would silently reject a new choice).
+  const [created] = await base(TABLES.payments).create(
+    [{ fields: paymentFields(input) as FieldSet }],
+    { typecast: true },
+  );
+  await updateVendorInvoice(vendorInvoiceId, { paymentId: created.id });
+  return created.id;
 }
 
 // Find the vendor invoice (if any) paired with a given payment.
