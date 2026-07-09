@@ -36,6 +36,9 @@ type Props = {
   members: LinkOpt[];
   memberInvoices: MemberInvoiceOpt[];
   currencies: readonly Currency[];
+  // Payment ids that mirror an automated (paid) vendor invoice. Deleting one
+  // of these also deletes the paired invoice, so we warn before doing it.
+  linkedPaymentIds?: string[];
   // Prefills the search box, e.g. when arriving from an invoice's "payment"
   // link (/admin/payments?search=PAY-CODE).
   initialSearch?: string;
@@ -211,9 +214,11 @@ export function PaymentsClient({
   members,
   memberInvoices,
   currencies,
+  linkedPaymentIds,
   initialSearch,
 }: Props) {
   const router = useRouter();
+  const linkedPaymentIdSet = new Set(linkedPaymentIds ?? []);
   // Local mirror of the server-side payment list so we can apply optimistic
   // updates (e.g. inline status change) without a full refresh.
   const [rows, setRows] = useState<PaymentRecord[]>(payments);
@@ -1264,7 +1269,15 @@ export function PaymentsClient({
         message={
           <>
             This will permanently remove payment{" "}
-            <span className="font-mono">{deleteTarget?.paymentCode}</span>. This cannot be undone.
+            <span className="font-mono">{deleteTarget?.paymentCode}</span>.
+            {deleteTarget && linkedPaymentIdSet.has(deleteTarget.id) ? (
+              <>
+                {" "}
+                It was auto-created from an automated invoice, so{" "}
+                <strong>the linked invoice will be deleted too.</strong>
+              </>
+            ) : null}{" "}
+            This cannot be undone.
           </>
         }
         confirmLabel="Delete"

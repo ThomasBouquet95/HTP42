@@ -300,6 +300,10 @@ export const FIELDS = {
     emailFrom: "From",
     receivedAt: "Received At",
     notes: "Notes",
+    // Record id of the auto-created "Paid" outflow payment (these invoices are
+    // always already paid). The two are a linked pair: deleting one deletes
+    // the other. Empty when no payment was created (e.g. amount unknown).
+    paymentId: "Payment Id",
   },
 } as const;
 
@@ -1699,6 +1703,21 @@ export async function updatePayment(recordId: string, input: PaymentInput): Prom
 
 export async function deletePayment(recordId: string): Promise<void> {
   await base(TABLES.payments).destroy([recordId]);
+}
+
+// Delete a payment and, if it was the auto-created mirror of an automated
+// vendor invoice, delete that invoice too (raw destroy on both to avoid the
+// reverse cascade in deleteVendorInvoice looping back). Returns the linked
+// invoice id when one was also removed, so the UI can say so.
+export async function deletePaymentWithLinkedInvoice(
+  recordId: string,
+): Promise<{ deletedInvoiceId: string | null }> {
+  const linked = await vendorInvoiceForPayment(recordId);
+  await base(TABLES.payments).destroy([recordId]);
+  if (linked) {
+    await base(TABLES.vendorInvoices).destroy([linked.id]).catch(() => {});
+  }
+  return { deletedInvoiceId: linked?.id ?? null };
 }
 
 // One-time (re-runnable) backfill: recompute the stored FX rate + EUR value for
@@ -5116,7 +5135,7 @@ export async function deleteRetribution(id: string): Promise<void> {
 // by the email's Message Id. The table is created lazily via the meta API.
 // ---------------------------------------------------------------------------
 
-export type VendorInvoiceStatus = "Needs Review" | "Filed" | "";
+export type VendorInvoiceStatus = "Paid" | "Needs Review" | "Filed" | "";
 
 export type VendorInvoiceRecord = {
   id: string;
@@ -5133,6 +5152,7 @@ export type VendorInvoiceRecord = {
   emailFrom: string;
   receivedAt: string;
   notes: string;
+  paymentId: string;
   pdf: AttachmentRef | null;
   createdTime: string;
 };
@@ -5154,6 +5174,7 @@ function vendorInvoiceFromRecord(r: AirtableRecord<FieldSet>): VendorInvoiceReco
     emailFrom: str(r, F.emailFrom),
     receivedAt: str(r, F.receivedAt),
     notes: str(r, F.notes),
+    paymentId: str(r, F.paymentId),
     pdf: firstAttachment(r, F.pdf),
     createdTime: (r as unknown as { _rawJson?: { createdTime?: string } })._rawJson?.createdTime ?? "",
   };
@@ -5169,12 +5190,28 @@ export async function ensureVendorInvoicesSchema(): Promise<boolean> {
       cache: "no-store",
     });
     if (!res.ok) return false;
-    const data = (await res.json()) as { tables: Array<{ name: string }> };
-    if (data.tables.some((t) => t.name === TABLES.vendorInvoices)) {
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const F = FIELDS.vendorInvoices;
+    const existing = data.tables.find((t) => t.name === TABLES.vendorInvoices);
+    if (existing) {
+      // Table already created on a prior run — lazily add the Payment Id link
+      // field if it's missing (added after the table shipped). The "Paid"
+      // status choice is auto-added by typecast on write.
+      if (!existing.fields.some((f) => f.name === F.paymentId)) {
+        await fetch(
+          `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${existing.id}/fields`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ name: F.paymentId, type: "singleLineText" }),
+          },
+        ).catch(() => {});
+      }
       vendorInvoicesTableReady = true;
       return true;
     }
-    const F = FIELDS.vendorInvoices;
     const fields: Array<Record<string, unknown>> = [
       { name: F.vendor, type: "singleLineText" },
       { name: F.invoiceNumber, type: "singleLineText" },
@@ -5186,7 +5223,7 @@ export async function ensureVendorInvoicesSchema(): Promise<boolean> {
       {
         name: F.status,
         type: "singleSelect",
-        options: { choices: [{ name: "Needs Review" }, { name: "Filed" }] },
+        options: { choices: [{ name: "Paid" }, { name: "Needs Review" }, { name: "Filed" }] },
       },
       { name: F.pdf, type: "multipleAttachments" },
       { name: F.messageId, type: "singleLineText" },
@@ -5194,6 +5231,7 @@ export async function ensureVendorInvoicesSchema(): Promise<boolean> {
       { name: F.emailFrom, type: "singleLineText" },
       { name: F.receivedAt, type: "singleLineText" },
       { name: F.notes, type: "multilineText" },
+      { name: F.paymentId, type: "singleLineText" },
     ];
     const create = await fetch(metaUrl, {
       method: "POST",
@@ -5281,6 +5319,7 @@ export type VendorInvoiceInput = {
   emailFrom: string;
   receivedAt: string;
   notes: string;
+  paymentId?: string;
 };
 
 function vendorInvoiceFields(input: Partial<VendorInvoiceInput>): Record<string, unknown> {
@@ -5297,6 +5336,7 @@ function vendorInvoiceFields(input: Partial<VendorInvoiceInput>): Record<string,
   if (input.emailFrom !== undefined) out[F.emailFrom] = input.emailFrom;
   if (input.receivedAt !== undefined) out[F.receivedAt] = input.receivedAt;
   if (input.notes !== undefined) out[F.notes] = input.notes;
+  if (input.paymentId !== undefined) out[F.paymentId] = input.paymentId;
   // Amount + EUR move together: whenever the amount or currency is touched,
   // recompute the EUR figure so the record-keeping total stays consistent.
   if (input.amount !== undefined || input.currency !== undefined) {
@@ -5333,7 +5373,47 @@ export async function updateVendorInvoice(
 }
 
 export async function deleteVendorInvoice(id: string): Promise<void> {
+  // These invoices are paired with an auto-created "Paid" payment. Deleting
+  // the invoice also removes its payment (raw destroy, not deletePayment, to
+  // avoid the reverse cascade looping back here).
+  const rec = await getVendorInvoiceById(id).catch(() => null);
   await base(TABLES.vendorInvoices).destroy([id]);
+  if (rec?.paymentId) {
+    await base(TABLES.payments).destroy([rec.paymentId]).catch(() => {});
+  }
+}
+
+// Create the "Paid" outflow payment that mirrors an already-paid vendor
+// invoice, and link the two together (payment id stored on the invoice). The
+// payment carries a back-reference to the invoice in its comment so the
+// payments side can cascade the delete. Returns the new payment id.
+export async function createPaymentForVendorInvoice(
+  vendorInvoiceId: string,
+  input: PaymentInput,
+): Promise<string> {
+  const paymentId = await createPayment(input);
+  await updateVendorInvoice(vendorInvoiceId, { paymentId });
+  return paymentId;
+}
+
+// Find the vendor invoice (if any) paired with a given payment.
+export async function vendorInvoiceForPayment(
+  paymentId: string,
+): Promise<VendorInvoiceRecord | null> {
+  if (!paymentId) return null;
+  try {
+    const ok = await ensureVendorInvoicesSchema();
+    if (!ok) return null;
+    const records = await base(TABLES.vendorInvoices)
+      .select({
+        filterByFormula: `{${FIELDS.vendorInvoices.paymentId}} = "${escape(paymentId)}"`,
+        maxRecords: 1,
+      })
+      .firstPage();
+    return records[0] ? vendorInvoiceFromRecord(records[0]) : null;
+  } catch {
+    return null;
+  }
 }
 
 // Attach a PDF to a Vendor Invoices row via Airtable's content endpoint.

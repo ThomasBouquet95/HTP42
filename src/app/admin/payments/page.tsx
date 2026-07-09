@@ -7,6 +7,7 @@ import {
   listClients,
   listPayments,
   listProjects,
+  listVendorInvoices,
   CURRENCIES,
 } from "@/lib/airtable";
 import { PaymentsClient } from "./payments-client";
@@ -22,13 +23,21 @@ export default async function AdminPaymentsPage({
   if (!session) redirect("/dashboard");
   const { search } = await searchParams;
 
-  const [payments, projects, clients, members, invoices] = await Promise.all([
+  const [payments, projects, clients, members, invoices, vendorInvoices] = await Promise.all([
     listPayments(),
     listProjects(),
     listClients(),
     listAllMembers(),
     listAllInvoices(),
+    listVendorInvoices(),
   ]);
+
+  // Payments auto-created for automated (paid) vendor invoices are a linked
+  // pair — deleting one deletes the other. Tell the client which ids are
+  // linked so its delete confirmation can warn.
+  const linkedPaymentIds = vendorInvoices
+    .map((v) => v.paymentId)
+    .filter((id): id is string => !!id);
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
@@ -65,6 +74,7 @@ export default async function AdminPaymentsPage({
             pdfUrl: i.pdf?.url ?? "",
           }))}
           currencies={CURRENCIES}
+          linkedPaymentIds={linkedPaymentIds}
           initialSearch={search ?? ""}
         />
     </main>

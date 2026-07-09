@@ -275,7 +275,13 @@ function InvoiceDetail({
           label="Status"
           value={status}
           onChange={(v) => setStatus(v as VendorInvoiceStatus)}
+          hint={
+            status === "Paid" && !invoice.paymentId ? (
+              <span className="text-slate-500">Saving as Paid creates the matching payment.</span>
+            ) : undefined
+          }
         >
+          <option value="Paid">Paid</option>
           <option value="Needs Review">Needs review</option>
           <option value="Filed">Filed</option>
         </FormSelect>
@@ -296,7 +302,11 @@ function InvoiceDetail({
       <div className="flex items-center justify-between gap-2">
         {confirmDelete ? (
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-600">Delete this invoice record?</span>
+            <span className="text-slate-600">
+              {invoice.paymentId
+                ? "Delete this invoice and its linked payment?"
+                : "Delete this invoice record?"}
+            </span>
             <Button tone="danger" size="sm" onClick={remove} disabled={saving}>
               Yes, delete
             </Button>

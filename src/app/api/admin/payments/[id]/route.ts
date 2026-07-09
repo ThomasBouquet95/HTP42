@@ -4,7 +4,7 @@ import { requireAdminSession } from "@/lib/auth";
 import {
   cascadeInvoicePaidForPayment,
   CURRENCIES,
-  deletePayment,
+  deletePaymentWithLinkedInvoice,
   getPaymentById,
   listClients,
   listProjects,
@@ -199,8 +199,11 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
   try {
-    await deletePayment(id);
-    return NextResponse.json({ ok: true });
+    // If this payment mirrors an automated vendor invoice, deleting it also
+    // deletes the paired invoice (and vice-versa) — they're one record to the
+    // user, split across two tables.
+    const { deletedInvoiceId } = await deletePaymentWithLinkedInvoice(id);
+    return NextResponse.json({ ok: true, deletedInvoiceId });
   } catch (e) {
     return apiError(e, "delete the payment");
   }

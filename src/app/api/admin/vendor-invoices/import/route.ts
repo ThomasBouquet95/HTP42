@@ -3,9 +3,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requireAdminSession } from "@/lib/auth";
 import {
   attachVendorInvoicePdf,
+  createPaymentForVendorInvoice,
   createVendorInvoice,
   ensureVendorInvoicesSchema,
   vendorInvoiceMessageIds,
+  type Currency,
+  type PaymentInput,
   type VendorInvoiceInput,
 } from "@/lib/airtable";
 import { fetchInvoiceMails, type MailInvoice } from "@/lib/mail-import";
@@ -88,6 +91,38 @@ async function extractFields(base64: string): Promise<Extracted> {
   }
 }
 
+// Build the "Paid" outflow payment that mirrors an already-paid vendor
+// invoice. Paid date = invoice date when known, else the day the email
+// arrived, so the payment lands in the right period.
+function buildPaidPayment(
+  fields: Extracted,
+  currency: string,
+  m: MailInvoice,
+): PaymentInput {
+  const paidDate = fields.invoiceDate || (m.receivedDateTime ? m.receivedDateTime.slice(0, 10) : null);
+  return {
+    direction: "Outflow",
+    type: "Expense",
+    projectRecordIds: [],
+    clientRecordIds: [],
+    memberRecordIds: [],
+    memberInvoiceRecordIds: [],
+    invoiceDate: fields.invoiceDate || null,
+    invoiceReference: fields.invoiceNumber,
+    invoiceCurrency: (currency as Currency) || "EUR",
+    invoiceValue: fields.amount,
+    fxRateToEur: null,
+    invoiceValueEur: null,
+    paymentTerms: "",
+    paymentStatus: "Paid",
+    paymentDate: paidDate,
+    dueDate: null,
+    beneficiary: fields.vendor,
+    comment: `Auto-created from ${env.automatedInvoiceProjectCode} automated invoice import.`,
+    invoiceUrl: "",
+  };
+}
+
 async function run() {
   const ready = await ensureVendorInvoicesSchema();
   if (!ready) {
@@ -108,18 +143,20 @@ async function run() {
     try {
       // Extract from the first PDF; attach every PDF to the record.
       const fields = await extractFields(m.pdfs[0].base64);
-      // Auto-file when the extraction is confident (a vendor AND an amount
-      // came through). Only flag the genuinely uncertain ones for a human
-      // glance, so the nightly run is effectively hands-off.
-      const confident = !!fields.vendor && fields.amount != null;
+      const currency = fields.currency || "EUR";
+      // These invoices are always already paid. When we have an amount we can
+      // create the matching "Paid" outflow payment and mark the invoice Paid;
+      // if the amount didn't come through, flag it for a quick human review
+      // (no payment yet — it's created when the amount is filled in on save).
+      const hasAmount = fields.amount != null;
       const input: VendorInvoiceInput = {
         vendor: fields.vendor,
         invoiceNumber: fields.invoiceNumber,
         invoiceDate: fields.invoiceDate,
         amount: fields.amount,
-        currency: fields.currency || "EUR",
+        currency,
         projectCode: env.automatedInvoiceProjectCode,
-        status: confident ? "Filed" : "Needs Review",
+        status: hasAmount ? "Paid" : "Needs Review",
         messageId: m.messageId,
         emailSubject: m.subject,
         emailFrom: m.from,
@@ -129,6 +166,9 @@ async function run() {
       const id = await createVendorInvoice(input);
       for (const pdf of m.pdfs) {
         await attachVendorInvoicePdf(id, pdf.filename, pdf.base64);
+      }
+      if (hasAmount) {
+        await createPaymentForVendorInvoice(id, buildPaidPayment(fields, currency, m));
       }
       imported += 1;
     } catch (e) {
