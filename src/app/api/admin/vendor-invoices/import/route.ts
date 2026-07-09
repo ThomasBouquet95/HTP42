@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireAdminSession } from "@/lib/auth";
 import {
+  attachPaymentPdf,
   attachVendorInvoicePdf,
   createPaymentForVendorInvoice,
   createVendorInvoice,
@@ -168,7 +169,9 @@ async function run() {
         await attachVendorInvoicePdf(id, pdf.filename, pdf.base64);
       }
       if (hasAmount) {
-        await createPaymentForVendorInvoice(id, buildPaidPayment(fields, currency, m));
+        const paymentId = await createPaymentForVendorInvoice(id, buildPaidPayment(fields, currency, m));
+        // Attach the same invoice PDF to the payment so it carries the document.
+        await attachPaymentPdf(paymentId, m.pdfs[0].filename, m.pdfs[0].base64).catch(() => {});
       }
       imported += 1;
     } catch (e) {

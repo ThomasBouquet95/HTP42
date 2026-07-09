@@ -69,7 +69,7 @@ export async function PATCH(
         comment: `Auto-created from ${updated.projectCode || "automated"} invoice.`,
         invoiceUrl: "",
       };
-      await createPaymentForVendorInvoice(id, payment);
+      await createPaymentForVendorInvoice(id, payment, updated.pdf?.url || undefined);
     }
   } catch (e) {
     return apiError(e, "update the invoice");

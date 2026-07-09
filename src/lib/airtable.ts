@@ -5390,12 +5390,20 @@ export async function deleteVendorInvoice(id: string): Promise<void> {
 export async function createPaymentForVendorInvoice(
   vendorInvoiceId: string,
   input: PaymentInput,
+  pdfUrl?: string,
 ): Promise<string> {
   // typecast: true so the "Expense"/"Outflow"/"Paid" single-select values are
   // auto-added if those choices don't exist yet on the Payments table (the
   // plain createPayment omits typecast and would silently reject a new choice).
+  const fields = paymentFields(input);
+  // Copy the invoice PDF onto the payment (Airtable ingests the url into the
+  // attachment field) so the payment carries the same document.
+  if (pdfUrl) {
+    await ensurePaymentInvoicePdfField();
+    fields[FIELDS.payments.invoicePdf] = [{ url: pdfUrl }];
+  }
   const [created] = await base(TABLES.payments).create(
-    [{ fields: paymentFields(input) as FieldSet }],
+    [{ fields: fields as FieldSet }],
     { typecast: true },
   );
   await updateVendorInvoice(vendorInvoiceId, { paymentId: created.id });

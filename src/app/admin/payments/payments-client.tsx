@@ -48,6 +48,8 @@ type Filters = {
   direction: "All" | "Inflow" | "Outflow";
   status: string;
   currency: string;
+  project: string;
+  counterparty: string;
   dueFrom: string;
   dueTo: string;
   paymentFrom: string;
@@ -59,6 +61,8 @@ const DEFAULT_FILTERS: Filters = {
   direction: "Inflow",
   status: "All",
   currency: "All",
+  project: "All",
+  counterparty: "All",
   dueFrom: "",
   dueTo: "",
   paymentFrom: "",
@@ -257,6 +261,22 @@ export function PaymentsClient({
     p.clientRecordIds.map((id) => clientsById.get(id)?.name || clientsById.get(id)?.code).filter(Boolean).join(", ");
   const memberLabel = (p: PaymentRecord) =>
     p.memberRecordIds.map((id) => membersById.get(id)?.name || membersById.get(id)?.code).filter(Boolean).join(", ");
+  // Every distinct counterparty a payment touches (linked clients, linked
+  // members, and a free-text beneficiary/vendor), used by the counterparty
+  // filter so inflows (client), outflows (member), and vendor bills all match.
+  const counterpartyValues = (p: PaymentRecord): string[] => {
+    const out: string[] = [];
+    for (const id of p.clientRecordIds) {
+      const c = clientsById.get(id);
+      if (c) out.push(c.name || c.code);
+    }
+    for (const id of p.memberRecordIds) {
+      const m = membersById.get(id);
+      if (m) out.push(m.name || m.code);
+    }
+    if (p.beneficiary) out.push(p.beneficiary);
+    return out;
+  };
   // DES status for a payment, from its linked client(s): "Yes" if any client is
   // subject, else "No" if any is explicitly not, else "" (unknown / no client).
   const desForPayment = (p: PaymentRecord): "Yes" | "No" | "" => {
@@ -313,12 +333,27 @@ export function PaymentsClient({
     return [...set].sort();
   }, [rows, currencies]);
 
+  const projectOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of rows) for (const c of p.projectCodes) if (c) set.add(c);
+    return [...set].sort();
+  }, [rows]);
+
+  const counterpartyOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of rows) for (const v of counterpartyValues(p)) set.add(v);
+    return [...set].sort((a, b) => a.localeCompare(b));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+
   const filtered = useMemo(() => {
     const q = filters.search.trim().toLowerCase();
     return rows.filter((p) => {
       if (filters.direction !== "All" && p.direction !== filters.direction) return false;
       if (filters.status !== "All" && effectiveStatus(p.paymentStatus) !== filters.status) return false;
       if (filters.currency !== "All" && p.invoiceCurrency !== filters.currency) return false;
+      if (filters.project !== "All" && !p.projectCodes.includes(filters.project)) return false;
+      if (filters.counterparty !== "All" && !counterpartyValues(p).includes(filters.counterparty)) return false;
       // Date range filters apply only once the user has picked BOTH ends —
       // a half-set range previously hid every payment outside the partial bound.
       if (filters.dueFrom && filters.dueTo) {
@@ -406,6 +441,8 @@ export function PaymentsClient({
     filters.direction !== DEFAULT_FILTERS.direction ||
     filters.status !== DEFAULT_FILTERS.status ||
     filters.currency !== DEFAULT_FILTERS.currency ||
+    filters.project !== DEFAULT_FILTERS.project ||
+    filters.counterparty !== DEFAULT_FILTERS.counterparty ||
     filters.dueFrom !== "" ||
     filters.dueTo !== "" ||
     filters.paymentFrom !== "" ||
@@ -786,10 +823,34 @@ export function PaymentsClient({
                 <SortHeader label="Type" sort={sort} colKey="type" onToggle={toggleSort} />
               </th>
               <th className="px-2 py-1.5 text-left font-medium hidden lg:table-cell">
-                <SortHeader label="Project" sort={sort} colKey="project" onToggle={toggleSort} />
+                <HeaderFilterSelect
+                  label="Project"
+                  value={filters.project}
+                  onChange={(v) => update("project", v)}
+                  options={[
+                    { value: "All", label: "Project" },
+                    ...projectOptions.map((c) => ({ value: c, label: c })),
+                  ]}
+                  active={filters.project !== "All"}
+                  sort={sort}
+                  colKey="project"
+                  onToggle={toggleSort}
+                />
               </th>
               <th className="px-2 py-1.5 text-left font-medium">
-                <SortHeader label="Counterparty" sort={sort} colKey="counterparty" onToggle={toggleSort} />
+                <HeaderFilterSelect
+                  label="Counterparty"
+                  value={filters.counterparty}
+                  onChange={(v) => update("counterparty", v)}
+                  options={[
+                    { value: "All", label: "Counterparty" },
+                    ...counterpartyOptions.map((c) => ({ value: c, label: c })),
+                  ]}
+                  active={filters.counterparty !== "All"}
+                  sort={sort}
+                  colKey="counterparty"
+                  onToggle={toggleSort}
+                />
               </th>
               <th className="px-2 py-1.5 text-left font-medium hidden lg:table-cell">Invoice ref</th>
               <th className="px-2 py-1.5 text-left font-medium hidden md:table-cell">
