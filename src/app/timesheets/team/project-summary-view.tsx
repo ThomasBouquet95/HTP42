@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { ProjectSummary, ProjectTeamMember, ProjectRole, ProjectStatus } from "@/lib/airtable";
+import type { ProjectSummary, ProjectTeamMember, ProjectRole } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
+import { StatusPill } from "@/components/badge";
+import { Button, ButtonLink } from "@/components/form-controls";
 import { addWeeksIso, formatHumanDate, formatWeekRange, mondayOf, thisMondayIso } from "@/lib/dates";
 import { WeekChip } from "@/components/week-chip";
 import { DateRangeChip } from "@/components/date-range-chip";
@@ -60,11 +62,11 @@ export function ProjectSummaryView({ summary }: Props) {
     <div className="space-y-4">
       {/* Header card: name, status, dates on the left; KPI tiles on the right;
           progress bar across the bottom. */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+      <section className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <StatusPill status={project.status} />
+              {project.status ? <StatusPill status={project.status} /> : null}
               <DateRangeChip startIso={project.startDate} endIso={project.endDate} size="sm" />
             </div>
             <h3 className="mt-1.5 text-lg font-semibold text-slate-900 truncate">
@@ -98,27 +100,24 @@ export function ProjectSummaryView({ summary }: Props) {
           </div>
         ) : null}
         <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => exportCsv(summary)}
-            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
-          >
+          <Button tone="secondary" size="sm" onClick={() => exportCsv(summary)}>
             Export CSV
-          </button>
-          <a
+          </Button>
+          <ButtonLink
             href={`/timesheets/team/print?project=${encodeURIComponent(project.projectCode)}`}
+            tone="primary"
+            size="sm"
             target="_blank"
             rel="noopener noreferrer"
-            className="rounded-md bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700"
           >
             Export PDF
-          </a>
+          </ButtonLink>
         </div>
       </section>
 
       {/* Team strip */}
       {orderedMembers.length > 0 ? (
-        <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 sm:px-5">
+        <section className="rounded-lg border border-slate-200 bg-white px-4 py-3 sm:px-5">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Team
@@ -161,7 +160,7 @@ export function ProjectSummaryView({ summary }: Props) {
       </div>
 
       {tab === "members" ? (
-        <div className="rounded-2xl border border-slate-200 bg-white">
+        <div className="rounded-lg border border-slate-200 bg-white">
           {orderedMembers.length === 0 ? (
             <div className="text-center text-sm text-slate-500 py-10">
               No one is staffed on this project yet.
@@ -229,34 +228,6 @@ function KpiTile({
       </div>
       <div className={`mt-0.5 text-base font-semibold tabular-nums ${v}`}>{value}</div>
     </div>
-  );
-}
-
-function StatusPill({ status }: { status: ProjectStatus | "" }) {
-  if (!status) return null;
-  const tone =
-    status === "In Progress"
-      ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
-      : status === "Completed"
-        ? "bg-blue-50 text-blue-700 ring-blue-100"
-        : status === "On Hold"
-          ? "bg-amber-50 text-amber-700 ring-amber-100"
-          : "bg-slate-50 text-slate-700 ring-slate-200";
-  const dot =
-    status === "In Progress"
-      ? "bg-emerald-500"
-      : status === "Completed"
-        ? "bg-blue-500"
-        : status === "On Hold"
-          ? "bg-amber-500"
-          : "bg-slate-400";
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${tone}`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden />
-      {status}
-    </span>
   );
 }
 
@@ -393,7 +364,7 @@ function ProjectWeeksTab({
 
   if (members.length === 0) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+      <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
         No team members yet.
       </div>
     );
@@ -403,7 +374,7 @@ function ProjectWeeksTab({
 
   return (
     <div className="space-y-2">
-      <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto">
+      <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
         <table className="w-full text-xs border-collapse">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
@@ -476,13 +447,13 @@ function ProjectWeeksTab({
         </table>
       </div>
       <div className="flex justify-center">
-        <button
-          type="button"
+        <Button
+          tone="secondary"
+          size="sm"
           onClick={() => setWeekCount((w) => w + WEEKS_PER_LOAD)}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-50"
         >
           + Show {WEEKS_PER_LOAD} more weeks
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -598,7 +569,7 @@ function MemberRow({
                 Staffings
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-xs">
                   <thead className="text-xs uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="text-left py-1 pr-3 font-medium">Code</th>

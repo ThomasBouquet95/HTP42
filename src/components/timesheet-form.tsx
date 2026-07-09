@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { StaffingRecord, TimesheetRecord } from "@/lib/airtable";
 import { formatWeekRange, fridayOfWeek, mondayOf, thisMondayIso } from "@/lib/dates";
 import { WeekPicker } from "@/components/week-picker";
+import { Button } from "@/components/form-controls";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
@@ -295,7 +296,7 @@ export function TimesheetForm({
           <select
             value={staffingId}
             onChange={(e) => setStaffingId(e.target.value)}
-            className="mt-1 block w-full max-w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+            className="mt-1 block w-full max-w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
             disabled={loadingStaffings}
           >
             {staffings.length === 0 ? (
@@ -348,7 +349,7 @@ export function TimesheetForm({
                     step={0.25}
                     value={days[k].hours}
                     onChange={(e) => updateDay(k, { hours: e.target.value })}
-                    className="w-20 rounded-md border border-slate-300 px-2 py-1 text-xs tabular-nums"
+                    className="w-20 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs tabular-nums focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
                   />
                 </td>
                 <td className="px-3 py-1.5">
@@ -357,7 +358,7 @@ export function TimesheetForm({
                     onChange={(e) => updateDay(k, { task: e.target.value })}
                     placeholder={"What did you work on?\nUse new lines to list multiple items."}
                     rows={2}
-                    className="block w-full resize-y rounded-md border border-slate-300 px-2 py-1 text-xs leading-snug focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                    className="block w-full resize-y rounded-md border border-slate-300 px-2.5 py-1.5 text-xs leading-snug focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
                   />
                 </td>
               </tr>
@@ -374,31 +375,31 @@ export function TimesheetForm({
       {error ? <div className="rounded-md bg-red-50 text-red-700 p-2.5 text-xs">{error}</div> : null}
 
       <div className="flex flex-wrap items-center gap-2.5">
-        <button
-          type="button"
+        <Button
+          tone="secondary"
+          size="sm"
           onClick={() => (onCancel ? onCancel() : router.back())}
           disabled={submitting}
-          className="rounded-md border border-red-300 bg-white hover:bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 disabled:opacity-60"
         >
           Cancel
-        </button>
+        </Button>
         <div className="flex gap-2 sm:ml-auto">
-          <button
-            type="button"
+          <Button
+            tone="secondary"
+            size="sm"
             onClick={() => save("Draft")}
             disabled={submitting}
-            className="rounded-md border border-slate-300 bg-white hover:bg-slate-50 px-3 py-1.5 text-xs font-medium disabled:opacity-60"
           >
             Save as Draft
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            tone="primary"
+            size="sm"
             onClick={() => save("Submitted")}
             disabled={submitting}
-            className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 text-xs font-medium disabled:opacity-60"
           >
             Submit
-          </button>
+          </Button>
         </div>
       </div>
     </form>

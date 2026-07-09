@@ -8,6 +8,8 @@ import type {
   ChatMessage,
   MemberStatus,
 } from "@/lib/airtable";
+import { Button } from "@/components/form-controls";
+import { SearchInput } from "@/components/search-input";
 
 type MemberOpt = {
   id: string;
@@ -572,13 +574,9 @@ export function ChatClient({
           <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Conversations
           </h2>
-          <button
-            type="button"
-            onClick={() => setNewChatOpen(true)}
-            className="rounded-full bg-brand-600 text-white px-2.5 py-1 text-[10px] font-medium hover:bg-brand-700"
-          >
+          <Button tone="primary" size="sm" onClick={() => setNewChatOpen(true)}>
             + New
-          </button>
+          </Button>
         </header>
         <ul className="flex-1 overflow-y-auto divide-y divide-slate-100">
           {conversations.length === 0 ? (
@@ -1187,8 +1185,9 @@ function MessageActions({
                 >
                   Cancel
                 </button>
-                <button
-                  type="button"
+                <Button
+                  tone="danger"
+                  size="sm"
                   onClick={async () => {
                     setWorking(true);
                     try {
@@ -1200,10 +1199,9 @@ function MessageActions({
                     }
                   }}
                   disabled={working}
-                  className="rounded bg-red-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-red-700 disabled:opacity-60"
                 >
                   {working ? "Deleting…" : "Delete"}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -1526,7 +1524,7 @@ function NewChatModal({
                 value={groupTitle}
                 onChange={(e) => setGroupTitle(e.target.value)}
                 placeholder="e.g. Pricing Working Group"
-                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
                 autoFocus
               />
             </label>
@@ -1546,7 +1544,7 @@ function NewChatModal({
                     // the auto-default ("Project · …") follows the picker.
                     setGroupTitle("");
                   }}
-                  className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+                  className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
                   autoFocus
                 >
                   <option value="">Pick a project you're staffed on…</option>
@@ -1578,7 +1576,7 @@ function NewChatModal({
                       value={groupTitle}
                       onChange={(e) => setGroupTitle(e.target.value)}
                       placeholder={`Project · ${pickedProject.name || pickedProject.code}`}
-                      className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+                      className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
                     />
                   </label>
                   <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600">
@@ -1599,12 +1597,11 @@ function NewChatModal({
             <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
               {kind === "Direct" ? "Pick a person" : "Pick members"}
             </span>
-            <input
-              type="search"
+            <SearchInput
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={setSearch}
               placeholder="Search by name or code…"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+              className="mt-1 w-full"
             />
             <ul className="mt-1.5 max-h-60 overflow-y-auto rounded-md border border-slate-200 bg-slate-50">
               {filtered.length === 0 ? (
@@ -1652,20 +1649,10 @@ function NewChatModal({
           ) : null}
         </div>
         <footer className="flex items-center justify-end gap-2 border-t border-slate-100 px-4 py-3">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-50 disabled:opacity-50"
-          >
+          <Button tone="secondary" size="sm" onClick={onClose} disabled={busy}>
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={go}
-            disabled={busy || !canCreate}
-            className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
-          >
+          </Button>
+          <Button tone="primary" size="sm" onClick={go} disabled={busy || !canCreate}>
             {busy
               ? kind === "Direct"
                 ? "Opening…"
@@ -1675,7 +1662,7 @@ function NewChatModal({
                 : kind === "Project"
                   ? "Create project chat"
                   : "Create group"}
-          </button>
+          </Button>
         </footer>
       </div>
     </div>
