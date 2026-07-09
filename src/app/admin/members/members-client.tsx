@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { SearchInput } from "@/components/search-input";
 import { EditIcon, IconButton } from "@/components/admin-icons";
 import { DownloadChip } from "@/components/download-chip";
 import type {
@@ -378,12 +379,11 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-        <input
-          type="search"
+        <SearchInput
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={setSearch}
           placeholder="Search by code, name, email, country…"
-          className="flex-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+          className="flex-1"
         />
         <Button tone="primary" size="sm" onClick={openCreate}>
           + New member

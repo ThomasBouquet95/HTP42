@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { StarRating } from "@/components/star-rating";
+import { SearchInput } from "@/components/search-input";
 
 export type MemberReview = {
   surveyId: string;
@@ -69,12 +70,11 @@ export function MemberReviewsClient({
       {/* Left: member list */}
       <div className="rounded-lg border border-slate-200 bg-white">
         <div className="border-b border-slate-100 p-2">
-          <input
-            type="search"
+          <SearchInput
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={setSearch}
             placeholder="Search members…"
-            className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+            className="w-full"
           />
         </div>
         <div className="max-h-[70vh] overflow-y-auto">

@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { DownloadChip } from "@/components/download-chip";
 import { DateField } from "@/components/date-picker";
+import { StatusPill } from "@/components/badge";
+import { Button } from "@/components/form-controls";
 import type { MemberInvoiceRecord } from "@/lib/airtable";
 
 type Filters = {
@@ -206,42 +208,34 @@ export function AdminInvoicesClient({
               value={filters.search}
               onChange={(e) => update("search", e.target.value)}
               placeholder="code, member, project, comment…"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
             />
           </label>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={reset}
-            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
-          >
+          <Button tone="secondary" size="sm" onClick={reset}>
             Reset filters
-          </button>
-          <button
-            type="button"
-            onClick={exportCsv}
-            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
-          >
+          </Button>
+          <Button tone="secondary" size="sm" onClick={exportCsv}>
             Export CSV
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Table */}
       <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
         <table className="w-full text-xs">
-          <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-3 py-2 font-medium">Submitted</th>
-              <th className="text-left px-3 py-2 font-medium">Invoice</th>
-              <th className="text-left px-3 py-2 font-medium">Member</th>
-              <th className="text-left px-3 py-2 font-medium">Staffing</th>
-              <th className="text-right px-3 py-2 font-medium">Amount</th>
-              <th className="text-left px-3 py-2 font-medium">Status</th>
-              <th className="text-left px-3 py-2 font-medium">Payment</th>
-              <th className="text-left px-3 py-2 font-medium">PDF</th>
-              <th className="text-left px-3 py-2 font-medium">Comment</th>
+              <th className="text-left px-2 py-1.5 font-medium">Submitted</th>
+              <th className="text-left px-2 py-1.5 font-medium">Invoice</th>
+              <th className="text-left px-2 py-1.5 font-medium">Member</th>
+              <th className="text-left px-2 py-1.5 font-medium">Staffing</th>
+              <th className="text-right px-2 py-1.5 font-medium">Amount</th>
+              <th className="text-left px-2 py-1.5 font-medium">Status</th>
+              <th className="text-left px-2 py-1.5 font-medium">Payment</th>
+              <th className="text-left px-2 py-1.5 font-medium">PDF</th>
+              <th className="text-left px-2 py-1.5 font-medium">Comment</th>
             </tr>
           </thead>
           <tbody>
@@ -255,8 +249,8 @@ export function AdminInvoicesClient({
               filtered.map((r) => {
                 const payment = paymentByInvoiceId[r.id];
                 return (
-                  <tr key={r.id} className="border-t border-slate-100 align-top">
-                    <td className="px-3 py-2 whitespace-nowrap text-slate-600">
+                  <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50 align-top">
+                    <td className="px-2 py-1.5 whitespace-nowrap text-slate-600">
                       {r.submissionDate
                         ? new Date(r.submissionDate).toLocaleString("en-GB", {
                             day: "2-digit",
@@ -267,7 +261,7 @@ export function AdminInvoicesClient({
                           })
                         : "—"}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-2 py-1.5">
                       <div className="font-mono text-[11px] text-slate-900">
                         {r.invoiceCode || "—"}
                       </div>
@@ -284,29 +278,29 @@ export function AdminInvoicesClient({
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-2 py-1.5">
                       <div className="font-mono text-[10px] text-brand-700">
                         {r.memberCode || "—"}
                       </div>
                       <div className="truncate max-w-[12rem] demo-blur">{r.memberName || "—"}</div>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-2 py-1.5">
                       <div className="font-mono text-[10px] text-brand-700">
                         {r.staffingCode || "—"}
                       </div>
                       <div className="truncate max-w-[16rem] demo-blur">{r.projectName || r.projectCode || "—"}</div>
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap demo-blur">
+                    <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap demo-blur">
                       {r.amount != null
                         ? `${r.amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}${
                             r.currency ? " " + r.currency : ""
                           }`
                         : "—"}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    <td className="px-2 py-1.5 whitespace-nowrap">
                       <InvoiceStatusBadge status={r.status} />
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    <td className="px-2 py-1.5 whitespace-nowrap">
                       {payment ? (
                         <Link
                           href={`/admin/payments?search=${encodeURIComponent(payment.code)}`}
@@ -320,14 +314,14 @@ export function AdminInvoicesClient({
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-2 py-1.5">
                       <DownloadChip
                         url={r.pdf?.url}
                         title={`Open ${r.pdf?.filename || "PDF"}`}
                         emptyTitle="No PDF on file"
                       />
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-2 py-1.5">
                       <div
                         className="text-[11px] text-slate-600 max-w-[16rem] line-clamp-2"
                         title={r.comment}
@@ -361,17 +355,7 @@ export function AdminInvoicesClient({
 
 function InvoiceStatusBadge({ status }: { status: string }) {
   if (!status) return <span className="text-slate-300">—</span>;
-  const cls =
-    status === "Paid"
-      ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
-      : status === "Cancelled"
-      ? "bg-slate-100 text-slate-500 ring-slate-200 line-through"
-      : "bg-amber-50 text-amber-700 ring-amber-100"; // To be paid
-  return (
-    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${cls}`}>
-      {status}
-    </span>
-  );
+  return <StatusPill status={status} />;
 }
 
 function Select({

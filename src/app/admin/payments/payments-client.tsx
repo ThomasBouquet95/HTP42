@@ -3,7 +3,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
-import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { Button, ButtonLink, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { SearchInput } from "@/components/search-input";
+import { Badge } from "@/components/badge";
 import { DownloadChip } from "@/components/download-chip";
 import { DateField } from "@/components/date-picker";
 import { PaidDateModal } from "@/components/paid-date-modal";
@@ -689,7 +691,7 @@ export function PaymentsClient({
   return (
     <div className="space-y-5">
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+      <div className="rounded-lg border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-3 py-2">
           <div
             role="tablist"
@@ -718,39 +720,21 @@ export function PaymentsClient({
             })}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <input
-                type="search"
-                aria-label="Search payments"
-                placeholder="Search by consultant, project code, client, reference…"
-                value={filters.search}
-                onChange={(e) => update("search", e.target.value)}
-                className="h-8 w-48 rounded-full border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs text-slate-700 placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              />
-              <svg
-                aria-hidden
-                viewBox="0 0 16 16"
-                className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-              >
-                <circle cx="7" cy="7" r="4.5" />
-                <path d="m11 11 3 3" strokeLinecap="round" />
-              </svg>
-            </div>
+            <SearchInput
+              value={filters.search}
+              onChange={(v) => update("search", v)}
+              placeholder="Search by consultant, project code, client, reference…"
+              ariaLabel="Search payments"
+              className="w-48"
+            />
             <span className="hidden sm:inline text-[11px] text-slate-500 px-1">
               {sorted.length} payment{sorted.length === 1 ? "" : "s"}
             </span>
-            <button
-              type="button"
+            <Button
+              tone="secondary"
+              size="sm"
               onClick={resetAll}
               disabled={!isFiltered}
-              className={`inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors ${
-                isFiltered
-                  ? "bg-brand-600 text-white shadow-sm hover:bg-brand-700"
-                  : "text-slate-400"
-              }`}
             >
               {isFiltered ? (
                 <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
@@ -758,33 +742,29 @@ export function PaymentsClient({
                 </svg>
               ) : null}
               Reset
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              tone="secondary"
+              size="sm"
               onClick={exportCsv}
               disabled={sorted.length === 0}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
             >
               <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
                 <path d="M8 2v8m0 0L5 7m3 3 3-3M3 12v1.5A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5V12" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               Export
-            </button>
-            <button
-              type="button"
-              onClick={openCreate}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-brand-600 px-3 text-xs font-medium text-white shadow-sm transition-colors hover:bg-brand-700"
-            >
+            </Button>
+            <Button tone="primary" size="sm" onClick={openCreate}>
               <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                 <path d="M8 3v10M3 8h10" strokeLinecap="round" />
               </svg>
               New payment
-            </button>
+            </Button>
           </div>
         </div>
         <div className="overflow-x-auto">
         <table className="w-full text-xs">
-          <thead className="border-b border-slate-100 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 whitespace-nowrap">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 whitespace-nowrap">
             <tr>
               <th className="w-6 px-1 py-1.5" />
               <th className="px-2 py-1.5 text-left font-medium">
@@ -1033,7 +1013,7 @@ export function PaymentsClient({
             <DownloadChip
               url={editing?.invoicePdf?.url}
               title={`Open ${editing?.invoicePdf?.filename || "invoice PDF"}`}
-              emptyTitle="No invoice PDF yet"
+              emptyTitle="No invoice PDF on file"
             />
             <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
               {invoiceFile ? "Change file" : editing?.invoicePdf?.url ? "Replace PDF" : "Upload PDF"}
@@ -1543,16 +1523,17 @@ function PaymentDetails({
 
       <div className="flex flex-wrap items-center gap-3 text-[11px]">
         {invoicePdfUrl ? (
-          <a
+          <ButtonLink
             href={invoicePdfUrl}
+            tone="secondary"
+            size="sm"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 font-medium text-brand-600 hover:bg-slate-50"
           >
             Invoice PDF ↗
-          </a>
+          </ButtonLink>
         ) : (
-          <span className="text-slate-400">No invoice PDF</span>
+          <span className="text-slate-400">No invoice PDF on file</span>
         )}
         {p.invoiceUrl ? (
           <a
@@ -1582,15 +1563,7 @@ function PField({ label, value, mono, blur }: { label: string; value: string; mo
 
 function DirectionPill({ direction }: { direction: string }) {
   if (!direction) return <span className="text-slate-400">—</span>;
-  const cls =
-    direction === "Inflow"
-      ? "bg-green-50 text-green-700 border-green-200"
-      : "bg-red-50 text-red-700 border-red-200";
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}>
-      {direction}
-    </span>
-  );
+  return <Badge tone={direction === "Inflow" ? "success" : "danger"}>{direction}</Badge>;
 }
 
 function DateRangeHeader({

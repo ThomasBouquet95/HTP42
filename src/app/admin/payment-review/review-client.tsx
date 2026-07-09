@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DownloadChip } from "@/components/download-chip";
 import { PaidDateModal } from "@/components/paid-date-modal";
+import { SearchInput } from "@/components/search-input";
+import { Badge, StatusPill } from "@/components/badge";
+import { Button } from "@/components/form-controls";
 
 export type ReviewBundle = {
   payment: {
@@ -127,14 +130,6 @@ function statusTone(status: string): StatusTone {
   if (s === "under review") return "review";
   return "other";
 }
-const TONE_PILL: Record<StatusTone, string> = {
-  paid: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  approved: "bg-blue-50 text-blue-700 ring-blue-200",
-  cancelled: "bg-slate-100 text-slate-500 ring-slate-200 line-through",
-  review: "bg-amber-50 text-amber-700 ring-amber-200",
-  other: "bg-slate-50 text-slate-600 ring-slate-200",
-};
-
 export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
   const router = useRouter();
   const [data, setData] = useState(groups);
@@ -257,12 +252,11 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
       {/* Member list */}
       <div className="self-start overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="border-b border-slate-100 p-2">
-          <input
-            type="search"
+          <SearchInput
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={setSearch}
             placeholder="Search members…"
-            className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+            className="w-full"
           />
         </div>
         <ul className="max-h-[72vh] divide-y divide-slate-100 overflow-y-auto">
@@ -292,9 +286,9 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
                       </div>
                     </div>
                     {g.underReview.length > 0 ? (
-                      <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-200">
+                      <Badge tone="warning" className="shrink-0">
                         {g.underReview.length} to review
-                      </span>
+                      </Badge>
                     ) : null}
                   </button>
                 </li>
@@ -450,9 +444,7 @@ function BundleDetail({
               <span className="rounded-md bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] text-white">
                 #{selected.payment.code || "—"}
               </span>
-              <span className={`rounded-full px-2 py-0.5 font-medium ring-1 ${TONE_PILL[tone]}`}>
-                {statusLabel}
-              </span>
+              <StatusPill status={statusLabel} />
               {selected.payment.type ? <span>{selected.payment.type}</span> : null}
             </button>
           </div>
@@ -481,30 +473,20 @@ function BundleDetail({
         ) : null}
         {!readOnly ? (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              disabled={saving}
-              onClick={onApprove}
-              className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-            >
+            <Button tone="primary" size="sm" disabled={saving} onClick={onApprove}>
               Approve → To be paid
-            </button>
+            </Button>
             <button
               type="button"
               disabled={saving}
               onClick={onMarkPaid}
-              className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Mark paid
             </button>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={onCancel}
-              className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-            >
+            <Button tone="danger" size="sm" disabled={saving} onClick={onCancel}>
               Cancel
-            </button>
+            </Button>
             <Link
               href={`/admin/payments?search=${encodeURIComponent(selected.payment.code)}`}
               className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700"
@@ -805,16 +787,16 @@ function Empty({ children }: { children: React.ReactNode }) {
 function ValidityChip({ validity }: { validity: string }) {
   if (!validity) return null;
   const v = validity.toLowerCase();
-  const cls = v.includes("valid")
-    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+  const tone = v.includes("valid")
+    ? "success"
     : v.includes("expir")
-    ? "bg-red-50 text-red-700 border-red-200"
+    ? "danger"
     : v.includes("missing")
-    ? "bg-amber-50 text-amber-700 border-amber-200"
-    : "bg-slate-50 text-slate-600 border-slate-200";
+    ? "warning"
+    : "neutral";
   return (
-    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${cls}`}>
+    <Badge tone={tone} className="shrink-0">
       {validity}
-    </span>
+    </Badge>
   );
 }

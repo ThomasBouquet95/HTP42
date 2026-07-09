@@ -10,12 +10,14 @@ export function SearchInput({
   placeholder = "Search…",
   className,
   ariaLabel,
+  autoFocus,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   className?: string;
   ariaLabel?: string;
+  autoFocus?: boolean;
 }) {
   return (
     <div className={`relative ${className ?? "w-full sm:w-64"}`}>
@@ -36,6 +38,7 @@ export function SearchInput({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         aria-label={ariaLabel ?? placeholder}
+        autoFocus={autoFocus}
         className="block w-full rounded-md border border-slate-300 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
       />
     </div>

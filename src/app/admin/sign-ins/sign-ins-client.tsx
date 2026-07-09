@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { SignInActivity } from "@/lib/airtable";
+import { SearchInput } from "@/components/search-input";
 
 type SortKey = "lastActivity" | "lastSignIn" | "signInCount" | "memberCode" | "fullName";
 type SortDir = "asc" | "desc";
@@ -214,26 +215,12 @@ export function SignInActivityClient({
             );
           })}
         </div>
-        <div className="relative">
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, code, email…"
-            className="h-8 w-64 rounded-full border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs text-slate-700 placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-          />
-          <svg
-            aria-hidden
-            viewBox="0 0 16 16"
-            className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-          >
-            <circle cx="7" cy="7" r="4.5" />
-            <path d="m11 11 3 3" strokeLinecap="round" />
-          </svg>
-        </div>
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search name, code, email…"
+          className="w-64"
+        />
         <span className="text-[11px] text-slate-500 ml-auto">
           {sorted.length} of {rows.length}
         </span>
@@ -241,21 +228,21 @@ export function SignInActivityClient({
 
       <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
         <table className="w-full text-xs">
-          <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 whitespace-nowrap">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 whitespace-nowrap">
             <tr>
-              <th className="text-left px-3 py-2 font-medium">
+              <th className="text-left px-2 py-1.5 font-medium">
                 <SortBtn label="Member" colKey="fullName" sort={sort} onToggle={toggleSort} />
               </th>
-              <th className="text-left px-3 py-2 font-medium hidden md:table-cell">
+              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">
                 <SortBtn label="Code" colKey="memberCode" sort={sort} onToggle={toggleSort} />
               </th>
-              <th className="text-left px-3 py-2 font-medium">
+              <th className="text-left px-2 py-1.5 font-medium">
                 <SortBtn label="Status" colKey="lastActivity" sort={sort} onToggle={toggleSort} />
               </th>
-              <th className="text-right px-3 py-2 font-medium">
+              <th className="text-right px-2 py-1.5 font-medium">
                 <SortBtn label="Opens" colKey="signInCount" sort={sort} onToggle={toggleSort} align="right" />
               </th>
-              <th className="text-left px-3 py-2 font-medium">
+              <th className="text-left px-2 py-1.5 font-medium">
                 <SortBtn label="Last opened" colKey="lastSignIn" sort={sort} onToggle={toggleSort} />
               </th>
             </tr>
@@ -282,7 +269,7 @@ export function SignInActivityClient({
                       : "hover:bg-slate-50"
                   }`}
                 >
-                  <td className="px-3 py-1.5">
+                  <td className="px-2 py-1.5">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="relative shrink-0">
                         <div className="h-7 w-7 rounded-full overflow-hidden bg-brand-50 text-brand-700 flex items-center justify-center text-[10px] font-semibold">
@@ -303,20 +290,20 @@ export function SignInActivityClient({
                       </div>
                     </div>
                   </td>
-                  <td className="px-3 py-1.5 font-mono text-[11px] text-slate-500 hidden md:table-cell">
+                  <td className="px-2 py-1.5 font-mono text-[11px] text-slate-500 hidden md:table-cell">
                     {r.memberCode}
                   </td>
-                  <td className="px-3 py-1.5">
+                  <td className="px-2 py-1.5">
                     <PresenceLabel lastActivity={r.lastActivity} now={tickNow} />
                   </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">
+                  <td className="px-2 py-1.5 text-right tabular-nums">
                     {r.signInCount > 0 ? (
                       <span className="font-medium text-slate-900">{r.signInCount}</span>
                     ) : (
                       <span className="text-slate-300">0</span>
                     )}
                   </td>
-                  <td className="px-3 py-1.5 whitespace-nowrap">
+                  <td className="px-2 py-1.5 whitespace-nowrap">
                     {r.lastSignIn ? (
                       <LastSignInCell iso={r.lastSignIn} now={tickNow} />
                     ) : (

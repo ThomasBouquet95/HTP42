@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect } from "@/components/form-controls";
+import { SearchInput } from "@/components/search-input";
+import { Badge } from "@/components/badge";
 import { EditIcon, TrashIcon, IconButton } from "@/components/admin-icons";
 
 export type ProjectOpt = {
@@ -322,12 +324,11 @@ export function RetributionClient({
       {/* Project list */}
       <div className="self-start overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="border-b border-slate-100 p-2">
-          <input
-            type="search"
+          <SearchInput
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={setSearch}
             placeholder="Search projects…"
-            className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+            className="w-full"
           />
         </div>
         <ul className="max-h-[72vh] divide-y divide-slate-100 overflow-y-auto">
@@ -401,14 +402,14 @@ export function RetributionClient({
             {/* Rows */}
             <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
               <table className="w-full text-xs">
-                <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th className="px-3 py-2 text-left font-medium">Category</th>
-                    <th className="px-3 py-2 text-left font-medium">Member</th>
-                    <th className="px-3 py-2 text-left font-medium">Rate</th>
-                    <th className="px-3 py-2 text-left font-medium">Basis</th>
-                    <th className="px-3 py-2 text-right font-medium">Amount</th>
-                    <th className="px-3 py-2" />
+                    <th className="px-2 py-1.5 text-left font-medium">Category</th>
+                    <th className="px-2 py-1.5 text-left font-medium">Member</th>
+                    <th className="px-2 py-1.5 text-left font-medium">Rate</th>
+                    <th className="px-2 py-1.5 text-left font-medium">Basis</th>
+                    <th className="px-2 py-1.5 text-right font-medium">Amount</th>
+                    <th className="px-2 py-1.5" />
                   </tr>
                 </thead>
                 <tbody>
@@ -421,11 +422,11 @@ export function RetributionClient({
                   ) : (
                     projectRows.map((r) => (
                       <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50">
-                        <td className="px-3 py-2">{categoryLabel(r)}</td>
-                        <td className="px-3 py-2 demo-blur">
+                        <td className="px-2 py-1.5">{categoryLabel(r)}</td>
+                        <td className="px-2 py-1.5 demo-blur">
                           {r.memberName || r.memberCode || "—"}
                         </td>
-                        <td className="px-3 py-2 tabular-nums">
+                        <td className="px-2 py-1.5 tabular-nums">
                           {r.amountType === PER_DAY ? (
                             <span className="demo-blur">
                               {money(r.dailyAmount, project.currency)}/day × {days(r.workedDays)}
@@ -439,13 +440,13 @@ export function RetributionClient({
                             pct(r.percent)
                           )}
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-2 py-1.5">
                           <BasisPill basis={r.costBasis} />
                         </td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium demo-blur">
+                        <td className="px-2 py-1.5 text-right tabular-nums font-medium demo-blur">
                           {money(amountOf(r), project.currency)}
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-2 py-1.5">
                           <div className="flex items-center justify-end gap-1.5">
                             <IconButton title="Edit" onClick={() => openEdit(r)}>
                               <EditIcon />
@@ -462,17 +463,17 @@ export function RetributionClient({
                 {projectRows.length > 0 ? (
                   <tfoot>
                     <tr className="border-t border-slate-200 bg-slate-50 text-[11px] font-medium text-slate-600">
-                      <td className="px-3 py-2" colSpan={2}>
+                      <td className="px-2 py-1.5" colSpan={2}>
                         Total
                       </td>
-                      <td className="px-3 py-2 text-[10px] text-slate-500" colSpan={2}>
+                      <td className="px-2 py-1.5 text-[10px] text-slate-500" colSpan={2}>
                         {pct(totals.partOf)} in price · {pct(totals.onTop)} on top
                         <span className="text-slate-400"> (percentage rows)</span>
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums demo-blur">
+                      <td className="px-2 py-1.5 text-right tabular-nums demo-blur">
                         {money(totals.anyNull ? null : totals.amount, project.currency)}
                       </td>
-                      <td className="px-3 py-2" />
+                      <td className="px-2 py-1.5" />
                     </tr>
                   </tfoot>
                 ) : null}
@@ -694,15 +695,5 @@ export function RetributionClient({
 function BasisPill({ basis }: { basis: string }) {
   if (!basis) return <span className="text-slate-300">—</span>;
   const onTop = basis === "On top";
-  return (
-    <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${
-        onTop
-          ? "bg-violet-50 text-violet-700 ring-violet-200"
-          : "bg-slate-100 text-slate-600 ring-slate-200"
-      }`}
-    >
-      {onTop ? "On top" : "In price"}
-    </span>
-  );
+  return <Badge tone={onTop ? "info" : "neutral"}>{onTop ? "On top" : "In price"}</Badge>;
 }
