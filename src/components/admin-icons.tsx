@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export function EditIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -72,13 +74,28 @@ export function RefreshIcon() {
   );
 }
 
+export function ChevronRightIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// One square 28px icon affordance used across admin tables. Renders a button
+// (onClick) or, when `href` is given, an identical-looking link — so an
+// "open"/navigation icon matches the edit/delete icons exactly.
 export function IconButton({
   onClick,
+  href,
+  target,
   title,
   tone = "neutral",
   children,
 }: {
-  onClick: () => void;
+  onClick?: () => void;
+  href?: string;
+  target?: string;
   title: string;
   tone?: "neutral" | "danger" | "brand";
   children: React.ReactNode;
@@ -89,14 +106,16 @@ export function IconButton({
       : tone === "brand"
       ? "border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100"
       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900";
+  const shared = `inline-flex h-7 w-7 items-center justify-center rounded-md border ${cls}`;
+  if (href) {
+    return (
+      <Link href={href} target={target} title={title} aria-label={title} className={shared}>
+        {children}
+      </Link>
+    );
+  }
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      aria-label={title}
-      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border ${cls}`}
-    >
+    <button type="button" onClick={onClick} title={title} aria-label={title} className={shared}>
       {children}
     </button>
   );

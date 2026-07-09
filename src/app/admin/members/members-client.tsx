@@ -2,12 +2,11 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
-import { EditIcon, IconButton } from "@/components/admin-icons";
+import { EditIcon, IconButton, ChevronRightIcon } from "@/components/admin-icons";
 import { DownloadChip } from "@/components/download-chip";
 import { StatusSelect } from "@/components/status-select";
 import type {
@@ -504,29 +503,12 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
                   </td>
                   <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1.5">
-                      <Link
-                        href={`/admin/member-reviews?member=${encodeURIComponent(m.memberCode)}`}
-                        title="Client reviews"
-                        aria-label="Client reviews"
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-amber-600"
-                      >
-                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-                          <path d="M12 3.5l2.6 5.3 5.9.85-4.25 4.14 1 5.86L12 17l-5.25 2.65 1-5.86L3.5 9.65l5.9-.85z" strokeLinejoin="round" />
-                        </svg>
-                      </Link>
                       <IconButton title="Edit" onClick={() => openEdit(m)}>
                         <EditIcon />
                       </IconButton>
-                      <Link
-                        href={`/admin/members/${m.id}`}
-                        title="Open member page"
-                        aria-label="Open member page"
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-brand-700"
-                      >
-                        <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
-                          <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </Link>
+                      <IconButton title="Open member page" href={`/admin/members/${m.id}`}>
+                        <ChevronRightIcon />
+                      </IconButton>
                     </div>
                   </td>
                 </tr>

@@ -319,7 +319,7 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
                         </td>
                         <td className="px-2 py-1.5 text-slate-600">{t.projectCode || "—"}</td>
                         <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">
-                          {t.totalHours.toFixed(2)} h
+                          {(Number(t.totalHours) || 0).toFixed(2)} h
                         </td>
                         <td className="px-2 py-1.5 text-center">
                           <StatusPill status={t.status} />
