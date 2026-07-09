@@ -23,6 +23,7 @@ type GraphMessage = {
   subject?: string;
   internetMessageId?: string;
   receivedDateTime?: string;
+  hasAttachments?: boolean;
   from?: { emailAddress?: { address?: string; name?: string } };
 };
 
@@ -60,10 +61,12 @@ export async function fetchInvoiceMails(limit = 50): Promise<
 
   const base = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}`;
   const listUrl =
-    `${base}/messages?$filter=${encodeURIComponent("hasAttachments eq true")}` +
-    `&$top=${Math.min(Math.max(limit, 1), 100)}` +
+    // Graph rejects a `hasAttachments` $filter combined with an $orderby
+    // ("InefficientFilter"). So we sort by newest and skip attachment-less
+    // messages client-side using the hasAttachments flag in $select.
+    `${base}/messages?$top=${Math.min(Math.max(limit, 1), 100)}` +
     `&$orderby=${encodeURIComponent("receivedDateTime desc")}` +
-    `&$select=${encodeURIComponent("id,subject,internetMessageId,receivedDateTime,from")}`;
+    `&$select=${encodeURIComponent("id,subject,internetMessageId,receivedDateTime,hasAttachments,from")}`;
 
   const listRes = await fetch(listUrl, {
     headers: { Authorization: `Bearer ${token}` },
@@ -78,6 +81,7 @@ export async function fetchInvoiceMails(limit = 50): Promise<
 
   const invoices: MailInvoice[] = [];
   for (const m of messages) {
+    if (m.hasAttachments === false) continue;
     const attRes = await fetch(
       `${base}/messages/${m.id}/attachments?$select=${encodeURIComponent("name,contentType,contentBytes")}`,
       { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
