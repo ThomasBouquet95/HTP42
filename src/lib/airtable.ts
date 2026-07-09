@@ -1996,7 +1996,6 @@ export async function updateInvoiceStatus(
 export type MemberInvoiceUpdateInput = {
   amount: number | null;
   currency: string;
-  status: string;
   comment: string;
   submissionDate: string | null;
 };
@@ -2011,7 +2010,6 @@ export async function updateMemberInvoice(
   const fields: Record<string, unknown> = {
     [FIELDS.memberInvoices.amount]: input.amount,
     [FIELDS.memberInvoices.currency]: input.currency === "" ? null : input.currency,
-    [FIELDS.memberInvoices.status]: input.status === "" ? null : input.status,
     [FIELDS.memberInvoices.comment]: input.comment,
     [FIELDS.memberInvoices.submissionDate]: input.submissionDate,
   };

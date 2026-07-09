@@ -22,8 +22,8 @@ const patchSchema = z.object({
   amount: z.number().nullable().optional(),
   currency: z.string().optional(),
   projectCode: z.string().optional(),
-  status: z.union([z.enum(["Paid", "Needs Review", "Filed"]), z.literal("")]).optional(),
   notes: z.string().optional(),
+  markPaid: z.boolean().optional(),
 });
 
 export async function PATCH(
@@ -44,12 +44,13 @@ export async function PATCH(
   }
 
   try {
-    await updateVendorInvoice(id, parsed.data);
-    // If a reviewed invoice is now marked Paid, has an amount, and has no
-    // linked payment yet, create its matching "Paid" outflow payment now —
-    // the same pairing the nightly import makes automatically.
+    const { markPaid, ...patch } = parsed.data;
+    await updateVendorInvoice(id, patch);
+    // When the admin marks the invoice paid and it has an amount but no linked
+    // payment yet, create its matching "Paid" outflow payment now — the same
+    // pairing the nightly import makes automatically.
     const updated = (await getVendorInvoiceById(id)) ?? existing;
-    if (updated.status === "Paid" && updated.amount != null && !updated.paymentId) {
+    if (markPaid && updated.amount != null && !updated.paymentId) {
       const payment: PaymentInput = {
         direction: "Outflow",
         type: "Expense",

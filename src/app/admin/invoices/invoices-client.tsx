@@ -11,7 +11,7 @@ import { StatusPill } from "@/components/badge";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { EditIcon } from "@/components/admin-icons";
-import { CURRENCIES, INVOICE_STATUSES } from "@/lib/airtable";
+import { CURRENCIES } from "@/lib/airtable";
 import type { MemberInvoiceRecord } from "@/lib/airtable";
 
 type Filters = {
@@ -35,7 +35,6 @@ const DEFAULT_FILTERS: Filters = {
 type EditForm = {
   amount: string;
   currency: string;
-  status: string;
   comment: string;
   submissionDate: string;
 };
@@ -44,7 +43,6 @@ function fromInvoice(r: MemberInvoiceRecord): EditForm {
   return {
     amount: r.amount == null ? "" : String(r.amount),
     currency: r.currency ?? "",
-    status: r.status ?? "",
     comment: r.comment ?? "",
     submissionDate: (r.submissionDate ?? "").slice(0, 10),
   };
@@ -55,7 +53,7 @@ export function AdminInvoicesClient({
   paymentByInvoiceId,
 }: {
   invoices: MemberInvoiceRecord[];
-  paymentByInvoiceId: Record<string, { id: string; code: string }>;
+  paymentByInvoiceId: Record<string, { id: string; code: string; status: string }>;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(invoices);
@@ -112,7 +110,6 @@ export function AdminInvoicesClient({
       const body = {
         amount: form.amount === "" ? null : Number(form.amount),
         currency: form.currency,
-        status: form.status,
         comment: form.comment,
         submissionDate: form.submissionDate || null,
       };
@@ -250,7 +247,7 @@ export function AdminInvoicesClient({
       r.projectName,
       r.amount != null ? String(r.amount) : "",
       r.currency,
-      r.status || "",
+      paymentByInvoiceId[r.id]?.status ?? "",
       paymentByInvoiceId[r.id]?.code ?? "",
       r.comment,
       r.pdf?.url ?? "",
@@ -430,7 +427,11 @@ export function AdminInvoicesClient({
                         : "—"}
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap">
-                      <InvoiceStatusBadge status={r.status} />
+                      {payment ? (
+                        <StatusPill status={payment.status || "—"} />
+                      ) : (
+                        <span className="text-slate-300">No payment</span>
+                      )}
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       {payment ? (
@@ -534,16 +535,6 @@ export function AdminInvoicesClient({
               <option key={c} value={c}>{c}</option>
             ))}
           </FormSelect>
-          <FormSelect
-            label="Status"
-            value={form.status}
-            onChange={(v) => updateField("status", v)}
-          >
-            <option value="">—</option>
-            {INVOICE_STATUSES.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </FormSelect>
           <DateField
             label="Submission date"
             value={form.submissionDate}
@@ -595,11 +586,6 @@ export function AdminInvoicesClient({
   );
 }
 
-function InvoiceStatusBadge({ status }: { status: string }) {
-  if (!status) return <span className="text-slate-300">—</span>;
-  return <StatusPill status={status} />;
-}
-
 // Read-only detail shown when a member-invoice row is expanded.
 function InvoiceDetails({
   invoice,
@@ -607,7 +593,7 @@ function InvoiceDetails({
   onEdit,
 }: {
   invoice: MemberInvoiceRecord;
-  payment?: { id: string; code: string };
+  payment?: { id: string; code: string; status: string };
   onEdit: () => void;
 }) {
   const money =
@@ -635,7 +621,7 @@ function InvoiceDetails({
         <PField label="Staffing" value={invoice.staffingCode || "—"} mono />
         <PField label="Amount" value={money} blur />
         <PField label="Currency" value={invoice.currency || "—"} />
-        <PField label="Status" value={invoice.status || "—"} />
+        <PField label="Status" value={payment?.status || "—"} />
         <PField label="Submitted" value={submitted} />
       </dl>
 

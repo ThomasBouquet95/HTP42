@@ -20,11 +20,11 @@ export default async function AdminInvoicesPage() {
 
   // Map each member-invoice to the payment that references it, so the invoices
   // table can link straight to the corresponding payment.
-  const paymentByInvoiceId: Record<string, { id: string; code: string }> = {};
+  const paymentByInvoiceId: Record<string, { id: string; code: string; status: string }> = {};
   for (const p of payments) {
     for (const invId of p.memberInvoiceRecordIds) {
       if (!paymentByInvoiceId[invId]) {
-        paymentByInvoiceId[invId] = { id: p.id, code: p.paymentCode };
+        paymentByInvoiceId[invId] = { id: p.id, code: p.paymentCode, status: p.paymentStatus || "" };
       }
     }
   }
@@ -33,6 +33,11 @@ export default async function AdminInvoicesPage() {
   // auto-created payment (searchable by code on the Payments screen).
   const paymentCodeById: Record<string, string> = {};
   for (const p of payments) paymentCodeById[p.id] = p.paymentCode;
+
+  // Payment status by payment record id — lets an invoice derive its displayed
+  // status from the linked payment (member + automated).
+  const paymentStatusById: Record<string, string> = {};
+  for (const p of payments) paymentStatusById[p.id] = p.paymentStatus || "";
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
@@ -46,6 +51,7 @@ export default async function AdminInvoicesPage() {
         paymentByInvoiceId={paymentByInvoiceId}
         vendorInvoices={vendorInvoices}
         paymentCodeById={paymentCodeById}
+        paymentStatusById={paymentStatusById}
         mailbox={env.automatedInvoiceMailbox}
         projectCode={env.automatedInvoiceProjectCode}
       />

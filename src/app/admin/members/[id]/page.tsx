@@ -8,6 +8,7 @@ import {
   listAllInvoices,
   listAllMembers,
   listAllTimesheets,
+  listPayments,
   listSignInActivity,
   listSurveys,
 } from "@/lib/airtable";
@@ -56,13 +57,25 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
   if (!session) redirect("/dashboard");
   const { id } = await params;
 
-  const [members, signIns, invoices, timesheets, surveys] = await Promise.all([
+  const [members, signIns, invoices, timesheets, surveys, payments] = await Promise.all([
     listAllMembers(),
     listSignInActivity(),
     listAllInvoices(),
     listAllTimesheets(),
     listSurveys(),
+    listPayments(),
   ]);
+
+  // Invoice status is derived from the linked payment. Map each member-invoice
+  // record id to the status of the payment that references it.
+  const paymentStatusByInvoiceId: Record<string, string> = {};
+  for (const p of payments) {
+    for (const invId of p.memberInvoiceRecordIds) {
+      if (!paymentStatusByInvoiceId[invId]) {
+        paymentStatusByInvoiceId[invId] = p.paymentStatus || "";
+      }
+    }
+  }
 
   const member = members.find((m) => m.id === id);
   if (!member) notFound();
@@ -282,7 +295,11 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
                           {money(i.amount, i.currency)}
                         </td>
                         <td className="px-2 py-1.5 text-center">
-                          {i.status ? <StatusPill status={i.status} /> : <span className="text-slate-300">—</span>}
+                          {paymentStatusByInvoiceId[i.id] ? (
+                            <StatusPill status={paymentStatusByInvoiceId[i.id]} />
+                          ) : (
+                            <span className="text-slate-300">No payment</span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-center">
                           <DownloadChip url={i.pdf?.url} title="Open invoice PDF" emptyTitle="No PDF" />

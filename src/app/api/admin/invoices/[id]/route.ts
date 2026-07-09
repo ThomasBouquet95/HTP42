@@ -9,7 +9,6 @@ export const runtime = "nodejs";
 const patchSchema = z.object({
   amount: z.number().nullable().optional(),
   currency: z.string().optional(),
-  status: z.string().optional(),
   comment: z.string().optional(),
   submissionDate: z.string().optional(),
 });
@@ -33,7 +32,6 @@ export async function PATCH(
     await updateMemberInvoice(id, {
       amount: d.amount ?? null,
       currency: d.currency ?? "",
-      status: d.status ?? "",
       comment: d.comment ?? "",
       submissionDate: d.submissionDate ? d.submissionDate : null,
     });

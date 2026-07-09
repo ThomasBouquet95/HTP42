@@ -9,11 +9,12 @@ import { Modal, ConfirmDialog } from "@/components/modal";
 import { SearchInput } from "@/components/search-input";
 import { StatusPill } from "@/components/badge";
 import { EditIcon } from "@/components/admin-icons";
-import type { VendorInvoiceRecord, VendorInvoiceStatus } from "@/lib/airtable";
+import type { VendorInvoiceRecord } from "@/lib/airtable";
 
 type Props = {
   invoices: VendorInvoiceRecord[];
   paymentCodeById?: Record<string, string>;
+  paymentStatusById?: Record<string, string>;
   mailbox: string;
   projectCode: string;
 };
@@ -29,7 +30,7 @@ function prettyDate(raw: string): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-const STATUS_FILTERS = ["All", "Paid", "Needs Review", "Filed"] as const;
+const STATUS_FILTERS = ["All", "Needs review", "To be paid", "Paid"] as const;
 
 type EditForm = {
   vendor: string;
@@ -38,7 +39,6 @@ type EditForm = {
   amount: string;
   currency: string;
   projectCode: string;
-  status: VendorInvoiceStatus;
   notes: string;
 };
 
@@ -50,13 +50,24 @@ function fromInvoice(inv: VendorInvoiceRecord): EditForm {
     amount: inv.amount == null ? "" : String(inv.amount),
     currency: inv.currency || "EUR",
     projectCode: inv.projectCode,
-    status: inv.status || "Needs Review",
     notes: inv.notes,
   };
 }
 
-export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, projectCode }: Props) {
+export function VendorInvoicesClient({
+  invoices,
+  paymentCodeById,
+  paymentStatusById,
+  mailbox,
+  projectCode,
+}: Props) {
   const router = useRouter();
+
+  // Displayed status is derived from the linked payment. When an invoice has a
+  // payment we show that payment's status (defaulting to "Paid" for the paired
+  // outflow); with no payment yet it still needs a human to review + pay it.
+  const derivedStatus = (inv: VendorInvoiceRecord) =>
+    inv.paymentId ? paymentStatusById?.[inv.paymentId] || "Paid" : "Needs review";
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string>("");
@@ -152,8 +163,40 @@ export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, proje
           amount: form.amount.trim() === "" ? null : Number(form.amount),
           currency: form.currency,
           projectCode: form.projectCode,
-          status: form.status,
           notes: form.notes,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Could not save.");
+        return;
+      }
+      setEditing(null);
+      router.refresh();
+    } catch {
+      setError("Could not save — please retry.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function markPaid() {
+    if (!editing) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/vendor-invoices/${editing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vendor: form.vendor,
+          invoiceNumber: form.invoiceNumber,
+          invoiceDate: form.invoiceDate,
+          amount: form.amount.trim() === "" ? null : Number(form.amount),
+          currency: form.currency,
+          projectCode: form.projectCode,
+          notes: form.notes,
+          markPaid: true,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -195,7 +238,11 @@ export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, proje
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return invoices.filter((inv) => {
-      if (statusFilter !== "All" && (inv.status || "") !== statusFilter) return false;
+      if (
+        statusFilter !== "All" &&
+        derivedStatus(inv).toLowerCase() !== statusFilter.toLowerCase()
+      )
+        return false;
       if (q) {
         const haystack = [inv.vendor, inv.invoiceNumber, inv.emailSubject]
           .filter(Boolean)
@@ -317,11 +364,7 @@ export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, proje
                         {money(inv.amount, inv.currency)}
                       </td>
                       <td className="px-2 py-1.5 text-center">
-                        {inv.status ? (
-                          <StatusPill status={inv.status} />
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
+                        <StatusPill status={derivedStatus(inv)} />
                       </td>
                       <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
                         {inv.paymentId ? (
@@ -359,6 +402,7 @@ export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, proje
                         <td colSpan={7} className="px-3 py-3">
                           <InvoiceDetails
                             invoice={inv}
+                            status={derivedStatus(inv)}
                             paymentCode={inv.paymentId ? paymentCodeById?.[inv.paymentId] ?? "" : ""}
                             onEdit={() => openEdit(inv)}
                           />
@@ -437,21 +481,18 @@ export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, proje
             value={form.projectCode}
             onChange={(v) => updateField("projectCode", v)}
           />
-          <FormSelect
-            label="Status"
-            value={form.status}
-            onChange={(v) => updateField("status", v as VendorInvoiceStatus)}
-            hint={
-              form.status === "Paid" && !editing?.paymentId ? (
-                <span className="text-slate-500">Saving as Paid creates the matching payment.</span>
-              ) : undefined
-            }
-          >
-            <option value="Paid">Paid</option>
-            <option value="Needs Review">Needs review</option>
-            <option value="Filed">Filed</option>
-          </FormSelect>
         </div>
+
+        {editing && !editing.paymentId && Number(form.amount) > 0 ? (
+          <div className="mt-3 flex items-center gap-3 rounded-md bg-slate-50 px-3 py-2.5 text-xs ring-1 ring-slate-100">
+            <span className="text-slate-600">
+              No payment yet — mark this invoice paid to create the matching payment.
+            </span>
+            <Button tone="primary" size="sm" className="ml-auto" onClick={markPaid} disabled={saving}>
+              {saving ? "Working…" : "Mark as paid"}
+            </Button>
+          </div>
+        ) : null}
 
         <div className="mt-3">
           <FormTextarea label="Notes" value={form.notes} onChange={(v) => updateField("notes", v)} rows={2} />
@@ -483,10 +524,12 @@ export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, proje
 // Read-only detail shown when a vendor-invoice row is expanded.
 function InvoiceDetails({
   invoice,
+  status,
   paymentCode,
   onEdit,
 }: {
   invoice: VendorInvoiceRecord;
+  status: string;
   paymentCode: string;
   onEdit: () => void;
 }) {
@@ -500,7 +543,12 @@ function InvoiceDetails({
         <Field label="Currency" value={invoice.currency || "—"} />
         <Field label="Amount (EUR)" value={money(invoice.amountEur, "EUR")} blur />
         <Field label="Project code" value={invoice.projectCode || "—"} />
-        <Field label="Status" value={invoice.status || "—"} />
+        <div>
+          <dt className="text-[10px] uppercase tracking-wide text-slate-400">Status</dt>
+          <dd className="mt-0.5">
+            <StatusPill status={status} />
+          </dd>
+        </div>
       </dl>
 
       {invoice.notes ? (

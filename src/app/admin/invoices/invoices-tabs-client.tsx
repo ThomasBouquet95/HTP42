@@ -16,18 +16,22 @@ export function InvoicesTabsClient({
   paymentByInvoiceId,
   vendorInvoices,
   paymentCodeById,
+  paymentStatusById,
   mailbox,
   projectCode,
 }: {
   memberInvoices: MemberInvoiceRecord[];
-  paymentByInvoiceId: Record<string, { id: string; code: string }>;
+  paymentByInvoiceId: Record<string, { id: string; code: string; status: string }>;
   vendorInvoices: VendorInvoiceRecord[];
   paymentCodeById: Record<string, string>;
+  paymentStatusById: Record<string, string>;
   mailbox: string;
   projectCode: string;
 }) {
   const [tab, setTab] = useState<Tab>("member");
-  const needsReview = vendorInvoices.filter((i) => i.status === "Needs Review").length;
+  // "Needs review" = an automated invoice not yet turned into a payment
+  // (status is derived from the linked payment, so no payment = needs review).
+  const needsReview = vendorInvoices.filter((i) => !i.paymentId).length;
 
   return (
     <div className="space-y-4">
@@ -61,6 +65,7 @@ export function InvoicesTabsClient({
         <VendorInvoicesClient
           invoices={vendorInvoices}
           paymentCodeById={paymentCodeById}
+          paymentStatusById={paymentStatusById}
           mailbox={mailbox}
           projectCode={projectCode}
         />
