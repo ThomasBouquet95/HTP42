@@ -79,6 +79,7 @@ export type MemberGroup = {
   memberName: string;
   memberCode: string;
   underReview: ReviewBundle[];
+  toBePaid: ReviewBundle[];
   past: ReviewBundle[];
 };
 
@@ -180,10 +181,16 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
     [data, selectedId],
   );
 
-  // On (re)selecting a member, default under-review cards open and past ones
-  // collapsed. User toggles persist until the selection or data changes.
+  // On (re)selecting a member, default the actionable cards open (to-be-paid
+  // and under-review) and past ones collapsed. User toggles persist until the
+  // selection or data changes.
   useEffect(() => {
-    setOpenItems(new Set(selected?.underReview.map((b) => b.payment.id) ?? []));
+    setOpenItems(
+      new Set([
+        ...(selected?.toBePaid.map((b) => b.payment.id) ?? []),
+        ...(selected?.underReview.map((b) => b.payment.id) ?? []),
+      ]),
+    );
   }, [selected]);
 
   // Keep a valid selection as the (filtered) list changes.
@@ -207,23 +214,24 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(d.error ?? `Update failed (HTTP ${res.status})`);
       }
-      // Optimistically move the payment out of "under review" into "past" for
-      // its member; router.refresh() then reconciles with the server.
+      // Optimistically move the payment between buckets (under review → to be
+      // paid → past) for its member; router.refresh() then reconciles.
+      const toPay = status === "To be paid" || status === "Scheduled";
       setData((ds) =>
         ds.map((g) => {
-          const b = g.underReview.find((x) => x.payment.id === id);
+          const b =
+            g.underReview.find((x) => x.payment.id === id) ??
+            g.toBePaid.find((x) => x.payment.id === id);
           if (!b) return g;
-          // Move the same bundle into "past" with its new status/payment date so
-          // the detail (invoice, timesheets, staffing, SOW) is preserved.
           const moved: ReviewBundle = {
             ...b,
             payment: { ...b.payment, status, paymentDate: paymentDate ?? b.payment.paymentDate },
           };
-          return {
-            ...g,
-            underReview: g.underReview.filter((x) => x.payment.id !== id),
-            past: [moved, ...g.past],
-          };
+          const underReview = g.underReview.filter((x) => x.payment.id !== id);
+          const toBePaid = g.toBePaid.filter((x) => x.payment.id !== id);
+          return toPay
+            ? { ...g, underReview, toBePaid: [moved, ...toBePaid] }
+            : { ...g, underReview, toBePaid, past: [moved, ...g.past] };
         }),
       );
       setToast({ kind: "ok", msg: `Marked ${status}` });
@@ -282,14 +290,17 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
                         {g.memberName || g.memberCode || "—"}
                       </div>
                       <div className="text-[11px] text-slate-400">
-                        {g.past.length} past payment{g.past.length === 1 ? "" : "s"}
+                        {g.toBePaid.length} to pay · {g.past.length} past
                       </div>
                     </div>
-                    {g.underReview.length > 0 ? (
-                      <Badge tone="warning" className="shrink-0">
-                        {g.underReview.length} to review
-                      </Badge>
-                    ) : null}
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {g.underReview.length > 0 ? (
+                        <Badge tone="warning">{g.underReview.length} to review</Badge>
+                      ) : null}
+                      {g.toBePaid.length > 0 ? (
+                        <Badge tone="info">{g.toBePaid.length} to pay</Badge>
+                      ) : null}
+                    </div>
                   </button>
                 </li>
               );
@@ -310,9 +321,9 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
             ) : null}
           </div>
 
-          {/* Under review */}
+          {/* Under review → approve to move to "To be paid" */}
           <div>
-            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
               Under review · {selected.underReview.length}
             </h3>
             {selected.underReview.length === 0 ? (
@@ -325,12 +336,41 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
                   <BundleDetail
                     key={b.payment.id}
                     bundle={b}
+                    accent="review"
                     saving={savingId === b.payment.id}
                     open={openItems.has(b.payment.id)}
                     onToggle={() => toggleItem(b.payment.id)}
                     expandedTs={expandedTs}
                     toggleTs={toggleTs}
                     onApprove={() => setStatus(b.payment.id, "To be paid")}
+                    onCancel={() => setStatus(b.payment.id, "Canceled")}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* To be paid → approved, awaiting the actual payment */}
+          <div>
+            <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+              To be paid · {selected.toBePaid.length}
+            </h3>
+            {selected.toBePaid.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
+                Nothing awaiting payment for this member.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {selected.toBePaid.map((b) => (
+                  <BundleDetail
+                    key={b.payment.id}
+                    bundle={b}
+                    accent="topay"
+                    saving={savingId === b.payment.id}
+                    open={openItems.has(b.payment.id)}
+                    onToggle={() => toggleItem(b.payment.id)}
+                    expandedTs={expandedTs}
+                    toggleTs={toggleTs}
                     onMarkPaid={() => setPaidTargetId(b.payment.id)}
                     onCancel={() => setStatus(b.payment.id, "Canceled")}
                   />
@@ -341,7 +381,7 @@ export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
 
           {/* Past payments */}
           <div>
-            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
               Past payments · {selected.past.length}
             </h3>
             {selected.past.length === 0 ? (
@@ -394,6 +434,7 @@ function BundleDetail({
   bundle: selected,
   saving = false,
   readOnly = false,
+  accent = "review",
   open,
   onToggle,
   expandedTs,
@@ -405,6 +446,7 @@ function BundleDetail({
   bundle: ReviewBundle;
   saving?: boolean;
   readOnly?: boolean;
+  accent?: "review" | "topay" | "past";
   open: boolean;
   onToggle: () => void;
   expandedTs: Set<string>;
@@ -414,11 +456,20 @@ function BundleDetail({
   onCancel?: () => void;
 }) {
   const tone = readOnly ? statusTone(selected.payment.status) : "review";
-  const statusLabel = readOnly ? selected.payment.status || "—" : "Under review";
+  const isToPay = accent === "topay";
+  const statusLabel = readOnly
+    ? selected.payment.status || "—"
+    : isToPay
+    ? "To be paid"
+    : "Under review";
   return (
     <div
       className={`overflow-hidden rounded-lg border bg-white ${
-        readOnly ? "border-slate-200" : "border-amber-300 ring-1 ring-amber-100"
+        readOnly
+          ? "border-slate-200"
+          : isToPay
+          ? "border-brand-200 ring-1 ring-brand-100"
+          : "border-amber-300 ring-1 ring-amber-100"
       }`}
     >
       {/* Header + actions */}
@@ -473,20 +524,26 @@ function BundleDetail({
         ) : null}
         {!readOnly ? (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button tone="primary" size="sm" disabled={saving} onClick={onApprove}>
-              Approve → To be paid
-            </Button>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={onMarkPaid}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Mark paid
-            </button>
-            <Button tone="danger" size="sm" disabled={saving} onClick={onCancel}>
-              Cancel
-            </Button>
+            {onApprove ? (
+              <Button tone="primary" size="sm" disabled={saving} onClick={onApprove}>
+                Approve → To be paid
+              </Button>
+            ) : null}
+            {onMarkPaid ? (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={onMarkPaid}
+                className="inline-flex items-center justify-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Mark as paid
+              </button>
+            ) : null}
+            {onCancel ? (
+              <Button tone="danger" size="sm" disabled={saving} onClick={onCancel}>
+                Cancel
+              </Button>
+            ) : null}
             <Link
               href={`/admin/payments?search=${encodeURIComponent(selected.payment.code)}`}
               className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700"

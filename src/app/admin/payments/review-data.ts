@@ -155,7 +155,7 @@ export function buildReviewGroups(input: Inputs): {
   function ensureGroup(memberId: string, name: string, code: string): MemberGroup {
     let g = groupMap.get(memberId);
     if (!g) {
-      g = { memberId, memberName: name, memberCode: code, underReview: [], past: [] };
+      g = { memberId, memberName: name, memberCode: code, underReview: [], toBePaid: [], past: [] };
       groupMap.set(memberId, g);
     } else {
       if (!g.memberName && name) g.memberName = name;
@@ -180,22 +180,31 @@ export function buildReviewGroups(input: Inputs): {
     if (!memberId) continue;
     const m = memberById.get(memberId);
     const g = ensureGroup(memberId, m?.fullName || "", m?.memberCode || p.memberCodes[0] || "");
-    if (isUnderReview(p.paymentStatus)) g.underReview.push(buildBundle(p));
+    const s = p.paymentStatus;
+    if (isUnderReview(s)) g.underReview.push(buildBundle(p));
+    else if (s === "To be paid" || s === "Scheduled") g.toBePaid.push(buildBundle(p));
     else g.past.push(buildBundle(p));
   }
 
+  const byRecency = (a: ReviewBundle, b: ReviewBundle) =>
+    (b.payment.paymentDate ?? b.payment.invoiceDate ?? "").localeCompare(
+      a.payment.paymentDate ?? a.payment.invoiceDate ?? "",
+    );
   const groups = [...groupMap.values()]
     .map((g) => ({
       ...g,
-      past: g.past.sort((a, b) =>
-        (b.payment.paymentDate ?? b.payment.invoiceDate ?? "").localeCompare(
-          a.payment.paymentDate ?? a.payment.invoiceDate ?? "",
+      // Oldest-due first for items awaiting payment; newest first for history.
+      toBePaid: g.toBePaid.sort((a, b) =>
+        (a.payment.dueDate ?? a.payment.invoiceDate ?? "").localeCompare(
+          b.payment.dueDate ?? b.payment.invoiceDate ?? "",
         ),
       ),
+      past: g.past.sort(byRecency),
     }))
+    // Members needing action (under review or to be paid) rise to the top.
     .sort(
       (a, b) =>
-        b.underReview.length - a.underReview.length ||
+        b.underReview.length + b.toBePaid.length - (a.underReview.length + a.toBePaid.length) ||
         (a.memberName || a.memberCode).localeCompare(b.memberName || b.memberCode),
     );
 
