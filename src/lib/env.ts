@@ -51,7 +51,7 @@ export const env = {
   // importer reads PDF attachments from here via Microsoft Graph (the Azure
   // app needs Mail.Read application permission granted for this mailbox).
   get itInvoiceMailbox() {
-    return process.env.IT_INVOICE_MAILBOX ?? "billing@NETORGFT14090071.onmicrosoft.com";
+    return process.env.IT_INVOICE_MAILBOX ?? "automatedbilling@htp42.com";
   },
   // Internal project code every imported IT invoice is filed under.
   get itInvoiceProjectCode() {
