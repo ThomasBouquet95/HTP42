@@ -68,6 +68,7 @@ const STATUS_TONE: Record<string, BadgeTone> = {
   "pending signature": "warning",
   "needs review": "warning",
   "on hold": "warning",
+  "partially active": "warning",
   "at risk": "warning",
   "to be paid": "warning",
   "awaiting payment": "warning",

@@ -173,6 +173,7 @@ so the admin demo toggle can blur them.
 | Text/select/textarea | `FormField`, `FormSelect`, `FormTextarea` | `form-controls.tsx` |
 | Single date field | `DateField` | `date-picker.tsx` |
 | Status pill | `Badge`, `StatusPill` | `badge.tsx` |
+| Editable status dropdown | `StatusSelect` | `status-select.tsx` |
 | Document open/download | `DownloadChip` | `download-chip.tsx` |
 | Modal / confirm | `Modal`, `ConfirmDialog` | `modal.tsx` |
 | Icons | `EditIcon`, `TrashIcon`, … | `admin-icons.tsx` |
