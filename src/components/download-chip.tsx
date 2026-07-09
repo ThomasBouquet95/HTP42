@@ -1,8 +1,11 @@
+"use client";
+
 // Shared "open / download a document" affordance used across the admin
 // tables (payments, contracts, invoices, member CVs) so they all look
 // identical: a small square brand-tinted chip with a document icon.
 // When there is no document, a faint disabled chip is shown instead so
-// the column still aligns.
+// the column still aligns. It's a client component (the anchor stops row
+// click propagation), so it can be dropped into Server Components too.
 export function DownloadChip({
   url,
   title = "Open document",
