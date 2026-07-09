@@ -15,8 +15,19 @@ export function FilterBar({ children, className }: { children: ReactNode; classN
   );
 }
 
-// Labeled dropdown filter. Label is small uppercase slate; the select is a
-// compact form-control that turns brand-tinted when a value is active.
+// Shared control chrome so every filter (select, date, search) is the same
+// height and shape and lines up in one row.
+const FILTER_H = "h-8";
+const chevronBg = {
+  backgroundImage:
+    "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'><path fill='none' stroke='%2394a3b8' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round' d='M1.5 3l2.5 2.5L6.5 3'/></svg>\")",
+  backgroundRepeat: "no-repeat",
+  backgroundPosition: "right 8px center",
+  backgroundSize: "8px 8px",
+} as const;
+
+// Self-labeling dropdown filter: shows the "All X" option as its resting label
+// (no separate caption), turns brand-tinted + medium when a value is picked.
 export function FilterSelect({
   label,
   value,
@@ -32,27 +43,36 @@ export function FilterSelect({
 }) {
   const active = value !== "All";
   return (
-    <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
-      <span className="uppercase tracking-wide">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={`max-w-[12rem] rounded-md border bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 ${
-          active ? "border-brand-300 text-brand-800" : "border-slate-300 text-slate-700"
-        }`}
-      >
-        <option value="All">{allLabel}</option>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
+    <select
+      aria-label={label}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={chevronBg}
+      className={`${FILTER_H} max-w-[13rem] appearance-none truncate rounded-md border bg-white pl-2.5 pr-7 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 ${
+        active ? "border-brand-300 font-medium text-brand-800" : "border-slate-300 text-slate-600"
+      }`}
+    >
+      <option value="All">{allLabel}</option>
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
   );
 }
 
-// Calendar-backed date-range filter (uses the app-wide CalendarRange popover).
+// Short "8 Jul" style for the chip; keeps the resting label from wrapping.
+function shortDate(raw: string): string {
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+// Self-labeling calendar date-range chip: rests showing its label (e.g.
+// "Due date"), shows a tidy "8 Jul – 20 Jul" range with an inline clear when
+// set. Uses the app-wide CalendarRange popover.
 export function FilterDateRange({
   label,
   from,
@@ -69,20 +89,37 @@ export function FilterDateRange({
   const [open, setOpen] = useState(false);
   const active = !!from && !!to;
   return (
-    <div className="relative inline-flex items-center gap-1.5 text-[11px] text-slate-500">
-      <span className="uppercase tracking-wide">{label}</span>
+    <div className="relative inline-flex">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`inline-flex items-center gap-1 rounded-md border bg-white px-2 py-1 text-xs ${
-          active ? "border-brand-300 text-brand-800" : "border-slate-300 text-slate-700"
+        aria-label={label}
+        className={`inline-flex ${FILTER_H} items-center gap-1.5 rounded-md border bg-white pl-2.5 pr-2 text-xs ${
+          active ? "border-brand-300 font-medium text-brand-800" : "border-slate-300 text-slate-600"
         }`}
       >
-        <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden>
+        <svg viewBox="0 0 16 16" className={`h-3.5 w-3.5 ${active ? "text-brand-500" : "text-slate-400"}`} fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden>
           <rect x="2.5" y="3" width="11" height="10.5" rx="1.5" />
           <path d="M2.5 6h11M5.5 2v2M10.5 2v2" strokeLinecap="round" />
         </svg>
-        {active ? `${from} → ${to}` : "Any"}
+        {active ? `${shortDate(from)} – ${shortDate(to)}` : label}
+        {active ? (
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label={`Clear ${label}`}
+            onClick={(e) => { e.stopPropagation(); onFrom(""); onTo(""); }}
+            className="ml-0.5 rounded-sm p-0.5 text-brand-500 hover:bg-brand-50 hover:text-brand-700"
+          >
+            <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+              <path d="M3 3l6 6M9 3l-6 6" strokeLinecap="round" />
+            </svg>
+          </span>
+        ) : (
+          <svg viewBox="0 0 8 8" className="h-2 w-2 text-slate-400" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden>
+            <path d="M1.5 3l2.5 2.5L6.5 3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
       </button>
       {open ? (
         <>
@@ -93,6 +130,7 @@ export function FilterDateRange({
             onClick={() => setOpen(false)}
           />
           <div className="absolute left-0 top-full z-50 mt-1 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+            <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
             <CalendarRange from={from} to={to} onChange={(f, t) => { onFrom(f); onTo(t); }} />
             <div className="mt-2 flex justify-end gap-3 text-[11px]">
               <button type="button" onClick={() => { onFrom(""); onTo(""); }} className="text-slate-500 hover:text-slate-800">
