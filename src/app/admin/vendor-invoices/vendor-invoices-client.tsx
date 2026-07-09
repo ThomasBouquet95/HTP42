@@ -9,6 +9,7 @@ import type { VendorInvoiceRecord, VendorInvoiceStatus } from "@/lib/airtable";
 
 type Props = {
   invoices: VendorInvoiceRecord[];
+  paymentCodeById?: Record<string, string>;
   mailbox: string;
   projectCode: string;
 };
@@ -24,7 +25,7 @@ function prettyDate(raw: string): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-export function VendorInvoicesClient({ invoices, mailbox, projectCode }: Props) {
+export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, projectCode }: Props) {
   const router = useRouter();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [importing, setImporting] = useState(false);
@@ -174,7 +175,11 @@ export function VendorInvoicesClient({ invoices, mailbox, projectCode }: Props) 
                       <tr className="border-t border-slate-100 bg-slate-50/60">
                         <td />
                         <td colSpan={6} className="px-3 py-3">
-                          <InvoiceDetail invoice={inv} onChanged={() => router.refresh()} />
+                          <InvoiceDetail
+                            invoice={inv}
+                            paymentCode={inv.paymentId ? paymentCodeById?.[inv.paymentId] ?? "" : ""}
+                            onChanged={() => router.refresh()}
+                          />
                         </td>
                       </tr>
                     ) : null}
@@ -191,9 +196,11 @@ export function VendorInvoicesClient({ invoices, mailbox, projectCode }: Props) 
 
 function InvoiceDetail({
   invoice,
+  paymentCode,
   onChanged,
 }: {
   invoice: VendorInvoiceRecord;
+  paymentCode: string;
   onChanged: () => void;
 }) {
   const [vendor, setVendor] = useState(invoice.vendor);
@@ -288,6 +295,21 @@ function InvoiceDetail({
       </div>
 
       <FormTextarea label="Notes" value={notes} onChange={setNotes} rows={2} />
+
+      {/* Linked payment — these invoices are already paid, so each has a
+          matching Paid payment. Link straight to it on the Payments screen. */}
+      {invoice.paymentId ? (
+        <div className="flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-2 text-xs text-emerald-800 ring-1 ring-emerald-100">
+          <span className="font-medium">Paid</span>
+          <span className="text-emerald-700">· a matching payment was created.</span>
+          <a
+            href={`/admin/payments?search=${encodeURIComponent(paymentCode || invoice.paymentId)}`}
+            className="ml-auto inline-flex items-center gap-1 font-medium text-emerald-800 underline-offset-2 hover:underline"
+          >
+            {paymentCode ? `View payment ${paymentCode}` : "View payment"} ↗
+          </a>
+        </div>
+      ) : null}
 
       {/* Source email — read only, so you can trace where it came from. */}
       <dl className="grid grid-cols-1 gap-x-4 gap-y-1 rounded-md bg-white px-3 py-2 text-xs ring-1 ring-slate-100 sm:grid-cols-3">

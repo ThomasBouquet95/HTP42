@@ -28,6 +28,11 @@ export default async function AdminInvoicesPage() {
     }
   }
 
+  // Payment code by record id, so an automated invoice can link to its
+  // auto-created payment (searchable by code on the Payments screen).
+  const paymentCodeById: Record<string, string> = {};
+  for (const p of payments) paymentCodeById[p.id] = p.paymentCode;
+
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <AdminTabs active="invoices" />
@@ -41,6 +46,7 @@ export default async function AdminInvoicesPage() {
         memberInvoices={invoices}
         paymentByInvoiceId={paymentByInvoiceId}
         vendorInvoices={vendorInvoices}
+        paymentCodeById={paymentCodeById}
         mailbox={env.automatedInvoiceMailbox}
         projectCode={env.automatedInvoiceProjectCode}
       />

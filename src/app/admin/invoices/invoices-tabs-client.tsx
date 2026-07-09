@@ -15,12 +15,14 @@ export function InvoicesTabsClient({
   memberInvoices,
   paymentByInvoiceId,
   vendorInvoices,
+  paymentCodeById,
   mailbox,
   projectCode,
 }: {
   memberInvoices: MemberInvoiceRecord[];
   paymentByInvoiceId: Record<string, { id: string; code: string }>;
   vendorInvoices: VendorInvoiceRecord[];
+  paymentCodeById: Record<string, string>;
   mailbox: string;
   projectCode: string;
 }) {
@@ -58,6 +60,7 @@ export function InvoicesTabsClient({
       ) : (
         <VendorInvoicesClient
           invoices={vendorInvoices}
+          paymentCodeById={paymentCodeById}
           mailbox={mailbox}
           projectCode={projectCode}
         />

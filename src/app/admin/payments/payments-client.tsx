@@ -267,6 +267,10 @@ export function PaymentsClient({
   };
   const [filters, setFilters] = useState<Filters>({
     ...DEFAULT_FILTERS,
+    // Arriving via a search link (e.g. from an automated invoice's payment
+    // link) should surface the match regardless of direction — the default
+    // Inflow tab would otherwise hide an outflow result.
+    direction: initialSearch ? "All" : DEFAULT_FILTERS.direction,
     search: initialSearch ?? "",
   });
   const [sort, setSort] = useState<{ key: SortKey | null; dir: SortDir }>({
