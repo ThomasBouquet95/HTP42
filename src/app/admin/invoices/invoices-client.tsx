@@ -1,11 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { DownloadChip } from "@/components/download-chip";
 import { DateField } from "@/components/date-picker";
 import { StatusPill } from "@/components/badge";
-import { Button } from "@/components/form-controls";
+import { Modal, ConfirmDialog } from "@/components/modal";
+import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { EditIcon } from "@/components/admin-icons";
+import { CURRENCIES, INVOICE_STATUSES } from "@/lib/airtable";
 import type { MemberInvoiceRecord } from "@/lib/airtable";
 
 type Filters = {
@@ -26,6 +30,24 @@ const DEFAULT_FILTERS: Filters = {
   to: "",
 };
 
+type EditForm = {
+  amount: string;
+  currency: string;
+  status: string;
+  comment: string;
+  submissionDate: string;
+};
+
+function fromInvoice(r: MemberInvoiceRecord): EditForm {
+  return {
+    amount: r.amount == null ? "" : String(r.amount),
+    currency: r.currency ?? "",
+    status: r.status ?? "",
+    comment: r.comment ?? "",
+    submissionDate: (r.submissionDate ?? "").slice(0, 10),
+  };
+}
+
 export function AdminInvoicesClient({
   invoices,
   paymentByInvoiceId,
@@ -33,6 +55,7 @@ export function AdminInvoicesClient({
   invoices: MemberInvoiceRecord[];
   paymentByInvoiceId: Record<string, { id: string; code: string }>;
 }) {
+  const router = useRouter();
   const [rows, setRows] = useState(invoices);
   useEffect(() => setRows(invoices), [invoices]);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -42,6 +65,86 @@ export function AdminInvoicesClient({
     const t = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(t);
   }, [toast]);
+
+  const [editing, setEditing] = useState<MemberInvoiceRecord | null>(null);
+  const [form, setForm] = useState<EditForm>(fromInvoice({} as MemberInvoiceRecord));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MemberInvoiceRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const currencyOptions = useMemo(() => {
+    const set = new Set<string>(CURRENCIES as readonly string[]);
+    for (const r of rows) if (r.currency) set.add(r.currency);
+    return [...set].sort();
+  }, [rows]);
+
+  function openEdit(r: MemberInvoiceRecord) {
+    setEditing(r);
+    setForm(fromInvoice(r));
+    setError(null);
+  }
+  function closeModal() {
+    if (saving) return;
+    setEditing(null);
+    setError(null);
+  }
+  function updateField<K extends keyof EditForm>(key: K, value: EditForm[K]) {
+    setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  async function submit() {
+    if (!editing) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const body = {
+        amount: form.amount === "" ? null : Number(form.amount),
+        currency: form.currency,
+        status: form.status,
+        comment: form.comment,
+        submissionDate: form.submissionDate || null,
+      };
+      const res = await fetch(`/api/admin/invoices/${editing.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? "Save failed.");
+      }
+      setEditing(null);
+      setToast({ kind: "ok", msg: "Invoice updated" });
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/admin/invoices/${deleteTarget.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? "Delete failed.");
+      }
+      const wasEditing = editing?.id === deleteTarget.id;
+      setDeleteTarget(null);
+      if (wasEditing) setEditing(null);
+      setToast({ kind: "ok", msg: "Invoice deleted" });
+      router.refresh();
+    } catch (e) {
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Delete failed." });
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((p) => {
@@ -236,12 +339,13 @@ export function AdminInvoicesClient({
               <th className="text-left px-2 py-1.5 font-medium">Payment</th>
               <th className="text-left px-2 py-1.5 font-medium">PDF</th>
               <th className="text-left px-2 py-1.5 font-medium">Comment</th>
+              <th className="px-2 py-1.5 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="text-center text-slate-500 py-10">
+                <td colSpan={10} className="text-center text-slate-500 py-10">
                   No invoices match these filters.
                 </td>
               </tr>
@@ -329,6 +433,17 @@ export function AdminInvoicesClient({
                         {r.comment || "—"}
                       </div>
                     </td>
+                    <td className="px-2 py-1.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(r)}
+                        title="Edit"
+                        aria-label="Edit"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                      >
+                        <EditIcon />
+                      </button>
+                    </td>
                   </tr>
                 );
               })
@@ -336,6 +451,96 @@ export function AdminInvoicesClient({
           </tbody>
         </table>
       </div>
+
+      <Modal
+        open={!!editing}
+        onClose={closeModal}
+        busy={saving}
+        title={`Edit ${editing?.invoiceCode || "invoice"}`}
+        size="lg"
+        footer={
+          <>
+            {editing ? (
+              <Button
+                tone="danger"
+                size="sm"
+                disabled={saving}
+                onClick={() => setDeleteTarget(editing)}
+                className="mr-auto"
+              >
+                Delete
+              </Button>
+            ) : null}
+            <Button tone="secondary" size="sm" onClick={closeModal} disabled={saving}>
+              Cancel
+            </Button>
+            <Button tone="primary" size="sm" onClick={submit} disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField
+            label="Amount"
+            value={form.amount}
+            onChange={(v) => updateField("amount", v)}
+            type="number"
+          />
+          <FormSelect
+            label="Currency"
+            value={form.currency}
+            onChange={(v) => updateField("currency", v)}
+          >
+            <option value="">—</option>
+            {currencyOptions.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </FormSelect>
+          <FormSelect
+            label="Status"
+            value={form.status}
+            onChange={(v) => updateField("status", v)}
+          >
+            <option value="">—</option>
+            {INVOICE_STATUSES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </FormSelect>
+          <DateField
+            label="Submission date"
+            value={form.submissionDate}
+            onChange={(v) => updateField("submissionDate", v)}
+            placeholder="Pick a date"
+          />
+          <FormTextarea
+            label="Comment"
+            value={form.comment}
+            onChange={(v) => updateField("comment", v)}
+            rows={3}
+            className="sm:col-span-2"
+          />
+        </div>
+        {error ? (
+          <div className="mt-3 rounded-md bg-red-50 text-red-700 p-2.5 text-xs">{error}</div>
+        ) : null}
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete invoice?"
+        message={
+          <>
+            This will permanently remove invoice{" "}
+            <span className="font-mono">{deleteTarget?.invoiceCode}</span>. This cannot be undone.
+          </>
+        }
+        confirmLabel="Delete"
+        confirmTone="danger"
+        busy={deleting}
+        onCancel={() => (deleting ? undefined : setDeleteTarget(null))}
+        onConfirm={confirmDelete}
+      />
 
       {toast ? (
         <div

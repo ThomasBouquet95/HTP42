@@ -1993,6 +1993,34 @@ export async function updateInvoiceStatus(
   ]);
 }
 
+export type MemberInvoiceUpdateInput = {
+  amount: number | null;
+  currency: string;
+  status: string;
+  comment: string;
+  submissionDate: string | null;
+};
+
+// Admin edit of a member invoice. Writes only the editable fields — the PDF
+// and the linked member/project/staffing are left untouched. typecast:true so
+// the Status single-select accepts its canonical choices without complaint.
+export async function updateMemberInvoice(
+  recordId: string,
+  input: MemberInvoiceUpdateInput,
+): Promise<void> {
+  const fields: Record<string, unknown> = {
+    [FIELDS.memberInvoices.amount]: input.amount,
+    [FIELDS.memberInvoices.currency]: input.currency === "" ? null : input.currency,
+    [FIELDS.memberInvoices.status]: input.status === "" ? null : input.status,
+    [FIELDS.memberInvoices.comment]: input.comment,
+    [FIELDS.memberInvoices.submissionDate]: input.submissionDate,
+  };
+  await base(TABLES.memberInvoices).update(
+    [{ id: recordId, fields: fields as FieldSet }],
+    { typecast: true },
+  );
+}
+
 export async function deleteInvoice(recordId: string): Promise<void> {
   await base(TABLES.memberInvoices).destroy([recordId]);
 }
