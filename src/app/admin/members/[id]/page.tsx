@@ -4,7 +4,6 @@ import { requireAdminSession } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { DownloadChip } from "@/components/download-chip";
 import { Badge, StatusPill } from "@/components/badge";
-import { StarRating } from "@/components/star-rating";
 import {
   listAllInvoices,
   listAllMembers,
@@ -222,7 +221,7 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
             ) : (
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
-                  <StarRating value={avgGrade} readOnly size={16} />
+                  <Stars value={avgGrade} size={16} />
                   <span className="text-xs text-slate-500">
                     {avgGrade != null ? avgGrade.toFixed(1) : "—"} avg · {reviews.length} review
                     {reviews.length === 1 ? "" : "s"}
@@ -235,7 +234,7 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
                         <div className="min-w-0 truncate text-xs font-medium text-slate-800 demo-blur">
                           {r.project}
                         </div>
-                        {r.grade != null ? <StarRating value={r.grade} readOnly size={13} /> : null}
+                        {r.grade != null ? <Stars value={r.grade} size={13} /> : null}
                       </div>
                       {r.wentWell ? (
                         <p className="mt-1 text-[11px] text-slate-600 demo-blur">
@@ -374,6 +373,47 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="text-xs text-slate-500">{children}</p>;
+}
+
+// Server-safe read-only star display (0–5, half steps). Kept inline so this
+// page stays a pure Server Component.
+function Stars({ value, size = 14 }: { value: number | null; size?: number }) {
+  const v = Number.isFinite(value as number) ? (value as number) : 0;
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 text-amber-500"
+      aria-label={value != null ? `${value} out of 5` : "unrated"}
+    >
+      {[1, 2, 3, 4, 5].map((i) => {
+        const state = v >= i ? "full" : v >= i - 0.5 ? "half" : "empty";
+        return <StarGlyph key={i} state={state} size={size} />;
+      })}
+    </span>
+  );
+}
+
+function StarGlyph({ state, size }: { state: "full" | "half" | "empty"; size: number }) {
+  const path =
+    "M8 1.6l1.9 3.85 4.25.62-3.07 3 .72 4.23L8 11.9 4.19 13.3l.72-4.23-3.07-3 4.25-.62z";
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
+      {state === "half" ? (
+        <defs>
+          <linearGradient id="half">
+            <stop offset="50%" stopColor="currentColor" />
+            <stop offset="50%" stopColor="transparent" />
+          </linearGradient>
+        </defs>
+      ) : null}
+      <path
+        d={path}
+        fill={state === "full" ? "currentColor" : state === "half" ? "url(#half)" : "none"}
+        stroke="currentColor"
+        strokeWidth="1"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 // Compact 14-day open-activity strip from the per-day counts.
