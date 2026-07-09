@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { DownloadChip } from "@/components/download-chip";
@@ -58,6 +58,15 @@ export function AdminInvoicesClient({
   const router = useRouter();
   const [rows, setRows] = useState(invoices);
   useEffect(() => setRows(invoices), [invoices]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  function toggle(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
@@ -330,6 +339,7 @@ export function AdminInvoicesClient({
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
+              <th className="w-6 px-1 py-1.5" />
               <th className="text-left px-2 py-1.5 font-medium">Submitted</th>
               <th className="text-left px-2 py-1.5 font-medium">Invoice</th>
               <th className="text-left px-2 py-1.5 font-medium">Member</th>
@@ -345,15 +355,39 @@ export function AdminInvoicesClient({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center text-slate-500 py-10">
+                <td colSpan={11} className="text-center text-slate-500 py-10">
                   No invoices match these filters.
                 </td>
               </tr>
             ) : (
               filtered.map((r) => {
                 const payment = paymentByInvoiceId[r.id];
+                const open = expanded.has(r.id);
                 return (
-                  <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50 align-top">
+                  <Fragment key={r.id}>
+                  <tr
+                    onClick={() => toggle(r.id)}
+                    aria-expanded={open}
+                    className="cursor-pointer border-t border-slate-100 hover:bg-slate-50 align-top"
+                    title="Click for full details"
+                  >
+                    <td className="px-1 py-1.5 text-center">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 12 12"
+                        fill="none"
+                        className={`inline text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+                      >
+                        <path
+                          d="M4.5 3 7.5 6 4.5 9"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </td>
                     <td className="px-2 py-1.5 whitespace-nowrap text-slate-600">
                       {r.submissionDate
                         ? new Date(r.submissionDate).toLocaleString("en-GB", {
@@ -404,7 +438,7 @@ export function AdminInvoicesClient({
                     <td className="px-2 py-1.5 whitespace-nowrap">
                       <InvoiceStatusBadge status={r.status} />
                     </td>
-                    <td className="px-2 py-1.5 whitespace-nowrap">
+                    <td className="px-2 py-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       {payment ? (
                         <Link
                           href={`/admin/payments?search=${encodeURIComponent(payment.code)}`}
@@ -418,7 +452,7 @@ export function AdminInvoicesClient({
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
-                    <td className="px-2 py-1.5">
+                    <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                       <DownloadChip
                         url={r.pdf?.url}
                         title={`Open ${r.pdf?.filename || "PDF"}`}
@@ -433,7 +467,7 @@ export function AdminInvoicesClient({
                         {r.comment || "—"}
                       </div>
                     </td>
-                    <td className="px-2 py-1.5 text-right">
+                    <td className="px-2 py-1.5 text-right" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         onClick={() => openEdit(r)}
@@ -445,6 +479,15 @@ export function AdminInvoicesClient({
                       </button>
                     </td>
                   </tr>
+                  {open ? (
+                    <tr className="border-t border-slate-100 bg-slate-50/60">
+                      <td />
+                      <td colSpan={10} className="px-3 py-3">
+                        <InvoiceDetails invoice={r} payment={payment} onEdit={() => openEdit(r)} />
+                      </td>
+                    </tr>
+                  ) : null}
+                  </Fragment>
                 );
               })
             )}
@@ -561,6 +604,84 @@ export function AdminInvoicesClient({
 function InvoiceStatusBadge({ status }: { status: string }) {
   if (!status) return <span className="text-slate-300">—</span>;
   return <StatusPill status={status} />;
+}
+
+// Read-only detail shown when a member-invoice row is expanded.
+function InvoiceDetails({
+  invoice,
+  payment,
+  onEdit,
+}: {
+  invoice: MemberInvoiceRecord;
+  payment?: { id: string; code: string };
+  onEdit: () => void;
+}) {
+  const money =
+    invoice.amount != null
+      ? `${invoice.amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}${
+          invoice.currency ? " " + invoice.currency : ""
+        }`
+      : "—";
+  const submitted = invoice.submissionDate
+    ? new Date(invoice.submissionDate).toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "—";
+  return (
+    <div className="space-y-3">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+        <PField label="Member" value={invoice.memberName || "—"} blur />
+        <PField label="Member code" value={invoice.memberCode || "—"} mono />
+        <PField label="Invoice code" value={invoice.invoiceCode || "—"} mono />
+        <PField label="Project" value={invoice.projectName || invoice.projectCode || "—"} blur />
+        <PField label="Staffing" value={invoice.staffingCode || "—"} mono />
+        <PField label="Amount" value={money} blur />
+        <PField label="Currency" value={invoice.currency || "—"} />
+        <PField label="Status" value={invoice.status || "—"} />
+        <PField label="Submitted" value={submitted} />
+      </dl>
+
+      {invoice.comment ? (
+        <p className="rounded-md bg-white p-2 text-[11px] text-slate-600 demo-blur">{invoice.comment}</p>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-3 text-[11px]">
+        <DownloadChip
+          url={invoice.pdf?.url}
+          title={`Open ${invoice.pdf?.filename || "PDF"}`}
+          emptyTitle="No PDF on file"
+        />
+        {payment ? (
+          <Link
+            href={`/admin/payments?search=${encodeURIComponent(payment.code)}`}
+            className="inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 font-mono text-[11px] text-brand-700 hover:bg-brand-100"
+            title="Open the corresponding payment"
+          >
+            {payment.code || "Payment"} <span aria-hidden>↗</span>
+          </Link>
+        ) : null}
+        <Button tone="secondary" size="sm" className="ml-auto" onClick={onEdit}>
+          <EditIcon />
+          Edit invoice
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function PField({ label, value, mono, blur }: { label: string; value: string; mono?: boolean; blur?: boolean }) {
+  return (
+    <div>
+      <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+      <dd className={`text-slate-800 ${mono ? "font-mono text-[11px]" : ""} ${blur ? "demo-blur" : ""}`}>
+        {value || "—"}
+      </dd>
+    </div>
+  );
 }
 
 function Select({

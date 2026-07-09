@@ -1,12 +1,14 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DownloadChip } from "@/components/download-chip";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { DateField } from "@/components/date-picker";
-import { ConfirmDialog } from "@/components/modal";
+import { Modal, ConfirmDialog } from "@/components/modal";
+import { SearchInput } from "@/components/search-input";
 import { StatusPill } from "@/components/badge";
+import { EditIcon } from "@/components/admin-icons";
 import type { VendorInvoiceRecord, VendorInvoiceStatus } from "@/lib/airtable";
 
 type Props = {
@@ -27,11 +29,50 @@ function prettyDate(raw: string): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
+const STATUS_FILTERS = ["All", "Paid", "Needs Review", "Filed"] as const;
+
+type EditForm = {
+  vendor: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  amount: string;
+  currency: string;
+  projectCode: string;
+  status: VendorInvoiceStatus;
+  notes: string;
+};
+
+function fromInvoice(inv: VendorInvoiceRecord): EditForm {
+  return {
+    vendor: inv.vendor,
+    invoiceNumber: inv.invoiceNumber,
+    invoiceDate: inv.invoiceDate,
+    amount: inv.amount == null ? "" : String(inv.amount),
+    currency: inv.currency || "EUR",
+    projectCode: inv.projectCode,
+    status: inv.status || "Needs Review",
+    notes: inv.notes,
+  };
+}
+
 export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, projectCode }: Props) {
   const router = useRouter();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string>("");
+
+  // Client-side filters over the invoices prop.
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("All");
+
+  // Edit modal state — mirrors the payments screen: the expanded row is a
+  // read-only panel, edits happen in a modal.
+  const [editing, setEditing] = useState<VendorInvoiceRecord | null>(null);
+  const [form, setForm] = useState<EditForm>(fromInvoice({} as VendorInvoiceRecord));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<VendorInvoiceRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   function toggle(id: string) {
     setExpanded((prev) => {
@@ -40,6 +81,20 @@ export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, proje
       else next.add(id);
       return next;
     });
+  }
+
+  function openEdit(inv: VendorInvoiceRecord) {
+    setEditing(inv);
+    setForm(fromInvoice(inv));
+    setError(null);
+  }
+  function closeModal() {
+    if (saving) return;
+    setEditing(null);
+    setError(null);
+  }
+  function updateField<K extends keyof EditForm>(key: K, value: EditForm[K]) {
+    setForm((f) => ({ ...f, [key]: value }));
   }
 
   async function runImport() {
@@ -82,6 +137,76 @@ export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, proje
     }
   }
 
+  async function submit() {
+    if (!editing) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/vendor-invoices/${editing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vendor: form.vendor,
+          invoiceNumber: form.invoiceNumber,
+          invoiceDate: form.invoiceDate,
+          amount: form.amount.trim() === "" ? null : Number(form.amount),
+          currency: form.currency,
+          projectCode: form.projectCode,
+          status: form.status,
+          notes: form.notes,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Could not save.");
+        return;
+      }
+      setEditing(null);
+      router.refresh();
+    } catch {
+      setError("Could not save — please retry.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/vendor-invoices/${deleteTarget.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Could not delete.");
+        return;
+      }
+      const wasEditing = editing?.id === deleteTarget.id;
+      setDeleteTarget(null);
+      if (wasEditing) setEditing(null);
+      router.refresh();
+    } catch {
+      setError("Could not delete — please retry.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return invoices.filter((inv) => {
+      if (statusFilter !== "All" && (inv.status || "") !== statusFilter) return false;
+      if (q) {
+        const haystack = [inv.vendor, inv.invoiceNumber, inv.emailSubject]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [invoices, search, statusFilter]);
+
   const totalEur = invoices.reduce((s, i) => s + (i.amountEur ?? 0), 0);
 
   return (
@@ -101,9 +226,35 @@ export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, proje
         </div>
       </div>
 
-      <div className="text-xs text-slate-500">
-        Total on file:{" "}
-        <span className="demo-blur font-medium text-slate-700">{money(totalEur, "EUR")}</span>
+      {/* Filters + total. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search by vendor, invoice #, subject…"
+          ariaLabel="Search vendor invoices"
+          className="w-64"
+        />
+        <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+          <span className="uppercase tracking-wide">Status</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className={`rounded-md border bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 ${
+              statusFilter !== "All" ? "border-brand-300 text-brand-800" : "border-slate-300 text-slate-700"
+            }`}
+          >
+            {STATUS_FILTERS.map((s) => (
+              <option key={s} value={s}>
+                {s === "All" ? "All statuses" : s}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="ml-auto text-xs text-slate-500">
+          Total on file:{" "}
+          <span className="demo-blur font-medium text-slate-700">{money(totalEur, "EUR")}</span>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -117,18 +268,20 @@ export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, proje
               <th className="px-2 py-1.5 text-right font-medium">Amount</th>
               <th className="px-2 py-1.5 text-center font-medium">Status</th>
               <th className="px-2 py-1.5 text-center font-medium">Payment</th>
-              <th className="px-2 py-1.5 text-center font-medium">PDF</th>
+              <th className="px-2 py-1.5 text-right font-medium">PDF</th>
             </tr>
           </thead>
           <tbody>
-            {invoices.length === 0 ? (
+            {filtered.length === 0 ? (
               <tr>
                 <td colSpan={8} className="text-center text-slate-500 py-10">
-                  No automated invoices on file yet. They import automatically each night, or use “Import now”.
+                  {invoices.length === 0
+                    ? "No automated invoices on file yet. They import automatically each night, or use “Import now”."
+                    : "No automated invoices match these filters."}
                 </td>
               </tr>
             ) : (
-              invoices.map((inv) => {
+              filtered.map((inv) => {
                 const open = expanded.has(inv.id);
                 return (
                   <Fragment key={inv.id}>
@@ -185,18 +338,29 @@ export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, proje
                           <span className="text-slate-300">—</span>
                         )}
                       </td>
-                      <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
-                        <DownloadChip url={inv.pdf?.url} title="Open invoice PDF" emptyTitle="No PDF" />
+                      <td className="px-2 py-1.5 text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="inline-flex items-center gap-1">
+                          <DownloadChip url={inv.pdf?.url} title="Open invoice PDF" emptyTitle="No PDF" />
+                          <button
+                            type="button"
+                            onClick={() => openEdit(inv)}
+                            title="Edit"
+                            aria-label="Edit"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                          >
+                            <EditIcon />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     {open ? (
                       <tr className="border-t border-slate-100 bg-slate-50/60">
                         <td />
                         <td colSpan={7} className="px-3 py-3">
-                          <InvoiceDetail
+                          <InvoiceDetails
                             invoice={inv}
                             paymentCode={inv.paymentId ? paymentCodeById?.[inv.paymentId] ?? "" : ""}
-                            onChanged={() => router.refresh()}
+                            onEdit={() => openEdit(inv)}
                           />
                         </td>
                       </tr>
@@ -208,111 +372,140 @@ export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, proje
           </tbody>
         </table>
       </div>
+
+      <Modal
+        open={!!editing}
+        onClose={closeModal}
+        busy={saving}
+        title={`Edit ${editing?.vendor || "invoice"}`}
+        size="lg"
+        footer={
+          <>
+            {editing ? (
+              <Button
+                tone="danger"
+                size="sm"
+                disabled={saving}
+                onClick={() => setDeleteTarget(editing)}
+                className="mr-auto"
+              >
+                Delete
+              </Button>
+            ) : null}
+            <Button tone="secondary" size="sm" onClick={closeModal} disabled={saving}>
+              Cancel
+            </Button>
+            <Button tone="primary" size="sm" onClick={submit} disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <FormField
+            label="Vendor"
+            value={form.vendor}
+            onChange={(v) => updateField("vendor", v)}
+            inputClassName="demo-blur"
+          />
+          <FormField
+            label="Invoice number"
+            value={form.invoiceNumber}
+            onChange={(v) => updateField("invoiceNumber", v)}
+            inputClassName="demo-blur"
+          />
+          <DateField
+            label="Invoice date"
+            value={form.invoiceDate}
+            onChange={(v) => updateField("invoiceDate", v)}
+          />
+          <FormField
+            label="Amount"
+            value={form.amount}
+            onChange={(v) => updateField("amount", v)}
+            type="number"
+            inputClassName="demo-blur"
+          />
+          <FormSelect label="Currency" value={form.currency} onChange={(v) => updateField("currency", v)}>
+            <option value="EUR">EUR</option>
+            <option value="USD">USD</option>
+            <option value="CHF">CHF</option>
+            <option value="GBP">GBP</option>
+          </FormSelect>
+          <FormField
+            label="Project code"
+            value={form.projectCode}
+            onChange={(v) => updateField("projectCode", v)}
+          />
+          <FormSelect
+            label="Status"
+            value={form.status}
+            onChange={(v) => updateField("status", v as VendorInvoiceStatus)}
+            hint={
+              form.status === "Paid" && !editing?.paymentId ? (
+                <span className="text-slate-500">Saving as Paid creates the matching payment.</span>
+              ) : undefined
+            }
+          >
+            <option value="Paid">Paid</option>
+            <option value="Needs Review">Needs review</option>
+            <option value="Filed">Filed</option>
+          </FormSelect>
+        </div>
+
+        <div className="mt-3">
+          <FormTextarea label="Notes" value={form.notes} onChange={(v) => updateField("notes", v)} rows={2} />
+        </div>
+
+        {error ? (
+          <div className="mt-3 rounded-md bg-red-50 text-red-700 p-2.5 text-xs">{error}</div>
+        ) : null}
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete invoice?"
+        message={
+          deleteTarget?.paymentId
+            ? "This will permanently remove this invoice — if a linked payment exists it's removed too. This cannot be undone."
+            : "This will permanently remove this invoice record. This cannot be undone."
+        }
+        confirmLabel="Delete"
+        confirmTone="danger"
+        busy={deleting}
+        onCancel={() => (deleting ? undefined : setDeleteTarget(null))}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }
 
-function InvoiceDetail({
+// Read-only detail shown when a vendor-invoice row is expanded.
+function InvoiceDetails({
   invoice,
   paymentCode,
-  onChanged,
+  onEdit,
 }: {
   invoice: VendorInvoiceRecord;
   paymentCode: string;
-  onChanged: () => void;
+  onEdit: () => void;
 }) {
-  const [vendor, setVendor] = useState(invoice.vendor);
-  const [invoiceNumber, setInvoiceNumber] = useState(invoice.invoiceNumber);
-  const [invoiceDate, setInvoiceDate] = useState(invoice.invoiceDate);
-  const [amount, setAmount] = useState(invoice.amount == null ? "" : String(invoice.amount));
-  const [currency, setCurrency] = useState(invoice.currency || "EUR");
-  const [projectCode, setProjectCode] = useState(invoice.projectCode);
-  const [status, setStatus] = useState<VendorInvoiceStatus>(invoice.status || "Needs Review");
-  const [notes, setNotes] = useState(invoice.notes);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  async function save() {
-    setSaving(true);
-    setError("");
-    try {
-      const res = await fetch(`/api/admin/vendor-invoices/${invoice.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          vendor,
-          invoiceNumber,
-          invoiceDate,
-          amount: amount.trim() === "" ? null : Number(amount),
-          currency,
-          projectCode,
-          status,
-          notes,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data.error || "Could not save.");
-        return;
-      }
-      onChanged();
-    } catch {
-      setError("Could not save — please retry.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function remove() {
-    setSaving(true);
-    setError("");
-    try {
-      const res = await fetch(`/api/admin/vendor-invoices/${invoice.id}`, { method: "DELETE" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || "Could not delete.");
-        return;
-      }
-      onChanged();
-    } catch {
-      setError("Could not delete — please retry.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <FormField label="Vendor" value={vendor} onChange={setVendor} inputClassName="demo-blur" />
-        <FormField label="Invoice number" value={invoiceNumber} onChange={setInvoiceNumber} inputClassName="demo-blur" />
-        <DateField label="Invoice date" value={invoiceDate} onChange={setInvoiceDate} />
-        <FormField label="Amount" value={amount} onChange={setAmount} type="number" inputClassName="demo-blur" />
-        <FormSelect label="Currency" value={currency} onChange={setCurrency}>
-          <option value="EUR">EUR</option>
-          <option value="USD">USD</option>
-          <option value="CHF">CHF</option>
-          <option value="GBP">GBP</option>
-        </FormSelect>
-        <FormField label="Project code" value={projectCode} onChange={setProjectCode} />
-        <FormSelect
-          label="Status"
-          value={status}
-          onChange={(v) => setStatus(v as VendorInvoiceStatus)}
-          hint={
-            status === "Paid" && !invoice.paymentId ? (
-              <span className="text-slate-500">Saving as Paid creates the matching payment.</span>
-            ) : undefined
-          }
-        >
-          <option value="Paid">Paid</option>
-          <option value="Needs Review">Needs review</option>
-          <option value="Filed">Filed</option>
-        </FormSelect>
-      </div>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+        <Field label="Vendor" value={invoice.vendor || "—"} blur />
+        <Field label="Invoice number" value={invoice.invoiceNumber || "—"} blur />
+        <Field label="Invoice date" value={prettyDate(invoice.invoiceDate)} />
+        <Field label="Amount" value={money(invoice.amount, invoice.currency)} blur />
+        <Field label="Currency" value={invoice.currency || "—"} />
+        <Field label="Amount (EUR)" value={money(invoice.amountEur, "EUR")} blur />
+        <Field label="Project code" value={invoice.projectCode || "—"} />
+        <Field label="Status" value={invoice.status || "—"} />
+      </dl>
 
-      <FormTextarea label="Notes" value={notes} onChange={setNotes} rows={2} />
+      {invoice.notes ? (
+        <p className="rounded-md bg-white p-2 text-[11px] text-slate-600 demo-blur">{invoice.notes}</p>
+      ) : null}
 
       {/* Linked payment — these invoices are already paid, so each has a
           matching Paid payment. Link straight to it on the Payments screen. */}
@@ -333,35 +526,16 @@ function InvoiceDetail({
       <dl className="grid grid-cols-1 gap-x-4 gap-y-1 rounded-md bg-white px-3 py-2 text-xs ring-1 ring-slate-100 sm:grid-cols-3">
         <Field label="From" value={invoice.emailFrom || "—"} />
         <Field label="Received" value={prettyDate(invoice.receivedAt)} />
-        <Field label="Amount (EUR)" value={money(invoice.amountEur, "EUR")} blur />
         <Field label="Email subject" value={invoice.emailSubject || "—"} className="sm:col-span-3" />
       </dl>
 
-      {error ? <div className="text-xs text-red-600">{error}</div> : null}
-
-      <div className="flex items-center justify-between gap-2">
-        <Button tone="danger" size="sm" onClick={() => setConfirmDelete(true)} disabled={saving}>
-          Delete
-        </Button>
-        <Button tone="primary" size="sm" onClick={save} disabled={saving}>
-          {saving ? "Saving…" : "Save"}
+      <div className="flex flex-wrap items-center gap-3 text-[11px]">
+        <DownloadChip url={invoice.pdf?.url} title="Open invoice PDF" emptyTitle="No PDF on file" />
+        <Button tone="secondary" size="sm" className="ml-auto" onClick={onEdit}>
+          <EditIcon />
+          Edit invoice
         </Button>
       </div>
-
-      <ConfirmDialog
-        open={confirmDelete}
-        title="Delete invoice?"
-        message={
-          invoice.paymentId
-            ? "This will permanently remove this invoice and its linked payment. This cannot be undone."
-            : "This will permanently remove this invoice record. This cannot be undone."
-        }
-        confirmLabel="Delete"
-        confirmTone="danger"
-        busy={saving}
-        onCancel={() => (saving ? undefined : setConfirmDelete(false))}
-        onConfirm={remove}
-      />
     </div>
   );
 }
