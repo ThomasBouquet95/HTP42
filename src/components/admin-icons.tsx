@@ -58,6 +58,20 @@ export function TrashIcon() {
   );
 }
 
+export function RefreshIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M20 11a8 8 0 1 0-.6 4M20 5v6h-6"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function IconButton({
   onClick,
   title,

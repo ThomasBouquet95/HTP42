@@ -19,7 +19,11 @@ export const retributionSchema = z
     percent: z.number().min(0).max(1000).optional(),
     dailyAmount: z.number().min(0).max(1_000_000_000).optional(),
     workedStaffingId: z.string().trim().default(""),
-    costBasis: z.enum(RETRIBUTION_BASES as [string, ...string[]]),
+    // Basis (in-price vs on-top) only applies to percentage rows; per-day
+    // rows send "" (a flat cost carries no basis).
+    costBasis: z
+      .union([z.enum(RETRIBUTION_BASES as [string, ...string[]]), z.literal("")])
+      .default(""),
     memberRecordId: z.string().trim().min(1, "Pick a member."),
     memberCode: z.string().trim().max(40).default(""),
   })
@@ -38,6 +42,10 @@ export const retributionSchema = z
   .refine((d) => d.amountType !== "Per day worked" || d.workedStaffingId.length > 0, {
     message: "Pick the consultant whose days count.",
     path: ["workedStaffingId"],
+  })
+  .refine((d) => d.amountType !== "Percentage" || d.costBasis.length > 0, {
+    message: "Pick a basis.",
+    path: ["costBasis"],
   });
 
 export type RetributionBody = z.infer<typeof retributionSchema>;

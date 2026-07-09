@@ -6,7 +6,7 @@ import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
 import { Badge } from "@/components/badge";
-import { EditIcon, TrashIcon, IconButton } from "@/components/admin-icons";
+import { EditIcon, TrashIcon, IconButton, RefreshIcon } from "@/components/admin-icons";
 
 export type ProjectOpt = {
   id: string;
@@ -104,6 +104,14 @@ export function RetributionClient({
   const [data, setData] = useState(rows);
   useEffect(() => setData(rows), [rows]);
   const [search, setSearch] = useState("");
+  // Per-day amounts are derived live from logged days, so "Refresh" just
+  // re-pulls the server data to reflect the latest timesheets.
+  const [refreshing, setRefreshing] = useState(false);
+  function refresh() {
+    setRefreshing(true);
+    router.refresh();
+    setTimeout(() => setRefreshing(false), 800);
+  }
 
   const countByProject = useMemo(() => {
     const m = new Map<string, number>();
@@ -264,7 +272,9 @@ export function RetributionClient({
         percent: isPerDay ? undefined : Number(form.percent),
         dailyAmount: isPerDay ? Number(form.dailyAmount) : undefined,
         workedStaffingId: isPerDay ? form.workedStaffingId : "",
-        costBasis: form.costBasis,
+        // Basis (in-price vs on-top) only applies to percentage rows; a
+        // per-day amount is a flat cost, so it carries no basis.
+        costBasis: isPerDay ? "" : form.costBasis,
         memberRecordId: form.memberRecordId,
         memberCode: members.find((m) => m.id === form.memberRecordId)?.code ?? "",
       };
@@ -357,7 +367,7 @@ export function RetributionClient({
                       </div>
                     </div>
                     {n > 0 ? (
-                      <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                      <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
                         {n}
                       </span>
                     ) : null}
@@ -379,7 +389,7 @@ export function RetributionClient({
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4">
               <div className="min-w-0">
-                <div className="text-sm font-semibold text-slate-900 demo-blur">
+                <div className="text-sm text-slate-800 demo-blur">
                   <span className="font-mono text-xs text-slate-500">{project.code}</span>{" "}
                   {project.name}
                 </div>
@@ -394,9 +404,17 @@ export function RetributionClient({
                   )}
                 </div>
               </div>
-              <Button tone="primary" size="sm" onClick={openCreate}>
-                + Add retribution
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button tone="secondary" size="sm" onClick={refresh} disabled={refreshing} title="Re-pull the latest logged days">
+                  <span className={refreshing ? "animate-spin" : ""}>
+                    <RefreshIcon />
+                  </span>
+                  {refreshing ? "Refreshing…" : "Refresh"}
+                </Button>
+                <Button tone="primary" size="sm" onClick={openCreate}>
+                  + Add retribution
+                </Button>
+              </div>
             </div>
 
             {/* Rows */}
@@ -441,9 +459,13 @@ export function RetributionClient({
                           )}
                         </td>
                         <td className="px-2 py-1.5">
-                          <BasisPill basis={r.costBasis} />
+                          {r.amountType === PER_DAY ? (
+                            <span className="text-slate-300">—</span>
+                          ) : (
+                            <BasisPill basis={r.costBasis} />
+                          )}
                         </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums font-medium demo-blur">
+                        <td className="px-2 py-1.5 text-right tabular-nums demo-blur">
                           {money(amountOf(r), project.currency)}
                         </td>
                         <td className="px-2 py-1.5">
@@ -490,7 +512,7 @@ export function RetributionClient({
             {/* Per person */}
             {perPerson.length > 0 ? (
               <div>
-                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
                   Per person
                 </h3>
                 <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -500,7 +522,7 @@ export function RetributionClient({
                         <div className="min-w-0 flex-1 truncate text-sm text-slate-800 demo-blur">
                           {p.name}
                         </div>
-                        <div className="shrink-0 text-right text-sm font-semibold tabular-nums text-slate-900 demo-blur">
+                        <div className="shrink-0 text-right text-sm font-medium tabular-nums text-slate-900 demo-blur">
                           {money(p.hasNull ? null : p.amount, project.currency)}
                         </div>
                       </li>
@@ -626,15 +648,17 @@ export function RetributionClient({
           </div>
         )}
 
-        <div className="mt-3">
-          <FormSelect label="Basis" value={form.costBasis} onChange={(v) => update("costBasis", v)}>
-            {bases.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </FormSelect>
-        </div>
+        {isPerDay ? null : (
+          <div className="mt-3">
+            <FormSelect label="Basis" value={form.costBasis} onChange={(v) => update("costBasis", v)}>
+              {bases.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </FormSelect>
+          </div>
+        )}
 
         {isPerDay && projectStaffings.length === 0 ? (
           <p className="mt-3 rounded-md bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
