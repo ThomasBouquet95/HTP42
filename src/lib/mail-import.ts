@@ -36,7 +36,10 @@ type GraphAttachment = {
 };
 
 function isPdf(a: GraphAttachment): boolean {
-  if (a["@odata.type"] !== "#microsoft.graph.fileAttachment") return false;
+  // Only real file attachments carry contentBytes (reference/OneDrive and
+  // item attachments don't) — that presence is the reliable signal. We do NOT
+  // check @odata.type here: it isn't returned when the attachments query uses
+  // $select, so requiring it silently rejected every attachment.
   if (!a.contentBytes) return false;
   const ct = (a.contentType ?? "").toLowerCase();
   const name = (a.name ?? "").toLowerCase();
@@ -47,7 +50,15 @@ function isPdf(a: GraphAttachment): boolean {
 // mailbox, then pull their PDF attachments. `limit` caps how many messages we
 // scan per run (newest first) so a huge mailbox never blocks the cron.
 export async function fetchInvoiceMails(limit = 50): Promise<
-  | { ok: true; invoices: MailInvoice[]; scanned: number; withAttachments: number }
+  | {
+      ok: true;
+      invoices: MailInvoice[];
+      scanned: number;
+      withAttachments: number;
+      // Compact list of attachment types seen (for the "0 with a PDF" case),
+      // so an admin can tell why nothing matched.
+      attachmentsSeen: Array<{ name: string; contentType: string; hasBytes: boolean }>;
+    }
   | { ok: false; error: string }
 > {
   const mailbox = env.automatedInvoiceMailbox;
@@ -82,15 +93,27 @@ export async function fetchInvoiceMails(limit = 50): Promise<
 
   const invoices: MailInvoice[] = [];
   let withAttachments = 0;
+  const attachmentsSeen: Array<{ name: string; contentType: string; hasBytes: boolean }> = [];
   for (const m of messages) {
     if (m.hasAttachments === false) continue;
     withAttachments += 1;
-    const attRes = await fetch(
-      `${base}/messages/${m.id}/attachments?$select=${encodeURIComponent("name,contentType,contentBytes")}`,
-      { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
-    );
+    // No $select here: with a projection Graph omits @odata.type and can omit
+    // contentBytes, so we fetch the full attachment objects.
+    const attRes = await fetch(`${base}/messages/${m.id}/attachments`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
     if (!attRes.ok) continue;
     const attData = (await attRes.json()) as { value?: GraphAttachment[] };
+    for (const a of attData.value ?? []) {
+      if (attachmentsSeen.length < 12) {
+        attachmentsSeen.push({
+          name: a.name ?? "",
+          contentType: a.contentType ?? "",
+          hasBytes: !!a.contentBytes,
+        });
+      }
+    }
     const pdfs = (attData.value ?? [])
       .filter(isPdf)
       .map((a) => ({ filename: a.name || "invoice.pdf", base64: a.contentBytes as string }));
@@ -103,5 +126,5 @@ export async function fetchInvoiceMails(limit = 50): Promise<
       pdfs,
     });
   }
-  return { ok: true, invoices, scanned: messages.length, withAttachments };
+  return { ok: true, invoices, scanned: messages.length, withAttachments, attachmentsSeen };
 }

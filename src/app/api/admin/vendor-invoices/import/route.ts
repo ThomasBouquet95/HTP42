@@ -139,6 +139,7 @@ async function run() {
     messagesScanned: mail.scanned,
     withAttachments: mail.withAttachments,
     withPdf: mail.invoices.length,
+    attachmentsSeen: mail.attachmentsSeen,
     errors,
   });
 }
