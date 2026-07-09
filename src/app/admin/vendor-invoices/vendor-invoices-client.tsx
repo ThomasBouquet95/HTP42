@@ -86,7 +86,7 @@ export function VendorInvoicesClient({ invoices, mailbox, projectCode }: Props) 
       {/* Import bar. */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2.5">
         <div className="text-xs text-slate-600">
-          Paid IT invoices are imported automatically each night from{" "}
+          Paid vendor invoices are imported automatically each night from{" "}
           <span className="font-mono text-[11px] text-slate-800">{mailbox}</span> and filed under{" "}
           <span className="font-mono text-[11px] text-slate-800">{projectCode}</span>.
         </div>
@@ -120,7 +120,7 @@ export function VendorInvoicesClient({ invoices, mailbox, projectCode }: Props) 
             {invoices.length === 0 ? (
               <tr>
                 <td colSpan={7} className="text-center text-slate-500 py-10">
-                  No IT invoices on file yet. They import automatically each night, or use “Import now”.
+                  No automated invoices on file yet. They import automatically each night, or use “Import now”.
                 </td>
               </tr>
             ) : (

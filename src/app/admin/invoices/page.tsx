@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
-import { listAllInvoices, listPayments } from "@/lib/airtable";
-import { AdminInvoicesClient } from "./invoices-client";
+import { listAllInvoices, listPayments, listVendorInvoices } from "@/lib/airtable";
+import { env } from "@/lib/env";
+import { InvoicesTabsClient } from "./invoices-tabs-client";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,11 @@ export default async function AdminInvoicesPage() {
   const session = await requireAdminSession();
   if (!session) redirect("/dashboard");
 
-  const [invoices, payments] = await Promise.all([listAllInvoices(), listPayments()]);
+  const [invoices, payments, vendorInvoices] = await Promise.all([
+    listAllInvoices(),
+    listPayments(),
+    listVendorInvoices(),
+  ]);
 
   // Map each member-invoice to the payment that references it, so the invoices
   // table can link straight to the corresponding payment.
@@ -27,10 +32,18 @@ export default async function AdminInvoicesPage() {
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <AdminTabs active="invoices" />
       <div className="mb-4 flex items-baseline gap-3">
-        <h1 className="text-base sm:text-lg font-semibold">Member invoices</h1>
-        <span className="text-xs text-slate-500">· {invoices.length} submitted</span>
+        <h1 className="text-base sm:text-lg font-semibold">Invoices</h1>
+        <span className="text-xs text-slate-500">
+          · {invoices.length} member · {vendorInvoices.length} automated
+        </span>
       </div>
-      <AdminInvoicesClient invoices={invoices} paymentByInvoiceId={paymentByInvoiceId} />
+      <InvoicesTabsClient
+        memberInvoices={invoices}
+        paymentByInvoiceId={paymentByInvoiceId}
+        vendorInvoices={vendorInvoices}
+        mailbox={env.automatedInvoiceMailbox}
+        projectCode={env.automatedInvoiceProjectCode}
+      />
     </main>
   );
 }

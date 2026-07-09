@@ -19,7 +19,6 @@ type PageKey =
   | "cockpit"
   | "paymentreview"
   | "retribution"
-  | "vendorinvoices"
   | "invoices"
   | "legalcockpit"
   | "contracts"
@@ -40,7 +39,6 @@ const CATEGORIES: Category[] = [
       { key: "networkcockpit", href: "/admin/network", label: "Cockpit" },
       { key: "members", href: "/admin/members", label: "Members" },
       { key: "memberreviews", href: "/admin/member-reviews", label: "Client review" },
-      { key: "invoices", href: "/admin/invoices", label: "Member invoices" },
       { key: "signins", href: "/admin/sign-ins", label: "App activity" },
     ],
   },
@@ -68,9 +66,9 @@ const CATEGORIES: Category[] = [
     pages: [
       { key: "cockpit", href: "/admin/cockpit", label: "Cockpit" },
       { key: "payments", href: "/admin/payments", label: "Payments" },
+      { key: "invoices", href: "/admin/invoices", label: "Invoices" },
       { key: "paymentreview", href: "/admin/payment-review", label: "Review" },
       { key: "retribution", href: "/admin/retribution", label: "Retribution" },
-      { key: "vendorinvoices", href: "/admin/vendor-invoices", label: "IT invoices" },
     ],
   },
   {

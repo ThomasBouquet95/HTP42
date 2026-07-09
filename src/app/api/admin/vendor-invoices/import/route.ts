@@ -108,6 +108,10 @@ async function run() {
     try {
       // Extract from the first PDF; attach every PDF to the record.
       const fields = await extractFields(m.pdfs[0].base64);
+      // Auto-file when the extraction is confident (a vendor AND an amount
+      // came through). Only flag the genuinely uncertain ones for a human
+      // glance, so the nightly run is effectively hands-off.
+      const confident = !!fields.vendor && fields.amount != null;
       const input: VendorInvoiceInput = {
         vendor: fields.vendor,
         invoiceNumber: fields.invoiceNumber,
@@ -115,7 +119,7 @@ async function run() {
         amount: fields.amount,
         currency: fields.currency || "EUR",
         projectCode: env.automatedInvoiceProjectCode,
-        status: "Needs Review",
+        status: confident ? "Filed" : "Needs Review",
         messageId: m.messageId,
         emailSubject: m.subject,
         emailFrom: m.from,
