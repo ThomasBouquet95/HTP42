@@ -111,7 +111,7 @@ async function run() {
         invoiceDate: fields.invoiceDate,
         amount: fields.amount,
         currency: fields.currency || "EUR",
-        projectCode: env.itInvoiceProjectCode,
+        projectCode: env.automatedInvoiceProjectCode,
         status: "Needs Review",
         messageId: m.messageId,
         emailSubject: m.subject,

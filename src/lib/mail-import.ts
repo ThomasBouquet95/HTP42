@@ -48,8 +48,8 @@ function isPdf(a: GraphAttachment): boolean {
 export async function fetchInvoiceMails(limit = 50): Promise<
   { ok: true; invoices: MailInvoice[] } | { ok: false; error: string }
 > {
-  const mailbox = env.itInvoiceMailbox;
-  if (!mailbox) return { ok: false, error: "IT_INVOICE_MAILBOX is not configured" };
+  const mailbox = env.automatedInvoiceMailbox;
+  if (!mailbox) return { ok: false, error: "AUTOMATED_INVOICE_MAILBOX is not configured" };
 
   let token: string;
   try {

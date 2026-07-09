@@ -26,8 +26,8 @@ export default async function AdminVendorInvoicesPage() {
       </div>
       <VendorInvoicesClient
         invoices={invoices}
-        mailbox={env.itInvoiceMailbox}
-        projectCode={env.itInvoiceProjectCode}
+        mailbox={env.automatedInvoiceMailbox}
+        projectCode={env.automatedInvoiceProjectCode}
       />
     </main>
   );

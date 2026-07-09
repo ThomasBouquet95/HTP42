@@ -47,14 +47,25 @@ export const env = {
   get anthropicApiKey() {
     return process.env.ANTHROPIC_API_KEY ?? "";
   },
-  // Shared mailbox that receives paid IT / vendor invoices. The nightly
+  // Shared mailbox that receives automated / paid vendor invoices. The nightly
   // importer reads PDF attachments from here via Microsoft Graph (the Azure
   // app needs Mail.Read application permission granted for this mailbox).
-  get itInvoiceMailbox() {
-    return process.env.IT_INVOICE_MAILBOX ?? "automatedbilling@htp42.com";
+  // Named generically ("automated invoice") since the scope may broaden beyond
+  // IT bills later. The legacy IT_INVOICE_* vars are still honoured as a
+  // fallback so an already-set value keeps working.
+  get automatedInvoiceMailbox() {
+    return (
+      process.env.AUTOMATED_INVOICE_MAILBOX ??
+      process.env.IT_INVOICE_MAILBOX ??
+      "automatedbilling@htp42.com"
+    );
   },
-  // Internal project code every imported IT invoice is filed under.
-  get itInvoiceProjectCode() {
-    return process.env.IT_INVOICE_PROJECT_CODE ?? "INT-IT";
+  // Internal project code every imported invoice is filed under.
+  get automatedInvoiceProjectCode() {
+    return (
+      process.env.AUTOMATED_INVOICE_PROJECT_CODE ??
+      process.env.IT_INVOICE_PROJECT_CODE ??
+      "INT-IT"
+    );
   },
 };
