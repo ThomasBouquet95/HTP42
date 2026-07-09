@@ -9,6 +9,7 @@ import type {
   MemberStatus,
 } from "@/lib/airtable";
 import { Button } from "@/components/form-controls";
+import { SegmentedTabs } from "@/components/filters";
 import { SearchInput } from "@/components/search-input";
 
 type MemberOpt = {
@@ -1250,14 +1251,14 @@ function Composer({
           className="flex-1 resize-none overflow-y-auto rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-brand-500/30"
           style={{ maxHeight: 160 }}
         />
-        <button
-          type="button"
+        <Button
+          tone="primary"
+          size="sm"
           onClick={onSend}
           disabled={disabled || value.trim().length === 0}
-          className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
         >
           Send
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -1274,7 +1275,7 @@ function ConversationAvatar({
 }) {
   if (conversation.kind === "Group") {
     return (
-      <div className="relative h-9 w-9 shrink-0 rounded-full bg-violet-50 text-violet-700 flex items-center justify-center">
+      <div className="relative h-9 w-9 shrink-0 rounded-full bg-brand-50 text-brand-700 flex items-center justify-center">
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6">
           <circle cx="9" cy="10" r="3" />
           <circle cx="17" cy="11" r="2.5" />
@@ -1469,7 +1470,7 @@ function NewChatModal({
       onClick={() => !busy && onClose()}
     >
       <div
-        className="relative w-full max-w-md rounded-xl bg-white shadow-xl ring-1 ring-slate-200"
+        className="relative w-full max-w-md rounded-lg bg-white shadow-xl ring-1 ring-slate-200"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
@@ -1486,33 +1487,20 @@ function NewChatModal({
           </button>
         </header>
         <div className="px-4 py-3 space-y-3">
-          <div className="inline-flex flex-wrap items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5">
-            {(
-              [
-                { v: "Direct" as const, label: "Direct" },
-                { v: "Group" as const, label: "Group" },
-                { v: "Project" as const, label: "Project" },
-              ]
-            ).map((opt) => {
-              const active = kind === opt.v;
-              return (
-                <button
-                  key={opt.v}
-                  type="button"
-                  onClick={() => {
-                    setKind(opt.v);
-                    setSelected(new Set());
-                    setProjectCode("");
-                  }}
-                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                    active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
+          <SegmentedTabs
+            value={kind}
+            onChange={(v) => {
+              setKind(v);
+              setSelected(new Set());
+              setProjectCode("");
+            }}
+            options={[
+              { value: "Direct", label: "Direct" },
+              { value: "Group", label: "Group" },
+              { value: "Project", label: "Project" },
+            ]}
+            ariaLabel="Conversation type"
+          />
 
           {kind === "Group" ? (
             <label className="block">

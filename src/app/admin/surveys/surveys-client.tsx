@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormSelect } from "@/components/form-controls";
+import { TrashIcon } from "@/components/admin-icons";
 import { Badge } from "@/components/badge";
 import { StarRating } from "@/components/star-rating";
 import type { SurveyRecord } from "@/lib/airtable";
@@ -249,9 +250,7 @@ export function SurveysClient({
                               aria-label="Delete survey"
                               title="Delete survey"
                             >
-                              <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-                                <path d="M3 4h10M6.5 4V2.8a.8.8 0 0 1 .8-.8h1.4a.8.8 0 0 1 .8.8V4m2 0-.5 8.4a1 1 0 0 1-1 .9H5.7a1 1 0 0 1-1-.9L4.2 4M6.7 6.8v4M9.3 6.8v4" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
+                              <TrashIcon />
                             </button>
                           </div>
                         </div>

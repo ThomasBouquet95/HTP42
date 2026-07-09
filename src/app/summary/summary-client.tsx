@@ -478,15 +478,12 @@ export function SummaryClient({
                   {editable ? (
                     <td className="px-2 py-1.5 text-right">
                       <div className="inline-flex items-center gap-1">
-                        <button
-                          type="button"
+                        <IconButton
                           onClick={() => setOpenTimesheetId(t.id)}
                           title={t.status === "Draft" ? "Edit" : "View"}
-                          aria-label={t.status === "Draft" ? "Edit" : "View"}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                         >
                           {t.status === "Draft" ? <EditIcon /> : <EyeIcon />}
-                        </button>
+                        </IconButton>
                         {t.status !== "Deleted" ? (
                           <IconButton
                             onClick={() => setDeleteTarget(t)}
