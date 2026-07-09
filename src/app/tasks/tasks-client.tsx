@@ -7,6 +7,7 @@ import { TASK_PRIORITIES, TASK_STATUSES } from "@/lib/airtable";
 import { ConfirmDialog } from "@/components/modal";
 import { DateField } from "@/components/date-picker";
 import { SearchInput } from "@/components/search-input";
+import { SegmentedTabs } from "@/components/filters";
 import { Button } from "@/components/form-controls";
 
 type ProjectOpt = { id: string; code: string; name: string };
@@ -313,57 +314,26 @@ export function TasksClient({
     }
   }
 
-  const personalPalette = {
-    activeBg: "bg-brand-600",
-    activeText: "text-white",
-    idleText: "text-brand-700 hover:bg-brand-50",
-    dot: "bg-brand-500",
-  };
-  const sharedPalette = {
-    activeBg: "bg-slate-500",
-    activeText: "text-white",
-    idleText: "text-slate-600 hover:bg-slate-100",
-    dot: "bg-slate-400",
-  };
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-sm">
-          {(
-            [
-              { v: "Personal", label: "Personal tasks", count: counts.personal, palette: personalPalette },
-              { v: "Shared", label: "Shared (projects)", count: counts.shared, palette: sharedPalette },
-            ] as const
-          ).map((opt) => {
-            const active = mode === opt.v;
-            const p = opt.palette;
-            return (
-              <button
-                key={opt.v}
-                type="button"
-                onClick={() => setMode(opt.v)}
-                aria-pressed={active}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  active ? `${p.activeBg} ${p.activeText} shadow-sm` : p.idleText
-                }`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${active ? "bg-white/80" : p.dot}`}
-                  aria-hidden
-                />
-                {opt.label}
-                <span
-                  className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
-                    active ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
-                  }`}
-                >
-                  {opt.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <SegmentedTabs
+          value={mode}
+          onChange={setMode}
+          ariaLabel="Personal or shared tasks"
+          options={[
+            {
+              value: "Personal",
+              label: "Personal tasks",
+              badge: <TabCount n={counts.personal} />,
+            },
+            {
+              value: "Shared",
+              label: "Shared (projects)",
+              badge: <TabCount n={counts.shared} />,
+            },
+          ]}
+        />
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 p-4">
@@ -439,29 +409,15 @@ export function TasksClient({
       </div>
 
       <div className="flex items-center">
-        <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-0.5 shadow-sm">
-          {(
-            [
-              { v: "list", label: "List" },
-              { v: "kanban", label: "Board" },
-            ] as const
-          ).map((opt) => {
-            const active = view === opt.v;
-            return (
-              <button
-                key={opt.v}
-                type="button"
-                onClick={() => setView(opt.v)}
-                aria-pressed={active}
-                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                  active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
+        <SegmentedTabs
+          value={view}
+          onChange={setView}
+          ariaLabel="Task view"
+          options={[
+            { value: "list", label: "List" },
+            { value: "kanban", label: "Board" },
+          ]}
+        />
       </div>
 
       {view === "kanban" ? (
@@ -1181,7 +1137,7 @@ function TaskModal({
       onClick={() => !submitting && onClose()}
     >
       <div
-        className="relative w-full max-w-2xl rounded-xl bg-white shadow-xl"
+        className="relative w-full max-w-2xl rounded-lg bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
@@ -1719,10 +1675,11 @@ function PlusIcon() {
   );
 }
 
-function CheckListIcon() {
+// Small neutral count pill for the Personal/Shared segmented tabs.
+function TabCount({ n }: { n: number }) {
   return (
-    <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-      <path d="M3 4l1.5 1.5L7 3M3 9l1.5 1.5L7 8M3 13.5L4.5 15 7 12.5M10 4h3M10 9h3M10 13h3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-slate-600">
+      {n}
+    </span>
   );
 }
