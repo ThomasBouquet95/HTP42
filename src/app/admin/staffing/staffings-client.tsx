@@ -345,7 +345,7 @@ export function StaffingsAdminClient({
           allLabel="All statuses"
           options={staffingStatuses.map((s) => ({ value: s, label: s }))}
         />
-        <Button tone="primary" onClick={openCreate}>+ New staffing</Button>
+        <Button tone="primary" size="sm" onClick={openCreate}>+ New staffing</Button>
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
@@ -723,11 +723,11 @@ function StaffingStatusSelect({
 }) {
   const cls =
     value === "In Progress"
-      ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+      ? "bg-brand-50 border-brand-300 text-brand-700"
       : value === "Completed"
-      ? "bg-slate-100 border-slate-300 text-slate-700"
+      ? "bg-emerald-50 border-emerald-300 text-emerald-800"
       : value === "Not Started"
-      ? "bg-sky-50 border-sky-300 text-sky-800"
+      ? "bg-slate-100 border-slate-300 text-slate-700"
       : "bg-white border-slate-300 text-slate-500";
   return (
     <select

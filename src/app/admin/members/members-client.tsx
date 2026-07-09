@@ -858,7 +858,7 @@ function MemberStatusSelect({
 }) {
   const cls =
     value === "Active"
-      ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+      ? "bg-brand-50 border-brand-300 text-brand-700"
       : value === "Partially Active"
       ? "bg-amber-50 border-amber-300 text-amber-800"
       : "bg-slate-100 border-slate-300 text-slate-700";
@@ -867,7 +867,7 @@ function MemberStatusSelect({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onClick={(e) => e.stopPropagation()}
-      className={`block w-full rounded-md px-1.5 py-0.5 text-[11px] font-medium ${cls} focus:outline-none focus:ring-1 focus:ring-brand-600`}
+      className={`block w-full rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${cls} focus:outline-none focus:ring-1 focus:ring-brand-600`}
     >
       {statuses.map((s) => (
         <option key={s} value={s}>

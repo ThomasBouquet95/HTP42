@@ -231,7 +231,7 @@ export function ClientsAdminClient({ clients }: Props) {
           placeholder="Search by code, name, industry, country…"
           className="flex-1"
         />
-        <Button tone="primary" onClick={openCreate}>+ New client</Button>
+        <Button tone="primary" size="sm" onClick={openCreate}>+ New client</Button>
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">

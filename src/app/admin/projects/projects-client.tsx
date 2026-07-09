@@ -8,7 +8,7 @@ import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-c
 import { SearchInput } from "@/components/search-input";
 import { Badge } from "@/components/badge";
 import { FilterSelect } from "@/components/filters";
-import { EditIcon } from "@/components/admin-icons";
+import { EditIcon, IconButton } from "@/components/admin-icons";
 import { DownloadChip } from "@/components/download-chip";
 import { DateRangeChip } from "@/components/date-range-chip";
 import { DateField, DatePopover, MonthPopover } from "@/components/date-picker";
@@ -616,15 +616,9 @@ export function ProjectsAdminClient({
                       className="px-2 py-1.5 text-right whitespace-nowrap"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <button
-                        type="button"
-                        onClick={() => openEdit(p)}
-                        title="Edit project"
-                        aria-label="Edit project"
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                      >
+                      <IconButton title="Edit project" onClick={() => openEdit(p)}>
                         <EditIcon />
-                      </button>
+                      </IconButton>
                     </td>
                   </tr>
                   {open ? (
@@ -1287,11 +1281,11 @@ function ProjectStatusSelect({
 }) {
   const cls =
     value === "In Progress"
-      ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+      ? "bg-brand-50 border-brand-300 text-brand-700"
       : value === "On Hold"
       ? "bg-amber-50 border-amber-300 text-amber-800"
       : value === "Completed"
-      ? "bg-blue-50 border-blue-300 text-blue-800"
+      ? "bg-emerald-50 border-emerald-300 text-emerald-800"
       : value === "Planned" || value === "Not Started"
       ? "bg-slate-100 border-slate-300 text-slate-700"
       : "bg-white border-slate-300 text-slate-700";
@@ -1300,7 +1294,7 @@ function ProjectStatusSelect({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onClick={(e) => e.stopPropagation()}
-      className={`block w-full rounded-md px-1.5 py-0.5 text-[11px] font-medium ${cls} focus:outline-none focus:ring-1 focus:ring-brand-600`}
+      className={`block w-full rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${cls} focus:outline-none focus:ring-1 focus:ring-brand-600`}
     >
       <option value="">—</option>
       {statuses.map((s) => (
