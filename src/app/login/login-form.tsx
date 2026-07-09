@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
+import { ButtonLink } from "@/components/form-controls";
 
 const errorMessages: Record<string, string> = {
   missing_token: "Sign-in was incomplete. Please try again.",
@@ -37,13 +38,10 @@ export default function LoginForm() {
         ) : null}
 
         <div className="mt-6">
-          <a
-            href="/api/auth/signin"
-            className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-brand-600 hover:bg-brand-700 text-white py-2.5 text-sm font-medium"
-          >
+          <ButtonLink href="/api/auth/signin" tone="primary" className="w-full">
             <MicrosoftLogo />
             Sign in with Microsoft
-          </a>
+          </ButtonLink>
         </div>
         <p className="mt-6 text-center text-xs text-slate-500">
           Access is restricted to active network members.

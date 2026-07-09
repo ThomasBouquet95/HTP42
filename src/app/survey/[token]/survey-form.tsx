@@ -141,12 +141,12 @@ function Field({
 }) {
   return (
     <label className="mt-3 block">
-      <span className="block text-xs font-medium text-slate-600">{label}</span>
+      <span className="block text-[11px] uppercase tracking-wide font-medium text-slate-500">{label}</span>
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={3}
-        className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+        className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
       />
     </label>
   );

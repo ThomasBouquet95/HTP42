@@ -6,6 +6,8 @@ import type { TaskPriority, TaskRecord, TaskStatus, TaskVisibility } from "@/lib
 import { TASK_PRIORITIES, TASK_STATUSES } from "@/lib/airtable";
 import { ConfirmDialog } from "@/components/modal";
 import { DateField } from "@/components/date-picker";
+import { SearchInput } from "@/components/search-input";
+import { Button } from "@/components/form-controls";
 
 type ProjectOpt = { id: string; code: string; name: string };
 type MemberOpt = { id: string; code: string; name: string; photoUrl: string | null };
@@ -415,33 +417,24 @@ export function TasksClient({
             <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
               Search
             </span>
-            <input
-              type="search"
+            <SearchInput
               value={filters.search}
-              onChange={(e) => update("search", e.target.value)}
+              onChange={(v) => update("search", v)}
               placeholder="Title, project, assignee…"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+              className="mt-1 w-full"
             />
           </label>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={resetFilters}
-            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
-          >
+          <Button tone="secondary" size="sm" onClick={resetFilters}>
             Reset filters
-          </button>
+          </Button>
           <span className="text-xs text-slate-500">
             {filtered.length} task{filtered.length === 1 ? "" : "s"}
           </span>
-          <button
-            type="button"
-            onClick={openNew}
-            className="ml-auto inline-flex items-center gap-1 rounded-full bg-brand-600 px-3 h-8 text-xs font-medium text-white shadow-sm hover:bg-brand-700"
-          >
+          <Button tone="primary" size="sm" onClick={openNew} className="ml-auto">
             <PlusIcon /> New task
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -1263,7 +1256,7 @@ function TaskModal({
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs disabled:bg-slate-50"
+              className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 disabled:bg-slate-50"
               disabled={!isOwner}
               maxLength={300}
               autoFocus
@@ -1338,16 +1331,16 @@ function TaskModal({
                     }
                   }}
                   placeholder="Add a subtask and hit Enter…"
-                  className="flex-1 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs"
+                  className="flex-1 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
                 />
-                <button
-                  type="button"
+                <Button
+                  tone="secondary"
+                  size="sm"
                   onClick={addSubtask}
                   disabled={!newSubtask.trim()}
-                  className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium hover:bg-slate-50 disabled:opacity-50"
                 >
                   Add
-                </button>
+                </Button>
               </div>
             ) : null}
           </div>
@@ -1401,7 +1394,7 @@ function TaskModal({
                 min="0"
                 value={effort}
                 onChange={(e) => setEffort(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs"
+                className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
                 placeholder="0"
               />
             </label>
@@ -1477,28 +1470,24 @@ function TaskModal({
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
           {editing && isOwner ? (
-            <button
-              type="button"
+            <Button
+              tone="danger"
+              size="sm"
               onClick={() => onDelete(editing)}
               disabled={submitting}
-              className="mr-auto rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+              className="mr-auto"
             >
               Delete
-            </button>
+            </Button>
           ) : null}
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={submitting}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-50 disabled:opacity-50"
-          >
+          <Button tone="secondary" size="sm" onClick={onClose} disabled={submitting}>
             Cancel
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            tone="primary"
+            size="sm"
             onClick={submit}
             disabled={submitting || !title.trim()}
-            className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
           >
             {submitting ? (
               <>
@@ -1510,7 +1499,7 @@ function TaskModal({
             ) : (
               "Create task"
             )}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

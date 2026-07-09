@@ -11,18 +11,12 @@ import {
 } from "@/lib/airtable";
 import { thisMondayIso } from "@/lib/dates";
 import { rollupEarnings } from "@/lib/earnings";
+import { StatusPill } from "@/components/badge";
 import { EarningsChart } from "./earnings-chart";
 
 export const dynamic = "force-dynamic";
 
 const HOURS_PER_DAY = 8;
-const STATUS_TINT: Record<string, string> = {
-  "In Progress": "bg-emerald-500",
-  Planned: "bg-sky-500",
-  "Not Started": "bg-sky-500",
-  "On Hold": "bg-red-500",
-  Completed: "bg-slate-400",
-};
 
 export default async function DashboardHomePage() {
   const session = await getSession();
@@ -95,7 +89,7 @@ export default async function DashboardHomePage() {
       />
 
       {/* Earnings chart, kept tight vertically. */}
-      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 sm:px-5 sm:py-4">
+      <section className="rounded-lg border border-slate-200 bg-white px-4 py-3 sm:px-5 sm:py-4">
         <div className="flex items-baseline justify-between gap-4">
           <h2 className="text-sm font-semibold text-slate-900">
             Earnings, last 12 months
@@ -151,7 +145,7 @@ export default async function DashboardHomePage() {
 
       {/* Projects + quick actions */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 lg:col-span-2">
+        <section className="rounded-lg border border-slate-200 bg-white p-4 lg:col-span-2">
           <div className="flex items-baseline justify-between">
             <h2 className="text-sm font-semibold text-slate-900">Your projects</h2>
             <Link
@@ -179,18 +173,12 @@ export default async function DashboardHomePage() {
                     className="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2"
                   >
                     <div className="flex items-center gap-2">
-                      <span
-                        className={`h-2 w-2 rounded-full ${STATUS_TINT[p.status] ?? "bg-slate-300"}`}
-                        aria-hidden
-                      />
                       <span className="font-mono text-[10px] text-slate-500">{p.projectCode}</span>
                       <span className="truncate text-sm font-medium text-slate-900">
                         {p.projectName || "—"}
                       </span>
                       {p.status ? (
-                        <span className="text-[10px] uppercase tracking-wide text-slate-500">
-                          {p.status}
-                        </span>
+                        <StatusPill status={p.status} className="shrink-0" />
                       ) : null}
                     </div>
                     {allocHours > 0 ? (
@@ -225,7 +213,7 @@ export default async function DashboardHomePage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-4">
+        <section className="rounded-lg border border-slate-200 bg-white p-4">
           <h2 className="text-sm font-semibold text-slate-900">Quick actions</h2>
           <div className="mt-3 grid gap-2">
             <ActionLink
@@ -289,7 +277,7 @@ function EarningsHero({
   const ccyEntries = [...ccyTotals.entries()].sort((a, b) => b[1] - a[1]);
 
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-sky-50/40 to-brand-50/40 px-5 py-5 sm:px-7 sm:py-6">
+    <section className="relative overflow-hidden rounded-lg border border-slate-200 bg-gradient-to-br from-white via-sky-50/40 to-brand-50/40 px-5 py-5 sm:px-7 sm:py-6">
       <DotGrid />
       <div className="relative grid items-center gap-5 lg:grid-cols-[auto_1fr_minmax(0,auto)] lg:gap-8">
         <Image
@@ -403,7 +391,7 @@ function StatCard({
   sub: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
       <div className="flex items-center gap-2">
         <span
           className={`inline-flex h-7 w-7 items-center justify-center rounded-md ring-1 ${TONE_ACCENT[tone]}`}

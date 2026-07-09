@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { MemberRecord } from "@/lib/airtable";
 import { PhotoCropModal } from "@/components/photo-crop-modal";
 import { Modal } from "@/components/modal";
+import { Button } from "@/components/form-controls";
 
 type Props = { initial: MemberRecord };
 
@@ -102,13 +103,9 @@ export function ProfileForm({ initial }: Props) {
         ) : null}
 
         <div className="flex justify-end">
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-3.5 py-1.5 text-xs font-medium disabled:opacity-60"
-          >
+          <Button type="submit" tone="primary" size="sm" disabled={saving}>
             {saving ? "Saving…" : "Save changes"}
-          </button>
+          </Button>
         </div>
       </form>
 
@@ -166,13 +163,14 @@ function BankAccountCard({
             )}
           </div>
         </div>
-        <button
-          type="button"
+        <Button
+          tone="secondary"
+          size="sm"
           onClick={onEdit}
-          className="shrink-0 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-100"
+          className="shrink-0"
         >
           {hasAny ? "Edit" : "Add"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -248,22 +246,12 @@ function BankAccountModal({
       busy={saving}
       footer={
         <>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-50 disabled:opacity-60"
-          >
+          <Button tone="secondary" size="sm" onClick={onClose} disabled={saving}>
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={save}
-            disabled={saving}
-            className="rounded-md bg-brand-600 hover:bg-brand-700 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
-          >
+          </Button>
+          <Button tone="primary" size="sm" onClick={save} disabled={saving}>
             {saving ? "Saving…" : "Save"}
-          </button>
+          </Button>
         </>
       }
     >
@@ -387,23 +375,18 @@ function PhotoUpload({
         </div>
         <div className="space-y-1.5 text-xs">
           <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
+            <Button
+              tone="secondary"
+              size="sm"
               onClick={() => fileRef.current?.click()}
               disabled={busy}
-              className="rounded-md border border-slate-300 bg-white hover:bg-slate-50 px-2.5 py-1 font-medium disabled:opacity-60"
             >
               {member.photo ? "Replace" : "Upload"}
-            </button>
+            </Button>
             {member.photo ? (
-              <button
-                type="button"
-                onClick={removePhoto}
-                disabled={busy}
-                className="rounded-md border border-red-200 text-red-700 bg-white hover:bg-red-50 px-2.5 py-1 font-medium disabled:opacity-60"
-              >
+              <Button tone="danger" size="sm" onClick={removePhoto} disabled={busy}>
                 Remove
-              </button>
+              </Button>
             ) : null}
           </div>
           <p className="text-[11px] text-slate-500">Below 1 MB</p>
@@ -513,23 +496,18 @@ function CvUpload({
             <p className="text-slate-500">No CV uploaded yet.</p>
           )}
           <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
+            <Button
+              tone="secondary"
+              size="sm"
               onClick={() => fileRef.current?.click()}
               disabled={busy}
-              className="rounded-md border border-slate-300 bg-white hover:bg-slate-50 px-2.5 py-1 font-medium disabled:opacity-60"
             >
               {member.cv ? "Replace" : "Upload"}
-            </button>
+            </Button>
             {member.cv ? (
-              <button
-                type="button"
-                onClick={removeCv}
-                disabled={busy}
-                className="rounded-md border border-red-200 text-red-700 bg-white hover:bg-red-50 px-2.5 py-1 font-medium disabled:opacity-60"
-              >
+              <Button tone="danger" size="sm" onClick={removeCv} disabled={busy}>
                 Remove
-              </button>
+              </Button>
             ) : null}
           </div>
           <p className="text-[11px] text-slate-500">Below 1 MB</p>
@@ -581,14 +559,14 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">{label}</span>
       <input
         type={type ?? "text"}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={required}
         placeholder={placeholder}
-        className={`mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs ${
+        className={`mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 ${
           mono ? "font-mono uppercase" : ""
         }`}
       />
@@ -610,12 +588,12 @@ function TextArea({
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">{label}</span>
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={rows ?? 4}
-        className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs"
+        className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
       />
     </label>
   );

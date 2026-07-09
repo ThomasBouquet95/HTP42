@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DownloadChip } from "@/components/download-chip";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { StatusPill } from "@/components/badge";
 import type { VendorInvoiceRecord, VendorInvoiceStatus } from "@/lib/airtable";
 
 type Props = {
@@ -89,9 +90,9 @@ export function VendorInvoicesClient({ invoices, mailbox, projectCode }: Props) 
         <span className="demo-blur font-medium text-slate-700">{money(totalEur, "EUR")}</span>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <table className="min-w-full text-xs">
-          <thead className="bg-slate-50 text-slate-500">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
               <th className="w-6 px-1 py-1.5" />
               <th className="px-2 py-1.5 text-left font-medium">Vendor</th>
@@ -105,7 +106,7 @@ export function VendorInvoicesClient({ invoices, mailbox, projectCode }: Props) 
           <tbody>
             {invoices.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-6 text-center text-slate-500">
+                <td colSpan={7} className="text-center text-slate-500 py-10">
                   No IT invoices on file yet. They import automatically each night, or use “Import now”.
                 </td>
               </tr>
@@ -117,7 +118,7 @@ export function VendorInvoicesClient({ invoices, mailbox, projectCode }: Props) 
                     <tr
                       onClick={() => toggle(inv.id)}
                       aria-expanded={open}
-                      className="cursor-pointer border-t border-slate-100 align-middle hover:bg-slate-50/60"
+                      className="cursor-pointer border-t border-slate-100 align-middle hover:bg-slate-50"
                       title="Click for full details"
                     >
                       <td className="px-1 py-1.5 text-center">
@@ -146,7 +147,11 @@ export function VendorInvoicesClient({ invoices, mailbox, projectCode }: Props) 
                         {money(inv.amount, inv.currency)}
                       </td>
                       <td className="px-2 py-1.5 text-center">
-                        <StatusPill status={inv.status} />
+                        {inv.status ? (
+                          <StatusPill status={inv.status} />
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
                       </td>
                       <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
                         <DownloadChip url={inv.pdf?.url} title="Open invoice PDF" emptyTitle="No PDF" />
@@ -169,24 +174,6 @@ export function VendorInvoicesClient({ invoices, mailbox, projectCode }: Props) 
       </div>
     </div>
   );
-}
-
-function StatusPill({ status }: { status: VendorInvoiceStatus }) {
-  if (status === "Needs Review") {
-    return (
-      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-        Needs review
-      </span>
-    );
-  }
-  if (status === "Filed") {
-    return (
-      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-        Filed
-      </span>
-    );
-  }
-  return <span className="text-slate-300">—</span>;
 }
 
 function InvoiceDetail({

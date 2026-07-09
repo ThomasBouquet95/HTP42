@@ -8,7 +8,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { parseIsoDate, toIsoDate } from "@/lib/dates";
 import { WeekChip } from "@/components/week-chip";
 import { DateField } from "@/components/date-picker";
-import { FormSelect } from "@/components/form-controls";
+import { Button, FormSelect } from "@/components/form-controls";
+import { StatusPill } from "@/components/badge";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 
@@ -344,29 +345,25 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
             <ActiveFilterChips filters={filters} onClear={update} />
           </div>
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setFilters(DEFAULT_FILTERS)}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
-            >
+            <Button tone="secondary" size="md" onClick={() => setFilters(DEFAULT_FILTERS)}>
               Reset
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              tone="primary"
+              size="md"
               onClick={exportCsv}
               disabled={filtered.length === 0}
-              className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
             >
               Export CSV
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              tone="secondary"
+              size="md"
               onClick={exportPdf}
               disabled={filtered.length === 0}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             >
               Export PDF
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -425,7 +422,7 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={12} className="text-center text-slate-500 py-8 text-xs">
+                <td colSpan={12} className="text-center text-slate-500 py-10">
                   No timesheets match these filters.
                 </td>
               </tr>
@@ -636,11 +633,7 @@ function RelatedInvoices({
                 ) : null}
                 {/* Status + the settling payment, kept inline on the left. */}
                 <div className="flex shrink-0 items-center gap-2">
-                  {inv.status ? (
-                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
-                      {inv.status}
-                    </span>
-                  ) : null}
+                  {inv.status ? <StatusPill status={inv.status} /> : null}
                   {payment ? (
                     <a
                       href={`/admin/payments?search=${encodeURIComponent(payment.code)}`}

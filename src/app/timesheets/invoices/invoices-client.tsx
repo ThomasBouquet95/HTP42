@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { MemberInvoiceRecord } from "@/lib/airtable";
 import { formatFriendlyDate } from "@/components/date-picker";
+import { StatusPill } from "@/components/badge";
+import { Button } from "@/components/form-controls";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 
@@ -75,11 +77,11 @@ export function InvoicesClient({
         <div className="text-xs text-slate-500">
           {rows.length} invoice{rows.length === 1 ? "" : "s"}
         </div>
-        <button
-          type="button"
+        <Button
+          tone="primary"
+          size="sm"
           onClick={() => setModalOpen(true)}
           disabled={staffings.length === 0}
-          className="inline-flex items-center gap-1 rounded-full bg-brand-600 px-3 h-8 text-xs font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
           title={
             staffings.length === 0
               ? "No project staffing yet, an admin must staff you first"
@@ -87,7 +89,7 @@ export function InvoicesClient({
           }
         >
           <PlusIcon /> New invoice
-        </button>
+        </Button>
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
@@ -137,7 +139,11 @@ export function InvoicesClient({
                       : "—"}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
-                    <StatusPill status={inv.status} />
+                    {inv.status ? (
+                      <StatusPill status={inv.status} />
+                    ) : (
+                      <span className="text-slate-300 text-[11px]">—</span>
+                    )}
                     {inv.status === "Paid" && paymentDateByInvoiceId[inv.id] ? (
                       <div className="mt-0.5 text-[10px] text-emerald-700">
                         Paid {formatFriendlyDate(paymentDateByInvoiceId[inv.id])}
@@ -172,13 +178,9 @@ export function InvoicesClient({
                   </td>
                   <td className="px-3 py-2 text-right">
                     {inv.status !== "Paid" && inv.status !== "Cancelled" ? (
-                      <button
-                        type="button"
-                        onClick={() => cancelInvoice(inv.id)}
-                        className="rounded-md border border-red-200 bg-white px-2 py-0.5 text-[11px] font-medium text-red-700 hover:bg-red-50"
-                      >
+                      <Button tone="danger" size="sm" onClick={() => cancelInvoice(inv.id)}>
                         Cancel
-                      </button>
+                      </Button>
                     ) : null}
                   </td>
                 </tr>
@@ -348,7 +350,7 @@ function NewInvoiceModal({
             <select
               value={staffingId}
               onChange={(e) => setStaffingId(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
             >
               <option value="">Pick a staffing</option>
               {staffings.map((s) => (
@@ -445,7 +447,7 @@ function NewInvoiceModal({
                 min="0"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs"
+                className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
                 placeholder="0.00"
               />
             </label>
@@ -456,7 +458,7 @@ function NewInvoiceModal({
               <select
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value as "EUR" | "USD" | "CHF" | "")}
-                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
               >
                 <option value="">Currency</option>
                 <option value="EUR">EUR</option>
@@ -474,7 +476,7 @@ function NewInvoiceModal({
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               rows={2}
-              className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs"
+              className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
               placeholder="Period covered, invoice ref, any context for finance"
             />
           </label>
@@ -501,16 +503,12 @@ function NewInvoiceModal({
           </label>
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={submitting}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-50 disabled:opacity-50"
-          >
+          <Button tone="secondary" size="sm" onClick={onClose} disabled={submitting}>
             Cancel
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            tone="primary"
+            size="sm"
             onClick={submit}
             disabled={
               submitting ||
@@ -520,32 +518,12 @@ function NewInvoiceModal({
               !currency ||
               !comment.trim()
             }
-            className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
           >
             {submitting ? "Submitting…" : "Submit invoice"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
-  );
-}
-
-function StatusPill({ status }: { status: string }) {
-  if (!status) return <span className="text-slate-300 text-[11px]">—</span>;
-  const cls =
-    status === "Paid"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-      : status === "To be paid"
-      ? "border-amber-200 bg-amber-50 text-amber-700"
-      : status === "Cancelled"
-      ? "border-red-200 bg-red-50 text-red-700 line-through"
-      : "border-slate-200 bg-white text-slate-600";
-  return (
-    <span
-      className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-medium ${cls}`}
-    >
-      {status}
-    </span>
   );
 }
 

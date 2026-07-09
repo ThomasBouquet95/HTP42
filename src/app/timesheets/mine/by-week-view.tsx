@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { TimesheetRecord } from "@/lib/airtable";
+import { Button } from "@/components/form-controls";
 import {
   addWeeksIso,
   formatHumanDate,
@@ -201,23 +202,23 @@ export function TimesheetsByWeekView({
         </div>
         <div className="flex items-center gap-2">
           {canShowMoreColumns ? (
-            <button
-              type="button"
+            <Button
+              tone="secondary"
+              size="sm"
               onClick={() =>
                 setColumnCount((c) => Math.min(c + COLUMNS_PER_LOAD, allColumns.length))
               }
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
             >
               + Show more projects
-            </button>
+            </Button>
           ) : null}
-          <button
-            type="button"
+          <Button
+            tone="secondary"
+            size="sm"
             onClick={exportCsv(submittedWeeksData, visibleColumns)}
-            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
           >
             Export CSV
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -276,13 +277,13 @@ export function TimesheetsByWeekView({
       </div>
 
       <div className="flex justify-center">
-        <button
-          type="button"
+        <Button
+          tone="secondary"
+          size="sm"
           onClick={() => setWeekCount((w) => w + WEEKS_PER_LOAD)}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-50"
         >
           + Show {WEEKS_PER_LOAD} more weeks
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { TimesheetRecord, TimesheetStatus } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/modal";
+import { Button } from "@/components/form-controls";
 import { EditIcon, EyeIcon, IconButton, TrashIcon } from "@/components/admin-icons";
 import { WeekChip } from "@/components/week-chip";
 import { CalendarRange } from "@/components/calendar-range";
@@ -330,15 +331,15 @@ export function SummaryClient({
               to={filters.to}
               onChange={(from, to) => setFilters((prev) => ({ ...prev, from, to }))}
             />
-            <button
-              type="button"
+            <Button
+              tone="secondary"
+              size="sm"
               onClick={() =>
                 setFilters((prev) => ({ ...prev, period: "all", from: "", to: "" }))
               }
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
             >
               All time
-            </button>
+            </Button>
           </div>
         ) : null}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
@@ -347,8 +348,9 @@ export function SummaryClient({
             <span className="font-semibold text-slate-900">{total.toFixed(2)} h</span>
           </div>
           <div className="flex gap-1.5">
-            <button
-              type="button"
+            <Button
+              tone="secondary"
+              size="sm"
               onClick={() => {
                 // Reset has to RE-RESOLVE the default period's range so the
                 // table actually filters back to the current week (raw
@@ -357,26 +359,25 @@ export function SummaryClient({
                 const range = resolvePeriod(DEFAULT_FILTERS.period);
                 setFilters({ ...DEFAULT_FILTERS, ...range });
               }}
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
             >
               Reset
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              tone="secondary"
+              size="sm"
               onClick={exportCsv}
               disabled={filtered.length === 0}
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50 disabled:opacity-50"
             >
               Export CSV
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              tone="primary"
+              size="sm"
               onClick={exportPdf}
               disabled={filtered.length === 0}
-              className="rounded-md bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
             >
               Export PDF
-            </button>
+            </Button>
           </div>
         </div>
       </div>

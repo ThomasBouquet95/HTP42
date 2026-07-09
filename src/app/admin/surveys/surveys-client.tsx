@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormSelect } from "@/components/form-controls";
+import { Badge } from "@/components/badge";
 import { StarRating } from "@/components/star-rating";
 import type { SurveyRecord } from "@/lib/airtable";
 
@@ -238,9 +239,7 @@ export function SurveysClient({
                               {r.completedAt ? (
                                 <StarRating value={r.overallGrade} readOnly size={14} />
                               ) : (
-                                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-100">
-                                  Awaiting response
-                                </span>
+                                <Badge tone="warning">Awaiting response</Badge>
                               )}
                             </div>
                             <button
@@ -343,14 +342,14 @@ export function SurveysClient({
                   value={r.name}
                   onChange={(e) => setRecipient(i, { name: e.target.value })}
                   placeholder="Name (optional)"
-                  className="w-40 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs"
+                  className="w-40 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
                 />
                 <input
                   value={r.email}
                   onChange={(e) => setRecipient(i, { email: e.target.value })}
                   placeholder="email@client.com"
                   type="email"
-                  className="flex-1 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs"
+                  className="flex-1 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
                 />
                 {recipients.length > 1 ? (
                   <button
