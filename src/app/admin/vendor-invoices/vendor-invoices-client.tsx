@@ -54,11 +54,24 @@ export function VendorInvoicesClient({ invoices, mailbox, projectCode }: Props) 
         setImportMsg(`Could not read the mailbox: ${data.error}`);
         return;
       }
-      const parts = [`${data.imported ?? 0} imported`];
+      const imported = data.imported ?? 0;
+      const parts = [`${imported} imported`];
       if (data.skipped) parts.push(`${data.skipped} already on file`);
       if (Array.isArray(data.errors) && data.errors.length) parts.push(`${data.errors.length} errored`);
+      // When nothing came in, explain what the mailbox scan actually saw so
+      // it's clear whether the mailbox was empty or just had no PDFs.
+      if (imported === 0 && !data.skipped) {
+        const scanned = data.messagesScanned;
+        if (typeof scanned === "number") {
+          parts.push(
+            scanned === 0
+              ? "mailbox looks empty"
+              : `scanned ${scanned} recent emails, ${data.withPdf ?? 0} with a PDF`,
+          );
+        }
+      }
       setImportMsg(parts.join(" · "));
-      if ((data.imported ?? 0) > 0) router.refresh();
+      if (imported > 0) router.refresh();
     } catch {
       setImportMsg("Import failed — please retry.");
     } finally {

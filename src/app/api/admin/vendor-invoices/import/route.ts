@@ -13,6 +13,9 @@ import { env } from "@/lib/env";
 import { apiError } from "@/lib/errors";
 
 export const runtime = "nodejs";
+// Reading + downloading attachments for many messages, then AI-extracting and
+// uploading, can take a while — give the function generous headroom.
+export const maxDuration = 300;
 
 // Import paid IT / vendor invoices from the billing mailbox into Airtable.
 // Idempotent: each email is deduped by its internetMessageId, so re-running
@@ -132,7 +135,10 @@ async function run() {
   return NextResponse.json({
     imported,
     skipped: mail.invoices.length - fresh.length,
-    scanned: mail.invoices.length,
+    // Diagnostics so the admin can tell "mailbox empty" from "no PDFs found".
+    messagesScanned: mail.scanned,
+    withAttachments: mail.withAttachments,
+    withPdf: mail.invoices.length,
     errors,
   });
 }

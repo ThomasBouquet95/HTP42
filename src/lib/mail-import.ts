@@ -47,7 +47,8 @@ function isPdf(a: GraphAttachment): boolean {
 // mailbox, then pull their PDF attachments. `limit` caps how many messages we
 // scan per run (newest first) so a huge mailbox never blocks the cron.
 export async function fetchInvoiceMails(limit = 50): Promise<
-  { ok: true; invoices: MailInvoice[] } | { ok: false; error: string }
+  | { ok: true; invoices: MailInvoice[]; scanned: number; withAttachments: number }
+  | { ok: false; error: string }
 > {
   const mailbox = env.automatedInvoiceMailbox;
   if (!mailbox) return { ok: false, error: "AUTOMATED_INVOICE_MAILBOX is not configured" };
@@ -80,8 +81,10 @@ export async function fetchInvoiceMails(limit = 50): Promise<
   const messages = listData.value ?? [];
 
   const invoices: MailInvoice[] = [];
+  let withAttachments = 0;
   for (const m of messages) {
     if (m.hasAttachments === false) continue;
+    withAttachments += 1;
     const attRes = await fetch(
       `${base}/messages/${m.id}/attachments?$select=${encodeURIComponent("name,contentType,contentBytes")}`,
       { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
@@ -100,5 +103,5 @@ export async function fetchInvoiceMails(limit = 50): Promise<
       pdfs,
     });
   }
-  return { ok: true, invoices };
+  return { ok: true, invoices, scanned: messages.length, withAttachments };
 }
