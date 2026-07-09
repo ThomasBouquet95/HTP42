@@ -114,13 +114,14 @@ export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, proje
               <th className="px-2 py-1.5 text-left font-medium">Date</th>
               <th className="px-2 py-1.5 text-right font-medium">Amount</th>
               <th className="px-2 py-1.5 text-center font-medium">Status</th>
+              <th className="px-2 py-1.5 text-center font-medium">Payment</th>
               <th className="px-2 py-1.5 text-center font-medium">PDF</th>
             </tr>
           </thead>
           <tbody>
             {invoices.length === 0 ? (
               <tr>
-                <td colSpan={7} className="text-center text-slate-500 py-10">
+                <td colSpan={8} className="text-center text-slate-500 py-10">
                   No automated invoices on file yet. They import automatically each night, or use “Import now”.
                 </td>
               </tr>
@@ -168,13 +169,28 @@ export function VendorInvoicesClient({ invoices, paymentCodeById, mailbox, proje
                         )}
                       </td>
                       <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        {inv.paymentId ? (
+                          <a
+                            href={`/admin/payments?search=${encodeURIComponent(
+                              paymentCodeById?.[inv.paymentId] || inv.paymentId,
+                            )}`}
+                            title="Open the linked payment"
+                            className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-mono text-[11px] text-emerald-800 hover:bg-emerald-100"
+                          >
+                            {paymentCodeById?.[inv.paymentId] || "Payment"} ↗
+                          </a>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
                         <DownloadChip url={inv.pdf?.url} title="Open invoice PDF" emptyTitle="No PDF" />
                       </td>
                     </tr>
                     {open ? (
                       <tr className="border-t border-slate-100 bg-slate-50/60">
                         <td />
-                        <td colSpan={6} className="px-3 py-3">
+                        <td colSpan={7} className="px-3 py-3">
                           <InvoiceDetail
                             invoice={inv}
                             paymentCode={inv.paymentId ? paymentCodeById?.[inv.paymentId] ?? "" : ""}
