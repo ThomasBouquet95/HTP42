@@ -141,7 +141,7 @@ function BankAccountCard({
     <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <div className="text-[11px] uppercase tracking-wide text-slate-500">
+          <div className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
             Bank account
           </div>
           <div className="mt-0.5 text-xs text-slate-700">
@@ -361,7 +361,7 @@ function PhotoUpload({
 
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">Photo</div>
+      <div className="text-[11px] uppercase tracking-wide font-medium text-slate-500 mb-1.5">Photo</div>
       <div className="flex items-center gap-3">
         <div className="h-16 w-16 rounded-full overflow-hidden bg-slate-100 flex items-center justify-center text-slate-400 border border-slate-200">
           {member.photo ? (
@@ -473,7 +473,7 @@ function CvUpload({
 
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">CV</div>
+      <div className="text-[11px] uppercase tracking-wide font-medium text-slate-500 mb-1.5">CV</div>
       <div className="flex items-center gap-3">
         <div className="h-16 w-16 rounded-md bg-slate-100 flex items-center justify-center text-slate-400 border border-slate-200">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -530,7 +530,7 @@ function CvUpload({
 function ReadOnly({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-[11px] uppercase tracking-wide font-medium text-slate-500">{label}</div>
       <div className={`mt-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs ${mono ? "font-mono" : ""}`}>
         {value || "—"}
       </div>

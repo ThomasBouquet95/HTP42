@@ -12,6 +12,7 @@ import {
   StatusBreakdown,
   type ChartScope,
 } from "../payments/payment-charts";
+import { SegmentedTabs } from "@/components/filters";
 
 export function CockpitClient({ payments }: { payments: PaymentRecord[] }) {
   const [scope, setScope] = useState<ChartScope>("all");
@@ -47,29 +48,15 @@ export function CockpitClient({ payments }: { payments: PaymentRecord[] }) {
 
       {/* Scope toggle */}
       <div className="flex items-center gap-3">
-        <div className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5">
-          {(
-            [
-              { v: "all", label: "All payments" },
-              { v: "executed", label: "Executed only" },
-            ] as const
-          ).map((opt) => {
-            const active = scope === opt.v;
-            return (
-              <button
-                key={opt.v}
-                type="button"
-                onClick={() => setScope(opt.v)}
-                aria-pressed={active}
-                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
+        <SegmentedTabs
+          value={scope}
+          onChange={setScope}
+          ariaLabel="Payment scope"
+          options={[
+            { value: "all", label: "All payments" },
+            { value: "executed", label: "Executed only" },
+          ]}
+        />
       </div>
 
       {/* Charts. Two wide charts on top (they need horizontal room to

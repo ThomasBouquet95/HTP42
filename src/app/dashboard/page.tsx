@@ -277,7 +277,7 @@ function EarningsHero({
   const ccyEntries = [...ccyTotals.entries()].sort((a, b) => b[1] - a[1]);
 
   return (
-    <section className="relative overflow-hidden rounded-lg border border-slate-200 bg-gradient-to-br from-white via-sky-50/40 to-brand-50/40 px-5 py-5 sm:px-7 sm:py-6">
+    <section className="relative overflow-hidden rounded-lg border border-slate-200 bg-gradient-to-br from-white via-brand-50/40 to-brand-50/40 px-5 py-5 sm:px-7 sm:py-6">
       <DotGrid />
       <div className="relative grid items-center gap-5 lg:grid-cols-[auto_1fr_minmax(0,auto)] lg:gap-8">
         <Image
@@ -306,7 +306,7 @@ function EarningsHero({
               {formatEur(paidEur)} paid
             </span>
             <span>
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-300 mr-1 align-middle" />
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-300 mr-1 align-middle" />
               {formatEur(pendingEur)} pending
             </span>
             {ccyEntries.length > 1 ? (
