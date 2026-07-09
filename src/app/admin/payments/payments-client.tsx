@@ -3,10 +3,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
-import { Button, ButtonLink, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
 import { Badge } from "@/components/badge";
 import { DownloadChip } from "@/components/download-chip";
+import { EditIcon } from "@/components/admin-icons";
 import { DateField } from "@/components/date-picker";
 import { PaidDateModal } from "@/components/paid-date-modal";
 import type { Currency, PaymentRecord, PaymentStatus } from "@/lib/airtable";
@@ -1015,6 +1016,7 @@ export function PaymentsClient({
                             p.memberInvoiceRecordIds.map((id) => invoicePdfById.get(id)).find(Boolean) ||
                             ""
                           }
+                          onEdit={() => openEdit(p)}
                         />
                       </td>
                     </tr>
@@ -1510,25 +1512,6 @@ function Spinner() {
   );
 }
 
-function EditIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M4 20h4l10-10-4-4L4 16v4z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M14 6l4 4"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
 // Full detail shown when a payment row is expanded.
 function PaymentDetails({
   p,
@@ -1537,6 +1520,7 @@ function PaymentDetails({
   memberLabel,
   des,
   invoicePdfUrl,
+  onEdit,
 }: {
   p: PaymentRecord;
   projectLabel: string;
@@ -1544,6 +1528,7 @@ function PaymentDetails({
   memberLabel: string;
   des: "Yes" | "No" | "";
   invoicePdfUrl: string;
+  onEdit: () => void;
 }) {
   const money = (v: number | null, ccy: string) =>
     v == null ? "—" : `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}${ccy ? " " + ccy : ""}`;
@@ -1588,19 +1573,14 @@ function PaymentDetails({
       ) : null}
 
       <div className="flex flex-wrap items-center gap-3 text-[11px]">
-        {invoicePdfUrl ? (
-          <ButtonLink
-            href={invoicePdfUrl}
-            tone="secondary"
-            size="sm"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Invoice PDF ↗
-          </ButtonLink>
-        ) : (
-          <span className="text-slate-400">No invoice PDF on file</span>
-        )}
+        <span className="inline-flex items-center gap-1.5 text-slate-500">
+          <DownloadChip
+            url={invoicePdfUrl || undefined}
+            title="Open invoice PDF"
+            emptyTitle="No invoice PDF on file"
+          />
+          Invoice PDF
+        </span>
         {p.invoiceUrl ? (
           <a
             href={p.invoiceUrl}
@@ -1611,6 +1591,10 @@ function PaymentDetails({
             Invoice URL ↗
           </a>
         ) : null}
+        <Button tone="secondary" size="sm" className="ml-auto" onClick={onEdit}>
+          <EditIcon />
+          Edit payment
+        </Button>
       </div>
     </div>
   );
