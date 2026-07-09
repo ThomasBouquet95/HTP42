@@ -6,7 +6,7 @@ import Link from "next/link";
 import { DownloadChip } from "@/components/download-chip";
 import { DateField } from "@/components/date-picker";
 import { SearchInput } from "@/components/search-input";
-import { FilterBar, FilterSelect } from "@/components/filters";
+import { FilterBar, FilterSelect, FilterDateRange } from "@/components/filters";
 import { StatusPill } from "@/components/badge";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
@@ -305,8 +305,13 @@ export function AdminInvoicesClient({
               label: `${v.code} · ${v.projectName || v.projectCode}`,
             }))}
           />
-          <DateField label="From" value={filters.from} onChange={(v) => update("from", v)} allowFreeText={false} />
-          <DateField label="To" value={filters.to} onChange={(v) => update("to", v)} allowFreeText={false} />
+          <FilterDateRange
+            label="Submitted"
+            from={filters.from}
+            to={filters.to}
+            onFrom={(v) => update("from", v)}
+            onTo={(v) => update("to", v)}
+          />
           <SearchInput
             value={filters.search}
             onChange={(v) => update("search", v)}
