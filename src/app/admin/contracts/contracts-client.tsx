@@ -6,6 +6,8 @@ import { DownloadChip } from "@/components/download-chip";
 import { DateField, formatFriendlyDate } from "@/components/date-picker";
 import { SearchInput } from "@/components/search-input";
 import { Button, ButtonLink } from "@/components/form-controls";
+import { SegmentedTabs } from "@/components/filters";
+import { EditIcon, IconButton } from "@/components/admin-icons";
 import {
   CONTRACT_SIDES,
   CONTRACT_STATUSES,
@@ -521,45 +523,32 @@ export function ContractsAdminClient({
         </div>
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
-          <div className="inline-flex flex-wrap items-center rounded-md border border-slate-200 bg-slate-50 p-0.5 text-xs">
-            {(
-              [
-                { value: "Valid", label: "Valid", count: validityCounts.Valid },
-                { value: "Expiry Missing", label: "Expiry missing", count: validityCounts["Expiry Missing"] },
-                { value: "Expired", label: "Expired", count: validityCounts.Expired },
-                { value: "N/A", label: "N/A", count: validityCounts["N/A"] },
-                {
-                  value: "All",
-                  label: "All",
-                  count:
-                    validityCounts.Valid +
-                    validityCounts["Expiry Missing"] +
-                    validityCounts.Expired +
-                    validityCounts["N/A"],
-                },
-              ] as const
-            ).map((tab) => {
-              const active = filters.validity === tab.value;
-              return (
-                <button
-                  key={tab.value}
-                  type="button"
-                  onClick={() => update("validity", tab.value)}
-                  aria-pressed={active}
-                  className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
-                    active
-                      ? "bg-white text-slate-900 shadow-sm"
-                      : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  {tab.label}{" "}
-                  <span className={`text-[10px] ${active ? "text-slate-500" : "text-slate-400"}`}>
-                    {tab.count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          <SegmentedTabs
+            ariaLabel="Validity"
+            value={filters.validity}
+            onChange={(v) => update("validity", v)}
+            options={([
+              { value: "Valid", label: "Valid", count: validityCounts.Valid },
+              { value: "Expiry Missing", label: "Expiry missing", count: validityCounts["Expiry Missing"] },
+              { value: "Expired", label: "Expired", count: validityCounts.Expired },
+              { value: "N/A", label: "N/A", count: validityCounts["N/A"] },
+              {
+                value: "All",
+                label: "All",
+                count:
+                  validityCounts.Valid +
+                  validityCounts["Expiry Missing"] +
+                  validityCounts.Expired +
+                  validityCounts["N/A"],
+              },
+            ] as const).map((tab) => ({
+              value: tab.value,
+              label: tab.label,
+              badge: (
+                <span className="text-[10px] tabular-nums text-slate-400">{tab.count}</span>
+              ),
+            }))}
+          />
 
           <div className="flex items-center gap-2 text-sm text-slate-600">
             <span>
@@ -674,15 +663,11 @@ export function ContractsAdminClient({
                       </span>
                     </td>
                     <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => setOpenId(c.id)}
-                        title="Edit contract"
-                        aria-label="Edit contract"
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                      >
-                        <EditIcon />
-                      </button>
+                      <span className="inline-flex justify-center">
+                        <IconButton onClick={() => setOpenId(c.id)} title="Edit contract">
+                          <EditIcon />
+                        </IconButton>
+                      </span>
                     </td>
                   </tr>
                   {open ? (
@@ -878,25 +863,6 @@ function ValidityPill({ validity }: { validity: string }) {
     >
       {label}
     </span>
-  );
-}
-
-function EditIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M4 20h4l10-10-4-4L4 16v4z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M14 6l4 4"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
   );
 }
 
@@ -1456,27 +1422,28 @@ function ContractDetails({ c }: { c: ContractRecord }) {
 
       {c.keyTerms ? (
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-400">Key terms</div>
+          <div className="text-[11px] uppercase tracking-wide font-medium text-slate-500">Key terms</div>
           <p className="whitespace-pre-line text-[11px] text-slate-600">{c.keyTerms}</p>
         </div>
       ) : null}
       {c.comment ? (
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-400">Comment</div>
+          <div className="text-[11px] uppercase tracking-wide font-medium text-slate-500">Comment</div>
           <p className="whitespace-pre-line text-[11px] text-slate-600 demo-blur">{c.comment}</p>
         </div>
       ) : null}
 
       <div className="flex flex-wrap items-center gap-3 text-[11px]">
         {c.pdf?.url ? (
-          <a
+          <ButtonLink
             href={c.pdf.url}
+            tone="secondary"
+            size="sm"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 font-medium text-brand-600 hover:bg-slate-50"
           >
-            Contract PDF ↗
-          </a>
+            Contract PDF
+          </ButtonLink>
         ) : (
           <span className="text-slate-400">No PDF on file</span>
         )}
@@ -1498,7 +1465,7 @@ function Field({
 }) {
   return (
     <div>
-      <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+      <dt className="text-[11px] uppercase tracking-wide font-medium text-slate-500">{label}</dt>
       <dd className={`text-slate-800 ${mono ? "font-mono text-[11px]" : ""} ${blur ? "demo-blur" : ""}`}>
         {value || "—"}
       </dd>
@@ -1894,7 +1861,7 @@ function NewContractDialog({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl ring-1 ring-slate-200"
+        className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl ring-1 ring-slate-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">
@@ -2207,7 +2174,7 @@ function ContractDetailModal({
           modal. max-w-4xl gives the form a touch more horizontal room
           now that some sections need three columns. */}
       <div
-        className="relative flex w-full max-w-4xl flex-col rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200"
+        className="relative flex w-full max-w-4xl flex-col rounded-lg bg-white shadow-xl ring-1 ring-slate-200"
         style={{ maxHeight: "calc(100vh - 4rem)" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -2553,7 +2520,7 @@ function ContractDetailModal({
         </div>
 
         {/* Footer: Delete on the left, Cancel + Save on the right. */}
-        <div className="flex items-center justify-between gap-3 rounded-b-2xl border-t border-slate-200 bg-slate-50 px-5 py-3">
+        <div className="flex items-center justify-between gap-3 rounded-b-lg border-t border-slate-200 bg-slate-50 px-5 py-3">
           <div className="flex items-center gap-2">
             <Button
               tone="danger"
