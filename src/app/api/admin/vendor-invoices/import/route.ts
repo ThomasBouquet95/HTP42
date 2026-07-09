@@ -7,11 +7,13 @@ import {
   createPaymentForVendorInvoice,
   createVendorInvoice,
   ensureVendorInvoicesSchema,
+  getPaymentById,
   vendorInvoiceMessageIds,
   type Currency,
   type PaymentInput,
   type VendorInvoiceInput,
 } from "@/lib/airtable";
+import { notifyPaymentPaid } from "@/lib/payment-notify";
 import { fetchInvoiceMails, type MailInvoice } from "@/lib/mail-import";
 import { env } from "@/lib/env";
 import { apiError } from "@/lib/errors";
@@ -172,6 +174,10 @@ async function run() {
         const paymentId = await createPaymentForVendorInvoice(id, buildPaidPayment(fields, currency, m));
         // Attach the same invoice PDF to the payment so it carries the document.
         await attachPaymentPdf(paymentId, m.pdfs[0].filename, m.pdfs[0].base64).catch(() => {});
+        // The payment is already Paid — send the same paid-recap (To invoices
+        // inbox, CC Fulll + Qonto) an admin would trigger by marking it Paid.
+        const created = await getPaymentById(paymentId).catch(() => null);
+        if (created) await notifyPaymentPaid(created);
       }
       imported += 1;
     } catch (e) {

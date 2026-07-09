@@ -4,11 +4,13 @@ import { requireAdminSession } from "@/lib/auth";
 import {
   createPaymentForVendorInvoice,
   deleteVendorInvoice,
+  getPaymentById,
   getVendorInvoiceById,
   updateVendorInvoice,
   type Currency,
   type PaymentInput,
 } from "@/lib/airtable";
+import { notifyPaymentPaid } from "@/lib/payment-notify";
 import { apiError, zodMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -69,7 +71,11 @@ export async function PATCH(
         comment: `Auto-created from ${updated.projectCode || "automated"} invoice.`,
         invoiceUrl: "",
       };
-      await createPaymentForVendorInvoice(id, payment, updated.pdf?.url || undefined);
+      const paymentId = await createPaymentForVendorInvoice(id, payment, updated.pdf?.url || undefined);
+      // Send the same paid-recap (To invoices inbox, CC Fulll + Qonto) that
+      // marking a payment Paid in the payments panel would send.
+      const created = await getPaymentById(paymentId).catch(() => null);
+      if (created) await notifyPaymentPaid(created);
     }
   } catch (e) {
     return apiError(e, "update the invoice");

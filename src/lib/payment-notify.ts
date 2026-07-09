@@ -1,0 +1,184 @@
+import { env } from "./env";
+import { sendMailViaGraph } from "./email";
+import { listClients, listProjects, type PaymentRecord } from "./airtable";
+
+// Accounting inboxes that must be CC'd on every "payment paid" recap (Fulll
+// bookkeeping + Qonto receipts). Kept here so the payments route and the
+// automated-invoice import both send an identical recap.
+const PAID_RECAP_CC = [
+  "factures+cHEA-072a8f@m.fulll.io",
+  "receipts-ukcbzgcdo9a6@inbox.qonto.com",
+];
+
+// Graph caps inline attachments at ~3 MB; larger PDFs are skipped (email still
+// goes out with a note + the invoice URL).
+const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+
+// Recap email sent to the invoices inbox (with the accounting inboxes CC'd)
+// whenever ANY payment — inflow or outflow — is marked Paid: from the payments
+// list/modal/review page, AND when an automated vendor invoice auto-creates
+// its Paid payment on import or on manual review.
+export async function notifyPaymentPaid(p: PaymentRecord): Promise<void> {
+  const label =
+    p.invoiceReference ||
+    p.beneficiary ||
+    p.paymentCode ||
+    p.projectCodes.join(", ") ||
+    p.id;
+  const heading =
+    p.direction === "Inflow"
+      ? "Inflow received"
+      : p.direction === "Outflow"
+      ? "Outflow paid"
+      : "Payment recorded";
+  const subject = `[HTP42] ${heading}: ${label}`;
+  const introText =
+    p.direction === "Inflow"
+      ? "An inflow (client payment) has just been marked received in the HTP42 portal."
+      : p.direction === "Outflow"
+      ? "An outflow payment has just been marked paid in the HTP42 portal."
+      : "A payment has just been marked paid in the HTP42 portal.";
+
+  // Attach the invoice PDF — prefer the uploaded attachment, else the invoice
+  // URL. Failures here shouldn't block the email; the metadata still goes out.
+  const pdfSource = p.invoicePdf?.url || p.invoiceUrl || "";
+  let attachment:
+    | { filename: string; contentType: string; base64: string }
+    | null = null;
+  let pdfFailure: string | null = null;
+  if (pdfSource) {
+    const fetched = await fetchInvoicePdf(pdfSource, label);
+    if (fetched.ok) attachment = fetched.attachment;
+    else pdfFailure = fetched.error;
+  } else {
+    pdfFailure = "No invoice PDF or URL on the payment.";
+  }
+
+  const amountLine =
+    p.invoiceValue != null
+      ? `${p.invoiceValue.toLocaleString("en-US")} ${p.invoiceCurrency || ""}`.trim()
+      : "—";
+
+  // Resolve project/client to a readable "Code — Name" via record IDs.
+  let projectLabel = p.projectCodes.join(", ");
+  let clientLabel = p.clientCodes.join(", ");
+  try {
+    const [projects, clients] = await Promise.all([listProjects(), listClients()]);
+    const projById = new Map(projects.map((pr) => [pr.id, pr]));
+    const cliById = new Map(clients.map((c) => [c.id, c]));
+    const fmtProject = (id: string) => {
+      const pr = projById.get(id);
+      if (!pr) return "";
+      return pr.projectName ? `${pr.projectCode} — ${pr.projectName}` : pr.projectCode;
+    };
+    const fmtClient = (id: string) => {
+      const c = cliById.get(id);
+      if (!c) return "";
+      return c.clientName ? `${c.clientCode} — ${c.clientName}` : c.clientCode;
+    };
+    const resolvedProjects = p.projectRecordIds.map(fmtProject).filter(Boolean);
+    const resolvedClients = p.clientRecordIds.map(fmtClient).filter(Boolean);
+    if (resolvedProjects.length > 0) projectLabel = resolvedProjects.join(", ");
+    if (resolvedClients.length > 0) clientLabel = resolvedClients.join(", ");
+  } catch (e) {
+    console.error("Could not resolve project/client names for paid email:", e);
+  }
+
+  const textLines: string[] = [
+    introText,
+    ``,
+    `Reference: ${p.invoiceReference || "—"}`,
+    `Beneficiary: ${p.beneficiary || "—"}`,
+    `Amount: ${amountLine}`,
+    `Payment date: ${p.paymentDate ?? "—"}`,
+    `Invoice date: ${p.invoiceDate ?? "—"}`,
+    projectLabel ? `Project: ${projectLabel}` : null,
+    clientLabel ? `Client: ${clientLabel}` : null,
+    p.comment ? `Comment: ${p.comment}` : null,
+    ``,
+    p.invoiceUrl ? `Invoice URL: ${p.invoiceUrl}` : `Invoice URL: not set`,
+    pdfFailure ? `PDF: not attached — ${pdfFailure}` : `PDF: attached`,
+    ``,
+    `Portal: ${env.appUrl}/admin/payments`,
+  ].filter((l): l is string => l !== null);
+
+  const safe = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const htmlLines = [
+    `<p>${safe(introText)}</p>`,
+    `<ul>`,
+    `<li><strong>Reference:</strong> ${safe(p.invoiceReference || "—")}</li>`,
+    `<li><strong>Beneficiary:</strong> ${safe(p.beneficiary || "—")}</li>`,
+    `<li><strong>Amount:</strong> ${safe(amountLine)}</li>`,
+    `<li><strong>Payment date:</strong> ${safe(p.paymentDate ?? "—")}</li>`,
+    `<li><strong>Invoice date:</strong> ${safe(p.invoiceDate ?? "—")}</li>`,
+    projectLabel ? `<li><strong>Project:</strong> ${safe(projectLabel)}</li>` : "",
+    clientLabel ? `<li><strong>Client:</strong> ${safe(clientLabel)}</li>` : "",
+    p.comment ? `<li><strong>Comment:</strong> ${safe(p.comment).replace(/\n/g, "<br/>")}</li>` : "",
+    `</ul>`,
+    p.invoiceUrl
+      ? `<p><strong>Invoice URL:</strong> <a href="${safe(p.invoiceUrl)}">${safe(p.invoiceUrl)}</a></p>`
+      : `<p><strong>Invoice URL:</strong> not set</p>`,
+    pdfFailure
+      ? `<p><em>PDF not attached — ${safe(pdfFailure)}</em></p>`
+      : `<p>PDF attached.</p>`,
+    `<p><a href="${env.appUrl}/admin/payments">Open in portal</a></p>`,
+  ].filter(Boolean);
+
+  const result = await sendMailViaGraph({
+    to: env.invoiceRecipient,
+    cc: PAID_RECAP_CC,
+    subject,
+    textBody: textLines.join("\n"),
+    htmlBody: htmlLines.join(""),
+    attachments: attachment ? [attachment] : [],
+  });
+  if (!result.ok) {
+    console.error("Payment-paid email failed:", result.error);
+  }
+}
+
+async function fetchInvoicePdf(
+  url: string,
+  label: string,
+): Promise<
+  | { ok: true; attachment: { filename: string; contentType: string; base64: string } }
+  | { ok: false; error: string }
+> {
+  try {
+    const res = await fetch(url, { redirect: "follow" });
+    if (!res.ok) {
+      return { ok: false, error: `HTTP ${res.status} fetching invoice URL` };
+    }
+    const contentType = res.headers.get("content-type") ?? "";
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.byteLength > MAX_ATTACHMENT_BYTES) {
+      return {
+        ok: false,
+        error: `PDF is ${(buffer.byteLength / 1024 / 1024).toFixed(2)} MB (over the ${(
+          MAX_ATTACHMENT_BYTES /
+          1024 /
+          1024
+        ).toFixed(0)} MB inline cap)`,
+      };
+    }
+    const head = buffer.slice(0, 5).toString("ascii");
+    if (head !== "%PDF-") {
+      return {
+        ok: false,
+        error: `URL did not return a PDF (got ${contentType || "unknown"})`,
+      };
+    }
+    const safeLabel = label.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 80) || "invoice";
+    return {
+      ok: true,
+      attachment: {
+        filename: `${safeLabel}.pdf`,
+        contentType: "application/pdf",
+        base64: buffer.toString("base64"),
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Fetch failed" };
+  }
+}
