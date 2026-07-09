@@ -2,15 +2,19 @@ import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import {
+  listAllContracts,
   listAllInvoices,
   listAllMembers,
+  listAllStaffings,
+  listAllTimesheets,
   listClients,
   listPayments,
   listProjects,
   listVendorInvoices,
   CURRENCIES,
 } from "@/lib/airtable";
-import { PaymentsClient } from "./payments-client";
+import { PaymentsTabsClient } from "./payments-tabs-client";
+import { buildReviewGroups } from "./review-data";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +27,26 @@ export default async function AdminPaymentsPage({
   if (!session) redirect("/dashboard");
   const { search } = await searchParams;
 
-  const [payments, projects, clients, members, invoices, vendorInvoices] = await Promise.all([
+  const [
+    payments,
+    projects,
+    clients,
+    members,
+    invoices,
+    vendorInvoices,
+    staffings,
+    timesheets,
+    contracts,
+  ] = await Promise.all([
     listPayments(),
     listProjects(),
     listClients(),
     listAllMembers(),
     listAllInvoices(),
     listVendorInvoices(),
+    listAllStaffings(),
+    listAllTimesheets(),
+    listAllContracts(),
   ]);
 
   // Payments auto-created for automated (paid) vendor invoices are a linked
@@ -39,6 +56,16 @@ export default async function AdminPaymentsPage({
     .map((v) => v.paymentId)
     .filter((id): id is string => !!id);
 
+  const { groups, totalUnderReview } = buildReviewGroups({
+    payments,
+    invoices,
+    staffings,
+    timesheets,
+    contracts,
+    projects,
+    members,
+  });
+
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <AdminTabs active="payments" />
@@ -46,9 +73,10 @@ export default async function AdminPaymentsPage({
           <h1 className="text-base sm:text-lg font-semibold">Payments</h1>
           <span className="text-xs text-slate-500">
             · {payments.length} payment{payments.length === 1 ? "" : "s"}
+            {totalUnderReview > 0 ? ` · ${totalUnderReview} to review` : ""}
           </span>
         </div>
-        <PaymentsClient
+        <PaymentsTabsClient
           payments={payments}
           projects={projects.map((p) => ({ id: p.id, code: p.projectCode, name: p.projectName }))}
           clients={clients.map((c) => ({
@@ -76,6 +104,8 @@ export default async function AdminPaymentsPage({
           currencies={CURRENCIES}
           linkedPaymentIds={linkedPaymentIds}
           initialSearch={search ?? ""}
+          reviewGroups={groups}
+          totalUnderReview={totalUnderReview}
         />
     </main>
   );

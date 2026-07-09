@@ -17,7 +17,6 @@ type PageKey =
   | "timesheets"
   | "payments"
   | "cockpit"
-  | "paymentreview"
   | "retribution"
   | "invoices"
   | "legalcockpit"
@@ -67,7 +66,6 @@ const CATEGORIES: Category[] = [
       { key: "cockpit", href: "/admin/cockpit", label: "Cockpit" },
       { key: "payments", href: "/admin/payments", label: "Payments" },
       { key: "invoices", href: "/admin/invoices", label: "Invoices" },
-      { key: "paymentreview", href: "/admin/payment-review", label: "Review" },
       { key: "retribution", href: "/admin/retribution", label: "Retribution" },
     ],
   },
