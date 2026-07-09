@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { SearchInput } from "@/components/search-input";
+import { Badge } from "@/components/badge";
 import { EditIcon, IconButton } from "@/components/admin-icons";
 import { CLIENT_KINDS, type ClientKind, type ClientRecord } from "@/lib/airtable";
 
@@ -223,12 +225,11 @@ export function ClientsAdminClient({ clients }: Props) {
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-        <input
-          type="search"
+        <SearchInput
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={setSearch}
           placeholder="Search by code, name, industry, country…"
-          className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="flex-1"
         />
         <Button tone="primary" onClick={openCreate}>+ New client</Button>
       </div>
@@ -403,30 +404,12 @@ export function ClientsAdminClient({ clients }: Props) {
 }
 
 function KindPill({ kind }: { kind: ClientKind }) {
-  const cls =
-    kind === "Partner"
-      ? "bg-teal-50 text-teal-700 border-teal-200"
-      : "bg-sky-50 text-sky-700 border-sky-200";
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
-    >
-      {kind}
-    </span>
-  );
+  return <Badge tone={kind === "Partner" ? "neutral" : "info"}>{kind}</Badge>;
 }
 
 function DesPill({ value }: { value: "Yes" | "No" | "" }) {
   if (!value) return <span className="text-slate-300">—</span>;
-  const cls =
-    value === "Yes"
-      ? "bg-amber-50 text-amber-700 ring-amber-200"
-      : "bg-slate-100 text-slate-600 ring-slate-200";
-  return (
-    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ${cls}`}>
-      {value}
-    </span>
-  );
+  return <Badge tone={value === "Yes" ? "warning" : "neutral"}>{value}</Badge>;
 }
 
 function CodeHint({ status }: { status: CodeStatus }) {

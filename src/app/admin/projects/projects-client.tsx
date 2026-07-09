@@ -5,6 +5,8 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { SearchInput } from "@/components/search-input";
+import { Badge } from "@/components/badge";
 import { EditIcon } from "@/components/admin-icons";
 import { DownloadChip } from "@/components/download-chip";
 import { DateRangeChip } from "@/components/date-range-chip";
@@ -450,14 +452,13 @@ export function ProjectsAdminClient({
           higher than the labelled selects beside it. */}
       <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-3">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_12rem_12rem_auto]">
-          <label className="block text-sm">
-            <span className="block text-slate-600 mb-1">Search</span>
-            <input
-              type="search"
+          <label className="block">
+            <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">Search</span>
+            <SearchInput
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={setSearch}
               placeholder="Code, name, client, type, status…"
-              className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+              className="mt-1 w-full"
             />
           </label>
           <Select
@@ -485,7 +486,10 @@ export function ProjectsAdminClient({
             {/* Invisible spacer matches the label height of the surrounding
                 <Select /> labels so the button bottom-aligns with the
                 dropdowns instead of floating above them. */}
-            <span className="block text-sm mb-1" aria-hidden>
+            <span
+              className="block text-[11px] uppercase tracking-wide font-medium text-slate-500 mb-1"
+              aria-hidden
+            >
               &nbsp;
             </span>
             <Button tone="primary" onClick={openCreate} className="w-full">+ New project</Button>
@@ -517,17 +521,17 @@ export function ProjectsAdminClient({
               </button>
             ) : null}
           </div>
-          <button
-            type="button"
+          <Button
+            tone="secondary"
+            size="sm"
             onClick={() => {
               setSearch("");
               setStatusFilter(DEFAULT_STATUS_FILTER);
               setTypeFilter("All");
             }}
-            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
           >
             Reset
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -774,7 +778,7 @@ export function ProjectsAdminClient({
               ))}
             </FormSelect>
             <div>
-              <span className="text-xs font-medium text-slate-600">
+              <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
                 Project code <span className="text-red-500">*</span>
               </span>
               <div className="mt-1 flex gap-2">
@@ -783,7 +787,7 @@ export function ProjectsAdminClient({
                   value={form.projectCode}
                   onChange={(e) => updateField("projectCode", e.target.value)}
                   required
-                  className="block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm font-mono focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                  className="block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-mono focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
                   placeholder="AGX-2026-01"
                 />
                 <Button
@@ -1280,14 +1284,10 @@ function Field({
 }
 
 function TypePill({ type }: { type: ProjectType }) {
-  const cls =
-    type === "Fixed Price"
-      ? "bg-violet-50 text-violet-700 border-violet-200"
-      : "bg-amber-50 text-amber-700 border-amber-200";
   return (
-    <span className={`inline-flex items-center whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
+    <Badge tone={type === "Fixed Price" ? "info" : "warning"} className="whitespace-nowrap">
       {type}
-    </span>
+    </Badge>
   );
 }
 

@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { SearchInput } from "@/components/search-input";
+import { Badge, StatusPill } from "@/components/badge";
 import { DateField } from "@/components/date-picker";
 import {
   OPPORTUNITY_STAGES,
@@ -297,26 +299,12 @@ export function OpportunitiesClient({
       {/* Opportunities (right) */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[12rem]">
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search opportunities…"
-              className="h-9 w-full rounded-md border border-slate-300 bg-white pl-8 pr-3 text-xs"
-            />
-            <svg
-              aria-hidden
-              viewBox="0 0 16 16"
-              className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-            >
-              <circle cx="7" cy="7" r="4.5" />
-              <path d="m11 11 3 3" strokeLinecap="round" />
-            </svg>
-          </div>
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search opportunities…"
+            className="flex-1 min-w-[12rem]"
+          />
           <Button tone="primary" size="sm" onClick={openCreate}>
             + New opportunity
           </Button>
@@ -356,9 +344,7 @@ export function OpportunitiesClient({
                     <StagePill stage={o.stage} />
                     <StatusPill status={o.status} />
                     {converted ? (
-                      <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                        → {o.convertedProject}
-                      </span>
+                      <Badge tone="success">→ {o.convertedProject}</Badge>
                     ) : null}
                   </div>
                   {o.description ? (
@@ -875,36 +861,7 @@ function ConvertModal({
 
 function StagePill({ stage }: { stage: string }) {
   if (!stage) return null;
-  const cls =
-    stage === "Advanced"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-      : stage === "In Discussion"
-      ? "bg-amber-50 text-amber-700 border-amber-200"
-      : "bg-sky-50 text-sky-700 border-sky-200";
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${cls}`}>
-      {stage}
-    </span>
-  );
-}
-
-function StatusPill({ status }: { status: string }) {
-  if (!status) return null;
-  const cls =
-    status === "Won"
-      ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-      : status === "Lost"
-      ? "bg-rose-50 text-rose-700 border-rose-200"
-      : status === "At Risk"
-      ? "bg-red-50 text-red-700 border-red-200"
-      : status === "On Hold"
-      ? "bg-slate-100 text-slate-600 border-slate-200"
-      : status === "In Progress"
-      ? "bg-sky-50 text-sky-700 border-sky-200"
-      : "bg-white text-slate-600 border-slate-300";
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${cls}`}>
-      {status}
-    </span>
-  );
+  const tone =
+    stage === "Advanced" ? "success" : stage === "In Discussion" ? "warning" : "info";
+  return <Badge tone={tone}>{stage}</Badge>;
 }
