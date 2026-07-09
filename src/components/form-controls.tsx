@@ -117,7 +117,30 @@ export function FormTextarea({
   );
 }
 
-type ButtonTone = "primary" | "secondary" | "danger" | "ghost";
+export type ButtonTone = "primary" | "secondary" | "danger" | "ghost";
+export type ButtonSize = "sm" | "md";
+
+// Single source of truth for button styling, shared by <Button> and
+// <ButtonLink> so a clickable link that looks like a button never drifts
+// from the real thing.
+export function buttonClasses(
+  tone: ButtonTone = "secondary",
+  size: ButtonSize = "md",
+  className?: string,
+): string {
+  const base =
+    "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed";
+  const sz = size === "sm" ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-sm";
+  const toneCls =
+    tone === "primary"
+      ? "bg-brand-600 text-white hover:bg-brand-700"
+      : tone === "danger"
+      ? "border border-red-300 bg-white text-red-700 hover:bg-red-50"
+      : tone === "ghost"
+      ? "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+      : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50";
+  return `${base} ${sz} ${toneCls} ${className ?? ""}`;
+}
 
 export function Button({
   tone = "secondary",
@@ -130,7 +153,7 @@ export function Button({
   children,
 }: {
   tone?: ButtonTone;
-  size?: "sm" | "md";
+  size?: ButtonSize;
   disabled?: boolean;
   type?: "button" | "submit";
   onClick?: () => void;
@@ -138,26 +161,49 @@ export function Button({
   className?: string;
   children: ReactNode;
 }) {
-  const base =
-    "inline-flex items-center justify-center rounded-md font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed";
-  const sz = size === "sm" ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-sm";
-  const toneCls =
-    tone === "primary"
-      ? "bg-brand-600 text-white hover:bg-brand-700"
-      : tone === "danger"
-      ? "border border-red-300 bg-white text-red-700 hover:bg-red-50"
-      : tone === "ghost"
-      ? "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-      : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50";
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`${base} ${sz} ${toneCls} ${className ?? ""}`}
+      className={buttonClasses(tone, size, className)}
     >
       {children}
     </button>
+  );
+}
+
+// Anchor that looks exactly like a <Button>. Use for real navigations
+// (download links, sign-in, cross-page actions). Accepts next/link via `as`.
+export function ButtonLink({
+  href,
+  tone = "secondary",
+  size = "md",
+  title,
+  target,
+  rel,
+  className,
+  children,
+}: {
+  href: string;
+  tone?: ButtonTone;
+  size?: ButtonSize;
+  title?: string;
+  target?: string;
+  rel?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <a
+      href={href}
+      title={title}
+      target={target}
+      rel={rel}
+      className={buttonClasses(tone, size, className)}
+    >
+      {children}
+    </a>
   );
 }

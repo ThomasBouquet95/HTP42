@@ -1,24 +1,19 @@
 import type { TimesheetStatus } from "@/lib/airtable";
+import { Badge, type BadgeTone } from "@/components/badge";
 
-// Colour progression across the billing lifecycle so the step reads at a
-// glance: neutral (Draft) → amber "awaiting action" (Submitted) → blue "in
-// flight" (Invoiced) → green "money's in" (Paid). Deleted is a red tombstone,
-// clearly off to the side.
-const styles: Record<TimesheetStatus, string> = {
-  Draft: "bg-slate-100 text-slate-600 border-slate-200",
-  Submitted: "bg-amber-50 text-amber-700 border-amber-200",
-  Invoiced: "bg-blue-50 text-blue-700 border-blue-200",
-  Paid: "bg-emerald-100 text-emerald-800 border-emerald-300",
-  Cancelled: "bg-slate-100 text-slate-500 border-slate-200 line-through",
-  Deleted: "bg-rose-50 text-rose-700 border-rose-200",
+// Timesheet billing lifecycle mapped onto the app-wide badge tones so the
+// colours match the same words everywhere else (see components/badge.tsx):
+// Draft neutral → Submitted amber → Invoiced brand-blue → Paid green.
+// Cancelled is a struck-through neutral; Deleted is a red tombstone.
+const TONE: Record<TimesheetStatus, BadgeTone> = {
+  Draft: "neutral",
+  Submitted: "warning",
+  Invoiced: "info",
+  Paid: "success",
+  Cancelled: "cancelled",
+  Deleted: "danger",
 };
 
 export function StatusBadge({ status }: { status: TimesheetStatus }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${styles[status]}`}
-    >
-      {status}
-    </span>
-  );
+  return <Badge tone={TONE[status]}>{status}</Badge>;
 }
