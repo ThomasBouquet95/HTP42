@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
+import { PageHeader } from "@/components/page-header";
 import { listPayments } from "@/lib/airtable";
 import { CockpitClient } from "./cockpit-client";
 
@@ -15,9 +16,7 @@ export default async function AdminCockpitPage() {
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <AdminTabs active="cockpit" />
-      <div className="mb-4 flex items-baseline gap-3">
-        <h1 className="text-base sm:text-lg font-semibold">Financial cockpit</h1>
-      </div>
+      <PageHeader title="Financial cockpit" />
       <CockpitClient payments={payments} />
     </main>
   );

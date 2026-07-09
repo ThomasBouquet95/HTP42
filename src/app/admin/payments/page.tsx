@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
+import { PageHeader } from "@/components/page-header";
 import {
   listAllContracts,
   listAllInvoices,
@@ -69,13 +70,10 @@ export default async function AdminPaymentsPage({
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <AdminTabs active="payments" />
-        <div className="mb-4 flex items-baseline gap-3">
-          <h1 className="text-base sm:text-lg font-semibold">Payments</h1>
-          <span className="text-xs text-slate-500">
-            · {payments.length} payment{payments.length === 1 ? "" : "s"}
-            {totalUnderReview > 0 ? ` · ${totalUnderReview} to review` : ""}
-          </span>
-        </div>
+        <PageHeader
+          title="Payments"
+          subtitle={`· ${payments.length} payment${payments.length === 1 ? "" : "s"}${totalUnderReview > 0 ? ` · ${totalUnderReview} to review` : ""}`}
+        />
         <PaymentsTabsClient
           payments={payments}
           projects={projects.map((p) => ({ id: p.id, code: p.projectCode, name: p.projectName }))}

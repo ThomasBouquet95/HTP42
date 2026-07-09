@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
+import { PageHeader } from "@/components/page-header";
 import { listAllMembers, listSurveys } from "@/lib/airtable";
 import { MemberReviewsClient, type MemberReviewData } from "./reviews-client";
 
@@ -58,10 +59,7 @@ export default async function AdminMemberReviewsPage({
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <AdminTabs active="memberreviews" />
-      <div className="mb-4 flex items-baseline gap-3">
-        <h1 className="text-base sm:text-lg font-semibold">Client review</h1>
-        <span className="text-xs text-slate-500">· {totalReviews} received</span>
-      </div>
+      <PageHeader title="Client review" subtitle={`· ${totalReviews} received`} />
       <MemberReviewsClient members={data} initialCode={initialCode ?? null} />
     </main>
   );

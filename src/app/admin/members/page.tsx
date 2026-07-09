@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
+import { PageHeader } from "@/components/page-header";
 import { listAllMembers, CURRENCIES, MEMBER_ROLES, MEMBER_STATUSES } from "@/lib/airtable";
 import { MembersAdminClient } from "./members-client";
 
@@ -15,10 +16,7 @@ export default async function AdminMembersPage() {
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <AdminTabs active="members" />
-        <div className="mb-4 flex items-baseline gap-3">
-          <h1 className="text-base sm:text-lg font-semibold">Network Members</h1>
-          <span className="text-xs text-slate-500">· {members.length}</span>
-        </div>
+        <PageHeader title="Network Members" subtitle={`· ${members.length}`} />
         <MembersAdminClient
           members={members}
           roles={MEMBER_ROLES}

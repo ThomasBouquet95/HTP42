@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
+import { PageHeader } from "@/components/page-header";
 import { listAllInvoices, listPayments, listVendorInvoices } from "@/lib/airtable";
 import { env } from "@/lib/env";
 import { InvoicesTabsClient } from "./invoices-tabs-client";
@@ -36,12 +37,10 @@ export default async function AdminInvoicesPage() {
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <AdminTabs active="invoices" />
-      <div className="mb-4 flex items-baseline gap-3">
-        <h1 className="text-base sm:text-lg font-semibold">Invoices</h1>
-        <span className="text-xs text-slate-500">
-          · {invoices.length} member · {vendorInvoices.length} automated
-        </span>
-      </div>
+      <PageHeader
+        title="Invoices"
+        subtitle={`· ${invoices.length} member · ${vendorInvoices.length} automated`}
+      />
       <InvoicesTabsClient
         memberInvoices={invoices}
         paymentByInvoiceId={paymentByInvoiceId}

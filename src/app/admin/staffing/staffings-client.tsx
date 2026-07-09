@@ -9,6 +9,7 @@ import { Badge } from "@/components/badge";
 import { FilterSelect } from "@/components/filters";
 import { DateField } from "@/components/date-picker";
 import { EditIcon, IconButton } from "@/components/admin-icons";
+import { StatusSelect } from "@/components/status-select";
 import type {
   Currency,
   ProjectRole,
@@ -466,11 +467,18 @@ export function StaffingsAdminClient({
                       : `${s.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${s.currency || ""}`.trim()}
                   </td>
                   <td className="px-2 py-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                    <StaffingStatusSelect
-                      value={s.status}
-                      statuses={staffingStatuses}
-                      onChange={(next) => updateStatus(s.id, next)}
-                    />
+                    <span
+                      className="block"
+                      title="Auto-derived from days logged vs allocated; pick to override"
+                    >
+                      <StatusSelect
+                        value={s.status}
+                        options={staffingStatuses}
+                        onChange={(next) => updateStatus(s.id, next)}
+                        ariaLabel="Status"
+                        allowEmpty={false}
+                      />
+                    </span>
                   </td>
                   <td className="px-2 py-1.5 text-right" onClick={(e) => e.stopPropagation()}>
                     <IconButton title="Edit" onClick={() => openEdit(s)}>
@@ -706,43 +714,6 @@ export function StaffingsAdminClient({
         </div>
       ) : null}
     </div>
-  );
-}
-
-// Editable status dropdown, matching the members table. Defaults to the
-// value derived from days logged vs allocated; choosing one here stores an
-// explicit override.
-function StaffingStatusSelect({
-  value,
-  statuses,
-  onChange,
-}: {
-  value: string;
-  statuses: readonly string[];
-  onChange: (next: string) => void;
-}) {
-  const cls =
-    value === "In Progress"
-      ? "bg-brand-50 border-brand-300 text-brand-700"
-      : value === "Completed"
-      ? "bg-emerald-50 border-emerald-300 text-emerald-800"
-      : value === "Not Started"
-      ? "bg-slate-100 border-slate-300 text-slate-700"
-      : "bg-white border-slate-300 text-slate-500";
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      title="Auto-derived from days logged vs allocated; pick to override"
-      className={`block w-full rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${cls} focus:outline-none focus:ring-1 focus:ring-brand-600`}
-    >
-      {statuses.map((s) => (
-        <option key={s} value={s}>
-          {s}
-        </option>
-      ))}
-    </select>
   );
 }
 
