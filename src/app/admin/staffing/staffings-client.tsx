@@ -6,6 +6,7 @@ import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
 import { Badge } from "@/components/badge";
+import { FilterSelect } from "@/components/filters";
 import { DateField } from "@/components/date-picker";
 import { EditIcon, IconButton } from "@/components/admin-icons";
 import type {
@@ -337,16 +338,13 @@ export function StaffingsAdminClient({
           placeholder="Search by staffing, project, member, role…"
           className="flex-1"
         />
-        <select
+        <FilterSelect
+          label="Status"
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as "All" | StaffingStatus)}
-          className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-        >
-          <option value="All">All statuses</option>
-          {staffingStatuses.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
+          onChange={(v) => setStatusFilter(v as "All" | StaffingStatus)}
+          allLabel="All statuses"
+          options={staffingStatuses.map((s) => ({ value: s, label: s }))}
+        />
         <Button tone="primary" onClick={openCreate}>+ New staffing</Button>
       </div>
 

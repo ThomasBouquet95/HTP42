@@ -7,6 +7,7 @@ import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
 import { Badge } from "@/components/badge";
+import { FilterSelect } from "@/components/filters";
 import { EditIcon } from "@/components/admin-icons";
 import { DownloadChip } from "@/components/download-chip";
 import { DateRangeChip } from "@/components/date-range-chip";
@@ -451,49 +452,33 @@ export function ProjectsAdminClient({
           baseline-align across the row instead of the search box riding
           higher than the labelled selects beside it. */}
       <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-3">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_12rem_12rem_auto]">
-          <label className="block">
-            <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">Search</span>
-            <SearchInput
-              value={search}
-              onChange={setSearch}
-              placeholder="Code, name, client, type, status…"
-              className="mt-1 w-full"
-            />
-          </label>
-          <Select
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Code, name, client, type, status…"
+            className="w-64"
+          />
+          <FilterSelect
             label="Status"
             value={statusFilter}
             onChange={(v) => setStatusFilter(v as StatusFilter)}
-            options={[
-              { value: "All", label: "All statuses" },
-              ...projectStatuses.map((s) => ({
-                value: s,
-                label: `${s}${statusCounts.get(s) ? ` (${statusCounts.get(s)})` : ""}`,
-              })),
-            ]}
+            allLabel="All statuses"
+            options={projectStatuses.map((s) => ({
+              value: s,
+              label: `${s}${statusCounts.get(s) ? ` (${statusCounts.get(s)})` : ""}`,
+            }))}
           />
-          <Select
+          <FilterSelect
             label="Type"
             value={typeFilter}
             onChange={(v) => setTypeFilter(v as "All" | ProjectType)}
-            options={[
-              { value: "All", label: "All types" },
-              ...projectTypes.map((t) => ({ value: t, label: t })),
-            ]}
+            allLabel="All types"
+            options={projectTypes.map((t) => ({ value: t, label: t }))}
           />
-          <div className="flex flex-col">
-            {/* Invisible spacer matches the label height of the surrounding
-                <Select /> labels so the button bottom-aligns with the
-                dropdowns instead of floating above them. */}
-            <span
-              className="block text-[11px] uppercase tracking-wide font-medium text-slate-500 mb-1"
-              aria-hidden
-            >
-              &nbsp;
-            </span>
-            <Button tone="primary" onClick={openCreate} className="w-full">+ New project</Button>
-          </div>
+          <Button tone="primary" size="sm" onClick={openCreate} className="ml-auto">
+            + New project
+          </Button>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-sm text-slate-600">
           <div className="flex flex-wrap items-center gap-2">
@@ -1327,35 +1312,3 @@ function ProjectStatusSelect({
   );
 }
 
-// Compact filter dropdown matching the timesheets page so the two admin
-// pages share a visual vocabulary.
-function Select({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <label className="block">
-      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-        {label}
-      </span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}

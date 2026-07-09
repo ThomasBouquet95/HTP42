@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { DownloadChip } from "@/components/download-chip";
 import { SearchInput } from "@/components/search-input";
+import { SegmentedTabs } from "@/components/filters";
 import type { DocumentKind, DocumentRecord } from "@/lib/airtable";
 
 const KIND_FILTERS: Array<{ value: "All" | DocumentKind; label: string }> = [
@@ -60,24 +61,12 @@ export function DocumentSearchClient({ documents }: { documents: DocumentRecord[
           autoFocus
         />
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5">
-            {KIND_FILTERS.map((f) => {
-              const active = kind === f.value;
-              return (
-                <button
-                  key={f.value}
-                  type="button"
-                  onClick={() => setKind(f.value)}
-                  aria-pressed={active}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  {f.label}
-                </button>
-              );
-            })}
-          </div>
+          <SegmentedTabs
+            value={kind}
+            onChange={setKind}
+            options={KIND_FILTERS}
+            ariaLabel="Filter documents by kind"
+          />
           <span className="ml-auto text-[11px] text-slate-500">
             {results.length} result{results.length === 1 ? "" : "s"}
           </span>

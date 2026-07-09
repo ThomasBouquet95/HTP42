@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SignInActivity } from "@/lib/airtable";
 import { SearchInput } from "@/components/search-input";
+import { SegmentedTabs } from "@/components/filters";
 
 type SortKey = "lastActivity" | "lastSignIn" | "signInCount" | "memberCode" | "fullName";
 type SortDir = "asc" | "desc";
@@ -197,24 +198,12 @@ export function SignInActivityClient({
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex flex-wrap items-center gap-0.5 rounded-full bg-slate-100 p-0.5">
-          {FILTER_OPTIONS.map((f) => {
-            const active = filter === f.value;
-            return (
-              <button
-                key={f.value}
-                type="button"
-                onClick={() => setFilter(f.value)}
-                aria-pressed={active}
-                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                {f.label}
-              </button>
-            );
-          })}
-        </div>
+        <SegmentedTabs
+          value={filter}
+          onChange={setFilter}
+          options={FILTER_OPTIONS}
+          ariaLabel="Filter members by activity"
+        />
         <SearchInput
           value={search}
           onChange={setSearch}
