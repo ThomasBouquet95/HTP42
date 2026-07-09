@@ -4,6 +4,8 @@ import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DownloadChip } from "@/components/download-chip";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
+import { DateField } from "@/components/date-picker";
+import { ConfirmDialog } from "@/components/modal";
 import { StatusPill } from "@/components/badge";
 import type { VendorInvoiceRecord, VendorInvoiceStatus } from "@/lib/airtable";
 
@@ -285,7 +287,7 @@ function InvoiceDetail({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <FormField label="Vendor" value={vendor} onChange={setVendor} inputClassName="demo-blur" />
         <FormField label="Invoice number" value={invoiceNumber} onChange={setInvoiceNumber} inputClassName="demo-blur" />
-        <FormField label="Invoice date" value={invoiceDate} onChange={setInvoiceDate} type="date" />
+        <DateField label="Invoice date" value={invoiceDate} onChange={setInvoiceDate} />
         <FormField label="Amount" value={amount} onChange={setAmount} type="number" inputClassName="demo-blur" />
         <FormSelect label="Currency" value={currency} onChange={setCurrency}>
           <option value="EUR">EUR</option>
@@ -338,29 +340,28 @@ function InvoiceDetail({
       {error ? <div className="text-xs text-red-600">{error}</div> : null}
 
       <div className="flex items-center justify-between gap-2">
-        {confirmDelete ? (
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-600">
-              {invoice.paymentId
-                ? "Delete this invoice and its linked payment?"
-                : "Delete this invoice record?"}
-            </span>
-            <Button tone="danger" size="sm" onClick={remove} disabled={saving}>
-              Yes, delete
-            </Button>
-            <Button tone="ghost" size="sm" onClick={() => setConfirmDelete(false)} disabled={saving}>
-              Cancel
-            </Button>
-          </div>
-        ) : (
-          <Button tone="ghost" size="sm" onClick={() => setConfirmDelete(true)} disabled={saving}>
-            Delete
-          </Button>
-        )}
+        <Button tone="danger" size="sm" onClick={() => setConfirmDelete(true)} disabled={saving}>
+          Delete
+        </Button>
         <Button tone="primary" size="sm" onClick={save} disabled={saving}>
           {saving ? "Saving…" : "Save"}
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete invoice?"
+        message={
+          invoice.paymentId
+            ? "This will permanently remove this invoice and its linked payment. This cannot be undone."
+            : "This will permanently remove this invoice record. This cannot be undone."
+        }
+        confirmLabel="Delete"
+        confirmTone="danger"
+        busy={saving}
+        onCancel={() => (saving ? undefined : setConfirmDelete(false))}
+        onConfirm={remove}
+      />
     </div>
   );
 }

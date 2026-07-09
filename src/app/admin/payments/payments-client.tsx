@@ -334,11 +334,20 @@ export function PaymentsClient({
     return [...set].sort();
   }, [rows, currencies]);
 
+  // Options are {id → readable code}, so the dropdown shows "QUH-2026-01"
+  // rather than the raw linked-record id ("rec…") that lives in projectCodes.
   const projectOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const p of rows) for (const c of p.projectCodes) if (c) set.add(c);
-    return [...set].sort();
-  }, [rows]);
+    const map = new Map<string, string>();
+    for (const p of rows) {
+      for (const id of p.projectRecordIds) {
+        const pr = projectsById.get(id);
+        if (pr && !map.has(id)) map.set(id, pr.code || pr.name || id);
+      }
+    }
+    return [...map.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [rows, projectsById]);
 
   const counterpartyOptions = useMemo(() => {
     const set = new Set<string>();
@@ -353,7 +362,7 @@ export function PaymentsClient({
       if (filters.direction !== "All" && p.direction !== filters.direction) return false;
       if (filters.status !== "All" && effectiveStatus(p.paymentStatus) !== filters.status) return false;
       if (filters.currency !== "All" && p.invoiceCurrency !== filters.currency) return false;
-      if (filters.project !== "All" && !p.projectCodes.includes(filters.project)) return false;
+      if (filters.project !== "All" && !p.projectRecordIds.includes(filters.project)) return false;
       if (filters.counterparty !== "All" && !counterpartyValues(p).includes(filters.counterparty)) return false;
       // Date range filters apply only once the user has picked BOTH ends —
       // a half-set range previously hid every payment outside the partial bound.
@@ -819,7 +828,7 @@ export function PaymentsClient({
             value={filters.project}
             onChange={(v) => update("project", v)}
             allLabel="All projects"
-            options={projectOptions.map((c) => ({ value: c, label: c }))}
+            options={projectOptions}
           />
           <BarSelect
             label="Counterparty"
@@ -1573,14 +1582,6 @@ function PaymentDetails({
       ) : null}
 
       <div className="flex flex-wrap items-center gap-3 text-[11px]">
-        <span className="inline-flex items-center gap-1.5 text-slate-500">
-          <DownloadChip
-            url={invoicePdfUrl || undefined}
-            title="Open invoice PDF"
-            emptyTitle="No invoice PDF on file"
-          />
-          Invoice PDF
-        </span>
         {p.invoiceUrl ? (
           <a
             href={p.invoiceUrl}
