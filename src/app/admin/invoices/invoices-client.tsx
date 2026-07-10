@@ -336,7 +336,6 @@ export function AdminInvoicesClient({
               <th className="text-left px-2 py-1.5 font-medium">Member</th>
               <th className="text-left px-2 py-1.5 font-medium">Staffing</th>
               <th className="text-right px-2 py-1.5 font-medium">Amount</th>
-              <th className="text-left px-2 py-1.5 font-medium">Status</th>
               <th className="text-left px-2 py-1.5 font-medium">Payment</th>
               <th className="text-left px-2 py-1.5 font-medium">PDF</th>
               <th className="text-left px-2 py-1.5 font-medium">Comment</th>
@@ -346,7 +345,7 @@ export function AdminInvoicesClient({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text-center text-slate-500 py-10">
+                <td colSpan={10} className="text-center text-slate-500 py-10">
                   No invoices match these filters.
                 </td>
               </tr>
@@ -426,25 +425,21 @@ export function AdminInvoicesClient({
                           }`
                         : "—"}
                     </td>
-                    <td className="px-2 py-1.5 whitespace-nowrap">
-                      {payment ? (
-                        <StatusPill status={payment.status || "—"} />
-                      ) : (
-                        <span className="text-slate-300">No payment</span>
-                      )}
-                    </td>
                     <td className="px-2 py-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       {payment ? (
-                        <Link
-                          href={`/admin/payments?search=${encodeURIComponent(payment.code)}`}
-                          className="inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 font-mono text-[11px] text-brand-700 hover:bg-brand-100"
-                          title="Open the corresponding payment"
-                        >
-                          {payment.code || "Payment"}
-                          <span aria-hidden>↗</span>
-                        </Link>
+                        <div className="flex items-center gap-2">
+                          <Link
+                            href={`/admin/payments?search=${encodeURIComponent(payment.code)}`}
+                            className="inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 font-mono text-[11px] text-brand-700 hover:bg-brand-100"
+                            title="Open the corresponding payment"
+                          >
+                            {payment.code || "Payment"}
+                            <span aria-hidden>↗</span>
+                          </Link>
+                          {payment.status ? <StatusPill status={payment.status} /> : null}
+                        </div>
                       ) : (
-                        <span className="text-slate-300">—</span>
+                        <span className="text-slate-300">No payment</span>
                       )}
                     </td>
                     <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
@@ -477,7 +472,7 @@ export function AdminInvoicesClient({
                   {open ? (
                     <tr className="border-t border-slate-100 bg-slate-50/60">
                       <td />
-                      <td colSpan={10} className="px-3 py-3">
+                      <td colSpan={9} className="px-3 py-3">
                         <InvoiceDetails invoice={r} payment={payment} onEdit={() => openEdit(r)} />
                       </td>
                     </tr>
