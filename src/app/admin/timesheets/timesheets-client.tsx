@@ -8,8 +8,9 @@ import { StatusBadge } from "@/components/status-badge";
 import { parseIsoDate, toIsoDate } from "@/lib/dates";
 import { WeekChip } from "@/components/week-chip";
 import { Button } from "@/components/form-controls";
-import { FilterBar, FilterMultiSelect, FilterDateRange } from "@/components/filters";
+import { FilterBar, FilterMultiSelect, FilterDateRange, SegmentedTabs } from "@/components/filters";
 import { StatusPill } from "@/components/badge";
+import { TimesheetsByProject, TimesheetsByMember } from "./timesheets-breakdown";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 
@@ -23,9 +24,6 @@ const ADMIN_EDITABLE_STATUSES: TimesheetStatus[] = [
   "Paid",
   "Cancelled",
 ];
-
-// How many rows each breakdown card shows before "Show all".
-const BREAKDOWN_PREVIEW_ROWS = 6;
 
 type Filters = {
   // Multi-select: a timesheet matches when its status is in this set. An empty
@@ -75,7 +73,21 @@ function relatedInvoicesFor(
 
 export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId }: Props) {
   const router = useRouter();
+  // Overview (filterable table) · By project · By member — the two breakdown
+  // views live in their own tabs instead of inline cards above the table.
+  const [view, setView] = useState<"overview" | "byproject" | "bymember">("overview");
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  // Jumping from a breakdown group into the Overview, pre-filtered to that
+  // project + member.
+  function drillToOverview(projectCode: string | null, memberCode: string | null) {
+    setFilters({
+      ...DEFAULT_FILTERS,
+      status: [],
+      projectCodes: projectCode ? [projectCode] : [],
+      memberCodes: memberCode ? [memberCode] : [],
+    });
+    setView("overview");
+  }
   // Local mirror so an inline Status change feels instant even before the
   // server round-trip lands.
   const [rows, setRows] = useState<AdminTimesheetRecord[]>(timesheets);
@@ -203,19 +215,6 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
     return [...map.values()].sort((a, b) => b.hours - a.hours);
   }, [countable]);
 
-  const byProject = useMemo(() => {
-    const map = new Map<string, { code: string; name: string; hours: number; weeks: number }>();
-    for (const t of countable) {
-      const key = t.projectCode || "—";
-      const name = t.projectName || t.projectCode || "—";
-      const cur = map.get(key) ?? { code: key, name, hours: 0, weeks: 0 };
-      cur.hours += t.totalHours;
-      cur.weeks += 1;
-      map.set(key, cur);
-    }
-    return [...map.values()].sort((a, b) => b.hours - a.hours);
-  }, [countable]);
-
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((prev) => {
       const next = { ...prev, [key]: value };
@@ -263,6 +262,23 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
 
   return (
     <div className="space-y-4">
+      <SegmentedTabs
+        ariaLabel="Timesheets view"
+        value={view}
+        onChange={setView}
+        options={[
+          { value: "overview", label: "Overview" },
+          { value: "byproject", label: "By project" },
+          { value: "bymember", label: "By member" },
+        ]}
+      />
+
+      {view === "byproject" ? (
+        <TimesheetsByProject timesheets={rows} onDrill={drillToOverview} />
+      ) : view === "bymember" ? (
+        <TimesheetsByMember timesheets={rows} onDrill={drillToOverview} />
+      ) : (
+      <>
       {/* Filter bar */}
       <div className="bg-white rounded-lg border border-slate-200 p-4">
         <div className="mb-3">
@@ -345,48 +361,6 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
             </Button>
           </div>
         </div>
-      </div>
-
-      {/* Breakdowns: click a row to filter the table below; click again to clear. */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <BreakdownCard
-          title="By member"
-          rows={byMember.map((m) => ({
-            key: m.code,
-            label: m.name,
-            mono: m.code,
-            sub: `${m.weeks} timesheet${m.weeks === 1 ? "" : "s"}`,
-            hours: m.hours,
-          }))}
-          selectedKeys={filters.memberCodes}
-          onSelect={(key) =>
-            update(
-              "memberCodes",
-              filters.memberCodes.includes(key)
-                ? filters.memberCodes.filter((k) => k !== key)
-                : [...filters.memberCodes, key],
-            )
-          }
-        />
-        <BreakdownCard
-          title="By project"
-          rows={byProject.map((p) => ({
-            key: p.code,
-            label: p.name,
-            mono: p.code !== p.name ? p.code : undefined,
-            sub: `${p.weeks} timesheet${p.weeks === 1 ? "" : "s"}`,
-            hours: p.hours,
-          }))}
-          selectedKeys={filters.projectCodes}
-          onSelect={(key) =>
-            update(
-              "projectCodes",
-              filters.projectCodes.includes(key)
-                ? filters.projectCodes.filter((k) => k !== key)
-                : [...filters.projectCodes, key],
-            )
-          }
-        />
       </div>
 
       {/* Main table. Rows open the detail modal; the status chip stays inline. */}
@@ -520,6 +494,8 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
           </tbody>
         </table>
       </div>
+      </>
+      )}
 
       {toast ? (
         <div
@@ -744,111 +720,6 @@ function StatusMultiSelect({
           </button>
         );
       })}
-    </div>
-  );
-}
-
-
-type BreakdownRow = {
-  key: string;
-  label: string;
-  mono?: string;
-  sub?: string;
-  hours: number;
-};
-
-// Interactive breakdown: each row doubles as a filter toggle for the main
-// table, with a proportional bar so the distribution reads at a glance.
-// Collapsed to the top rows by default with a "Show all" expander.
-function BreakdownCard({
-  title,
-  rows,
-  selectedKeys,
-  onSelect,
-}: {
-  title: string;
-  rows: BreakdownRow[];
-  selectedKeys: string[];
-  onSelect: (key: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const maxHours = rows.length > 0 ? rows[0].hours : 0;
-  const visible = expanded ? rows : rows.slice(0, BREAKDOWN_PREVIEW_ROWS);
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white">
-      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2">
-        <span className="text-sm font-semibold text-slate-800">{title}</span>
-        <span className="text-[11px] text-slate-400">
-          Click a row to filter
-        </span>
-      </div>
-      {rows.length === 0 ? (
-        <div className="px-4 py-6 text-center text-sm text-slate-500">No data.</div>
-      ) : (
-        <>
-          <ul className="divide-y divide-slate-100">
-            {visible.map((r) => {
-              const active = selectedKeys.includes(r.key);
-              const pct = maxHours > 0 ? (r.hours / maxHours) * 100 : 0;
-              return (
-                <li key={r.key}>
-                  <button
-                    type="button"
-                    onClick={() => onSelect(r.key)}
-                    aria-pressed={active}
-                    className={`relative block w-full px-4 py-2 text-left text-sm transition-colors ${
-                      active ? "bg-brand-50" : "hover:bg-slate-50"
-                    }`}
-                  >
-                    <span className="relative z-10 flex items-center justify-between gap-3">
-                      <span className="min-w-0">
-                        <span className={`font-medium ${active ? "text-brand-800" : "text-slate-800"}`}>
-                          {r.label}
-                        </span>
-                        {r.mono ? (
-                          <span className="ml-2 font-mono text-[10px] text-slate-400">{r.mono}</span>
-                        ) : null}
-                        {r.sub ? (
-                          <span className="block text-xs text-slate-500">{r.sub}</span>
-                        ) : null}
-                      </span>
-                      <span className="flex shrink-0 items-center gap-2">
-                        <span className="font-semibold tabular-nums text-slate-900">
-                          {r.hours.toFixed(2)} h
-                        </span>
-                        {active ? (
-                          <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white">
-                            Filtered
-                          </span>
-                        ) : null}
-                      </span>
-                    </span>
-                    {/* Proportional bar under the row content */}
-                    <span
-                      aria-hidden
-                      className="absolute inset-x-4 bottom-1 z-0 block h-0.5 rounded-full bg-slate-100"
-                    >
-                      <span
-                        className={`block h-full rounded-full ${active ? "bg-brand-500" : "bg-brand-300"}`}
-                        style={{ width: `${Math.max(2, pct)}%` }}
-                      />
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          {rows.length > BREAKDOWN_PREVIEW_ROWS ? (
-            <button
-              type="button"
-              onClick={() => setExpanded((e) => !e)}
-              className="block w-full border-t border-slate-100 px-4 py-1.5 text-center text-xs font-medium text-brand-600 hover:bg-slate-50"
-            >
-              {expanded ? "Show less" : `Show all (${rows.length})`}
-            </button>
-          ) : null}
-        </>
-      )}
     </div>
   );
 }
