@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { PaymentsClient } from "./payments-client";
 import { PaymentReviewClient, type MemberGroup } from "../payment-review/review-client";
+import { PaymentsByProject, PaymentsByMember } from "./payments-breakdown";
 import type { Currency, PaymentRecord } from "@/lib/airtable";
 
-type Tab = "payments" | "review";
+type Tab = "payments" | "review" | "byproject" | "bymember";
 
 type LinkOpt = { id: string; code: string; name: string };
 type ClientOpt = { id: string; code: string; name: string; subjectToDes: "Yes" | "No" | "" };
@@ -72,6 +73,12 @@ export function PaymentsTabsClient({
             </span>
           ) : null}
         </TabButton>
+        <TabButton active={tab === "byproject"} onClick={() => setTab("byproject")}>
+          By project
+        </TabButton>
+        <TabButton active={tab === "bymember"} onClick={() => setTab("bymember")}>
+          By member
+        </TabButton>
       </div>
 
       {tab === "payments" ? (
@@ -85,8 +92,12 @@ export function PaymentsTabsClient({
           linkedPaymentIds={linkedPaymentIds}
           initialSearch={initialSearch}
         />
-      ) : (
+      ) : tab === "review" ? (
         <PaymentReviewClient groups={reviewGroups} />
+      ) : tab === "byproject" ? (
+        <PaymentsByProject payments={payments} projects={projects} clients={clients} members={members} />
+      ) : (
+        <PaymentsByMember payments={payments} members={members} projects={projects} />
       )}
     </div>
   );
