@@ -3,7 +3,15 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { StatusPill } from "@/components/badge";
 import { WeekChip } from "@/components/week-chip";
+import { Button } from "@/components/form-controls";
+import { FilterBar, FilterMultiSelect, FilterDateRange } from "@/components/filters";
+import { TIMESHEET_STATUSES } from "@/lib/airtable";
 import type { AdminTimesheetRecord } from "@/lib/airtable";
+import { downloadTimesheetsCsv } from "./timesheets-export";
+
+// Breakdown default: the billing lifecycle only — Draft / Cancelled / Deleted
+// are excluded until the admin opts them in.
+const DEFAULT_BREAKDOWN_STATUS = ["Submitted", "Invoiced", "Paid"];
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
@@ -42,6 +50,7 @@ export function TimesheetsByProject({
     <GroupedTimesheets
       timesheets={timesheets}
       pickLabel="Project"
+      printParam="project"
       options={options}
       pickMatches={(t, code) => t.projectCode === code}
       groupKey={(t) => t.memberCode}
@@ -71,6 +80,7 @@ export function TimesheetsByMember({
     <GroupedTimesheets
       timesheets={timesheets}
       pickLabel="Member"
+      printParam="member"
       options={options}
       pickMatches={(t, code) => t.memberCode === code}
       groupKey={(t) => t.projectCode || "—"}
@@ -95,6 +105,7 @@ type Group = {
 function GroupedTimesheets({
   timesheets,
   pickLabel,
+  printParam,
   options,
   pickMatches,
   groupKey,
@@ -104,6 +115,7 @@ function GroupedTimesheets({
 }: {
   timesheets: AdminTimesheetRecord[];
   pickLabel: string;
+  printParam: "project" | "member";
   options: { value: string; label: string }[];
   pickMatches: (t: AdminTimesheetRecord, code: string) => boolean;
   groupKey: (t: AdminTimesheetRecord) => string;
@@ -112,11 +124,37 @@ function GroupedTimesheets({
   onDrill?: (pickCode: string, groupCode: string) => void;
 }) {
   const [picked, setPicked] = useState(options[0]?.value ?? "");
+  // Status defaults to the billing lifecycle (Draft / Cancelled / Deleted off);
+  // an empty selection means "any status". Week is an optional start-date range.
+  const [status, setStatus] = useState<string[]>(DEFAULT_BREAKDOWN_STATUS);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
 
   const rows = useMemo(
-    () => timesheets.filter((t) => isCountable(t) && !!picked && pickMatches(t, picked)),
-    [timesheets, picked, pickMatches],
+    () =>
+      timesheets.filter((t) => {
+        if (!picked || !pickMatches(t, picked)) return false;
+        // No status selected → all statuses; otherwise the timesheet must match.
+        if (status.length === 0) {
+          if (!isCountable(t)) return false;
+        } else if (!status.includes(t.status)) {
+          return false;
+        }
+        if (from && (t.startDate ?? "") < from) return false;
+        if (to && (t.startDate ?? "") > to) return false;
+        return true;
+      }),
+    [timesheets, picked, pickMatches, status, from, to],
   );
+
+  function exportPdf() {
+    const p = new URLSearchParams();
+    p.set(printParam, picked);
+    if (status.length > 0) p.set("status", status.join(","));
+    if (from) p.set("from", from);
+    if (to) p.set("to", to);
+    window.open(`/print/timesheets?${p.toString()}`, "_blank", "noopener");
+  }
 
   const groups: Group[] = useMemo(() => {
     const m = new Map<string, Group>();
@@ -140,14 +178,33 @@ function GroupedTimesheets({
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   }, [rows]);
 
+  const statusOptions = useMemo(
+    () => TIMESHEET_STATUSES.map((s) => ({ value: s, label: s })),
+    [],
+  );
+
   return (
     <div className="space-y-4">
-      <Picker label={pickLabel} value={picked} onChange={setPicked} options={options} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <FilterBar>
+          <Picker label={pickLabel} value={picked} onChange={setPicked} options={options} />
+          <FilterMultiSelect label="Status" selected={status} onChange={setStatus} options={statusOptions} />
+          <FilterDateRange label="Week" from={from} to={to} onFrom={setFrom} onTo={setTo} />
+        </FilterBar>
+        <div className="flex gap-2">
+          <Button tone="primary" size="sm" onClick={() => downloadTimesheetsCsv(rows, picked)} disabled={rows.length === 0}>
+            Export CSV
+          </Button>
+          <Button tone="secondary" size="sm" onClick={exportPdf} disabled={rows.length === 0}>
+            Export PDF
+          </Button>
+        </div>
+      </div>
 
       {!picked ? (
         <EmptyPanel>Select a {pickLabel.toLowerCase()} to see its logged time.</EmptyPanel>
       ) : rows.length === 0 ? (
-        <EmptyPanel>No timesheets logged for this {pickLabel.toLowerCase()} yet.</EmptyPanel>
+        <EmptyPanel>No timesheets match these filters.</EmptyPanel>
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-3">

@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 import type { AdminTimesheetRecord, MemberInvoiceRecord, TimesheetStatus } from "@/lib/airtable";
 import { TIMESHEET_STATUSES } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
-import { parseIsoDate, toIsoDate } from "@/lib/dates";
 import { WeekChip } from "@/components/week-chip";
 import { Button } from "@/components/form-controls";
 import { FilterBar, FilterMultiSelect, FilterDateRange, SegmentedTabs } from "@/components/filters";
 import { StatusPill } from "@/components/badge";
 import { TimesheetsByProject, TimesheetsByMember } from "./timesheets-breakdown";
+import { dayIsos, downloadTimesheetsCsv } from "./timesheets-export";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 
@@ -32,7 +32,6 @@ type Filters = {
   status: TimesheetStatus[];
   memberCodes: string[];
   projectCodes: string[];
-  staffingIds: string[];
   from: string;
   to: string;
 };
@@ -44,7 +43,6 @@ const DEFAULT_FILTERS: Filters = {
   status: ["Submitted", "Invoiced", "Paid"],
   memberCodes: [],
   projectCodes: [],
-  staffingIds: [],
   from: "",
   to: "",
 };
@@ -166,28 +164,11 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [rows]);
 
-  const staffingOptions = useMemo(() => {
-    const map = new Map<string, { code: string; project: string; projectCode: string }>();
-    for (const t of rows) {
-      if (!map.has(t.staffingRecordId) && t.staffingRecordId) {
-        map.set(t.staffingRecordId, {
-          code: t.staffingCode,
-          project: t.projectName || t.projectCode,
-          projectCode: t.projectCode,
-        });
-      }
-    }
-    return [...map.entries()]
-      .filter(([, v]) => filters.projectCodes.length === 0 || filters.projectCodes.includes(v.projectCode))
-      .sort((a, b) => a[1].code.localeCompare(b[1].code));
-  }, [rows, filters.projectCodes]);
-
   const filtered = useMemo(() => {
     return rows.filter((t) => {
       if (filters.status.length > 0 && !filters.status.includes(t.status)) return false;
       if (filters.memberCodes.length && !filters.memberCodes.includes(t.memberCode)) return false;
       if (filters.projectCodes.length && !filters.projectCodes.includes(t.projectCode)) return false;
-      if (filters.staffingIds.length && !filters.staffingIds.includes(t.staffingRecordId)) return false;
       if (filters.from && (t.startDate ?? "") < filters.from) return false;
       if (filters.to && (t.startDate ?? "") > filters.to) return false;
       return true;
@@ -220,33 +201,14 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
   }, [countable]);
 
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
-    setFilters((prev) => {
-      const next = { ...prev, [key]: value };
-      if (key === "projectCodes" && prev.staffingIds.length) next.staffingIds = [];
-      return next;
-    });
+    setFilters((prev) => ({ ...prev, [key]: value }));
   }
 
   function exportCsv() {
     // Exports cover the whole "officially logged" lifecycle: Submitted,
-    // Invoiced, Paid. Drafts and Deleted are always excluded. The internal
-    // status column itself is omitted from the file (see toCsvRows).
-    const rows = toCsvRows(
-      filtered.filter(
-        (t) =>
-          t.status === "Submitted" || t.status === "Invoiced" || t.status === "Paid",
-      ),
-    );
-    const csv = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `htp42-admin-timesheets-${todayStamp()}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    // Invoiced, Paid. Drafts and Deleted are always excluded (see
+    // downloadTimesheetsCsv / toCsvRows).
+    downloadTimesheetsCsv(filtered);
   }
 
   // Open a printable (Save-as-PDF) report of the currently filtered timesheets.
@@ -258,7 +220,6 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
     if (filters.status.length > 0) p.set("status", filters.status.join(","));
     if (filters.memberCodes.length) p.set("member", filters.memberCodes.join(","));
     if (filters.projectCodes.length) p.set("project", filters.projectCodes.join(","));
-    if (filters.staffingIds.length) p.set("staffing", filters.staffingIds.join(","));
     if (filters.from) p.set("from", filters.from);
     if (filters.to) p.set("to", filters.to);
     window.open(`/print/timesheets?${p.toString()}`, "_blank", "noopener");
@@ -318,12 +279,6 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
               value: code,
               label: name && name !== code ? `${code} · ${name}` : code,
             }))}
-          />
-          <FilterMultiSelect
-            label="Staffing"
-            selected={filters.staffingIds}
-            onChange={(v) => update("staffingIds", v)}
-            options={staffingOptions.map(([id, v]) => ({ value: id, label: `${v.code} · ${v.project}` }))}
           />
           <FilterDateRange
             label="Week"
@@ -726,73 +681,4 @@ function StatusMultiSelect({
       })}
     </div>
   );
-}
-
-function toCsvRows(rows: AdminTimesheetRecord[]): string[][] {
-  // Status omitted on purpose — exports are shared outside finance and
-  // shouldn't leak the Submitted / Invoiced / Paid billing lifecycle.
-  const header = [
-    "Timesheet Code",
-    "Member Code",
-    "Member Name",
-    "Project Code",
-    "Project Name",
-    "Staffing Code",
-    "Week Start",
-    "Week End",
-    "Submission Date",
-    "Monday Date", "Monday Hours", "Monday Task",
-    "Tuesday Date", "Tuesday Hours", "Tuesday Task",
-    "Wednesday Date", "Wednesday Hours", "Wednesday Task",
-    "Thursday Date", "Thursday Hours", "Thursday Task",
-    "Friday Date", "Friday Hours", "Friday Task",
-    "Total Hours",
-  ];
-  const out: string[][] = [header];
-  for (const t of rows) {
-    const d = dayIsos(t.startDate);
-    out.push([
-      t.timesheetCode,
-      t.memberCode,
-      t.memberName,
-      t.projectCode,
-      t.projectName,
-      t.staffingCode,
-      t.startDate ?? "",
-      t.endDate ?? "",
-      t.submissionDate ?? "",
-      d.monday, t.monday.hours.toString(), t.monday.task,
-      d.tuesday, t.tuesday.hours.toString(), t.tuesday.task,
-      d.wednesday, t.wednesday.hours.toString(), t.wednesday.task,
-      d.thursday, t.thursday.hours.toString(), t.thursday.task,
-      d.friday, t.friday.hours.toString(), t.friday.task,
-      t.totalHours.toFixed(2),
-    ]);
-  }
-  return out;
-}
-
-function dayIsos(startIso: string | null): Record<(typeof DAY_KEYS)[number], string> {
-  const empty = { monday: "", tuesday: "", wednesday: "", thursday: "", friday: "" };
-  if (!startIso) return empty;
-  const base = parseIsoDate(startIso);
-  const out = { ...empty };
-  for (let i = 0; i < DAY_KEYS.length; i += 1) {
-    const d = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate() + i));
-    out[DAY_KEYS[i]] = toIsoDate(d);
-  }
-  return out;
-}
-
-function csvCell(value: string): string {
-  if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-  return value;
-}
-
-function todayStamp(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}${m}${day}`;
 }
