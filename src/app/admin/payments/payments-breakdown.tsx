@@ -236,13 +236,22 @@ function SummaryCard({
   tone: "success" | "danger";
   t: { sent: number; committed: number; review: number };
 }) {
+  // Green for inflows, reddish for outflows — same colour family as the
+  // direction pills / cards on the Payments tab.
+  const card =
+    tone === "success"
+      ? "border-emerald-200 bg-emerald-50"
+      : "border-rose-200 bg-rose-50";
+  const label = tone === "success" ? "text-emerald-700/70" : "text-rose-700/70";
+  const value = tone === "success" ? "text-emerald-800" : "text-rose-800";
+  const sub = tone === "success" ? "text-emerald-700/80" : "text-rose-700/80";
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <div className="text-[10px] uppercase tracking-wide text-slate-400">{title}</div>
-      <div className={`mt-1 text-lg font-semibold tabular-nums demo-blur ${tone === "success" ? "text-emerald-700" : "text-slate-900"}`}>
-        {eur(t.sent)} <span className="text-[11px] font-normal text-slate-400">sent</span>
+    <div className={`rounded-lg border p-3 ${card}`}>
+      <div className={`text-[10px] uppercase tracking-wide ${label}`}>{title}</div>
+      <div className={`mt-1 text-lg font-semibold tabular-nums demo-blur ${value}`}>
+        {eur(t.sent)} <span className="text-[11px] font-normal opacity-70">sent</span>
       </div>
-      <div className="mt-0.5 text-[11px] text-slate-500 demo-blur">
+      <div className={`mt-0.5 text-[11px] demo-blur ${sub}`}>
         {eur(t.committed)} committed · {eur(t.review)} under review
       </div>
     </div>
