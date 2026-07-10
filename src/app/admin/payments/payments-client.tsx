@@ -6,7 +6,7 @@ import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
 import { Badge } from "@/components/badge";
-import { FilterSelect, FilterDateRange } from "@/components/filters";
+import { FilterMultiSelect, FilterDateRange } from "@/components/filters";
 import { DownloadChip } from "@/components/download-chip";
 import { EditIcon } from "@/components/admin-icons";
 import { DateField } from "@/components/date-picker";
@@ -52,10 +52,10 @@ type Props = {
 
 type Filters = {
   direction: "All" | "Inflow" | "Outflow";
-  status: string;
-  currency: string;
-  project: string;
-  counterparty: string;
+  status: string[];
+  currency: string[];
+  project: string[];
+  counterparty: string[];
   dueFrom: string;
   dueTo: string;
   paymentFrom: string;
@@ -65,10 +65,10 @@ type Filters = {
 
 const DEFAULT_FILTERS: Filters = {
   direction: "Inflow",
-  status: "All",
-  currency: "All",
-  project: "All",
-  counterparty: "All",
+  status: [],
+  currency: [],
+  project: [],
+  counterparty: [],
   dueFrom: "",
   dueTo: "",
   paymentFrom: "",
@@ -374,10 +374,11 @@ export function PaymentsClient({
     const q = filters.search.trim().toLowerCase();
     return rows.filter((p) => {
       if (filters.direction !== "All" && p.direction !== filters.direction) return false;
-      if (filters.status !== "All" && effectiveStatus(p.paymentStatus) !== filters.status) return false;
-      if (filters.currency !== "All" && p.invoiceCurrency !== filters.currency) return false;
-      if (filters.project !== "All" && !p.projectRecordIds.includes(filters.project)) return false;
-      if (filters.counterparty !== "All" && !counterpartyValues(p).includes(filters.counterparty)) return false;
+      if (filters.status.length && !filters.status.includes(effectiveStatus(p.paymentStatus))) return false;
+      if (filters.currency.length && !filters.currency.includes(p.invoiceCurrency)) return false;
+      if (filters.project.length && !p.projectRecordIds.some((id) => filters.project.includes(id))) return false;
+      if (filters.counterparty.length && !counterpartyValues(p).some((c) => filters.counterparty.includes(c)))
+        return false;
       // Date range filters apply only once the user has picked BOTH ends —
       // a half-set range previously hid every payment outside the partial bound.
       if (filters.dueFrom && filters.dueTo) {
@@ -464,10 +465,10 @@ export function PaymentsClient({
   const DEFAULT_SORT = { key: "id" as SortKey, dir: "desc" as SortDir };
   const isFiltered =
     filters.direction !== DEFAULT_FILTERS.direction ||
-    filters.status !== DEFAULT_FILTERS.status ||
-    filters.currency !== DEFAULT_FILTERS.currency ||
-    filters.project !== DEFAULT_FILTERS.project ||
-    filters.counterparty !== DEFAULT_FILTERS.counterparty ||
+    filters.status.length > 0 ||
+    filters.currency.length > 0 ||
+    filters.project.length > 0 ||
+    filters.counterparty.length > 0 ||
     filters.dueFrom !== "" ||
     filters.dueTo !== "" ||
     filters.paymentFrom !== "" ||
@@ -835,35 +836,31 @@ export function PaymentsClient({
         </div>
         {/* Filter row — quick dropdowns for the common facets. */}
         <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-3 py-2">
-          <FilterSelect
+          <FilterMultiSelect
             label="Project"
-            value={filters.project}
+            selected={filters.project}
             onChange={(v) => update("project", v)}
-            allLabel="All projects"
             options={projectOptions}
           />
-          <FilterSelect
+          <FilterMultiSelect
             label="Counterparty"
-            value={filters.counterparty}
+            selected={filters.counterparty}
             onChange={(v) => update("counterparty", v)}
-            allLabel="All counterparties"
             options={counterpartyOptions.map((c) => ({ value: c, label: c }))}
           />
-          <FilterSelect
+          <FilterMultiSelect
             label="Status"
-            value={filters.status}
+            selected={filters.status}
             onChange={(v) => update("status", v)}
-            allLabel="All statuses"
             options={statusOptions.map((s) => ({
               value: s,
               label: filters.direction === "Inflow" ? statusLabel(s, "Inflow") : s,
             }))}
           />
-          <FilterSelect
+          <FilterMultiSelect
             label="Currency"
-            value={filters.currency}
+            selected={filters.currency}
             onChange={(v) => update("currency", v)}
-            allLabel="All currencies"
             options={currencyOptions.map((c) => ({ value: c, label: c }))}
           />
           <FilterDateRange

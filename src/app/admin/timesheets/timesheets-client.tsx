@@ -7,8 +7,8 @@ import { TIMESHEET_STATUSES } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
 import { parseIsoDate, toIsoDate } from "@/lib/dates";
 import { WeekChip } from "@/components/week-chip";
-import { DateField } from "@/components/date-picker";
-import { Button, FormSelect } from "@/components/form-controls";
+import { Button } from "@/components/form-controls";
+import { FilterBar, FilterMultiSelect, FilterDateRange } from "@/components/filters";
 import { StatusPill } from "@/components/badge";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
@@ -29,11 +29,12 @@ const BREAKDOWN_PREVIEW_ROWS = 6;
 
 type Filters = {
   // Multi-select: a timesheet matches when its status is in this set. An empty
-  // set means "no status filter" (show everything).
+  // set means "no status filter" (show everything). Member / project /
+  // staffing are likewise multi-select — empty means "no filter".
   status: TimesheetStatus[];
-  memberCode: string;
-  projectCode: string;
-  staffingId: string;
+  memberCodes: string[];
+  projectCodes: string[];
+  staffingIds: string[];
   from: string;
   to: string;
 };
@@ -43,9 +44,9 @@ type Filters = {
 // hidden by default but can be toggled on.
 const DEFAULT_FILTERS: Filters = {
   status: ["Submitted", "Invoiced", "Paid"],
-  memberCode: "All",
-  projectCode: "All",
-  staffingId: "All",
+  memberCodes: [],
+  projectCodes: [],
+  staffingIds: [],
   from: "",
   to: "",
 };
@@ -161,16 +162,16 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
       }
     }
     return [...map.entries()]
-      .filter(([, v]) => filters.projectCode === "All" || v.projectCode === filters.projectCode)
+      .filter(([, v]) => filters.projectCodes.length === 0 || filters.projectCodes.includes(v.projectCode))
       .sort((a, b) => a[1].code.localeCompare(b[1].code));
-  }, [rows, filters.projectCode]);
+  }, [rows, filters.projectCodes]);
 
   const filtered = useMemo(() => {
     return rows.filter((t) => {
       if (filters.status.length > 0 && !filters.status.includes(t.status)) return false;
-      if (filters.memberCode !== "All" && t.memberCode !== filters.memberCode) return false;
-      if (filters.projectCode !== "All" && t.projectCode !== filters.projectCode) return false;
-      if (filters.staffingId !== "All" && t.staffingRecordId !== filters.staffingId) return false;
+      if (filters.memberCodes.length && !filters.memberCodes.includes(t.memberCode)) return false;
+      if (filters.projectCodes.length && !filters.projectCodes.includes(t.projectCode)) return false;
+      if (filters.staffingIds.length && !filters.staffingIds.includes(t.staffingRecordId)) return false;
       if (filters.from && (t.startDate ?? "") < filters.from) return false;
       if (filters.to && (t.startDate ?? "") > filters.to) return false;
       return true;
@@ -218,7 +219,7 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((prev) => {
       const next = { ...prev, [key]: value };
-      if (key === "projectCode" && prev.staffingId !== "All") next.staffingId = "All";
+      if (key === "projectCodes" && prev.staffingIds.length) next.staffingIds = [];
       return next;
     });
   }
@@ -252,9 +253,9 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
   function exportPdf() {
     const p = new URLSearchParams();
     if (filters.status.length > 0) p.set("status", filters.status.join(","));
-    if (filters.memberCode !== "All") p.set("member", filters.memberCode);
-    if (filters.projectCode !== "All") p.set("project", filters.projectCode);
-    if (filters.staffingId !== "All") p.set("staffing", filters.staffingId);
+    if (filters.memberCodes.length) p.set("member", filters.memberCodes.join(","));
+    if (filters.projectCodes.length) p.set("project", filters.projectCodes.join(","));
+    if (filters.staffingIds.length) p.set("staffing", filters.staffingIds.join(","));
     if (filters.from) p.set("from", filters.from);
     if (filters.to) p.set("to", filters.to);
     window.open(`/print/timesheets?${p.toString()}`, "_blank", "noopener");
@@ -282,58 +283,36 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
             />
           </div>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <FormSelect
+        <FilterBar>
+          <FilterMultiSelect
             label="Member"
-            value={filters.memberCode}
-            onChange={(v) => update("memberCode", v)}
-          >
-            <option value="All">All members</option>
-            {memberOptions.map(([code, name]) => (
-              <option key={code} value={code}>
-                {code} · {name}
-              </option>
-            ))}
-          </FormSelect>
-          <FormSelect
+            selected={filters.memberCodes}
+            onChange={(v) => update("memberCodes", v)}
+            options={memberOptions.map(([code, name]) => ({ value: code, label: `${code} · ${name}` }))}
+          />
+          <FilterMultiSelect
             label="Project"
-            value={filters.projectCode}
-            onChange={(v) => update("projectCode", v)}
-          >
-            <option value="All">All projects</option>
-            {projectOptions.map(([code, name]) => (
-              <option key={code} value={code}>
-                {name && name !== code ? `${code} · ${name}` : code}
-              </option>
-            ))}
-          </FormSelect>
-          <FormSelect
+            selected={filters.projectCodes}
+            onChange={(v) => update("projectCodes", v)}
+            options={projectOptions.map(([code, name]) => ({
+              value: code,
+              label: name && name !== code ? `${code} · ${name}` : code,
+            }))}
+          />
+          <FilterMultiSelect
             label="Staffing"
-            value={filters.staffingId}
-            onChange={(v) => update("staffingId", v)}
-          >
-            <option value="All">All staffings</option>
-            {staffingOptions.map(([id, v]) => (
-              <option key={id} value={id}>
-                {v.code} · {v.project}
-              </option>
-            ))}
-          </FormSelect>
-          <DateField
-            label="From"
-            value={filters.from}
-            onChange={(v) => update("from", v)}
-            placeholder="Any date"
-            allowFreeText={false}
+            selected={filters.staffingIds}
+            onChange={(v) => update("staffingIds", v)}
+            options={staffingOptions.map(([id, v]) => ({ value: id, label: `${v.code} · ${v.project}` }))}
           />
-          <DateField
-            label="To"
-            value={filters.to}
-            onChange={(v) => update("to", v)}
-            placeholder="Any date"
-            allowFreeText={false}
+          <FilterDateRange
+            label="Week"
+            from={filters.from}
+            to={filters.to}
+            onFrom={(v) => update("from", v)}
+            onTo={(v) => update("to", v)}
           />
-        </div>
+        </FilterBar>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
             <span>
@@ -379,9 +358,14 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
             sub: `${m.weeks} timesheet${m.weeks === 1 ? "" : "s"}`,
             hours: m.hours,
           }))}
-          selectedKey={filters.memberCode === "All" ? null : filters.memberCode}
+          selectedKeys={filters.memberCodes}
           onSelect={(key) =>
-            update("memberCode", filters.memberCode === key ? "All" : key)
+            update(
+              "memberCodes",
+              filters.memberCodes.includes(key)
+                ? filters.memberCodes.filter((k) => k !== key)
+                : [...filters.memberCodes, key],
+            )
           }
         />
         <BreakdownCard
@@ -393,9 +377,14 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
             sub: `${p.weeks} timesheet${p.weeks === 1 ? "" : "s"}`,
             hours: p.hours,
           }))}
-          selectedKey={filters.projectCode === "All" ? null : filters.projectCode}
+          selectedKeys={filters.projectCodes}
           onSelect={(key) =>
-            update("projectCode", filters.projectCode === key ? "All" : key)
+            update(
+              "projectCodes",
+              filters.projectCodes.includes(key)
+                ? filters.projectCodes.filter((k) => k !== key)
+                : [...filters.projectCodes, key],
+            )
           }
         />
       </div>
@@ -558,11 +547,17 @@ function ActiveFilterChips({
   onClear: <K extends keyof Filters>(key: K, value: Filters[K]) => void;
 }) {
   const chips: { label: string; clear: () => void }[] = [];
-  if (filters.memberCode !== "All") {
-    chips.push({ label: filters.memberCode, clear: () => onClear("memberCode", "All") });
+  for (const code of filters.memberCodes) {
+    chips.push({
+      label: code,
+      clear: () => onClear("memberCodes", filters.memberCodes.filter((c) => c !== code)),
+    });
   }
-  if (filters.projectCode !== "All") {
-    chips.push({ label: filters.projectCode, clear: () => onClear("projectCode", "All") });
+  for (const code of filters.projectCodes) {
+    chips.push({
+      label: code,
+      clear: () => onClear("projectCodes", filters.projectCodes.filter((c) => c !== code)),
+    });
   }
   if (chips.length === 0) return null;
   return (
@@ -768,12 +763,12 @@ type BreakdownRow = {
 function BreakdownCard({
   title,
   rows,
-  selectedKey,
+  selectedKeys,
   onSelect,
 }: {
   title: string;
   rows: BreakdownRow[];
-  selectedKey: string | null;
+  selectedKeys: string[];
   onSelect: (key: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -793,7 +788,7 @@ function BreakdownCard({
         <>
           <ul className="divide-y divide-slate-100">
             {visible.map((r) => {
-              const active = selectedKey === r.key;
+              const active = selectedKeys.includes(r.key);
               const pct = maxHours > 0 ? (r.hours / maxHours) * 100 : 0;
               return (
                 <li key={r.key}>

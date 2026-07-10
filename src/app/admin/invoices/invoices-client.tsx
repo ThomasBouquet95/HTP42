@@ -6,7 +6,7 @@ import Link from "next/link";
 import { DownloadChip } from "@/components/download-chip";
 import { DateField } from "@/components/date-picker";
 import { SearchInput } from "@/components/search-input";
-import { FilterBar, FilterSelect, FilterDateRange } from "@/components/filters";
+import { FilterBar, FilterMultiSelect, FilterDateRange } from "@/components/filters";
 import { StatusPill } from "@/components/badge";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
@@ -15,18 +15,18 @@ import { CURRENCIES } from "@/lib/airtable";
 import type { MemberInvoiceRecord } from "@/lib/airtable";
 
 type Filters = {
-  memberCode: string;
-  projectCode: string;
-  staffingId: string;
+  memberCodes: string[];
+  projectCodes: string[];
+  staffingIds: string[];
   search: string;
   from: string;
   to: string;
 };
 
 const DEFAULT_FILTERS: Filters = {
-  memberCode: "All",
-  projectCode: "All",
-  staffingId: "All",
+  memberCodes: [],
+  projectCodes: [],
+  staffingIds: [],
   search: "",
   from: "",
   to: "",
@@ -157,7 +157,7 @@ export function AdminInvoicesClient({
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((p) => {
       const next = { ...p, [key]: value };
-      if (key === "projectCode" && p.staffingId !== "All") next.staffingId = "All";
+      if (key === "projectCodes" && p.staffingIds.length) next.staffingIds = [];
       return next;
     });
   }
@@ -188,16 +188,16 @@ export function AdminInvoicesClient({
       });
     }
     return [...m.entries()]
-      .filter(([, v]) => filters.projectCode === "All" || v.projectCode === filters.projectCode)
+      .filter(([, v]) => filters.projectCodes.length === 0 || filters.projectCodes.includes(v.projectCode))
       .sort((a, b) => a[1].code.localeCompare(b[1].code));
-  }, [rows, filters.projectCode]);
+  }, [rows, filters.projectCodes]);
 
   const filtered = useMemo(() => {
     const q = filters.search.trim().toLowerCase();
     return rows.filter((r) => {
-      if (filters.memberCode !== "All" && r.memberCode !== filters.memberCode) return false;
-      if (filters.projectCode !== "All" && r.projectCode !== filters.projectCode) return false;
-      if (filters.staffingId !== "All" && r.staffingRecordId !== filters.staffingId) return false;
+      if (filters.memberCodes.length && !filters.memberCodes.includes(r.memberCode)) return false;
+      if (filters.projectCodes.length && !filters.projectCodes.includes(r.projectCode)) return false;
+      if (filters.staffingIds.length && !filters.staffingIds.includes(r.staffingRecordId)) return false;
       const day = (r.submissionDate ?? "").slice(0, 10);
       if (filters.from && day && day < filters.from) return false;
       if (filters.to && day && day > filters.to) return false;
@@ -272,31 +272,28 @@ export function AdminInvoicesClient({
       {/* Filters */}
       <div className="bg-white rounded-lg border border-slate-200 p-4">
         <FilterBar>
-          <FilterSelect
+          <FilterMultiSelect
             label="Member"
-            value={filters.memberCode}
-            onChange={(v) => update("memberCode", v)}
-            allLabel="All members"
+            selected={filters.memberCodes}
+            onChange={(v) => update("memberCodes", v)}
             options={memberOptions.map(([code, name]) => ({
               value: code,
               label: `${code} · ${name}`,
             }))}
           />
-          <FilterSelect
+          <FilterMultiSelect
             label="Project"
-            value={filters.projectCode}
-            onChange={(v) => update("projectCode", v)}
-            allLabel="All projects"
+            selected={filters.projectCodes}
+            onChange={(v) => update("projectCodes", v)}
             options={projectOptions.map(([code, name]) => ({
               value: code,
               label: name && name !== code ? `${code} · ${name}` : code,
             }))}
           />
-          <FilterSelect
+          <FilterMultiSelect
             label="Staffing"
-            value={filters.staffingId}
-            onChange={(v) => update("staffingId", v)}
-            allLabel="All staffings"
+            selected={filters.staffingIds}
+            onChange={(v) => update("staffingIds", v)}
             options={staffingOptions.map(([id, v]) => ({
               value: id,
               label: `${v.code} · ${v.projectName || v.projectCode}`,

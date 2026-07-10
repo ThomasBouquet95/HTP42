@@ -37,10 +37,11 @@ export default async function TimesheetsPrintPage({
   if (!session) redirect("/dashboard");
 
   const sp = await searchParams;
-  const statusFilter = (sp.status ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  const member = sp.member ?? "";
-  const project = sp.project ?? "";
-  const staffing = sp.staffing ?? "";
+  const csv = (v: string | undefined) => (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const statusFilter = csv(sp.status);
+  const member = csv(sp.member);
+  const project = csv(sp.project);
+  const staffing = csv(sp.staffing);
   const from = sp.from ?? "";
   const to = sp.to ?? "";
 
@@ -49,9 +50,9 @@ export default async function TimesheetsPrintPage({
       // Exports only ever cover the billing lifecycle.
       if (t.status !== "Submitted" && t.status !== "Invoiced" && t.status !== "Paid") return false;
       if (statusFilter.length > 0 && !statusFilter.includes(t.status)) return false;
-      if (member && t.memberCode !== member) return false;
-      if (project && t.projectCode !== project) return false;
-      if (staffing && t.staffingRecordId !== staffing) return false;
+      if (member.length && !member.includes(t.memberCode)) return false;
+      if (project.length && !project.includes(t.projectCode)) return false;
+      if (staffing.length && !staffing.includes(t.staffingRecordId)) return false;
       if (from && (t.startDate ?? "") < from) return false;
       if (to && (t.startDate ?? "") > to) return false;
       return true;
@@ -69,9 +70,9 @@ export default async function TimesheetsPrintPage({
 
   const filterBits: string[] = [];
   if (statusFilter.length > 0) filterBits.push(`Status: ${statusFilter.join(", ")}`);
-  if (member) filterBits.push(`Member: ${member}`);
-  if (project) filterBits.push(`Project: ${project}`);
-  if (staffing) filterBits.push(`Staffing: ${rows[0]?.staffingCode || staffing}`);
+  if (member.length) filterBits.push(`Member: ${member.join(", ")}`);
+  if (project.length) filterBits.push(`Project: ${project.join(", ")}`);
+  if (staffing.length) filterBits.push(`Staffing: ${staffing.length === 1 ? rows[0]?.staffingCode || staffing[0] : `${staffing.length} selected`}`);
   if (from) filterBits.push(`From ${longDate(from)}`);
   if (to) filterBits.push(`To ${longDate(to)}`);
   const filterLabel = filterBits.length > 0 ? filterBits.join(" · ") : "All Submitted / Invoiced / Paid";

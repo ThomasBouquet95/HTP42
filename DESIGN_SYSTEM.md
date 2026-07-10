@@ -94,8 +94,14 @@ Every filter section uses the same building blocks, laid out in a `<FilterBar>`:
   `rounded-md border-slate-300 pl-8 text-xs`, leading magnifier. Never a bespoke
   pill/`rounded-full`/`text-sm` search field.
 - **`<FilterSelect label value onChange options allLabel>`** — labeled facet
-  dropdown (status, kind, project, …). Uppercase micro-label + compact select;
-  brand-tinted when active. Value `"All"` = no filter.
+  dropdown (single value). Uppercase micro-label + compact select; brand-tinted
+  when active. Value `"All"` = no filter.
+- **`<FilterMultiSelect label selected onChange options>`** — searchable
+  multi-select facet: chip rests on `label`, brand-tinted with a `label · N`
+  count once picked; opens a popover with a search box + checkbox list and an
+  inline clear. Prefer this over `FilterSelect` for high-cardinality facets
+  (member, project, staffing, counterparty). `selected: string[]`, empty = no
+  filter.
 - **`<FilterDateRange label from to onFrom onTo>`** — calendar-backed date range.
 - **`<SegmentedTabs>`** — for a small set of exclusive views (see §5).
 - A **Reset** button (`<Button tone="secondary" size="sm">`) clears all filters,
@@ -167,6 +173,7 @@ so the admin demo toggle can blur them.
 | View toggle | `SegmentedTabs` | `filters.tsx` |
 | Search box | `SearchInput` | `search-input.tsx` |
 | Facet dropdown | `FilterSelect` | `filters.tsx` |
+| Searchable multi-select facet | `FilterMultiSelect` | `filters.tsx` |
 | Date-range filter | `FilterDateRange` | `filters.tsx` |
 | Filter row wrapper | `FilterBar` | `filters.tsx` |
 | Button / link-button | `Button`, `ButtonLink` | `form-controls.tsx` |
