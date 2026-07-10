@@ -63,7 +63,7 @@ export function TimesheetsByMember({
     const m = new Map<string, string>();
     for (const t of timesheets) if (t.memberCode) m.set(t.memberCode, t.memberName || t.memberCode);
     return [...m.entries()]
-      .map(([code, name]) => ({ value: code, label: `${code} · ${name}` }))
+      .map(([code, name]) => ({ value: code, label: name && name !== code ? `${code} · ${name}` : code }))
       .sort((a, b) => a.value.localeCompare(b.value));
   }, [timesheets]);
 

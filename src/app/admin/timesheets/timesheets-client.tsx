@@ -80,11 +80,15 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
   // Jumping from a breakdown group into the Overview, pre-filtered to that
   // project + member.
   function drillToOverview(projectCode: string | null, memberCode: string | null) {
+    // Group keys use "—" as the placeholder for "no project"; that isn't a real
+    // code, so treat it as no filter rather than a value that matches nothing.
+    const proj = projectCode && projectCode !== "—" ? [projectCode] : [];
+    const mem = memberCode && memberCode !== "—" ? [memberCode] : [];
     setFilters({
       ...DEFAULT_FILTERS,
       status: [],
-      projectCodes: projectCode ? [projectCode] : [],
-      memberCodes: memberCode ? [memberCode] : [],
+      projectCodes: proj,
+      memberCodes: mem,
     });
     setView("overview");
   }
