@@ -557,7 +557,7 @@ function BundleDetail({
               </Button>
             ) : null}
             <Link
-              href={`/admin/payments?search=${encodeURIComponent(selected.payment.code)}`}
+              href={`/admin/payments?payment=${encodeURIComponent(selected.payment.id)}`}
               className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700"
             >
               Open in Payments →
@@ -566,7 +566,7 @@ function BundleDetail({
         ) : open ? (
           <div className="mt-3 flex justify-end">
             <Link
-              href={`/admin/payments?search=${encodeURIComponent(selected.payment.code)}`}
+              href={`/admin/payments?payment=${encodeURIComponent(selected.payment.id)}`}
               className="text-xs font-medium text-brand-600 hover:text-brand-700"
             >
               Open in Payments →

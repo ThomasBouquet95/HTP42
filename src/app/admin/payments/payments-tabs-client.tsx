@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { PaymentsClient } from "./payments-client";
-import { PaymentReviewClient, type MemberGroup } from "../payment-review/review-client";
+import { PaymentReviewClient, type MemberGroup, type ReviewBundle } from "../payment-review/review-client";
 import { PaymentsByProject, PaymentsByMember } from "./payments-breakdown";
 import type { Currency, PaymentRecord } from "@/lib/airtable";
 
@@ -37,7 +37,9 @@ export function PaymentsTabsClient({
   currencies,
   linkedPaymentIds,
   initialSearch,
+  initialPaymentId,
   reviewGroups,
+  bundleById,
   totalUnderReview,
 }: {
   payments: PaymentRecord[];
@@ -48,7 +50,9 @@ export function PaymentsTabsClient({
   currencies: readonly Currency[];
   linkedPaymentIds: string[];
   initialSearch: string;
+  initialPaymentId?: string;
   reviewGroups: MemberGroup[];
+  bundleById: Record<string, ReviewBundle>;
   totalUnderReview: number;
 }) {
   // Landing via a payment search link should open the list, not review.
@@ -97,6 +101,7 @@ export function PaymentsTabsClient({
           currencies={currencies}
           linkedPaymentIds={linkedPaymentIds}
           initialSearch={initialSearch}
+          initialPaymentId={initialPaymentId}
         />
       ) : tab === "review" ? (
         <PaymentReviewClient groups={reviewGroups} initialMemberId={reviewMemberId} />
@@ -106,6 +111,7 @@ export function PaymentsTabsClient({
           projects={projects}
           clients={clients}
           members={members}
+          bundleById={bundleById}
           onOpenReview={openReview}
         />
       ) : (
@@ -113,6 +119,7 @@ export function PaymentsTabsClient({
           payments={payments}
           members={members}
           projects={projects}
+          bundleById={bundleById}
           onOpenReview={openReview}
         />
       )}

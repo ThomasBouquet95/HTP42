@@ -22,11 +22,11 @@ export const dynamic = "force-dynamic";
 export default async function AdminPaymentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string }>;
+  searchParams: Promise<{ search?: string; payment?: string }>;
 }) {
   const session = await requireAdminSession();
   if (!session) redirect("/dashboard");
-  const { search } = await searchParams;
+  const { search, payment } = await searchParams;
 
   const [
     payments,
@@ -67,6 +67,16 @@ export default async function AdminPaymentsPage({
     members,
   });
 
+  // Flatten the review bundles by payment id so the By project / By member
+  // breakdown can show the linked invoice + timesheet breakdown inline when a
+  // row is expanded (only outflows carry a bundle).
+  const bundleById: Record<string, (typeof groups)[number]["underReview"][number]> = {};
+  for (const g of groups) {
+    for (const b of [...g.underReview, ...g.toBePaid, ...g.past]) {
+      bundleById[b.payment.id] = b;
+    }
+  }
+
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <AdminTabs active="payments" />
@@ -102,7 +112,9 @@ export default async function AdminPaymentsPage({
           currencies={CURRENCIES}
           linkedPaymentIds={linkedPaymentIds}
           initialSearch={search ?? ""}
+          initialPaymentId={payment ?? ""}
           reviewGroups={groups}
+          bundleById={bundleById}
           totalUnderReview={totalUnderReview}
         />
     </main>

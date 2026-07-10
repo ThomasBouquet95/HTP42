@@ -44,6 +44,10 @@ type Props = {
   // Prefills the search box, e.g. when arriving from an invoice's "payment"
   // link (/admin/payments?search=PAY-CODE).
   initialSearch?: string;
+  // Exact payment record id to isolate + auto-expand, from a "payment" deep
+  // link (/admin/payments?payment=recXXXX). Unambiguous — unlike a code
+  // substring search, which can match several rows.
+  initialPaymentId?: string;
 };
 
 type Filters = {
@@ -222,6 +226,7 @@ export function PaymentsClient({
   currencies,
   linkedPaymentIds,
   initialSearch,
+  initialPaymentId,
 }: Props) {
   const router = useRouter();
   const linkedPaymentIdSet = new Set(linkedPaymentIds ?? []);
@@ -230,7 +235,9 @@ export function PaymentsClient({
   const [rows, setRows] = useState<PaymentRecord[]>(payments);
   useEffect(() => setRows(payments), [payments]);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(
+    () => new Set(initialPaymentId ? [initialPaymentId] : []),
+  );
   function toggleRow(id: string) {
     setExpandedRows((prev) => {
       const next = new Set(prev);
@@ -358,6 +365,12 @@ export function PaymentsClient({
   }, [rows]);
 
   const filtered = useMemo(() => {
+    // A deep link to a specific payment isolates exactly that record — a code
+    // substring search (e.g. "139") could otherwise match several rows.
+    if (initialPaymentId) {
+      const one = rows.find((p) => p.id === initialPaymentId);
+      return one ? [one] : [];
+    }
     const q = filters.search.trim().toLowerCase();
     return rows.filter((p) => {
       if (filters.direction !== "All" && p.direction !== filters.direction) return false;
@@ -398,7 +411,8 @@ export function PaymentsClient({
       }
       return true;
     });
-  }, [rows, filters, clientLabel, memberLabel, projectLabel]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, filters, initialPaymentId]);
 
   const sorted = useMemo(() => {
     if (!sort.key) return filtered;

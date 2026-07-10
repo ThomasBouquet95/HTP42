@@ -369,9 +369,7 @@ export function VendorInvoicesClient({
                       <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
                         {inv.paymentId ? (
                           <a
-                            href={`/admin/payments?search=${encodeURIComponent(
-                              paymentCodeById?.[inv.paymentId] || inv.paymentId,
-                            )}`}
+                            href={`/admin/payments?payment=${encodeURIComponent(inv.paymentId)}`}
                             title="Open the linked payment"
                             className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-mono text-[11px] text-emerald-800 hover:bg-emerald-100"
                           >
@@ -562,7 +560,7 @@ function InvoiceDetails({
           <span className="font-medium">Paid</span>
           <span className="text-emerald-700">· a matching payment was created.</span>
           <a
-            href={`/admin/payments?search=${encodeURIComponent(paymentCode || invoice.paymentId)}`}
+            href={`/admin/payments?payment=${encodeURIComponent(invoice.paymentId)}`}
             className="ml-auto inline-flex items-center gap-1 font-medium text-emerald-800 underline-offset-2 hover:underline"
           >
             {paymentCode ? `View payment ${paymentCode}` : "View payment"} ↗

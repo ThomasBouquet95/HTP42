@@ -429,7 +429,7 @@ export function AdminInvoicesClient({
                       {payment ? (
                         <div className="flex items-center gap-2">
                           <Link
-                            href={`/admin/payments?search=${encodeURIComponent(payment.code)}`}
+                            href={`/admin/payments?payment=${encodeURIComponent(payment.id)}`}
                             className="inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 font-mono text-[11px] text-brand-700 hover:bg-brand-100"
                             title="Open the corresponding payment"
                           >
@@ -632,7 +632,7 @@ function InvoiceDetails({
         />
         {payment ? (
           <Link
-            href={`/admin/payments?search=${encodeURIComponent(payment.code)}`}
+            href={`/admin/payments?payment=${encodeURIComponent(payment.id)}`}
             className="inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 font-mono text-[11px] text-brand-700 hover:bg-brand-100"
             title="Open the corresponding payment"
           >

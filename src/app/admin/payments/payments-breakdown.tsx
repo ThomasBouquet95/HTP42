@@ -2,10 +2,21 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { StatusPill } from "@/components/badge";
+import { DownloadChip } from "@/components/download-chip";
 import { effectiveEur } from "@/lib/fx";
 import type { PaymentRecord } from "@/lib/airtable";
+import type { ReviewBundle } from "../payment-review/review-client";
 
 type LinkOpt = { id: string; code: string; name: string };
+
+const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
+const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
+  monday: "Mon",
+  tuesday: "Tue",
+  wednesday: "Wed",
+  thursday: "Thu",
+  friday: "Fri",
+};
 
 // Canonical status → bucket. Blank/legacy reads as "under review" (same rule
 // the payments list uses), Canceled is excluded from totals.
@@ -48,12 +59,14 @@ export function PaymentsByProject({
   projects,
   clients,
   members,
+  bundleById,
   onOpenReview,
 }: {
   payments: PaymentRecord[];
   projects: LinkOpt[];
   clients: LinkOpt[];
   members: LinkOpt[];
+  bundleById: Record<string, ReviewBundle>;
   onOpenReview?: (memberId?: string) => void;
 }) {
   const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
@@ -106,6 +119,7 @@ export function PaymentsByProject({
               rows={inflows}
               subtotalEur={inT.sent + inT.committed + inT.review}
               counterparty={clientLabel}
+              bundleById={bundleById}
             />
             <Column
               title="Outflows"
@@ -113,6 +127,7 @@ export function PaymentsByProject({
               rows={outflows}
               subtotalEur={outT.sent + outT.committed + outT.review}
               counterparty={memberLabel}
+              bundleById={bundleById}
               onReview={onOpenReview}
               reviewMemberIdFor={(p) =>
                 bucketOf(p.paymentStatus) !== "sent" && bucketOf(p.paymentStatus) !== "canceled"
@@ -133,11 +148,13 @@ export function PaymentsByMember({
   payments,
   members,
   projects,
+  bundleById,
   onOpenReview,
 }: {
   payments: PaymentRecord[];
   members: LinkOpt[];
   projects: LinkOpt[];
+  bundleById: Record<string, ReviewBundle>;
   onOpenReview?: (memberId?: string) => void;
 }) {
   const [memberId, setMemberId] = useState(members[0]?.id ?? "");
@@ -186,6 +203,7 @@ export function PaymentsByMember({
               rows={outstanding}
               subtotalEur={t.committed + t.review}
               counterparty={projectLabel}
+              bundleById={bundleById}
               onReview={onOpenReview}
               reviewMemberIdFor={() => memberId || undefined}
             />
@@ -195,6 +213,7 @@ export function PaymentsByMember({
               rows={paid}
               subtotalEur={t.sent}
               counterparty={projectLabel}
+              bundleById={bundleById}
             />
           </div>
         </>
@@ -312,6 +331,7 @@ function Column({
   rows,
   subtotalEur,
   counterparty,
+  bundleById,
   onReview,
   reviewMemberIdFor,
 }: {
@@ -320,6 +340,7 @@ function Column({
   rows: PaymentRecord[];
   subtotalEur: number;
   counterparty: (p: PaymentRecord) => string;
+  bundleById: Record<string, ReviewBundle>;
   onReview?: (memberId?: string) => void;
   reviewMemberIdFor?: (p: PaymentRecord) => string | undefined;
 }) {
@@ -353,6 +374,8 @@ function Column({
           {sorted.map((p) => {
             const isOpen = open.has(p.id);
             const reviewMemberId = reviewMemberIdFor?.(p);
+            const bundle = bundleById[p.id];
+            const invoicePdf = bundle?.invoice?.pdfUrl || p.invoicePdf?.url || p.invoiceUrl || "";
             return (
               <li key={p.id} className="border-t border-slate-100 text-xs first:border-t-0">
                 <div
@@ -389,7 +412,7 @@ function Column({
                   <StatusPill status={effStatus(p.paymentStatus)} />
                 </div>
                 {isOpen ? (
-                  <div className="bg-slate-50/60 px-3 pb-2.5 pl-8">
+                  <div className="bg-slate-50/60 px-3 pb-2.5 pl-8" onClick={(e) => e.stopPropagation()}>
                     <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] sm:grid-cols-3">
                       <Detail label="Type" value={p.type || "—"} />
                       <Detail label="Amount (EUR)" value={eur(effectiveEur(p))} blur />
@@ -397,22 +420,50 @@ function Column({
                       <Detail label="Invoice date" value={p.invoiceDate ?? "—"} />
                       <Detail label="Due date" value={p.dueDate ?? "—"} />
                       <Detail label="Payment date" value={p.paymentDate ?? "—"} />
+                      {bundle?.invoice ? (
+                        <Detail label="Invoice" value={bundle.invoice.code || "—"} />
+                      ) : null}
+                      {bundle?.staffing ? (
+                        <>
+                          <Detail label="Role" value={bundle.staffing.projectRole || bundle.staffing.role || "—"} />
+                          <Detail
+                            label="Rate / day"
+                            value={money(bundle.staffing.ratePerDay, bundle.staffing.currency)}
+                            blur
+                          />
+                          <Detail
+                            label="Days used"
+                            value={
+                              bundle.staffing.daysAllocated != null
+                                ? `${bundle.staffing.daysUsed} / ${bundle.staffing.daysAllocated}`
+                                : String(bundle.staffing.daysUsed)
+                            }
+                          />
+                        </>
+                      ) : null}
                     </dl>
                     {p.comment ? (
                       <p className="mt-1 text-[11px] text-slate-500 demo-blur">{p.comment}</p>
                     ) : null}
-                    <div className="mt-2 flex items-center gap-3">
+
+                    {bundle && bundle.timesheets.length > 0 ? (
+                      <TimesheetBreakdown timesheets={bundle.timesheets} />
+                    ) : null}
+
+                    <div className="mt-2 flex flex-wrap items-center gap-3">
                       <a
-                        href={`/admin/payments?search=${encodeURIComponent(p.paymentCode)}`}
-                        onClick={(e) => e.stopPropagation()}
+                        href={`/admin/payments?payment=${encodeURIComponent(p.id)}`}
                         className="text-[11px] font-medium text-brand-600 hover:text-brand-700"
                       >
                         Open in Payments →
                       </a>
+                      {invoicePdf ? (
+                        <DownloadChip url={invoicePdf} title="Open invoice PDF" emptyTitle="No PDF" />
+                      ) : null}
                       {onReview && reviewMemberId ? (
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); onReview(reviewMemberId); }}
+                          onClick={() => onReview(reviewMemberId)}
                           className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 hover:text-amber-800"
                         >
                           <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
@@ -439,6 +490,99 @@ function Detail({ label, value, blur }: { label: string; value: string; blur?: b
     <div>
       <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
       <dd className={`text-slate-700 ${blur ? "demo-blur" : ""}`}>{value}</dd>
+    </div>
+  );
+}
+
+const weekRange = (start: string | null, end: string | null) => {
+  if (start && end) return `${start} → ${end}`;
+  return start || end || "—";
+};
+
+// Collapsed-by-default timesheet list for an expanded payment row. Each week
+// can be opened to reveal the per-day hours + task breakdown.
+function TimesheetBreakdown({ timesheets }: { timesheets: ReviewBundle["timesheets"] }) {
+  const [showAll, setShowAll] = useState(false);
+  const [openWeeks, setOpenWeeks] = useState<Set<string>>(new Set());
+  const toggleWeek = (id: string) =>
+    setOpenWeeks((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const totalHours = timesheets.reduce((n, t) => n + (Number(t.totalHours) || 0), 0);
+
+  return (
+    <div className="mt-2 rounded-md border border-slate-200 bg-white">
+      <button
+        type="button"
+        onClick={() => setShowAll((v) => !v)}
+        aria-expanded={showAll}
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+      >
+        <svg
+          viewBox="0 0 12 12"
+          className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${showAll ? "rotate-90" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          aria-hidden
+        >
+          <path d="M4.5 3 7.5 6 4.5 9" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Timesheets <span className="text-slate-400">· {timesheets.length}</span>
+        <span className="ml-auto tabular-nums text-slate-400">{totalHours.toFixed(1)} h</span>
+      </button>
+
+      {showAll ? (
+        <ul className="border-t border-slate-100">
+          {timesheets.map((t) => {
+            const wOpen = openWeeks.has(t.id);
+            return (
+              <li key={t.id} className="border-t border-slate-100 first:border-t-0">
+                <button
+                  type="button"
+                  onClick={() => toggleWeek(t.id)}
+                  aria-expanded={wOpen}
+                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-[11px] hover:bg-slate-50"
+                >
+                  <svg
+                    viewBox="0 0 12 12"
+                    className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${wOpen ? "rotate-90" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    aria-hidden
+                  >
+                    <path d="M4.5 3 7.5 6 4.5 9" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span className="text-slate-700">{weekRange(t.startDate, t.endDate)}</span>
+                  <StatusPill status={t.status} />
+                  <span className="ml-auto tabular-nums text-slate-500">
+                    {(Number(t.totalHours) || 0).toFixed(1)} h
+                  </span>
+                </button>
+                {wOpen ? (
+                  <dl className="grid grid-cols-1 gap-x-4 gap-y-0.5 bg-slate-50/60 px-2.5 pb-2 pl-7 pt-1 text-[11px] sm:grid-cols-2">
+                    {DAY_KEYS.map((d) => {
+                      const day = t.days[d];
+                      if (!day || (!day.hours && !day.task)) return null;
+                      return (
+                        <div key={d} className="flex gap-2">
+                          <span className="w-8 shrink-0 text-slate-400">{DAY_LABELS[d]}</span>
+                          <span className="tabular-nums text-slate-600">{day.hours || 0}h</span>
+                          {day.task ? <span className="truncate text-slate-500 demo-blur">{day.task}</span> : null}
+                        </div>
+                      );
+                    })}
+                  </dl>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
     </div>
   );
 }

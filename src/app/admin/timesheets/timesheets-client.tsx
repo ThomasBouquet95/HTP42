@@ -636,7 +636,7 @@ function RelatedInvoices({
                   {inv.status ? <StatusPill status={inv.status} /> : null}
                   {payment ? (
                     <a
-                      href={`/admin/payments?search=${encodeURIComponent(payment.code)}`}
+                      href={`/admin/payments?payment=${encodeURIComponent(payment.id)}`}
                       className="inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-1.5 py-0.5 font-mono text-[10px] text-brand-700 hover:bg-brand-100"
                       title={`Open payment${payment.status ? ` (${payment.status})` : ""}`}
                     >
