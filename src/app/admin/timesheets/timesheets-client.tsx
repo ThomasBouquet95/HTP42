@@ -246,79 +246,53 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
       <>
       {/* Filter bar */}
       <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="mb-3">
-          <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-            Status
-          </span>
-          <div className="mt-1">
-            <StatusMultiSelect
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <FilterBar>
+            <FilterMultiSelect
+              label="Status"
               selected={filters.status}
-              onToggle={(s) =>
-                update(
-                  "status",
-                  filters.status.includes(s)
-                    ? filters.status.filter((x) => x !== s)
-                    : [...filters.status, s],
-                )
-              }
+              onChange={(v) => update("status", v as TimesheetStatus[])}
+              options={TIMESHEET_STATUSES.map((s) => ({ value: s, label: s }))}
             />
-          </div>
-        </div>
-        <FilterBar>
-          <FilterMultiSelect
-            label="Member"
-            selected={filters.memberCodes}
-            onChange={(v) => update("memberCodes", v)}
-            options={memberOptions.map(([code, name]) => ({ value: code, label: `${code} · ${name}` }))}
-          />
-          <FilterMultiSelect
-            label="Project"
-            selected={filters.projectCodes}
-            onChange={(v) => update("projectCodes", v)}
-            options={projectOptions.map(([code, name]) => ({
-              value: code,
-              label: name && name !== code ? `${code} · ${name}` : code,
-            }))}
-          />
-          <FilterDateRange
-            label="Week"
-            from={filters.from}
-            to={filters.to}
-            onFrom={(v) => update("from", v)}
-            onTo={(v) => update("to", v)}
-          />
-        </FilterBar>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
-          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-            <span>
-              {countable.length} timesheet{countable.length === 1 ? "" : "s"} ·{" "}
-              <span className="font-semibold text-slate-900">{total.toFixed(2)} h</span>
-              {" · "}
-              {byMember.length} member{byMember.length === 1 ? "" : "s"}
-            </span>
-            <ActiveFilterChips filters={filters} onClear={update} />
-          </div>
+            <FilterMultiSelect
+              label="Member"
+              selected={filters.memberCodes}
+              onChange={(v) => update("memberCodes", v)}
+              options={memberOptions.map(([code, name]) => ({ value: code, label: `${code} · ${name}` }))}
+            />
+            <FilterMultiSelect
+              label="Project"
+              selected={filters.projectCodes}
+              onChange={(v) => update("projectCodes", v)}
+              options={projectOptions.map(([code, name]) => ({
+                value: code,
+                label: name && name !== code ? `${code} · ${name}` : code,
+              }))}
+            />
+            <FilterDateRange
+              label="Week"
+              from={filters.from}
+              to={filters.to}
+              onFrom={(v) => update("from", v)}
+              onTo={(v) => update("to", v)}
+            />
+          </FilterBar>
           <div className="flex gap-2">
-            <Button tone="secondary" size="md" onClick={() => setFilters(DEFAULT_FILTERS)}>
+            <Button tone="secondary" size="sm" onClick={() => setFilters(DEFAULT_FILTERS)}>
               Reset
             </Button>
-            <Button
-              tone="primary"
-              size="md"
-              onClick={exportCsv}
-              disabled={filtered.length === 0}
-            >
+            <Button tone="primary" size="sm" onClick={exportCsv} disabled={filtered.length === 0}>
               Export CSV
             </Button>
-            <Button
-              tone="secondary"
-              size="md"
-              onClick={exportPdf}
-              disabled={filtered.length === 0}
-            >
+            <Button tone="secondary" size="sm" onClick={exportPdf} disabled={filtered.length === 0}>
               Export PDF
             </Button>
           </div>
+        </div>
+        <div className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
+          {countable.length} timesheet{countable.length === 1 ? "" : "s"} ·{" "}
+          <span className="font-semibold text-slate-800">{total.toFixed(2)} h</span> ·{" "}
+          {byMember.length} member{byMember.length === 1 ? "" : "s"}
         </div>
       </div>
 
@@ -472,47 +446,6 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
   );
 }
 
-// Small dismissable chips that surface non-default filters so the admin can
-// see (and undo) what's narrowing the table without scanning six dropdowns.
-function ActiveFilterChips({
-  filters,
-  onClear,
-}: {
-  filters: Filters;
-  onClear: <K extends keyof Filters>(key: K, value: Filters[K]) => void;
-}) {
-  const chips: { label: string; clear: () => void }[] = [];
-  for (const code of filters.memberCodes) {
-    chips.push({
-      label: code,
-      clear: () => onClear("memberCodes", filters.memberCodes.filter((c) => c !== code)),
-    });
-  }
-  for (const code of filters.projectCodes) {
-    chips.push({
-      label: code,
-      clear: () => onClear("projectCodes", filters.projectCodes.filter((c) => c !== code)),
-    });
-  }
-  if (chips.length === 0) return null;
-  return (
-    <span className="flex flex-wrap items-center gap-1">
-      {chips.map((c) => (
-        <button
-          key={c.label}
-          type="button"
-          onClick={c.clear}
-          className="inline-flex items-center gap-1 rounded-full bg-brand-50 border border-brand-200 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-100"
-          title="Clear this filter"
-        >
-          {c.label}
-          <span aria-hidden>×</span>
-        </button>
-      ))}
-    </span>
-  );
-}
-
 // Related invoices for an expanded timesheet row: the invoices on the same
 // staffing, each linked to the payment that settles it (when there is one).
 function RelatedInvoices({
@@ -589,6 +522,17 @@ function RelatedInvoices({
 
 // Inline status editor for the admin table. Looks like the StatusBadge with a
 // small chevron tacked on so admins can see at a glance that it's editable.
+// Mirrors StatusBadge: neutral → amber → blue → solid green across the
+// Draft → Submitted → Invoiced → Paid lifecycle; Deleted is a red tombstone.
+const STATUS_CHIP: Record<TimesheetStatus, string> = {
+  Draft: "bg-slate-100 text-slate-600 border-slate-200",
+  Submitted: "bg-amber-50 text-amber-700 border-amber-200",
+  Invoiced: "bg-blue-50 text-blue-700 border-blue-200",
+  Paid: "bg-emerald-100 text-emerald-800 border-emerald-300",
+  Cancelled: "bg-slate-100 text-slate-500 border-slate-200 line-through",
+  Deleted: "bg-rose-50 text-rose-700 border-rose-200",
+};
+
 // A transparent <select> sits on top so a single click opens the native
 // dropdown. Disabled rows (e.g. Deleted) drop the chevron and the overlay.
 function AdminStatusSelect({
@@ -634,51 +578,3 @@ function AdminStatusSelect({
   );
 }
 
-// Mirrors StatusBadge: neutral → amber → blue → solid green across the
-// Draft → Submitted → Invoiced → Paid lifecycle; Deleted is a red tombstone.
-const STATUS_CHIP: Record<TimesheetStatus, string> = {
-  Draft: "bg-slate-100 text-slate-600 border-slate-200",
-  Submitted: "bg-amber-50 text-amber-700 border-amber-200",
-  Invoiced: "bg-blue-50 text-blue-700 border-blue-200",
-  Paid: "bg-emerald-100 text-emerald-800 border-emerald-300",
-  Cancelled: "bg-slate-100 text-slate-500 border-slate-200 line-through",
-  Deleted: "bg-rose-50 text-rose-700 border-rose-200",
-};
-
-// Multi-select status filter: a toggle chip per status. Active chips use the
-// same colour language as the row badges; empty selection means "all".
-function StatusMultiSelect({
-  selected,
-  onToggle,
-}: {
-  selected: TimesheetStatus[];
-  onToggle: (s: TimesheetStatus) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {TIMESHEET_STATUSES.map((s) => {
-        const active = selected.includes(s);
-        return (
-          <button
-            key={s}
-            type="button"
-            onClick={() => onToggle(s)}
-            aria-pressed={active}
-            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
-              active
-                ? STATUS_CHIP[s]
-                : "border-slate-200 bg-white text-slate-400 hover:bg-slate-50"
-            }`}
-          >
-            {active ? (
-              <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden>
-                <path d="M3.5 8.5l3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            ) : null}
-            {s}
-          </button>
-        );
-      })}
-    </div>
-  );
-}

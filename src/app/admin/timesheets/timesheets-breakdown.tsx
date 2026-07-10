@@ -183,21 +183,37 @@ function GroupedTimesheets({
     [],
   );
 
+  const filtersDirty =
+    status.length !== DEFAULT_BREAKDOWN_STATUS.length ||
+    !DEFAULT_BREAKDOWN_STATUS.every((s) => status.includes(s)) ||
+    !!from ||
+    !!to;
+  function reset() {
+    setStatus(DEFAULT_BREAKDOWN_STATUS);
+    setFrom("");
+    setTo("");
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <FilterBar>
-          <Picker label={pickLabel} value={picked} onChange={setPicked} options={options} />
-          <FilterMultiSelect label="Status" selected={status} onChange={setStatus} options={statusOptions} />
-          <FilterDateRange label="Week" from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        </FilterBar>
-        <div className="flex gap-2">
-          <Button tone="primary" size="sm" onClick={() => downloadTimesheetsCsv(rows, picked)} disabled={rows.length === 0}>
-            Export CSV
-          </Button>
-          <Button tone="secondary" size="sm" onClick={exportPdf} disabled={rows.length === 0}>
-            Export PDF
-          </Button>
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <FilterBar>
+            <Picker label={pickLabel} value={picked} onChange={setPicked} options={options} />
+            <FilterMultiSelect label="Status" selected={status} onChange={setStatus} options={statusOptions} />
+            <FilterDateRange label="Week" from={from} to={to} onFrom={setFrom} onTo={setTo} />
+          </FilterBar>
+          <div className="flex gap-2">
+            <Button tone="secondary" size="sm" onClick={reset} disabled={!filtersDirty}>
+              Reset
+            </Button>
+            <Button tone="primary" size="sm" onClick={() => downloadTimesheetsCsv(rows, picked)} disabled={rows.length === 0}>
+              Export CSV
+            </Button>
+            <Button tone="secondary" size="sm" onClick={exportPdf} disabled={rows.length === 0}>
+              Export PDF
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -208,7 +224,7 @@ function GroupedTimesheets({
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-3">
-            <Stat label="Total hours" value={h1(totalHours)} accent />
+            <Stat label="Total hours" value={h1(totalHours)} primary />
             <Stat label={cap(groupNoun) + (groups.length === 1 ? "" : "s")} value={String(groups.length)} />
             <Stat
               label={`Timesheet${rows.length === 1 ? "" : "s"}`}
@@ -379,11 +395,13 @@ function Picker({
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function Stat({ label, value, primary }: { label: string; value: string; primary?: boolean }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
-      <div className={`mt-1 text-lg font-semibold tabular-nums ${accent ? "text-brand-700" : "text-slate-900"}`}>
+    <div className={`rounded-lg border p-3 ${primary ? "border-brand-200 bg-brand-50" : "border-slate-200 bg-white"}`}>
+      <div className={`text-[10px] uppercase tracking-wide ${primary ? "text-brand-700/70" : "text-slate-400"}`}>
+        {label}
+      </div>
+      <div className={`mt-1 text-lg font-semibold tabular-nums ${primary ? "text-brand-800" : "text-slate-900"}`}>
         {value}
       </div>
     </div>
