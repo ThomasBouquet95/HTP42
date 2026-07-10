@@ -53,6 +53,12 @@ export function PaymentsTabsClient({
 }) {
   // Landing via a payment search link should open the list, not review.
   const [tab, setTab] = useState<Tab>("payments");
+  // When a By project / By member row links to Review, switch tab + preselect.
+  const [reviewMemberId, setReviewMemberId] = useState<string | undefined>(undefined);
+  function openReview(memberId?: string) {
+    setReviewMemberId(memberId);
+    setTab("review");
+  }
 
   return (
     <div className="space-y-4">
@@ -93,11 +99,22 @@ export function PaymentsTabsClient({
           initialSearch={initialSearch}
         />
       ) : tab === "review" ? (
-        <PaymentReviewClient groups={reviewGroups} />
+        <PaymentReviewClient groups={reviewGroups} initialMemberId={reviewMemberId} />
       ) : tab === "byproject" ? (
-        <PaymentsByProject payments={payments} projects={projects} clients={clients} members={members} />
+        <PaymentsByProject
+          payments={payments}
+          projects={projects}
+          clients={clients}
+          members={members}
+          onOpenReview={openReview}
+        />
       ) : (
-        <PaymentsByMember payments={payments} members={members} projects={projects} />
+        <PaymentsByMember
+          payments={payments}
+          members={members}
+          projects={projects}
+          onOpenReview={openReview}
+        />
       )}
     </div>
   );

@@ -131,12 +131,24 @@ function statusTone(status: string): StatusTone {
   if (s === "under review") return "review";
   return "other";
 }
-export function PaymentReviewClient({ groups }: { groups: MemberGroup[] }) {
+export function PaymentReviewClient({
+  groups,
+  initialMemberId,
+}: {
+  groups: MemberGroup[];
+  initialMemberId?: string;
+}) {
   const router = useRouter();
   const [data, setData] = useState(groups);
   useEffect(() => setData(groups), [groups]);
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(groups[0]?.memberId ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    initialMemberId ?? groups[0]?.memberId ?? null,
+  );
+  // Jump to a member when another view (By project / By member) links here.
+  useEffect(() => {
+    if (initialMemberId) setSelectedId(initialMemberId);
+  }, [initialMemberId]);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [paidTargetId, setPaidTargetId] = useState<string | null>(null);
   const [expandedTs, setExpandedTs] = useState<Set<string>>(new Set());

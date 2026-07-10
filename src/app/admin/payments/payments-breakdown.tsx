@@ -48,11 +48,13 @@ export function PaymentsByProject({
   projects,
   clients,
   members,
+  onOpenReview,
 }: {
   payments: PaymentRecord[];
   projects: LinkOpt[];
   clients: LinkOpt[];
   members: LinkOpt[];
+  onOpenReview?: (memberId?: string) => void;
 }) {
   const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
   const clientsById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
@@ -111,6 +113,12 @@ export function PaymentsByProject({
               rows={outflows}
               subtotalEur={outT.sent + outT.committed + outT.review}
               counterparty={memberLabel}
+              onReview={onOpenReview}
+              reviewMemberIdFor={(p) =>
+                bucketOf(p.paymentStatus) !== "sent" && bucketOf(p.paymentStatus) !== "canceled"
+                  ? p.memberRecordIds[0] ?? undefined
+                  : undefined
+              }
             />
           </div>
         </>
@@ -125,10 +133,12 @@ export function PaymentsByMember({
   payments,
   members,
   projects,
+  onOpenReview,
 }: {
   payments: PaymentRecord[];
   members: LinkOpt[];
   projects: LinkOpt[];
+  onOpenReview?: (memberId?: string) => void;
 }) {
   const [memberId, setMemberId] = useState(members[0]?.id ?? "");
   const projectsById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
@@ -176,6 +186,8 @@ export function PaymentsByMember({
               rows={outstanding}
               subtotalEur={t.committed + t.review}
               counterparty={projectLabel}
+              onReview={onOpenReview}
+              reviewMemberIdFor={() => memberId || undefined}
             />
             <Column
               title="Paid"
@@ -300,14 +312,26 @@ function Column({
   rows,
   subtotalEur,
   counterparty,
+  onReview,
+  reviewMemberIdFor,
 }: {
   title: string;
   accent: "success" | "danger" | "warning";
   rows: PaymentRecord[];
   subtotalEur: number;
   counterparty: (p: PaymentRecord) => string;
+  onReview?: (memberId?: string) => void;
+  reviewMemberIdFor?: (p: PaymentRecord) => string | undefined;
 }) {
   const dot = accent === "success" ? "bg-emerald-500" : accent === "danger" ? "bg-rose-500" : "bg-amber-500";
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const sorted = [...rows].sort((a, b) =>
     (b.paymentDate ?? b.dueDate ?? b.invoiceDate ?? "").localeCompare(
       a.paymentDate ?? a.dueDate ?? a.invoiceDate ?? "",
@@ -326,24 +350,95 @@ function Column({
         <p className="px-3 py-6 text-center text-xs text-slate-400">Nothing here.</p>
       ) : (
         <ul>
-          {sorted.map((p) => (
-            <li key={p.id} className="flex items-center gap-2 border-t border-slate-100 px-3 py-2 text-xs first:border-t-0">
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-slate-800 demo-blur">{counterparty(p)}</div>
-                <div className="text-[10px] text-slate-400">
-                  <span className="font-mono">{p.paymentCode || "—"}</span>
-                  {p.invoiceReference ? ` · ${p.invoiceReference}` : ""}
-                  {p.paymentDate ? ` · paid ${p.paymentDate}` : p.dueDate ? ` · due ${p.dueDate}` : ""}
+          {sorted.map((p) => {
+            const isOpen = open.has(p.id);
+            const reviewMemberId = reviewMemberIdFor?.(p);
+            return (
+              <li key={p.id} className="border-t border-slate-100 text-xs first:border-t-0">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => toggle(p.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(p.id); }
+                  }}
+                  aria-expanded={isOpen}
+                  className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-slate-50"
+                >
+                  <svg
+                    viewBox="0 0 12 12"
+                    className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    aria-hidden
+                  >
+                    <path d="M4.5 3 7.5 6 4.5 9" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-slate-800 demo-blur">{counterparty(p)}</div>
+                    <div className="text-[10px] text-slate-400">
+                      <span className="font-mono">{p.paymentCode || "—"}</span>
+                      {p.invoiceReference ? ` · ${p.invoiceReference}` : ""}
+                      {p.paymentDate ? ` · paid ${p.paymentDate}` : p.dueDate ? ` · due ${p.dueDate}` : ""}
+                    </div>
+                  </div>
+                  <div className="whitespace-nowrap text-right tabular-nums text-slate-700 demo-blur">
+                    {money(p.invoiceValue, p.invoiceCurrency)}
+                  </div>
+                  <StatusPill status={effStatus(p.paymentStatus)} />
                 </div>
-              </div>
-              <div className="whitespace-nowrap text-right tabular-nums text-slate-700 demo-blur">
-                {money(p.invoiceValue, p.invoiceCurrency)}
-              </div>
-              <StatusPill status={effStatus(p.paymentStatus)} />
-            </li>
-          ))}
+                {isOpen ? (
+                  <div className="bg-slate-50/60 px-3 pb-2.5 pl-8">
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] sm:grid-cols-3">
+                      <Detail label="Type" value={p.type || "—"} />
+                      <Detail label="Amount (EUR)" value={eur(effectiveEur(p))} blur />
+                      <Detail label="Invoice ref" value={p.invoiceReference || "—"} />
+                      <Detail label="Invoice date" value={p.invoiceDate ?? "—"} />
+                      <Detail label="Due date" value={p.dueDate ?? "—"} />
+                      <Detail label="Payment date" value={p.paymentDate ?? "—"} />
+                    </dl>
+                    {p.comment ? (
+                      <p className="mt-1 text-[11px] text-slate-500 demo-blur">{p.comment}</p>
+                    ) : null}
+                    <div className="mt-2 flex items-center gap-3">
+                      <a
+                        href={`/admin/payments?search=${encodeURIComponent(p.paymentCode)}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-[11px] font-medium text-brand-600 hover:text-brand-700"
+                      >
+                        Open in Payments →
+                      </a>
+                      {onReview && reviewMemberId ? (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onReview(reviewMemberId); }}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 hover:text-amber-800"
+                        >
+                          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+                            <path d="M2 4.5h12M2 8h12M2 11.5h7" strokeLinecap="round" />
+                            <path d="M11 11.5l1.5 1.5L15 10" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                          Review
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       )}
+    </div>
+  );
+}
+
+function Detail({ label, value, blur }: { label: string; value: string; blur?: boolean }) {
+  return (
+    <div>
+      <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+      <dd className={`text-slate-700 ${blur ? "demo-blur" : ""}`}>{value}</dd>
     </div>
   );
 }
