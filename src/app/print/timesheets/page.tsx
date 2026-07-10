@@ -77,9 +77,24 @@ export default async function TimesheetsPrintPage({
   if (to) filterBits.push(`To ${longDate(to)}`);
   const filterLabel = filterBits.length > 0 ? filterBits.join(" · ") : "All Submitted / Invoiced / Paid";
 
+  // Meaningful filename for the browser's Save-as-PDF dialog (it seeds the name
+  // from document.title). Mirrors the CSV convention:
+  // htp42-timesheets-<scope>-<YYYYMMDD>.
+  const slug = (s: string) => s.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const scopeParts: string[] = [];
+  if (project.length === 1) scopeParts.push(slug(project[0]));
+  else if (project.length > 1) scopeParts.push(`${project.length}-projects`);
+  if (member.length === 1) scopeParts.push(slug(member[0]));
+  else if (member.length > 1) scopeParts.push(`${member.length}-members`);
+  const now = new Date();
+  const stamp = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, "0")}${String(
+    now.getUTCDate(),
+  ).padStart(2, "0")}`;
+  const docTitle = `htp42-timesheets-${scopeParts.join("-") || "all"}-${stamp}`;
+
   return (
     <div className="print-wrap">
-      <PrintTrigger />
+      <PrintTrigger title={docTitle} />
       <style dangerouslySetInnerHTML={{ __html: PRINT_CSS }} />
 
       <div
