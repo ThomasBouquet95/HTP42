@@ -5,12 +5,14 @@ import {
   existsTimesheetForWeek,
   getStaffingsForMember,
   getTimesheetById,
+  recordTimesheetReview,
   updateTimesheet,
   updateTimesheetStatus,
 } from "@/lib/airtable";
 import { timesheetInputSchema } from "@/lib/validation";
 import { fridayOfWeek, isMonday, todayIso, weekOverlapsRange } from "@/lib/dates";
 import { apiError, zodMessage } from "@/lib/errors";
+import { initiateReviewOnSubmit } from "@/lib/timesheet-review";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -28,8 +30,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
   const existing = await getTimesheetById(id, session.memberCode);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (existing.status !== "Draft") {
-    return NextResponse.json({ error: "Only Draft timesheets can be edited." }, { status: 409 });
+  // Editable while Draft, or while Rejected (revise + resubmit after a rejection).
+  if (existing.status !== "Draft" && existing.status !== "Rejected") {
+    return NextResponse.json(
+      { error: "Only draft or rejected timesheets can be edited." },
+      { status: 409 },
+    );
   }
 
   const body = await request.json().catch(() => null);
@@ -77,13 +83,21 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       status: input.status,
       submissionDate: input.status === "Submitted" ? todayIso() : null,
     });
+    if (input.status === "Submitted") {
+      await initiateReviewOnSubmit({
+        timesheetId: id,
+        memberCode: session.memberCode,
+        memberName: session.fullName || session.memberCode,
+        resubmit: existing.status === "Rejected",
+      });
+    }
     return NextResponse.json({ ok: true });
   } catch (e) {
     return apiError(e, input.status === "Submitted" ? "submit your timesheet" : "save your timesheet");
   }
 }
 
-const transitionSchema = z.object({ action: z.enum(["submit", "delete", "cancel"]) });
+const transitionSchema = z.object({ action: z.enum(["submit", "delete", "cancel", "reopen"]) });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -99,23 +113,63 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   try {
     if (parsed.data.action === "submit") {
-      if (existing.status !== "Draft") {
-        return NextResponse.json({ error: "Only Draft timesheets can be submitted." }, { status: 409 });
+      // Submit a Draft, or resubmit a Rejected timesheet for a fresh review round.
+      if (existing.status !== "Draft" && existing.status !== "Rejected") {
+        return NextResponse.json(
+          { error: "Only draft or rejected timesheets can be submitted." },
+          { status: 409 },
+        );
       }
       await updateTimesheetStatus(id, "Submitted", todayIso());
+      await initiateReviewOnSubmit({
+        timesheetId: id,
+        memberCode: session.memberCode,
+        memberName: session.fullName || session.memberCode,
+        resubmit: existing.status === "Rejected",
+      });
       return NextResponse.json({ ok: true });
     }
 
-    // cancel = mark the week as Cancelled (won't be billed). Allowed from Draft
-    // or Submitted; once it's been Invoiced/Paid it's out of the member's hands.
-    if (parsed.data.action === "cancel") {
-      if (existing.status !== "Draft" && existing.status !== "Submitted") {
+    // reopen = pull a Rejected timesheet back to Draft so the member can revise it.
+    if (parsed.data.action === "reopen") {
+      if (existing.status !== "Rejected") {
         return NextResponse.json(
-          { error: "Only draft or submitted timesheets can be cancelled." },
+          { error: "Only rejected timesheets can be reopened." },
+          { status: 409 },
+        );
+      }
+      await updateTimesheetStatus(id, "Draft");
+      await recordTimesheetReview({
+        timesheetId: id,
+        timesheetCode: existing.timesheetCode,
+        memberCode: session.memberCode,
+        staffingCode: existing.staffingCode,
+        action: "Reopened",
+        actor: session.fullName || session.memberCode,
+        method: "",
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // cancel = mark the week as Cancelled (won't be billed). Allowed until it's
+    // approved: Draft, Submitted (under review) or Rejected.
+    if (parsed.data.action === "cancel") {
+      if (!["Draft", "Submitted", "Rejected"].includes(existing.status)) {
+        return NextResponse.json(
+          { error: "This timesheet can no longer be cancelled." },
           { status: 409 },
         );
       }
       await updateTimesheetStatus(id, "Cancelled");
+      await recordTimesheetReview({
+        timesheetId: id,
+        timesheetCode: existing.timesheetCode,
+        memberCode: session.memberCode,
+        staffingCode: existing.staffingCode,
+        action: "Cancelled",
+        actor: session.fullName || session.memberCode,
+        method: "",
+      });
       return NextResponse.json({ ok: true });
     }
 
@@ -131,7 +185,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         ? "submit your timesheet"
         : parsed.data.action === "cancel"
           ? "cancel your timesheet"
-          : "delete your timesheet";
+          : parsed.data.action === "reopen"
+            ? "reopen your timesheet"
+            : "delete your timesheet";
     return apiError(e, action);
   }
 }

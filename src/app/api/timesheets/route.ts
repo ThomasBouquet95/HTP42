@@ -9,6 +9,7 @@ import {
 import { timesheetInputSchema } from "@/lib/validation";
 import { fridayOfWeek, isMonday, todayIso, weekOverlapsRange } from "@/lib/dates";
 import { apiError, zodMessage } from "@/lib/errors";
+import { initiateReviewOnSubmit } from "@/lib/timesheet-review";
 
 export async function GET() {
   const session = await getSession();
@@ -67,6 +68,15 @@ export async function POST(request: Request) {
       status: input.status,
       submissionDate: input.status === "Submitted" ? todayIso() : null,
     });
+    // On submit, kick off the review: log the audit entry and (for a
+    // Client-review staffing) email the reviewer a tokenised Approve/Reject link.
+    if (input.status === "Submitted") {
+      await initiateReviewOnSubmit({
+        timesheetId: id,
+        memberCode: session.memberCode,
+        memberName: session.fullName || session.memberCode,
+      });
+    }
     return NextResponse.json({ id });
   } catch (e) {
     return apiError(e, input.status === "Submitted" ? "submit your timesheet" : "save your timesheet");

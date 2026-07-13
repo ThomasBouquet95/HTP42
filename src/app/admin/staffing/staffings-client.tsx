@@ -60,6 +60,9 @@ type FormState = {
   startDate: string;
   endDate: string;
   notes: string;
+  reviewMethod: string;
+  reviewerName: string;
+  reviewerEmail: string;
 };
 
 const EMPTY: FormState = {
@@ -77,6 +80,10 @@ const EMPTY: FormState = {
   startDate: "",
   endDate: "",
   notes: "",
+  // Default: admin reviews submitted timesheets.
+  reviewMethod: "Admin",
+  reviewerName: "",
+  reviewerEmail: "",
 };
 
 function fromRecord(s: StaffingAdminRecord): FormState {
@@ -95,6 +102,9 @@ function fromRecord(s: StaffingAdminRecord): FormState {
     startDate: s.startDate ?? "",
     endDate: s.endDate ?? "",
     notes: s.notes,
+    reviewMethod: s.reviewMethod || "Admin",
+    reviewerName: s.reviewerName,
+    reviewerEmail: s.reviewerEmail,
   };
 }
 
@@ -117,6 +127,12 @@ function validateStaffingForm(f: FormState): string | null {
   if (f.ratePerDay && !f.currency) return "Pick the currency that goes with the rate.";
   if (f.currency && f.currency !== "EUR" && !f.fxToEur) {
     return "An FX rate is required when the currency is not EUR.";
+  }
+  if (f.reviewMethod === "Client") {
+    if (!f.reviewerName.trim()) return "A reviewer name is required for client review.";
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.reviewerEmail.trim())) {
+      return "A valid reviewer email is required for client review.";
+    }
   }
   return null;
 }
@@ -287,6 +303,9 @@ export function StaffingsAdminClient({
         endDate: form.endDate || null,
         status: form.status,
         notes: form.notes,
+        reviewMethod: form.reviewMethod,
+        reviewerName: form.reviewMethod === "Client" ? form.reviewerName : "",
+        reviewerEmail: form.reviewMethod === "Client" ? form.reviewerEmail : "",
       };
       const url = creating ? "/api/admin/staffings" : `/api/admin/staffings/${editing!.id}`;
       const method = creating ? "POST" : "PUT";
@@ -670,6 +689,39 @@ export function StaffingsAdminClient({
           </div>
         ) : null}
         <div className="mt-3">
+          <div className="sm:col-span-2 mt-1 border-t border-slate-100 pt-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Timesheet review
+            </div>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              Who approves timesheets submitted on this staffing.
+            </p>
+          </div>
+          <FormSelect
+            label="Review method"
+            value={form.reviewMethod}
+            onChange={(v) => updateField("reviewMethod", v)}
+          >
+            <option value="Admin">Admin review</option>
+            <option value="Client">Client review (by email)</option>
+          </FormSelect>
+          {form.reviewMethod === "Client" ? (
+            <>
+              <FormField
+                label="Reviewer name"
+                value={form.reviewerName}
+                onChange={(v) => updateField("reviewerName", v)}
+                placeholder="e.g. Jane Client"
+              />
+              <FormField
+                label="Reviewer email"
+                type="email"
+                value={form.reviewerEmail}
+                onChange={(v) => updateField("reviewerEmail", v)}
+                placeholder="reviewer@client.com"
+              />
+            </>
+          ) : null}
           <FormTextarea
             label="Notes"
             value={form.notes}
@@ -822,6 +874,13 @@ function StaffingDetails({ s, memberLabel }: { s: StaffingAdminRecord; memberLab
         <Field label="Start date" value={s.startDate ?? ""} />
         <Field label="End date" value={s.endDate ?? ""} />
         <Field label="Status" value={s.status} />
+        <Field label="Review method" value={s.reviewMethod ? `${s.reviewMethod} review` : "Admin review"} />
+        {s.reviewMethod === "Client" ? (
+          <>
+            <Field label="Reviewer" value={s.reviewerName} blur />
+            <Field label="Reviewer email" value={s.reviewerEmail} blur />
+          </>
+        ) : null}
       </dl>
 
       {s.notes ? (

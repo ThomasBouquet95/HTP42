@@ -681,6 +681,9 @@ export type TimesheetRecord = {
   reviewedBy: string;
   reviewedAt: string | null;
   reviewComment: string;
+  // Expiry of the active client-review link (null when none). The token value
+  // itself is intentionally never surfaced on the record.
+  reviewTokenExpiresAt: string | null;
 };
 
 function str(r: AirtableRecord<FieldSet>, field: string): string {
@@ -2327,6 +2330,7 @@ function toTimesheet(r: AirtableRecord<FieldSet>, staffings: Map<string, Staffin
     reviewedBy: str(r, FIELDS.timesheets.reviewedBy),
     reviewedAt: (r.get(FIELDS.timesheets.reviewedAt) as string | undefined) ?? null,
     reviewComment: str(r, FIELDS.timesheets.reviewComment),
+    reviewTokenExpiresAt: (r.get(FIELDS.timesheets.reviewTokenExpiresAt) as string | undefined) ?? null,
   };
 }
 

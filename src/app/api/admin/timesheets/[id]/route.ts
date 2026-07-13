@@ -4,13 +4,22 @@ import { requireAdminSession } from "@/lib/auth";
 import {
   TIMESHEET_STATUSES,
   adminUpdateTimesheetStatus,
+  decideTimesheet,
+  recordTimesheetReview,
   type TimesheetStatus,
 } from "@/lib/airtable";
 import { apiError, zodMessage } from "@/lib/errors";
 
-const patchSchema = z.object({
-  status: z.enum(TIMESHEET_STATUSES as [string, ...string[]]),
-});
+// Admin can either drive the review (approve/reject with an optional comment)
+// or set a raw status for corrections (e.g. Invoiced/Paid fixes). Approve/Reject
+// route through decideTimesheet so the review fields + audit trail are written.
+const patchSchema = z
+  .object({
+    action: z.enum(["approve", "reject"]).optional(),
+    status: z.enum(TIMESHEET_STATUSES as [string, ...string[]]).optional(),
+    comment: z.string().max(2000).optional(),
+  })
+  .refine((d) => d.action || d.status, { message: "Provide an action or a status." });
 
 export async function PATCH(
   request: Request,
@@ -24,8 +33,39 @@ export async function PATCH(
   if (!parsed.success) {
     return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
+  const d = parsed.data;
+  const reviewer = session.fullName || session.email || "Admin";
+
   try {
-    await adminUpdateTimesheetStatus(id, parsed.data.status as TimesheetStatus);
+    // Approve / Reject (from the action verb, or a direct status set to one of
+    // the decision states) go through the audited decision path.
+    const decision =
+      d.action === "approve" || d.status === "Approved"
+        ? "Approved"
+        : d.action === "reject" || d.status === "Rejected"
+          ? "Rejected"
+          : null;
+
+    if (decision) {
+      await decideTimesheet({
+        recordId: id,
+        decision,
+        reviewMethod: "Admin",
+        reviewedBy: reviewer,
+        comment: d.comment,
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // Any other status is a raw admin correction.
+    await adminUpdateTimesheetStatus(id, d.status as TimesheetStatus);
+    await recordTimesheetReview({
+      timesheetId: id,
+      action: (d.status as string) === "Cancelled" ? "Cancelled" : "Submitted",
+      actor: reviewer,
+      method: "Admin",
+      comment: `Admin set status to ${d.status}`,
+    });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return apiError(e, "update the timesheet status");
