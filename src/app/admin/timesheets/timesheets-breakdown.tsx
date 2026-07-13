@@ -1,13 +1,16 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
-import { StatusPill } from "@/components/badge";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Badge, StatusPill } from "@/components/badge";
 import { WeekChip } from "@/components/week-chip";
 import { Button } from "@/components/form-controls";
 import { FilterBar, FilterMultiSelect, FilterDateRange } from "@/components/filters";
 import { TIMESHEET_STATUSES } from "@/lib/airtable";
 import type { AdminTimesheetRecord } from "@/lib/airtable";
 import { downloadTimesheetsCsv } from "./timesheets-export";
+
+export type SowInfo = { reference: string; status: string; daysAllocated: number | null };
+type SowMap = Record<string, SowInfo>;
 
 // Breakdown default: the billing lifecycle only — Draft / Cancelled / Deleted
 // are excluded until the admin opts them in.
@@ -33,9 +36,11 @@ type Drill = (projectCode: string | null, memberCode: string | null) => void;
 
 export function TimesheetsByProject({
   timesheets,
+  sowByStaffing,
   onDrill,
 }: {
   timesheets: AdminTimesheetRecord[];
+  sowByStaffing?: SowMap;
   onDrill?: Drill;
 }) {
   const options = useMemo(() => {
@@ -52,6 +57,8 @@ export function TimesheetsByProject({
       pickLabel="Project"
       printParam="project"
       options={options}
+      sowByStaffing={sowByStaffing}
+      showSow
       pickMatches={(t, code) => t.projectCode === code}
       groupKey={(t) => t.memberCode}
       groupName={(t) => t.memberName || t.memberCode}
@@ -63,9 +70,11 @@ export function TimesheetsByProject({
 
 export function TimesheetsByMember({
   timesheets,
+  sowByStaffing,
   onDrill,
 }: {
   timesheets: AdminTimesheetRecord[];
+  sowByStaffing?: SowMap;
   onDrill?: Drill;
 }) {
   const options = useMemo(() => {
@@ -82,6 +91,8 @@ export function TimesheetsByMember({
       pickLabel="Member"
       printParam="member"
       options={options}
+      sowByStaffing={sowByStaffing}
+      showSow
       pickMatches={(t, code) => t.memberCode === code}
       groupKey={(t) => t.projectCode || "—"}
       groupName={(t) => t.projectName || t.projectCode || "—"}
@@ -99,6 +110,7 @@ type Group = {
   key: string;
   name: string;
   hours: number;
+  staffingCode: string;
   sheets: AdminTimesheetRecord[];
 };
 
@@ -107,6 +119,8 @@ function GroupedTimesheets({
   pickLabel,
   printParam,
   options,
+  sowByStaffing,
+  showSow,
   pickMatches,
   groupKey,
   groupName,
@@ -117,6 +131,8 @@ function GroupedTimesheets({
   pickLabel: string;
   printParam: "project" | "member";
   options: { value: string; label: string }[];
+  sowByStaffing?: SowMap;
+  showSow?: boolean;
   pickMatches: (t: AdminTimesheetRecord, code: string) => boolean;
   groupKey: (t: AdminTimesheetRecord) => string;
   groupName: (t: AdminTimesheetRecord) => string;
@@ -160,8 +176,10 @@ function GroupedTimesheets({
     const m = new Map<string, Group>();
     for (const t of rows) {
       const key = groupKey(t);
-      const g = m.get(key) ?? { key, name: groupName(t), hours: 0, sheets: [] };
+      const g =
+        m.get(key) ?? { key, name: groupName(t), hours: 0, staffingCode: t.staffingCode, sheets: [] };
       g.hours += t.totalHours;
+      if (!g.staffingCode) g.staffingCode = t.staffingCode;
       g.sheets.push(t);
       m.set(key, g);
     }
@@ -170,6 +188,15 @@ function GroupedTimesheets({
     }
     return [...m.values()].sort((a, b) => b.hours - a.hours);
   }, [rows, groupKey, groupName]);
+
+  // Master-detail selection: which group is shown on the right. Keep it valid
+  // as the picked project/member or filters change.
+  const [selectedKey, setSelectedKey] = useState<string>("");
+  useEffect(() => {
+    if (groups.length === 0) setSelectedKey("");
+    else if (!groups.some((g) => g.key === selectedKey)) setSelectedKey(groups[0].key);
+  }, [groups, selectedKey]);
+  const selected = groups.find((g) => g.key === selectedKey) ?? groups[0] ?? null;
 
   const totalHours = rows.reduce((s, t) => s + t.totalHours, 0);
   const statusSplit = useMemo(() => {
@@ -244,22 +271,82 @@ function GroupedTimesheets({
             </div>
           ) : null}
 
-          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-            <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 text-xs font-medium text-slate-700">
-              <span>
-                By {groupNoun} <span className="text-slate-400">· {groups.length}</span>
-              </span>
-              <span className="tabular-nums text-slate-500">{h1(totalHours)}</span>
+          <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+            {/* Left rail: one row per group (member on By project), with hours
+                and the linked SOW. */}
+            <div className="self-start overflow-hidden rounded-lg border border-slate-200 bg-white">
+              <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                <span>
+                  By {groupNoun} <span className="text-slate-400">· {groups.length}</span>
+                </span>
+                <span className="tabular-nums text-slate-400">{h1(totalHours)}</span>
+              </div>
+              <ul className="max-h-[70vh] divide-y divide-slate-100 overflow-y-auto">
+                {groups.map((g) => {
+                  const active = g.key === selected?.key;
+                  const sow = showSow ? sowByStaffing?.[g.staffingCode] : undefined;
+                  return (
+                    <li key={g.key}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedKey(g.key)}
+                        aria-pressed={active}
+                        className={`flex w-full flex-col gap-1 px-3 py-2.5 text-left transition-colors ${
+                          active ? "bg-brand-50" : "hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className={`truncate text-sm font-medium demo-blur ${active ? "text-brand-800" : "text-slate-900"}`}>
+                            {g.name}
+                          </span>
+                          <span className="shrink-0 tabular-nums text-xs font-semibold text-slate-700">
+                            {h1(g.hours)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[10px] text-slate-400">{g.key}</span>
+                          <span className="text-[10px] text-slate-400">
+                            · {g.sheets.length} wk{g.sheets.length === 1 ? "" : "s"}
+                          </span>
+                          {showSow ? <SowChip sow={sow} /> : null}
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
-            <ul>
-              {groups.map((g) => (
-                <GroupRow
-                  key={g.key}
-                  group={g}
-                  onDrill={onDrill ? () => onDrill(picked, g.key) : undefined}
-                />
-              ))}
-            </ul>
+
+            {/* Right detail: the selected group's weeks. */}
+            {selected ? (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-slate-900 demo-blur">{selected.name}</div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                      <span className="font-mono text-slate-400">{selected.key}</span>
+                      <span>· {h1(selected.hours)}</span>
+                      <span>· {selected.sheets.length} timesheet{selected.sheets.length === 1 ? "" : "s"}</span>
+                      {showSow ? <SowChip sow={sowByStaffing?.[selected.staffingCode]} /> : null}
+                    </div>
+                  </div>
+                  {onDrill ? (
+                    <button
+                      type="button"
+                      onClick={() => onDrill(picked, selected.key)}
+                      className="shrink-0 text-[11px] font-medium text-brand-600 hover:text-brand-700"
+                    >
+                      View in Overview →
+                    </button>
+                  ) : null}
+                </div>
+                <ul className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                  {selected.sheets.map((t) => (
+                    <WeekRow key={t.id} sheet={t} />
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
         </>
       )}
@@ -267,51 +354,22 @@ function GroupedTimesheets({
   );
 }
 
-function GroupRow({ group, onDrill }: { group: Group; onDrill?: () => void }) {
-  const [open, setOpen] = useState(false);
+// Compact SOW indicator: shows the linked SOW reference tinted by its status,
+// or a faint "No SOW" when the staffing has none.
+function SowChip({ sow }: { sow?: SowInfo }) {
+  if (!sow || !sow.reference) {
+    return <span className="text-[10px] text-slate-300">· No SOW</span>;
+  }
+  const tone =
+    sow.status === "Signed" ? "success" : sow.status === "Not Started" ? "neutral" : "warning";
   return (
-    <li className="border-t border-slate-100 text-xs first:border-t-0">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((v) => !v); }
-        }}
-        aria-expanded={open}
-        className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-slate-50"
-      >
-        <Chevron open={open} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-slate-800 demo-blur">{group.name}</div>
-          <div className="text-[10px] text-slate-400">
-            <span className="font-mono">{group.key}</span> · {group.sheets.length} timesheet
-            {group.sheets.length === 1 ? "" : "s"}
-          </div>
-        </div>
-        <div className="whitespace-nowrap tabular-nums font-semibold text-slate-800">{h1(group.hours)}</div>
-      </div>
-      {open ? (
-        <div className="bg-slate-50/60 px-3 pb-2.5 pl-8" onClick={(e) => e.stopPropagation()}>
-          <ul className="rounded-md border border-slate-200 bg-white">
-            {group.sheets.map((t) => (
-              <WeekRow key={t.id} sheet={t} />
-            ))}
-          </ul>
-          {onDrill ? (
-            <div className="mt-2">
-              <button
-                type="button"
-                onClick={onDrill}
-                className="inline-flex items-center gap-1 text-[11px] font-medium text-brand-600 hover:text-brand-700"
-              >
-                View in Overview →
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </li>
+    <span className="inline-flex items-center gap-1">
+      <span className="text-slate-300">·</span>
+      <Badge tone={tone}>
+        SOW {sow.reference}
+        {sow.status ? ` · ${sow.status}` : ""}
+      </Badge>
+    </span>
   );
 }
 

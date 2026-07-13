@@ -71,10 +71,6 @@ export function PaymentsTabsClient({
         aria-label="Payments view"
         className="inline-flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5"
       >
-        <TabButton active={tab === "payments"} onClick={() => setTab("payments")}>
-          Payments
-          <span className="ml-1.5 text-[10px] text-slate-400">{payments.length}</span>
-        </TabButton>
         <TabButton active={tab === "review"} onClick={() => setTab("review")}>
           Review
           {totalUnderReview > 0 ? (
@@ -82,6 +78,10 @@ export function PaymentsTabsClient({
               {totalUnderReview}
             </span>
           ) : null}
+        </TabButton>
+        <TabButton active={tab === "payments"} onClick={() => setTab("payments")}>
+          Overview
+          <span className="ml-1.5 text-[10px] text-slate-400">{payments.length}</span>
         </TabButton>
         <TabButton active={tab === "byproject"} onClick={() => setTab("byproject")}>
           By project

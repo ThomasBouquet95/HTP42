@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
-import { listAllInvoices, listAllTimesheets, listPayments } from "@/lib/airtable";
+import { listAllInvoices, listAllStaffings, listAllTimesheets, listPayments } from "@/lib/airtable";
 import { AdminTimesheetsClient } from "./timesheets-client";
+
+export type SowInfo = { reference: string; status: string; daysAllocated: number | null };
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +15,11 @@ export default async function AdminTimesheetsPage() {
   // Invoices ride along so an expanded timesheet row can show "related
   // invoices" (same staffing); payments let each invoice link to the payment
   // that settles it.
-  const [timesheets, invoices, payments] = await Promise.all([
+  const [timesheets, invoices, payments, staffings] = await Promise.all([
     listAllTimesheets(),
     listAllInvoices(),
     listPayments(),
+    listAllStaffings(),
   ]);
 
   // Map member-invoice id -> the payment referencing it.
@@ -27,6 +30,17 @@ export default async function AdminTimesheetsPage() {
         paymentByInvoiceId[invId] = { id: p.id, code: p.paymentCode, status: p.paymentStatus || "" };
       }
     }
+  }
+
+  // Per-staffing SOW + allocation, keyed by staffing code, so the By project /
+  // By member breakdowns can show the linked SOW next to each member.
+  const sowByStaffing: Record<string, SowInfo> = {};
+  for (const s of staffings) {
+    sowByStaffing[s.staffingCode] = {
+      reference: s.sowReference,
+      status: s.sowStatus,
+      daysAllocated: s.daysAllocated,
+    };
   }
 
   return (
@@ -42,6 +56,7 @@ export default async function AdminTimesheetsPage() {
           timesheets={timesheets}
           invoices={invoices}
           paymentByInvoiceId={paymentByInvoiceId}
+          sowByStaffing={sowByStaffing}
         />
     </main>
   );

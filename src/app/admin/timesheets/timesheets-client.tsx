@@ -55,10 +55,12 @@ const DEFAULT_FILTERS: Filters = {
 };
 
 type PaymentLink = { id: string; code: string; status: string };
+type SowInfo = { reference: string; status: string; daysAllocated: number | null };
 type Props = {
   timesheets: AdminTimesheetRecord[];
   invoices: MemberInvoiceRecord[];
   paymentByInvoiceId: Record<string, PaymentLink>;
+  sowByStaffing: Record<string, SowInfo>;
 };
 
 // Invoices tied to a timesheet: same staffing first, else same member+project
@@ -76,7 +78,7 @@ function relatedInvoicesFor(
   );
 }
 
-export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId }: Props) {
+export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId, sowByStaffing }: Props) {
   const router = useRouter();
   // Overview (filterable table) · By project · By member — the two breakdown
   // views live in their own tabs instead of inline cards above the table.
@@ -265,9 +267,9 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
       {view === "review" ? (
         <TimesheetReviewClient timesheets={rows} />
       ) : view === "byproject" ? (
-        <TimesheetsByProject timesheets={rows} onDrill={drillToOverview} />
+        <TimesheetsByProject timesheets={rows} sowByStaffing={sowByStaffing} onDrill={drillToOverview} />
       ) : view === "bymember" ? (
-        <TimesheetsByMember timesheets={rows} onDrill={drillToOverview} />
+        <TimesheetsByMember timesheets={rows} sowByStaffing={sowByStaffing} onDrill={drillToOverview} />
       ) : (
       <>
       {/* Filter bar */}
