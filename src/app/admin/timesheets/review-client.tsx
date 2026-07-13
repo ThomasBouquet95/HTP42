@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
 import { SegmentedTabs } from "@/components/filters";
-import { WeekChip } from "@/components/week-chip";
+import { formatWeekRange } from "@/lib/dates";
 import { dayIsos } from "./timesheets-export";
 import { SowChip, type SowInfo } from "./timesheets-breakdown";
 
@@ -89,6 +89,55 @@ export function TimesheetReviewClient({
     const t = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // One-time cutover helper: legacy timesheets still marked "Invoiced" from
+  // before the approval workflow. Offer a one-click reset to Under review.
+  const invoicedCount = useMemo(
+    () => timesheets.filter((t) => t.status === "Invoiced").length,
+    [timesheets],
+  );
+  const [migrating, setMigrating] = useState(false);
+  async function resetLegacyInvoiced() {
+    if (
+      !window.confirm(
+        `Reset ${invoicedCount} timesheet(s) still marked "Invoiced" back to Under review? Do this once, at cutover — it does not affect Paid weeks.`,
+      )
+    )
+      return;
+    setMigrating(true);
+    try {
+      const res = await fetch("/api/admin/timesheets/migrate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ confirm: "RESET-INVOICED-TO-UNDER-REVIEW" }),
+      });
+      const d = (await res.json().catch(() => ({}))) as { updated?: number; error?: string };
+      if (!res.ok) throw new Error(d.error ?? "Reset failed.");
+      setToast({ kind: "ok", msg: `Reset ${d.updated ?? 0} timesheet(s) to Under review` });
+      router.refresh();
+    } catch (e) {
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Reset failed." });
+    } finally {
+      setMigrating(false);
+    }
+  }
+  const legacyBanner =
+    invoicedCount > 0 ? (
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
+        <span>
+          <strong>{invoicedCount}</strong> timesheet{invoicedCount === 1 ? "" : "s"} still marked
+          &ldquo;Invoiced&rdquo; from before the approval workflow.
+        </span>
+        <button
+          type="button"
+          onClick={resetLegacyInvoiced}
+          disabled={migrating}
+          className="ml-auto rounded-md bg-amber-600 px-2.5 py-1 font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+        >
+          {migrating ? "Resetting…" : "Reset to Under review"}
+        </button>
+      </div>
+    ) : null;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -176,17 +225,22 @@ export function TimesheetReviewClient({
 
   if (groups.length === 0) {
     return (
-      <div className="rounded-lg border border-slate-200 bg-white p-10 text-center">
-        <div className="text-sm font-medium text-slate-800">Nothing to review</div>
-        <p className="mt-1 text-xs text-slate-500">
-          Submitted timesheets appear here for approval, grouped by member.
-        </p>
+      <div className="space-y-4">
+        {legacyBanner}
+        <div className="rounded-lg border border-slate-200 bg-white p-10 text-center">
+          <div className="text-sm font-medium text-slate-800">Nothing to review</div>
+          <p className="mt-1 text-xs text-slate-500">
+            Submitted timesheets appear here for approval, grouped by member.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+    <div className="space-y-4">
+      {legacyBanner}
+      <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       {/* Member list */}
       <div className="self-start overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="border-b border-slate-100 p-2">
@@ -305,6 +359,7 @@ export function TimesheetReviewClient({
           {toast.msg}
         </div>
       ) : null}
+      </div>
     </div>
   );
 }
@@ -453,19 +508,35 @@ function ProjectGroups({
         const agreed = sow?.daysAllocated != null ? sow.daysAllocated * 8 : null;
         const used = usedByStaffing?.get(g.staffingCode) ?? 0;
         const over = agreed != null && used > agreed;
+        const pct = agreed && agreed > 0 ? Math.min(100, (used / agreed) * 100) : used > 0 ? 100 : 0;
         return (
           <div key={g.code}>
             <div className="mb-1.5 flex flex-wrap items-center gap-2">
               <span className="text-sm font-semibold text-slate-800 demo-blur">{g.name}</span>
               <span className="font-mono text-[10px] text-slate-400">{g.code}</span>
               <SowChip sow={sow} />
-              <span
-                className={`ml-auto tabular-nums text-[11px] ${over ? "font-semibold text-rose-600" : "text-slate-500"}`}
+              {/* Hours used vs agreed — prominent meter so an admin can sanity-
+                  check effort against the staffing allocation at a glance. */}
+              <div
+                className={`ml-auto inline-flex items-center gap-2 rounded-md border px-2 py-1 ${
+                  over ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-white"
+                }`}
                 title="Hours logged (all statuses) vs hours agreed on the staffing"
               >
-                {used.toFixed(1)} h used
-                {agreed != null ? ` / ${agreed.toFixed(0)} h agreed` : ""}
-              </span>
+                <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className={`h-full rounded-full ${over ? "bg-rose-500" : "bg-emerald-500"}`}
+                    style={{ width: `${Math.max(pct, used > 0 ? 4 : 0)}%` }}
+                  />
+                </div>
+                <span className={`text-xs font-semibold tabular-nums ${over ? "text-rose-700" : "text-slate-800"}`}>
+                  {used.toFixed(1)}
+                  {agreed != null ? ` / ${agreed.toFixed(0)}` : ""} h
+                </span>
+                <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                  {agreed != null ? "used / agreed" : "used"}
+                </span>
+              </div>
             </div>
             <div className="space-y-3">
               {g.sheets.map((t) => (
@@ -521,7 +592,9 @@ function ReviewCard({
         className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"
       >
         <CardChevron open={open} />
-        <WeekChip startIso={t.startDate} endIso={t.endDate} />
+        <span className="text-[11px] font-medium text-slate-700">
+          {t.startDate && t.endDate ? formatWeekRange(t.startDate, t.endDate) : "—"}
+        </span>
         {t.reviewMethod === "Client" ? (
           <span className="text-[10px] text-slate-400">client</span>
         ) : null}

@@ -1,20 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
-import { migrateLegacySubmittedTimesheets } from "@/lib/airtable";
+import { migrateLegacyInvoicedTimesheets } from "@/lib/airtable";
 import { apiError, zodMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
-// One-shot cutover migration: maps legacy "Submitted" timesheets to "Approved".
-// Guarded by a confirmation token so it can't be triggered by accident — this
-// should be run exactly once, right after the approval workflow is deployed.
-// Trigger (while logged in as an admin), e.g. from the browser console:
-//   fetch("/api/admin/timesheets/migrate", { method: "POST",
-//     headers: { "content-type": "application/json" },
-//     body: JSON.stringify({ confirm: "MIGRATE-SUBMITTED-TO-APPROVED" }) })
-//     .then(r => r.json()).then(console.log)
-const schema = z.object({ confirm: z.literal("MIGRATE-SUBMITTED-TO-APPROVED") });
+// One-shot cutover migration: resets legacy "Invoiced" timesheets (from before
+// the approval workflow) back to "Submitted" (Under review). Guarded by a
+// confirmation token. Run once at cutover — see migrateLegacyInvoicedTimesheets.
+const schema = z.object({ confirm: z.literal("RESET-INVOICED-TO-UNDER-REVIEW") });
 
 export async function POST(request: Request) {
   const session = await requireAdminSession();
@@ -27,9 +22,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await migrateLegacySubmittedTimesheets();
+    const result = await migrateLegacyInvoicedTimesheets();
     return NextResponse.json(result);
   } catch (e) {
-    return apiError(e, "migrate legacy timesheet statuses");
+    return apiError(e, "reset legacy invoiced timesheets");
   }
 }
