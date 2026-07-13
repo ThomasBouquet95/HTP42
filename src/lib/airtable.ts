@@ -2342,6 +2342,13 @@ export async function backfillPaymentProjects(apply: boolean): Promise<{
   toFix: number;
   updated: number;
   unresolved: number;
+  diagnostics: {
+    linkedToInvoice: number;
+    standalone: number;
+    invoiceNotFound: number;
+    invoiceHasNoStaffing: number;
+    alreadyCorrect: number;
+  };
   changes: {
     paymentCode: string;
     staffingFrom: string;
@@ -2367,26 +2374,45 @@ export async function backfillPaymentProjects(apply: boolean): Promise<{
   }[] = [];
   const updates: { id: string; fields: FieldSet }[] = [];
   let unresolved = 0;
+  // Diagnostics so a dry-run explains WHY toFix is what it is.
+  const diag = {
+    linkedToInvoice: 0, // payments that link ≥1 member invoice
+    standalone: 0, // payments with no member invoice link (can't inherit)
+    invoiceNotFound: 0, // linked invoice id not present in the invoices table
+    invoiceHasNoStaffing: 0, // invoice exists but carries no staffing link
+    alreadyCorrect: 0, // staffing + project already right
+  };
   for (const p of raw) {
-    if (p.memberInvoiceRecordIds.length === 0) continue;
+    if (p.memberInvoiceRecordIds.length === 0) {
+      diag.standalone += 1;
+      continue;
+    }
+    diag.linkedToInvoice += 1;
     // Governing staffing = the invoice's staffing.
     let staffingId: string | undefined;
+    let sawInvoice = false;
     for (const invId of p.memberInvoiceRecordIds) {
-      const s = invStaffing.get(invId);
-      if (s) {
-        staffingId = s;
+      if (invStaffing.has(invId)) {
+        sawInvoice = true;
+        staffingId = invStaffing.get(invId);
         break;
       }
     }
     if (!staffingId) {
-      unresolved += 1; // invoice has no staffing link — can't resolve
+      // Distinguish "invoice not in table" from "invoice has no staffing".
+      if (!sawInvoice) diag.invoiceNotFound += 1;
+      else diag.invoiceHasNoStaffing += 1;
+      unresolved += 1;
       continue;
     }
     const code = staffingIdx.get(staffingId)?.projectCode;
     const targetProjectId = code ? idByCode.get(code) : undefined;
     const staffingOk = p.staffingRecordIds.includes(staffingId);
     const projectOk = targetProjectId ? p.projectRecordIds.includes(targetProjectId) : true;
-    if (staffingOk && projectOk) continue; // already correct
+    if (staffingOk && projectOk) {
+      diag.alreadyCorrect += 1;
+      continue;
+    }
     const staffingCodeOf = (id: string) => staffingIdx.get(id)?.code ?? id;
     changes.push({
       paymentCode: p.paymentCode || p.id,
@@ -2407,7 +2433,15 @@ export async function backfillPaymentProjects(apply: boolean): Promise<{
       updated += Math.min(10, updates.length - i);
     }
   }
-  return { scanned: raw.length, toFix: changes.length, updated, unresolved, changes };
+  // invStaffing built from invoices with a staffing — expose totals for context.
+  return {
+    scanned: raw.length,
+    toFix: changes.length,
+    updated,
+    unresolved,
+    diagnostics: diag,
+    changes,
+  };
 }
 
 export async function getInvoiceById(recordId: string): Promise<MemberInvoiceRecord | null> {
