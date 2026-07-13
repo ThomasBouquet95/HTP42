@@ -2298,16 +2298,11 @@ function toTimesheet(r: AirtableRecord<FieldSet>, staffings: Map<string, Staffin
   const wednesday = { hours: num(r, FIELDS.timesheets.wednesdayHours), task: str(r, FIELDS.timesheets.wednesdayTask) };
   const thursday = { hours: num(r, FIELDS.timesheets.thursdayHours), task: str(r, FIELDS.timesheets.thursdayTask) };
   const friday = { hours: num(r, FIELDS.timesheets.fridayHours), task: str(r, FIELDS.timesheets.fridayTask) };
-  // Legacy fold: a few rows still carry "Invoiced"/"Paid" on the old Billing
-  // Status field while their main Status is still "Submitted". Treat the
-  // billing value as the source of truth in that case so the admin UI shows
-  // the right state without a one-shot migration script.
-  const rawStatus = (str(r, FIELDS.timesheets.status) as TimesheetStatus) || "Draft";
-  const billing = str(r, FIELDS.timesheets.billingStatus);
-  let status: TimesheetStatus = rawStatus;
-  if (rawStatus === "Submitted" && (billing === "Invoiced" || billing === "Paid")) {
-    status = billing;
-  }
+  // The Status field is the single source of truth. The legacy "Billing
+  // Status" fold was dropped with the approval workflow: a row whose real
+  // Status is "Submitted" now shows as Under review (it must clear approval
+  // before it can be invoiced), regardless of any stale Billing Status value.
+  const status = (str(r, FIELDS.timesheets.status) as TimesheetStatus) || "Draft";
   return {
     id: r.id,
     timesheetCode: str(r, FIELDS.timesheets.timesheetCode),

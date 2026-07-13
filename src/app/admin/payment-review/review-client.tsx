@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { DownloadChip } from "@/components/download-chip";
 import { PaidDateModal } from "@/components/paid-date-modal";
 import { SearchInput } from "@/components/search-input";
+import { SegmentedTabs } from "@/components/filters";
 import { Badge, StatusPill } from "@/components/badge";
 import { StatusBadge, type ReviewInfo } from "@/components/status-badge";
 import { Button } from "@/components/form-controls";
@@ -160,6 +161,7 @@ export function PaymentReviewClient({
     if (initialMemberId) setSelectedId(initialMemberId);
   }, [initialMemberId]);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [sectionTab, setSectionTab] = useState<"underReview" | "toBePaid" | "past">("underReview");
   const [paidTargetId, setPaidTargetId] = useState<string | null>(null);
   const [expandedTs, setExpandedTs] = useState<Set<string>>(new Set());
   // Which payment cards are expanded. Defaults (set per selected member below):
@@ -343,15 +345,32 @@ export function PaymentReviewClient({
             ) : null}
           </div>
 
-          {/* Under review → approve to move to "To be paid" */}
-          <div>
-            <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
-              Under review · {selected.underReview.length}
-            </h3>
-            {selected.underReview.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
-                Nothing under review for this member.
-              </div>
+          <SegmentedTabs
+            ariaLabel="Payment status"
+            value={sectionTab}
+            onChange={setSectionTab}
+            options={[
+              {
+                value: "underReview",
+                label: "Under review",
+                badge: <TabCount n={selected.underReview.length} tone="warning" />,
+              },
+              {
+                value: "toBePaid",
+                label: "To be paid",
+                badge: <TabCount n={selected.toBePaid.length} tone="info" />,
+              },
+              {
+                value: "past",
+                label: "Past",
+                badge: <TabCount n={selected.past.length} tone="muted" />,
+              },
+            ]}
+          />
+
+          {sectionTab === "underReview" ? (
+            selected.underReview.length === 0 ? (
+              <EmptyNote>Nothing under review for this member.</EmptyNote>
             ) : (
               <div className="space-y-3">
                 {selected.underReview.map((b) => (
@@ -369,18 +388,10 @@ export function PaymentReviewClient({
                   />
                 ))}
               </div>
-            )}
-          </div>
-
-          {/* To be paid → approved, awaiting the actual payment */}
-          <div>
-            <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
-              To be paid · {selected.toBePaid.length}
-            </h3>
-            {selected.toBePaid.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
-                Nothing awaiting payment for this member.
-              </div>
+            )
+          ) : sectionTab === "toBePaid" ? (
+            selected.toBePaid.length === 0 ? (
+              <EmptyNote>Nothing awaiting payment for this member.</EmptyNote>
             ) : (
               <div className="space-y-3">
                 {selected.toBePaid.map((b) => (
@@ -398,34 +409,24 @@ export function PaymentReviewClient({
                   />
                 ))}
               </div>
-            )}
-          </div>
-
-          {/* Past payments */}
-          <div>
-            <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
-              Past payments · {selected.past.length}
-            </h3>
-            {selected.past.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
-                No past payments yet.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {selected.past.map((b) => (
-                  <BundleDetail
-                    key={b.payment.id}
-                    bundle={b}
-                    readOnly
-                    open={openItems.has(b.payment.id)}
-                    onToggle={() => toggleItem(b.payment.id)}
-                    expandedTs={expandedTs}
-                    toggleTs={toggleTs}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+            )
+          ) : selected.past.length === 0 ? (
+            <EmptyNote>No past payments yet.</EmptyNote>
+          ) : (
+            <div className="space-y-3">
+              {selected.past.map((b) => (
+                <BundleDetail
+                  key={b.payment.id}
+                  bundle={b}
+                  readOnly
+                  open={openItems.has(b.payment.id)}
+                  onToggle={() => toggleItem(b.payment.id)}
+                  expandedTs={expandedTs}
+                  toggleTs={toggleTs}
+                />
+              ))}
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -448,6 +449,31 @@ export function PaymentReviewClient({
           {toast.msg}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// Count pill for the status tabs: amber for the actionable "under review",
+// brand for "to be paid", muted for "past". Hidden at zero.
+function TabCount({ n, tone }: { n: number; tone: "warning" | "info" | "muted" }) {
+  if (n === 0) return null;
+  const cls =
+    tone === "warning"
+      ? "bg-amber-100 text-amber-800"
+      : tone === "info"
+        ? "bg-brand-100 text-brand-800"
+        : "bg-slate-200 text-slate-600";
+  return (
+    <span className={`inline-flex items-center rounded-full px-1.5 text-[10px] font-semibold ${cls}`}>
+      {n}
+    </span>
+  );
+}
+
+function EmptyNote({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-dashed border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
+      {children}
     </div>
   );
 }
