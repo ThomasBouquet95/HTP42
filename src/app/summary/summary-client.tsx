@@ -158,10 +158,12 @@ export function SummaryClient({
     const STATUS_ORDER: Record<TimesheetStatus, number> = {
       Paid: 0,
       Invoiced: 1,
-      Submitted: 2,
-      Draft: 3,
-      Cancelled: 4,
-      Deleted: 5,
+      Approved: 2,
+      Submitted: 3,
+      Rejected: 4,
+      Draft: 5,
+      Cancelled: 6,
+      Deleted: 7,
     };
     return timesheets
       .filter((t) => {

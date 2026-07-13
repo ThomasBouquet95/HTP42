@@ -6,10 +6,12 @@ import {
   createStaffing,
   CURRENCIES,
   PROJECT_ROLES,
+  REVIEW_METHODS,
   SOW_STATUSES,
   STAFFING_STATUSES,
   type Currency,
   type ProjectRole,
+  type ReviewMethod,
   type SowStatus,
   type StaffingStatus,
 } from "@/lib/airtable";
@@ -39,6 +41,9 @@ const schema = z.object({
   endDate: nullableDate,
   status: z.union([z.enum(STAFFING_STATUSES as [string, ...string[]]), z.literal("")]).default(""),
   notes: z.string().max(5000).default(""),
+  reviewMethod: z.union([z.enum(REVIEW_METHODS as [string, ...string[]]), z.literal("")]).default(""),
+  reviewerName: z.string().trim().max(200).default(""),
+  reviewerEmail: z.string().trim().max(320).default(""),
 });
 
 export async function POST(request: Request) {
@@ -68,6 +73,9 @@ export async function POST(request: Request) {
       endDate: d.endDate ?? null,
       status: d.status as StaffingStatus | "",
       notes: d.notes,
+      reviewMethod: d.reviewMethod as ReviewMethod | "",
+      reviewerName: d.reviewerName,
+      reviewerEmail: d.reviewerEmail,
     });
     return NextResponse.json({ id });
   } catch (e) {

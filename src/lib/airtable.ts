@@ -29,6 +29,7 @@ export const TABLES = {
   chatConversations: "Chat Conversations",
   chatMessages: "Chat Messages",
   vendorInvoices: "Vendor Invoices",
+  timesheetReviews: "Timesheet Reviews",
 } as const;
 
 export const FIELDS = {
@@ -143,6 +144,10 @@ export const FIELDS = {
     status: "Status",
     notes: "Notes",
     timesheets: "Timesheets",
+    // Approval workflow config (lazily created via meta API).
+    reviewMethod: "Review Method",
+    reviewerName: "Reviewer Name",
+    reviewerEmail: "Reviewer Email",
   },
   timesheets: {
     timesheetCode: "Timesheet Code",
@@ -164,6 +169,25 @@ export const FIELDS = {
     fridayTask: "Friday (task)",
     status: "Status",
     billingStatus: "Billing Status",
+    // Approval workflow (lazily created via meta API — see ensureTimesheetReviewFields).
+    reviewMethod: "Review Method",
+    reviewedBy: "Reviewed By",
+    reviewedAt: "Reviewed At",
+    reviewComment: "Review Comment",
+    reviewToken: "Review Token",
+    reviewTokenExpiresAt: "Review Token Expires At",
+  },
+  timesheetReviews: {
+    entry: "Entry",
+    timesheetId: "Timesheet Record Id",
+    timesheetCode: "Timesheet Code",
+    memberCode: "Member Code",
+    staffingCode: "Staffing Code",
+    action: "Action",
+    actor: "Actor",
+    method: "Method",
+    comment: "Comment",
+    at: "At",
   },
   payments: {
     paymentCode: "Payment Code",
@@ -360,15 +384,19 @@ export type SowStatus = "Signed" | "In Progress" | "Draft" | "Not Started";
 export const SOW_STATUSES: SowStatus[] = ["Not Started", "Draft", "In Progress", "Signed"];
 
 // One status spans the whole lifecycle of a timesheet:
-//   Draft → Submitted → Invoiced → Paid (Deleted is a terminal opt-out).
-// Members own the Draft → Submitted transition; admins own the Invoiced and
-// Paid steps. "Cancelled" is a soft opt-out (a week that won't be billed)
-// kept visible for the record; like Draft/Deleted it never counts toward
-// logged/billed days. The legacy "Billing Status" field is no longer written
-// by the portal; it stays on Airtable for historical records but is ignored.
+//   Draft → Submitted (Under Review) → Approved → Invoiced → Paid.
+// Branches: Submitted → Rejected / Cancelled; Rejected → Draft → Submitted.
+// Members own Draft → Submitted and can Cancel until approved; the reviewer
+// (admin or client, per the staffing's review method) owns Approved/Rejected;
+// admins own Invoiced/Paid (the latter via the payment cascade). "Submitted"
+// is stored but shown as "Under Review". Draft/Rejected/Cancelled/Deleted
+// never count toward logged/billed days. The legacy "Billing Status" field is
+// no longer written; it stays on Airtable for historical records but ignored.
 export type TimesheetStatus =
   | "Draft"
   | "Submitted"
+  | "Approved"
+  | "Rejected"
   | "Invoiced"
   | "Paid"
   | "Cancelled"
@@ -376,11 +404,46 @@ export type TimesheetStatus =
 export const TIMESHEET_STATUSES: TimesheetStatus[] = [
   "Draft",
   "Submitted",
+  "Approved",
+  "Rejected",
   "Invoiced",
   "Paid",
   "Cancelled",
   "Deleted",
 ];
+
+// Statuses that count as "logged effort" toward a staffing's days used and
+// toward what an invoice/payment settles. Draft/Rejected/Cancelled/Deleted are
+// excluded. (Submitted is included so days-in-flight still show while a week
+// awaits review.)
+export const LOGGED_TIMESHEET_STATUSES: TimesheetStatus[] = [
+  "Submitted",
+  "Approved",
+  "Invoiced",
+  "Paid",
+];
+
+// How a submitted timesheet gets reviewed, configured per staffing.
+export type ReviewMethod = "Admin" | "Client";
+export const REVIEW_METHODS: ReviewMethod[] = ["Admin", "Client"];
+
+// Allowed status transitions (the single source of truth for the state
+// machine — every route validates against this).
+const TIMESHEET_TRANSITIONS: Record<TimesheetStatus, TimesheetStatus[]> = {
+  Draft: ["Submitted", "Deleted"],
+  Submitted: ["Approved", "Rejected", "Cancelled"],
+  Approved: ["Invoiced", "Cancelled"],
+  Rejected: ["Draft", "Submitted", "Deleted"],
+  Invoiced: ["Paid"],
+  Paid: [],
+  Cancelled: ["Draft"],
+  Deleted: [],
+};
+
+export function canTransitionTimesheet(from: TimesheetStatus, to: TimesheetStatus): boolean {
+  if (from === to) return true;
+  return (TIMESHEET_TRANSITIONS[from] ?? []).includes(to);
+}
 
 // Kept only so legacy imports compile while we tear out the dual-status UI.
 // Do not use in new code.
@@ -586,6 +649,12 @@ export type StaffingAdminRecord = {
   // form so saving unrelated fields doesn't silently pin an auto status.
   rawStatus: StaffingStatus | "";
   notes: string;
+  // Approval workflow config: who reviews submitted timesheets for this
+  // staffing. "" defaults to Admin review. Reviewer name/email drive the
+  // client-review email.
+  reviewMethod: ReviewMethod | "";
+  reviewerName: string;
+  reviewerEmail: string;
 };
 
 export type TimesheetRecord = {
@@ -606,6 +675,12 @@ export type TimesheetRecord = {
   thursday: { hours: number; task: string };
   friday: { hours: number; task: string };
   totalHours: number;
+  // Current review decision (denormalized for fast display + tooltip). The full
+  // audit trail lives in the Timesheet Reviews table.
+  reviewMethod: ReviewMethod | "";
+  reviewedBy: string;
+  reviewedAt: string | null;
+  reviewComment: string;
 };
 
 function str(r: AirtableRecord<FieldSet>, field: string): string {
@@ -2164,6 +2239,29 @@ export async function getTeammateMemberRecordIds(
 // The linked Member Code field on staffing uses Network Members record IDs, but
 // filterByFormula sees their primary-field values (the member codes). We filter
 // by the visible memberCode string with FIND to remain robust if multiple links exist.
+// All staffings keyed by record id (for toTimesheet when the member is
+// unknown, e.g. resolving a client-review token).
+async function getStaffingMap(): Promise<Map<string, StaffingRecord>> {
+  const [records, projectNames] = await Promise.all([
+    base(TABLES.projectStaffing).select().all(),
+    getProjectNameMap(),
+  ]);
+  const map = new Map<string, StaffingRecord>();
+  for (const r of records) {
+    const projectCode = str(r, FIELDS.projectStaffing.projectCode);
+    map.set(r.id, {
+      id: r.id,
+      staffingCode: str(r, FIELDS.projectStaffing.staffingCode),
+      projectCode,
+      projectName: projectNames.get(projectCode) ?? "",
+      startDate: (r.get(FIELDS.projectStaffing.startDate) as string | undefined) ?? null,
+      endDate: (r.get(FIELDS.projectStaffing.endDate) as string | undefined) ?? null,
+      status: (str(r, FIELDS.projectStaffing.status) as StaffingStatus) || null,
+    });
+  }
+  return map;
+}
+
 async function staffingsByMemberCodeString(memberCode: string): Promise<Map<string, StaffingRecord>> {
   const [records, projectNames] = await Promise.all([
     base(TABLES.projectStaffing)
@@ -2225,6 +2323,10 @@ function toTimesheet(r: AirtableRecord<FieldSet>, staffings: Map<string, Staffin
     thursday,
     friday,
     totalHours: monday.hours + tuesday.hours + wednesday.hours + thursday.hours + friday.hours,
+    reviewMethod: (str(r, FIELDS.timesheets.reviewMethod) as ReviewMethod) || "",
+    reviewedBy: str(r, FIELDS.timesheets.reviewedBy),
+    reviewedAt: (r.get(FIELDS.timesheets.reviewedAt) as string | undefined) ?? null,
+    reviewComment: str(r, FIELDS.timesheets.reviewComment),
   };
 }
 
@@ -2420,6 +2522,288 @@ export async function adminUpdateTimesheetStatus(
 }
 
 // ---------------------------------------------------------------------------
+// Timesheet approval workflow: schema, audit trail, client-review tokens
+// ---------------------------------------------------------------------------
+
+let timesheetApprovalReady = false;
+
+// Lazily provisions everything the approval workflow needs:
+//  - the six review fields on the Timesheets table,
+//  - the three review-config fields on the Project Staffing table,
+//  - the append-only "Timesheet Reviews" audit table.
+// Best-effort + cached: safe to await before every write. Returns false if the
+// meta API is unreachable (the caller can still proceed for status-only writes).
+export async function ensureTimesheetApprovalSchema(): Promise<boolean> {
+  if (timesheetApprovalReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+
+    const addFields = async (
+      tableName: string,
+      wanted: Array<{ name: string; type: string; options?: Record<string, unknown> }>,
+    ) => {
+      const table = data.tables.find((t) => t.name === tableName);
+      if (!table) return;
+      for (const f of wanted) {
+        if (table.fields.some((x) => x.name === f.name)) continue;
+        const body: Record<string, unknown> = { name: f.name, type: f.type };
+        if (f.options) body.options = f.options;
+        const r = await fetch(
+          `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${env.airtablePat}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+          },
+        );
+        if (!r.ok) console.error(`ensureTimesheetApprovalSchema: add ${tableName}.${f.name} failed:`, await r.text().catch(() => ""));
+      }
+    };
+
+    const T = FIELDS.timesheets;
+    await addFields(TABLES.timesheets, [
+      { name: T.reviewMethod, type: "singleLineText" },
+      { name: T.reviewedBy, type: "singleLineText" },
+      { name: T.reviewedAt, type: "singleLineText" },
+      { name: T.reviewComment, type: "multilineText" },
+      { name: T.reviewToken, type: "singleLineText" },
+      { name: T.reviewTokenExpiresAt, type: "singleLineText" },
+    ]);
+
+    const S = FIELDS.projectStaffing;
+    await addFields(TABLES.projectStaffing, [
+      {
+        name: S.reviewMethod,
+        type: "singleSelect",
+        options: { choices: [{ name: "Admin" }, { name: "Client" }] },
+      },
+      { name: S.reviewerName, type: "singleLineText" },
+      { name: S.reviewerEmail, type: "singleLineText" },
+    ]);
+
+    if (!data.tables.some((t) => t.name === TABLES.timesheetReviews)) {
+      const R = FIELDS.timesheetReviews;
+      const create = await fetch(metaUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.airtablePat}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: TABLES.timesheetReviews,
+          description: "Append-only audit trail of timesheet approval actions.",
+          fields: [
+            { name: R.entry, type: "singleLineText" },
+            { name: R.timesheetId, type: "singleLineText" },
+            { name: R.timesheetCode, type: "singleLineText" },
+            { name: R.memberCode, type: "singleLineText" },
+            { name: R.staffingCode, type: "singleLineText" },
+            { name: R.action, type: "singleLineText" },
+            { name: R.actor, type: "singleLineText" },
+            { name: R.method, type: "singleLineText" },
+            { name: R.comment, type: "multilineText" },
+            { name: R.at, type: "singleLineText" },
+          ],
+        }),
+      });
+      if (!create.ok) console.error("ensureTimesheetApprovalSchema: create reviews table failed:", await create.text().catch(() => ""));
+    }
+
+    timesheetApprovalReady = true;
+    return true;
+  } catch (e) {
+    console.error("ensureTimesheetApprovalSchema failed:", e);
+    return false;
+  }
+}
+
+export type TimesheetReviewAction =
+  | "Submitted"
+  | "Review Requested"
+  | "Approved"
+  | "Rejected"
+  | "Cancelled"
+  | "Resubmitted"
+  | "Reopened";
+
+export type TimesheetReviewEntry = {
+  id: string;
+  timesheetId: string;
+  timesheetCode: string;
+  action: string;
+  actor: string;
+  method: string;
+  comment: string;
+  at: string | null;
+};
+
+// Append one immutable row to the audit trail. Best-effort: a logging failure
+// must never block the actual state transition, so we swallow errors here.
+export async function recordTimesheetReview(input: {
+  timesheetId: string;
+  timesheetCode?: string;
+  memberCode?: string;
+  staffingCode?: string;
+  action: TimesheetReviewAction;
+  actor: string;
+  method: ReviewMethod | "System" | "";
+  comment?: string;
+}): Promise<void> {
+  try {
+    await ensureTimesheetApprovalSchema();
+    const R = FIELDS.timesheetReviews;
+    const at = new Date().toISOString();
+    await base(TABLES.timesheetReviews).create([
+      {
+        fields: {
+          [R.entry]: `${input.timesheetCode || input.timesheetId} · ${input.action} · ${at}`,
+          [R.timesheetId]: input.timesheetId,
+          [R.timesheetCode]: input.timesheetCode ?? "",
+          [R.memberCode]: input.memberCode ?? "",
+          [R.staffingCode]: input.staffingCode ?? "",
+          [R.action]: input.action,
+          [R.actor]: input.actor,
+          [R.method]: input.method,
+          [R.comment]: input.comment ?? "",
+          [R.at]: at,
+        } as FieldSet,
+      },
+    ]);
+  } catch (e) {
+    console.error("recordTimesheetReview failed:", e);
+  }
+}
+
+export async function listTimesheetReviews(timesheetId: string): Promise<TimesheetReviewEntry[]> {
+  if (!timesheetId) return [];
+  try {
+    await ensureTimesheetApprovalSchema();
+    const R = FIELDS.timesheetReviews;
+    const records = await base(TABLES.timesheetReviews)
+      .select({ filterByFormula: `{${R.timesheetId}} = "${escape(timesheetId)}"` })
+      .all();
+    return records
+      .map((r) => ({
+        id: r.id,
+        timesheetId: str(r, R.timesheetId),
+        timesheetCode: str(r, R.timesheetCode),
+        action: str(r, R.action),
+        actor: str(r, R.actor),
+        method: str(r, R.method),
+        comment: str(r, R.comment),
+        at: (r.get(R.at) as string | undefined) ?? null,
+      }))
+      .sort((a, b) => (a.at ?? "").localeCompare(b.at ?? ""));
+  } catch (e) {
+    console.error("listTimesheetReviews failed:", e);
+    return [];
+  }
+}
+
+// A single-use, expiring token for the client-review email. 18 random bytes of
+// Web Crypto entropy (matches the surveys pattern). Expiry is stored on the
+// timesheet; single-use is enforced by clearing the token once a decision lands
+// and by requiring the timesheet to still be "Submitted".
+export function generateReviewToken(): string {
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export async function setTimesheetReviewToken(
+  recordId: string,
+  token: string,
+  expiresAtIso: string,
+): Promise<void> {
+  await ensureTimesheetApprovalSchema();
+  await base(TABLES.timesheets).update([
+    {
+      id: recordId,
+      fields: {
+        [FIELDS.timesheets.reviewMethod]: "Client",
+        [FIELDS.timesheets.reviewToken]: token,
+        [FIELDS.timesheets.reviewTokenExpiresAt]: expiresAtIso,
+      } as FieldSet,
+    },
+  ]);
+}
+
+// Resolve a client-review token to its timesheet. Returns null for unknown
+// tokens. Callers must still check status === "Submitted" and expiry.
+export async function getTimesheetByReviewToken(token: string): Promise<TimesheetRecord | null> {
+  if (!token) return null;
+  try {
+    await ensureTimesheetApprovalSchema();
+    const staffings = await getStaffingMap();
+    const records = await base(TABLES.timesheets)
+      .select({
+        filterByFormula: `{${FIELDS.timesheets.reviewToken}} = "${escape(token)}"`,
+        maxRecords: 1,
+      })
+      .firstPage();
+    return records[0] ? toTimesheet(records[0], staffings) : null;
+  } catch (e) {
+    console.error("getTimesheetByReviewToken failed:", e);
+    return null;
+  }
+}
+
+// Apply an Approved/Rejected decision: write the denormalized review fields +
+// status, clear the client-review token so its link can't be reused, and append
+// an audit row. `method` records who decided (Admin vs Client).
+export async function decideTimesheet(input: {
+  recordId: string;
+  timesheetCode?: string;
+  memberCode?: string;
+  staffingCode?: string;
+  decision: "Approved" | "Rejected";
+  reviewMethod: ReviewMethod;
+  reviewedBy: string;
+  comment?: string;
+}): Promise<void> {
+  await ensureTimesheetApprovalSchema();
+  const at = new Date().toISOString();
+  await base(TABLES.timesheets).update(
+    [
+      {
+        id: input.recordId,
+        fields: {
+          [FIELDS.timesheets.status]: input.decision,
+          [FIELDS.timesheets.reviewMethod]: input.reviewMethod,
+          [FIELDS.timesheets.reviewedBy]: input.reviewedBy,
+          [FIELDS.timesheets.reviewedAt]: at,
+          [FIELDS.timesheets.reviewComment]: input.comment ?? "",
+          [FIELDS.timesheets.reviewToken]: "",
+          [FIELDS.timesheets.reviewTokenExpiresAt]: "",
+        } as FieldSet,
+      },
+    ],
+    { typecast: true },
+  );
+  await recordTimesheetReview({
+    timesheetId: input.recordId,
+    timesheetCode: input.timesheetCode,
+    memberCode: input.memberCode,
+    staffingCode: input.staffingCode,
+    action: input.decision,
+    actor: input.reviewedBy,
+    method: input.reviewMethod,
+    comment: input.comment,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Admin: Project Staffings (full CRUD)
 // ---------------------------------------------------------------------------
 
@@ -2468,6 +2852,9 @@ function staffingAdminFromRecord(
       deriveStaffingStatus(days, daysUsedByStaffingId?.get(r.id) ?? 0),
     rawStatus: str(r, FIELDS.projectStaffing.status) as StaffingStatus | "",
     notes: str(r, FIELDS.projectStaffing.notes),
+    reviewMethod: (str(r, FIELDS.projectStaffing.reviewMethod) as ReviewMethod) || "",
+    reviewerName: str(r, FIELDS.projectStaffing.reviewerName),
+    reviewerEmail: str(r, FIELDS.projectStaffing.reviewerEmail),
   };
 }
 
@@ -2493,7 +2880,7 @@ const getDaysUsedByStaffingId = cache(async function getDaysUsedByStaffingId(): 
   const hoursByStaffingId = new Map<string, number>();
   for (const r of records) {
     const status = str(r, FIELDS.timesheets.status) as TimesheetStatus;
-    if (status !== "Submitted" && status !== "Invoiced" && status !== "Paid") continue;
+    if (!LOGGED_TIMESHEET_STATUSES.includes(status)) continue;
     const staffingId = firstLinkedId(r, FIELDS.timesheets.projectStaffing);
     if (!staffingId) continue;
     const hours =
@@ -2567,6 +2954,9 @@ export type StaffingInput = {
   endDate: string | null;
   status: StaffingStatus | "";
   notes: string;
+  reviewMethod: ReviewMethod | "";
+  reviewerName: string;
+  reviewerEmail: string;
 };
 
 function staffingFields(input: StaffingInput): Record<string, unknown> {
@@ -2585,6 +2975,9 @@ function staffingFields(input: StaffingInput): Record<string, unknown> {
     [FIELDS.projectStaffing.endDate]: input.endDate,
     [FIELDS.projectStaffing.status]: input.status === "" ? null : input.status,
     [FIELDS.projectStaffing.notes]: input.notes,
+    [FIELDS.projectStaffing.reviewMethod]: input.reviewMethod === "" ? null : input.reviewMethod,
+    [FIELDS.projectStaffing.reviewerName]: input.reviewerName,
+    [FIELDS.projectStaffing.reviewerEmail]: input.reviewerEmail,
   };
 }
 
@@ -2601,6 +2994,10 @@ function assertHasMember(input: StaffingInput): void {
 
 export async function createStaffing(input: StaffingInput): Promise<string> {
   assertHasMember(input);
+  // The review-config fields are lazily created; make sure they exist before
+  // we write to them (a plain create/update, unlike typecast, errors on an
+  // unknown field name).
+  await ensureTimesheetApprovalSchema();
   const [created] = await base(TABLES.projectStaffing).create([
     { fields: staffingFields(input) as FieldSet },
   ]);
@@ -2609,6 +3006,7 @@ export async function createStaffing(input: StaffingInput): Promise<string> {
 
 export async function updateStaffing(recordId: string, input: StaffingInput): Promise<void> {
   assertHasMember(input);
+  await ensureTimesheetApprovalSchema();
   await base(TABLES.projectStaffing).update([
     { id: recordId, fields: staffingFields(input) as FieldSet },
   ]);
