@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
-import { getRolePermissions } from "@/lib/airtable";
+import { getRolePermissions, MEMBER_ROLES } from "@/lib/airtable";
+import { ADMIN_ACCESS_ROLES } from "@/lib/session";
 import {
   ADMIN_PAGES,
   CONFIGURABLE_ADMIN_ROLES,
@@ -34,6 +35,11 @@ export default async function AdminRolesPage() {
     initial[role] = merged;
   }
 
+  // Member roles with no admin access at all (shown read-only for clarity).
+  const noAccessRoles = (MEMBER_ROLES as string[]).filter(
+    (r) => !(ADMIN_ACCESS_ROLES as readonly string[]).includes(r),
+  );
+
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <AdminTabs active="roles" />
@@ -46,6 +52,7 @@ export default async function AdminRolesPage() {
         pages={ADMIN_PAGES}
         initial={initial}
         superAdminRole={SUPER_ADMIN_ROLE}
+        noAccessRoles={noAccessRoles}
       />
     </main>
   );

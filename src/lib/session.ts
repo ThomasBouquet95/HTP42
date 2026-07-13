@@ -21,6 +21,7 @@ export const ADMIN_ACCESS_ROLES = [
   "Managing Partner",
   "Operating Partner",
   "Associate Partner",
+  "Project Manager",
   "Network Operations",
   "Admin",
 ] as const;

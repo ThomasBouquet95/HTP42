@@ -344,6 +344,7 @@ export type MemberRole =
   | "Managing Partner"
   | "Operating Partner"
   | "Associate Partner"
+  | "Project Manager"
   | "Network Operations"
   | "Network Expert"
   | "Support";
@@ -351,17 +352,20 @@ export const MEMBER_ROLES: MemberRole[] = [
   "Managing Partner",
   "Operating Partner",
   "Associate Partner",
+  "Project Manager",
   "Network Operations",
   "Network Expert",
   "Support",
 ];
 
-// Roles granted access to the admin panel. Everyone else — Network Expert,
-// Support, and unassigned (no role) — is member-only.
+// Roles granted access to the admin panel. Their per-page view/edit rights are
+// configurable in the role manager. Everyone else — Network Expert, Support,
+// and unassigned (no role) — is member-only with no admin access.
 export const ADMIN_ROLES: MemberRole[] = [
   "Managing Partner",
   "Operating Partner",
   "Associate Partner",
+  "Project Manager",
   "Network Operations",
 ];
 export function isAdminRole(role: string | null | undefined): boolean {

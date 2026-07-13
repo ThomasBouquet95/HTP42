@@ -13,11 +13,13 @@ export function RolesClient({
   pages,
   initial,
   superAdminRole,
+  noAccessRoles = [],
 }: {
   roles: string[];
   pages: PageDef[];
   initial: Record<string, PagePerms>;
   superAdminRole: string;
+  noAccessRoles?: string[];
 }) {
   const router = useRouter();
   const [state, setState] = useState<Record<string, PagePerms>>(initial);
@@ -93,10 +95,20 @@ export function RolesClient({
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
         <p>
           <strong className="text-slate-800">{superAdminRole}</strong> always has full access and
-          can&apos;t be restricted. <strong className="text-slate-800">Network Expert</strong>,{" "}
-          <strong className="text-slate-800">Support</strong> and unassigned members have no admin
-          access at all. Edit implies view.
+          can&apos;t be restricted. Edit implies view.
         </p>
+        {noAccessRoles.length ? (
+          <p className="mt-1 text-slate-500">
+            No admin access (member-only):{" "}
+            {noAccessRoles.map((r, i) => (
+              <span key={r}>
+                {i > 0 ? ", " : ""}
+                <span className="font-medium text-slate-700">{r}</span>
+              </span>
+            ))}
+            , and unassigned members.
+          </p>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">

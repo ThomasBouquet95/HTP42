@@ -48,12 +48,29 @@ function isAdminAccessRole(role: string): boolean {
   return (ADMIN_ACCESS_ROLES as readonly string[]).includes(role);
 }
 
+// Pages a Project Manager can touch by default (project delivery), before the
+// Managing Partner customises anything. Everything else defaults to no access.
+const PROJECT_MANAGER_DEFAULT_PAGES = [
+  "projects",
+  "opportunities",
+  "staffing",
+  "timesheets",
+];
+
 // Default permissions for a role before any override is saved. Super-admin and
-// legacy "Admin" get everything; other admin roles start with full access (the
-// Managing Partner then dials them down); non-admin roles get nothing.
+// legacy "Admin" get everything; Project Manager starts scoped to the delivery
+// pages; other admin roles start with full access (the Managing Partner then
+// dials them down); non-admin roles get nothing.
 export function defaultPermsFor(role: string): PagePerms {
-  const all = role === SUPER_ADMIN_ROLE || role === "Admin" || isAdminAccessRole(role);
   const perms: PagePerms = {};
+  if (role === "Project Manager") {
+    for (const p of ADMIN_PAGES) {
+      const on = PROJECT_MANAGER_DEFAULT_PAGES.includes(p.key);
+      perms[p.key] = { view: on, edit: on };
+    }
+    return perms;
+  }
+  const all = role === SUPER_ADMIN_ROLE || role === "Admin" || isAdminAccessRole(role);
   for (const p of ADMIN_PAGES) perms[p.key] = { view: all, edit: all };
   return perms;
 }
@@ -69,9 +86,13 @@ export function can(
   if (!role) return false;
   if (role === SUPER_ADMIN_ROLE || role === "Admin") return true;
   if (!isAdminAccessRole(role)) return false;
-  const perms = stored?.[role] ?? defaultPermsFor(role);
-  const p = perms[pageKey] ?? defaultPermsFor(role)[pageKey];
-  if (!p) return false;
+  // A stored row is authoritative: a key missing from it means NO access
+  // (fail closed) — e.g. a page added after the last save stays locked until
+  // the Managing Partner re-saves. Only fall back to code defaults when the
+  // role has no stored row at all.
+  const p = stored?.[role]
+    ? stored[role][pageKey] ?? { view: false, edit: false }
+    : defaultPermsFor(role)[pageKey] ?? { view: false, edit: false };
   // Edit implies view; a page you can edit you can also see.
   return action === "edit" ? p.edit : p.view || p.edit;
 }
