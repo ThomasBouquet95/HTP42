@@ -6,28 +6,41 @@ import { Button } from "@/components/form-controls";
 import { SegmentedTabs } from "@/components/filters";
 import type { PagePerms } from "@/lib/permissions";
 
+export type RoleKind = "full" | "config" | "none";
 type PageDef = { key: string; label: string; category: string; href: string };
+type RoleDef = { name: string; kind: RoleKind; perms: PagePerms };
 
 export function RolesClient({
   roles,
   pages,
-  initial,
+  canEdit,
   superAdminRole,
-  noAccessRoles = [],
+  configurableRoles,
 }: {
-  roles: string[];
+  roles: RoleDef[];
   pages: PageDef[];
-  initial: Record<string, PagePerms>;
+  canEdit: boolean;
   superAdminRole: string;
-  noAccessRoles?: string[];
+  configurableRoles: string[];
 }) {
   const router = useRouter();
+  const kindByRole = useMemo(
+    () => Object.fromEntries(roles.map((r) => [r.name, r.kind])),
+    [roles],
+  );
+  const initial = useMemo(
+    () => Object.fromEntries(roles.map((r) => [r.name, r.perms])) as Record<string, PagePerms>,
+    [roles],
+  );
   const [state, setState] = useState<Record<string, PagePerms>>(initial);
-  const [role, setRole] = useState(roles[0] ?? "");
+  const [role, setRole] = useState(roles[0]?.name ?? "");
   const [savingRole, setSavingRole] = useState<string | null>(null);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
 
-  // Group pages by category, preserving order.
+  const kind = kindByRole[role] as RoleKind;
+  const editable = kind === "config" && canEdit;
+  const perms = state[role] ?? {};
+
   const grouped = useMemo(() => {
     const out: { category: string; pages: PageDef[] }[] = [];
     for (const p of pages) {
@@ -41,23 +54,25 @@ export function RolesClient({
     return out;
   }, [pages]);
 
-  const perms = state[role] ?? {};
   const dirty = JSON.stringify(state[role]) !== JSON.stringify(initial[role]);
 
   function setPerm(pageKey: string, next: { view: boolean; edit: boolean }) {
     setState((s) => ({ ...s, [role]: { ...s[role], [pageKey]: next } }));
   }
   function toggleView(pageKey: string) {
+    if (!editable) return;
     const cur = perms[pageKey] ?? { view: false, edit: false };
     const view = !cur.view;
-    setPerm(pageKey, { view, edit: view ? cur.edit : false }); // no view ⇒ no edit
+    setPerm(pageKey, { view, edit: view ? cur.edit : false });
   }
   function toggleEdit(pageKey: string) {
+    if (!editable) return;
     const cur = perms[pageKey] ?? { view: false, edit: false };
     const edit = !cur.edit;
-    setPerm(pageKey, { view: edit ? true : cur.view, edit }); // edit ⇒ view
+    setPerm(pageKey, { view: edit ? true : cur.view, edit });
   }
   function setAll(action: "view" | "edit", value: boolean) {
+    if (!editable) return;
     setState((s) => {
       const next: PagePerms = { ...s[role] };
       for (const p of pages) {
@@ -90,25 +105,23 @@ export function RolesClient({
     }
   }
 
+  const banner =
+    kind === "full"
+      ? { cls: "border-emerald-200 bg-emerald-50 text-emerald-800", text: "Full access to every page — not configurable." }
+      : kind === "none"
+        ? { cls: "border-slate-200 bg-slate-50 text-slate-600", text: "No admin access — member-only. Not configurable." }
+        : !canEdit
+          ? { cls: "border-amber-200 bg-amber-50 text-amber-800", text: "View-only: you can see these settings but not change them." }
+          : null;
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
         <p>
-          <strong className="text-slate-800">{superAdminRole}</strong> always has full access and
-          can&apos;t be restricted. Edit implies view.
+          <strong className="text-slate-800">{superAdminRole}</strong> and{" "}
+          <strong className="text-slate-800">Operating Partner</strong> have full, locked access and
+          can open this page. Configurable roles: {configurableRoles.join(", ")}. Edit implies view.
         </p>
-        {noAccessRoles.length ? (
-          <p className="mt-1 text-slate-500">
-            No admin access (member-only):{" "}
-            {noAccessRoles.map((r, i) => (
-              <span key={r}>
-                {i > 0 ? ", " : ""}
-                <span className="font-medium text-slate-700">{r}</span>
-              </span>
-            ))}
-            , and unassigned members.
-          </p>
-        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -116,21 +129,27 @@ export function RolesClient({
           ariaLabel="Role"
           value={role}
           onChange={setRole}
-          options={roles.map((r) => ({ value: r, label: r }))}
+          options={roles.map((r) => ({ value: r.name, label: r.name }))}
         />
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] uppercase tracking-wide text-slate-400">Set all</span>
-          <button type="button" onClick={() => setAll("view", true)} className="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50">
-            View
-          </button>
-          <button type="button" onClick={() => setAll("edit", true)} className="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50">
-            Edit
-          </button>
-          <button type="button" onClick={() => setAll("view", false)} className="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50">
-            None
-          </button>
-        </div>
+        {editable ? (
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] uppercase tracking-wide text-slate-400">Set all</span>
+            <button type="button" onClick={() => setAll("view", true)} className="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50">
+              View
+            </button>
+            <button type="button" onClick={() => setAll("edit", true)} className="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50">
+              Edit
+            </button>
+            <button type="button" onClick={() => setAll("view", false)} className="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50">
+              None
+            </button>
+          </div>
+        ) : null}
       </div>
+
+      {banner ? (
+        <div className={`rounded-lg border px-4 py-2 text-xs ${banner.cls}`}>{banner.text}</div>
+      ) : null}
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-sm">
@@ -155,10 +174,10 @@ export function RolesClient({
                     <tr key={p.key} className="border-t border-slate-100">
                       <td className="px-4 py-2 text-slate-800">{p.label}</td>
                       <td className="px-3 py-2 text-center">
-                        <Check checked={perm.view} onChange={() => toggleView(p.key)} label={`View ${p.label}`} />
+                        <Check checked={perm.view} disabled={!editable} onChange={() => toggleView(p.key)} label={`View ${p.label}`} />
                       </td>
                       <td className="px-3 py-2 text-center">
-                        <Check checked={perm.edit} onChange={() => toggleEdit(p.key)} label={`Edit ${p.label}`} />
+                        <Check checked={perm.edit} disabled={!editable} onChange={() => toggleEdit(p.key)} label={`Edit ${p.label}`} />
                       </td>
                     </tr>
                   );
@@ -169,12 +188,14 @@ export function RolesClient({
         </table>
       </div>
 
-      <div className="flex items-center justify-end gap-3">
-        {dirty ? <span className="text-[11px] text-amber-600">Unsaved changes</span> : null}
-        <Button tone="primary" size="sm" onClick={save} disabled={!dirty || savingRole === role}>
-          {savingRole === role ? "Saving…" : "Save changes"}
-        </Button>
-      </div>
+      {editable ? (
+        <div className="flex items-center justify-end gap-3">
+          {dirty ? <span className="text-[11px] text-amber-600">Unsaved changes</span> : null}
+          <Button tone="primary" size="sm" onClick={save} disabled={!dirty || savingRole === role}>
+            {savingRole === role ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
+      ) : null}
 
       {toast ? (
         <div
@@ -192,17 +213,32 @@ export function RolesClient({
   );
 }
 
-function Check({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
+function Check({
+  checked,
+  onChange,
+  label,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
       role="checkbox"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={onChange}
       className={`inline-flex h-5 w-5 items-center justify-center rounded border ${
-        checked ? "border-brand-600 bg-brand-600 text-white" : "border-slate-300 bg-white hover:border-slate-400"
-      }`}
+        checked
+          ? disabled
+            ? "border-slate-300 bg-slate-300 text-white"
+            : "border-brand-600 bg-brand-600 text-white"
+          : "border-slate-300 bg-white"
+      } ${disabled ? "cursor-not-allowed opacity-70" : "hover:border-slate-400"}`}
     >
       {checked ? (
         <svg viewBox="0 0 12 12" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>

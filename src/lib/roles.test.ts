@@ -24,9 +24,11 @@ describe("admin-panel access by role", () => {
 });
 
 describe("can() permission resolution", () => {
-  it("super-admin and legacy Admin get everything", () => {
-    expect(can("Managing Partner", "payments", "edit")).toBe(true);
-    expect(can("Admin", "contracts", "edit")).toBe(true);
+  it("locked-full roles (Managing/Operating Partner + legacy Admin) get everything", () => {
+    for (const r of ["Managing Partner", "Operating Partner", "Admin"]) {
+      expect(can(r, "payments", "edit")).toBe(true);
+      expect(can(r, "settings", "edit")).toBe(true);
+    }
   });
 
   it("non-admin roles get nothing", () => {
@@ -35,16 +37,20 @@ describe("can() permission resolution", () => {
     expect(can("", "members", "view")).toBe(false);
   });
 
-  it("edit implies view; view does not imply edit", () => {
-    const stored = { "Operating Partner": { payments: { view: true, edit: false } } };
-    expect(can("Operating Partner", "payments", "view", stored)).toBe(true);
-    expect(can("Operating Partner", "payments", "edit", stored)).toBe(false);
-    const stored2 = { "Operating Partner": { payments: { view: false, edit: true } } };
-    expect(can("Operating Partner", "payments", "view", stored2)).toBe(true);
+  it("edit implies view; view does not imply edit (configurable role)", () => {
+    const stored = { "Network Operations": { payments: { view: true, edit: false } } };
+    expect(can("Network Operations", "payments", "view", stored)).toBe(true);
+    expect(can("Network Operations", "payments", "edit", stored)).toBe(false);
+    const stored2 = { "Network Operations": { payments: { view: false, edit: true } } };
+    expect(can("Network Operations", "payments", "view", stored2)).toBe(true);
   });
 
-  it("admin roles default to full access with no stored row", () => {
-    expect(can("Operating Partner", "payments", "edit")).toBe(true);
+  it("configurable admin roles default to full access except Settings", () => {
+    expect(can("Network Operations", "payments", "edit")).toBe(true);
+    expect(can("Associate Partner", "contracts", "view")).toBe(true);
+    // Settings is off by default for configurable roles.
+    expect(can("Network Operations", "settings", "view")).toBe(false);
+    expect(can("Associate Partner", "settings", "view")).toBe(false);
   });
 
   it("Project Manager defaults to the delivery pages only", () => {
@@ -52,12 +58,11 @@ describe("can() permission resolution", () => {
     expect(can("Project Manager", "timesheets", "view")).toBe(true);
     expect(can("Project Manager", "payments", "view")).toBe(false);
     expect(can("Project Manager", "contracts", "view")).toBe(false);
+    expect(can("Project Manager", "settings", "view")).toBe(false);
   });
 
   it("fails closed for a page key missing from an existing stored row", () => {
-    const stored = { "Operating Partner": { payments: { view: true, edit: true } } };
-    // "contracts" not in the stored row → no access, even though the code
-    // default for an admin role would be full.
-    expect(can("Operating Partner", "contracts", "view", stored)).toBe(false);
+    const stored = { "Network Operations": { payments: { view: true, edit: true } } };
+    expect(can("Network Operations", "contracts", "view", stored)).toBe(false);
   });
 });

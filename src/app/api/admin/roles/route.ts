@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminAction } from "@/lib/auth";
 import { setRolePermissions } from "@/lib/airtable";
-import { ADMIN_PAGE_KEYS, CONFIGURABLE_ADMIN_ROLES, SUPER_ADMIN_ROLE } from "@/lib/permissions";
+import { ADMIN_PAGE_KEYS, CONFIGURABLE_ADMIN_ROLES } from "@/lib/permissions";
 import { apiError, zodMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -17,11 +17,11 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
-  const session = await requireAdminSession();
-  // Only the super-admin (Managing Partner) can change role permissions.
-  if (!session || session.role !== SUPER_ADMIN_ROLE) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  // Changing role permissions requires "edit" on the Settings page — the
+  // locked-full roles (Managing Partner, Operating Partner) have it; others
+  // only if the matrix grants them Settings edit.
+  const session = await requireAdminAction("settings", "edit");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);

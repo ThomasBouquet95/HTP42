@@ -2,7 +2,7 @@ import Link from "next/link";
 import { DemoModeToggle } from "@/components/demo-mode";
 import { getSession } from "@/lib/auth";
 import { getRolePermissions } from "@/lib/airtable";
-import { can, SUPER_ADMIN_ROLE } from "@/lib/permissions";
+import { can } from "@/lib/permissions";
 
 // Page keys are the individual admin sub-pages. Each one belongs to
 // exactly one category below. Pages pass their own key as `active`;
@@ -25,7 +25,7 @@ type PageKey =
   | "legalcockpit"
   | "contracts"
   | "documents"
-  | "roles";
+  | "settings";
 
 type Page = { key: PageKey; href: string; label: string; hidden?: boolean };
 type Category = { key: string; label: string; pages: Page[] };
@@ -89,22 +89,17 @@ const CATEGORIES: Category[] = [
   {
     key: "settings",
     label: "Settings",
-    pages: [{ key: "roles", href: "/admin/roles", label: "Roles & access" }],
+    pages: [{ key: "settings", href: "/admin/roles", label: "Roles & access" }],
   },
 ];
-
-// Maps a category page-key list to the AdminTabs "cockpit" duplicates:
-// networkcockpit / cockpit / legalcockpit all render label "Cockpit".
 
 export async function AdminTabs({ active }: { active: PageKey }) {
   const session = await getSession();
   const role = session?.role ?? "";
   const stored = await getRolePermissions();
 
-  // Only pages the role can view. "roles" is Managing-Partner-only (never in
-  // the configurable matrix); every other page uses the permission model.
-  const visibleKey = (key: PageKey): boolean =>
-    key === "roles" ? role === SUPER_ADMIN_ROLE : can(role, key, "view", stored);
+  // Only show pages the role can view (Settings included — MP/OP by default).
+  const visibleKey = (key: PageKey): boolean => can(role, key, "view", stored);
 
   const categories = CATEGORIES.map((c) => ({
     ...c,
