@@ -266,6 +266,13 @@ export function PaymentsClient({
   );
   const projectLabel = (p: PaymentRecord) =>
     p.projectRecordIds.map((id) => projectsById.get(id)?.code).filter(Boolean).join(", ");
+  // The staffing a payment settles — resolved from its linked member invoice
+  // (the source of truth the project is derived from). Shown on outflow detail.
+  const invoiceOptById = new Map(memberInvoices.map((i) => [i.id, i]));
+  const staffingLabel = (p: PaymentRecord) => {
+    const inv = p.memberInvoiceRecordIds.map((id) => invoiceOptById.get(id)).find(Boolean);
+    return inv?.staffingCode ?? "";
+  };
   const clientLabel = (p: PaymentRecord) =>
     p.clientRecordIds.map((id) => clientsById.get(id)?.name || clientsById.get(id)?.code).filter(Boolean).join(", ");
   const memberLabel = (p: PaymentRecord) =>
@@ -1040,6 +1047,7 @@ export function PaymentsClient({
                         <PaymentDetails
                           p={p}
                           projectLabel={projectLabel(p)}
+                          staffingLabel={staffingLabel(p)}
                           clientLabel={clientLabel(p)}
                           memberLabel={memberLabel(p)}
                           des={desForPayment(p)}
@@ -1573,6 +1581,7 @@ function Spinner() {
 function PaymentDetails({
   p,
   projectLabel,
+  staffingLabel,
   clientLabel,
   memberLabel,
   des,
@@ -1581,6 +1590,7 @@ function PaymentDetails({
 }: {
   p: PaymentRecord;
   projectLabel: string;
+  staffingLabel: string;
   clientLabel: string;
   memberLabel: string;
   des: "Yes" | "No" | "";
@@ -1612,6 +1622,7 @@ function PaymentDetails({
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
         <PField label="Project" value={projectLabel} mono />
+        {staffingLabel ? <PField label="Staffing" value={staffingLabel} mono /> : null}
         <PField label="Client" value={clientLabel} blur />
         <PField label="Member" value={memberLabel} blur />
         <PField label="Beneficiary" value={p.beneficiary} blur />
