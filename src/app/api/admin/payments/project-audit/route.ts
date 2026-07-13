@@ -115,6 +115,15 @@ export async function GET(request: Request) {
   const byPair = tally((r) => `${r.paymentProject}  →  ${r.staffingProject}`);
   const noStaffing = mismatches.filter((r) => !r.hasStaffing).length;
 
+  // Target (staffing) project codes that have NO matching Project record. The
+  // backfill can't link a payment to a project that doesn't exist, so these
+  // rows can't be auto-fixed — the Project must be created or the staffing's
+  // project code corrected. This is the usual reason a fix "doesn't stick".
+  const knownCodes = new Set(projects.map((p) => p.projectCode).filter(Boolean));
+  const unresolvedTargets = [...new Set(mismatches.map((r) => r.staffingProject))]
+    .filter((code) => code && !knownCodes.has(code))
+    .sort();
+
   const summary = {
     totalPayments: payments.length,
     linkedPayments,
@@ -123,6 +132,7 @@ export async function GET(request: Request) {
     byClassification: Object.fromEntries(byClass),
     bySource: Object.fromEntries(bySource),
     invoicesWithoutStaffingLink: noStaffing,
+    unresolvedTargetProjects: unresolvedTargets,
   };
 
   const wantsJson =
@@ -175,6 +185,17 @@ export async function GET(request: Request) {
       ${summary.unlinkedPayments} standalone (not checkable) ·
       <span class="${summary.mismatchCount === 0 ? "ok" : "bad"}">${summary.mismatchCount} mismatch${summary.mismatchCount === 1 ? "" : "es"}</span>
     </p>
+
+    ${
+      unresolvedTargets.length > 0
+        ? `<div style="border:1px solid #fca5a5;background:#fef2f2;color:#7f1d1d;padding:10px 14px;border-radius:8px;margin:.75rem 0">
+        <strong>${unresolvedTargets.length} target project${unresolvedTargets.length === 1 ? "" : "s"} can't be auto-fixed.</strong>
+        These staffing/invoice project codes have <em>no matching Project record</em>, so a payment can't be linked to them and
+        the backfill skips them (counted as <code>unresolved</code>). Create the Project (or correct the staffing's project code), then re-run:
+        <div style="margin-top:6px">${unresolvedTargets.map((c) => `<code>${esc(c)}</code>`).join(" · ")}</div>
+      </div>`
+        : ""
+    }
 
     <h2>Fix the stored records</h2>
     <p class="muted" style="font-size:12px">
