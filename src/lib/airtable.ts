@@ -2414,6 +2414,24 @@ async function getStaffingMap(): Promise<Map<string, StaffingRecord>> {
   return map;
 }
 
+// Distinct project codes a member is staffed on (any Project Staffing linking
+// them). Used to scope a Project Manager's admin views to their own projects.
+export async function getMemberStaffedProjectCodes(memberCode: string): Promise<string[]> {
+  if (!memberCode) return [];
+  const records = await base(TABLES.projectStaffing)
+    .select({
+      filterByFormula: `FIND("${escape(memberCode)}", ARRAYJOIN({${FIELDS.projectStaffing.memberCode}}))`,
+      fields: [FIELDS.projectStaffing.projectCode],
+    })
+    .all();
+  const set = new Set<string>();
+  for (const r of records) {
+    const c = str(r, FIELDS.projectStaffing.projectCode);
+    if (c) set.add(c);
+  }
+  return [...set];
+}
+
 async function staffingsByMemberCodeString(memberCode: string): Promise<Map<string, StaffingRecord>> {
   const [records, projectNames] = await Promise.all([
     base(TABLES.projectStaffing)

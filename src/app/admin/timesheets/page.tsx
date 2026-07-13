@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import {
+  getMemberStaffedProjectCodes,
   listAllContracts,
   listAllInvoices,
   listAllStaffings,
@@ -22,17 +23,29 @@ export const dynamic = "force-dynamic";
 export default async function AdminTimesheetsPage() {
   const access = await requireAdminPage("timesheets");
   if (!access) redirect("/admin");
+  const { session } = access;
 
   // Invoices ride along so an expanded timesheet row can show "related
   // invoices" (same staffing); payments let each invoice link to the payment
   // that settles it.
-  const [timesheets, invoices, payments, staffings, contracts] = await Promise.all([
+  const [allTimesheets, invoices, payments, staffings, contracts] = await Promise.all([
     listAllTimesheets(),
     listAllInvoices(),
     listPayments(),
     listAllStaffings(),
     listAllContracts(),
   ]);
+
+  // Project Managers only see timesheets for projects they're staffed on;
+  // every other admin role sees all. (Access to the page itself is already
+  // gated by the "timesheets" view permission.)
+  const isProjectManager = session.role === "Project Manager";
+  const scopeCodes = isProjectManager
+    ? new Set(await getMemberStaffedProjectCodes(session.memberCode))
+    : null;
+  const timesheets = scopeCodes
+    ? allTimesheets.filter((t) => scopeCodes.has(t.projectCode))
+    : allTimesheets;
 
   // SOW document link per project: the PDF of a SOW-type contract on that
   // project (first match wins).
@@ -70,9 +83,12 @@ export default async function AdminTimesheetsPage() {
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <AdminTabs active="timesheets" />
         <div className="mb-4 flex items-baseline gap-3">
-          <h1 className="text-base sm:text-lg font-semibold">All timesheets</h1>
+          <h1 className="text-base sm:text-lg font-semibold">
+            {isProjectManager ? "Project timesheets" : "All timesheets"}
+          </h1>
           <span className="text-xs text-slate-500">
-            · {timesheets.length} across all members
+            · {timesheets.length}{" "}
+            {isProjectManager ? "on your projects" : "across all members"}
           </span>
         </div>
         <AdminTimesheetsClient

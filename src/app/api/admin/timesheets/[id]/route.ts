@@ -6,6 +6,7 @@ import {
   adminUpdateTimesheetStatus,
   decideTimesheet,
   getAdminTimesheetById,
+  getMemberStaffedProjectCodes,
   recordTimesheetReview,
   type TimesheetStatus,
 } from "@/lib/airtable";
@@ -39,6 +40,14 @@ export async function PATCH(
 
   const existing = await getAdminTimesheetById(id);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Project Managers may only act on timesheets for projects they're staffed on.
+  if (session.role === "Project Manager") {
+    const scope = new Set(await getMemberStaffedProjectCodes(session.memberCode));
+    if (!scope.has(existing.projectCode)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
 
   try {
     // Approve / Reject (from the action verb, or a direct status set to one of

@@ -62,14 +62,10 @@ export function isLockedFullRole(role: string | null | undefined): boolean {
   return !!role && LOCKED_FULL_ROLES.includes(role);
 }
 
-// Pages a Project Manager can touch by default (project delivery), before the
-// Managing Partner customises anything. Everything else defaults to no access.
-const PROJECT_MANAGER_DEFAULT_PAGES = [
-  "projects",
-  "opportunities",
-  "staffing",
-  "timesheets",
-];
+// Pages a Project Manager can touch by default: just Timesheets (and only for
+// the projects they're staffed on — enforced in the timesheets page). The
+// Managing/Operating Partner can widen this from the role manager.
+const PROJECT_MANAGER_DEFAULT_PAGES = ["timesheets"];
 
 // Default permissions for a role before any override is saved. Locked-full
 // roles get everything; Project Manager starts scoped to the delivery pages;

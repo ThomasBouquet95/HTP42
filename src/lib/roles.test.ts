@@ -53,11 +53,12 @@ describe("can() permission resolution", () => {
     expect(can("Associate Partner", "settings", "view")).toBe(false);
   });
 
-  it("Project Manager defaults to the delivery pages only", () => {
-    expect(can("Project Manager", "staffing", "edit")).toBe(true);
+  it("Project Manager defaults to Timesheets only", () => {
     expect(can("Project Manager", "timesheets", "view")).toBe(true);
+    expect(can("Project Manager", "timesheets", "edit")).toBe(true);
+    expect(can("Project Manager", "staffing", "view")).toBe(false);
+    expect(can("Project Manager", "projects", "view")).toBe(false);
     expect(can("Project Manager", "payments", "view")).toBe(false);
-    expect(can("Project Manager", "contracts", "view")).toBe(false);
     expect(can("Project Manager", "settings", "view")).toBe(false);
   });
 
