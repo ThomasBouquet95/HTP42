@@ -109,6 +109,24 @@ export function TimesheetReviewClient({
     [groups, selectedId],
   );
 
+  // Projects the selected member has timesheets on (via their staffings),
+  // for the on-top project selector. Reset the filter when the member changes.
+  const memberProjects = useMemo(() => {
+    if (!selected) return [] as { code: string; name: string }[];
+    const m = new Map<string, string>();
+    for (const t of [...selected.underReview, ...selected.approved, ...selected.rejected]) {
+      const code = t.projectCode || "—";
+      if (!m.has(code)) m.set(code, t.projectName || t.projectCode || "—");
+    }
+    return [...m.entries()]
+      .map(([code, name]) => ({ code, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [selected]);
+  const [projectFilter, setProjectFilter] = useState<string>("all");
+  useEffect(() => setProjectFilter("all"), [selectedId]);
+  const byProject = (list: AdminTimesheetRecord[]) =>
+    projectFilter === "all" ? list : list.filter((t) => (t.projectCode || "—") === projectFilter);
+
   async function decide(id: string, action: "approve" | "reject", comment: string) {
     const previous = rows.find((r) => r.id === id)?.status;
     if (!previous) return;
@@ -200,6 +218,19 @@ export function TimesheetReviewClient({
             ) : null}
           </div>
 
+          <ProjectSelector
+            projects={memberProjects}
+            value={projectFilter}
+            onChange={setProjectFilter}
+            sowByStaffing={sowByStaffing}
+            staffingCodeByProject={(code) => {
+              const t = [...selected.underReview, ...selected.approved, ...selected.rejected].find(
+                (x) => (x.projectCode || "—") === code,
+              );
+              return t?.staffingCode ?? "";
+            }}
+          />
+
           <SegmentedTabs
             ariaLabel="Review status"
             value={statusTab}
@@ -208,29 +239,29 @@ export function TimesheetReviewClient({
               {
                 value: "underReview",
                 label: "Under review",
-                badge: <CountBadge n={selected.underReview.length} tone="warning" />,
+                badge: <CountBadge n={byProject(selected.underReview).length} tone="warning" />,
               },
               {
                 value: "approved",
                 label: "Approved",
-                badge: <CountBadge n={selected.approved.length} tone="muted" />,
+                badge: <CountBadge n={byProject(selected.approved).length} tone="muted" />,
               },
               {
                 value: "rejected",
                 label: "Rejected",
-                badge: <CountBadge n={selected.rejected.length} tone="muted" />,
+                badge: <CountBadge n={byProject(selected.rejected).length} tone="muted" />,
               },
             ]}
           />
 
           <ProjectGroups
-            items={
+            items={byProject(
               statusTab === "underReview"
                 ? selected.underReview
                 : statusTab === "approved"
                   ? selected.approved
-                  : selected.rejected
-            }
+                  : selected.rejected,
+            )}
             empty={
               statusTab === "underReview"
                 ? "Nothing under review for this member."
@@ -271,6 +302,83 @@ function CountBadge({ n, tone }: { n: number; tone: "warning" | "muted" }) {
     <span className={`inline-flex items-center rounded-full px-1.5 text-[10px] font-semibold ${cls}`}>
       {n}
     </span>
+  );
+}
+
+// On-top project selector for the chosen member: subtabs when there are a few
+// projects, a dropdown when there are many. Shows the picked project's SOW
+// link inline. Hidden when the member has a single project (nothing to pick).
+function ProjectSelector({
+  projects,
+  value,
+  onChange,
+  sowByStaffing,
+  staffingCodeByProject,
+}: {
+  projects: { code: string; name: string }[];
+  value: string;
+  onChange: (v: string) => void;
+  sowByStaffing?: Record<string, SowInfo>;
+  staffingCodeByProject: (code: string) => string;
+}) {
+  if (projects.length <= 1) return null;
+  const activeSow = value !== "all" ? sowByStaffing?.[staffingCodeByProject(value)] : undefined;
+  const useDropdown = projects.length > 6;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Project</span>
+      {useDropdown ? (
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-8 max-w-[20rem] rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-800 focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+        >
+          <option value="all">All projects ({projects.length})</option>
+          {projects.map((p) => (
+            <option key={p.code} value={p.code}>
+              {p.name}
+              {p.code !== p.name ? ` · ${p.code}` : ""}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <div className="inline-flex flex-wrap items-center gap-0.5 rounded-lg bg-slate-100 p-0.5">
+          <ProjChip active={value === "all"} onClick={() => onChange("all")}>
+            All
+          </ProjChip>
+          {projects.map((p) => (
+            <ProjChip key={p.code} active={value === p.code} onClick={() => onChange(p.code)}>
+              {p.name}
+            </ProjChip>
+          ))}
+        </div>
+      )}
+      {activeSow ? <SowChip sow={activeSow} /> : null}
+    </div>
+  );
+}
+
+function ProjChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`inline-flex max-w-[12rem] items-center truncate rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+        active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
