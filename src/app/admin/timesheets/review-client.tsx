@@ -600,8 +600,8 @@ function ReviewCard({
           {t.startDate && t.endDate ? formatWeekRange(t.startDate, t.endDate) : "—"}
         </span>
         {clientPending ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-            ✉ Awaiting client
+          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+            Awaiting client
           </span>
         ) : t.reviewMethod === "Client" ? (
           <span className="text-[10px] text-slate-400">client</span>

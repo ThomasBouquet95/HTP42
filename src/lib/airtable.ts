@@ -2936,9 +2936,9 @@ function staffingAdminFromRecord(
 const getDaysUsedByStaffingId = cache(async function getDaysUsedByStaffingId(): Promise<
   Map<string, number>
 > {
-  // Sum total hours per Project Staffing across officially-logged timesheets
-  // (Submitted / Invoiced / Paid), then convert to days at HOURS_PER_DAY = 8.
-  // Drafts are work-in-progress and Deleted are tombstones — neither counts.
+  // Sum total hours per Project Staffing across the logged lifecycle
+  // (Submitted / Approved / Invoiced / Paid), then convert to days at
+  // HOURS_PER_DAY = 8. Draft / Rejected / Cancelled / Deleted never count.
   const records = await base(TABLES.timesheets)
     .select({
       fields: [

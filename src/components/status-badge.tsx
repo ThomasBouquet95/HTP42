@@ -29,14 +29,6 @@ const LABEL: Record<TimesheetStatus, string> = {
   Deleted: "Deleted",
 };
 
-// Small leading glyph for the workflow-defining states (per the product spec).
-const ICON: Partial<Record<TimesheetStatus, string>> = {
-  Submitted: "⏳",
-  Approved: "✅",
-  Rejected: "❌",
-  Cancelled: "🚫",
-};
-
 export function timesheetStatusLabel(status: TimesheetStatus): string {
   return LABEL[status] ?? status;
 }
@@ -55,24 +47,18 @@ function fmtDate(iso: string | null | undefined): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-// The canonical timesheet status pill. Shows the emoji + label; when `review`
+// The canonical timesheet status pill — text only (no icons). When `review`
 // carries a decision, hovering reveals reviewer / method / date / comment.
 export function StatusBadge({
   status,
   review,
-  showIcon = true,
 }: {
   status: TimesheetStatus;
   review?: ReviewInfo;
+  /** @deprecated icons were removed; kept so existing callers still compile. */
   showIcon?: boolean;
 }) {
-  const icon = showIcon ? ICON[status] : undefined;
-  const pill = (
-    <Badge tone={TONE[status]}>
-      {icon ? <span aria-hidden className="mr-1">{icon}</span> : null}
-      {LABEL[status]}
-    </Badge>
-  );
+  const pill = <Badge tone={TONE[status]}>{LABEL[status]}</Badge>;
 
   const decided = (status === "Approved" || status === "Rejected") && review;
   const hasReviewMeta =
