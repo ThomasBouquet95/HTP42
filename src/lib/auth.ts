@@ -1,8 +1,9 @@
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import { env } from "./env";
-import { findActiveMemberByEmail, type MemberRecord } from "./airtable";
+import { findActiveMemberByEmail, getRolePermissions, type MemberRecord } from "./airtable";
 import { isAdmin, isAdminRoleName, type SessionPayload } from "./session";
+import { can, type AdminAction } from "./permissions";
 
 const SESSION_COOKIE = "htp42_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
@@ -112,6 +113,31 @@ export async function requireAdminSession(): Promise<SessionPayload | null> {
   if (!member) return null;
   if (!isAdminRoleName(member.role)) return null;
   return { ...session, role: member.role };
+}
+
+// Page-level admin gate: admin session AND the live role has `view` on the
+// given admin page. Returns the session + whether the role may edit that page,
+// or null (caller should redirect). Use in every admin page/route.
+export async function requireAdminPage(
+  pageKey: string,
+): Promise<{ session: SessionPayload; canEdit: boolean } | null> {
+  const session = await requireAdminSession();
+  if (!session) return null;
+  const stored = await getRolePermissions();
+  if (!can(session.role, pageKey, "view", stored)) return null;
+  return { session, canEdit: can(session.role, pageKey, "edit", stored) };
+}
+
+// Convenience for API mutation routes: returns the session only if the role
+// may `edit` (or `view`) the page, else null.
+export async function requireAdminAction(
+  pageKey: string,
+  action: AdminAction,
+): Promise<SessionPayload | null> {
+  const session = await requireAdminSession();
+  if (!session) return null;
+  const stored = await getRolePermissions();
+  return can(session.role, pageKey, action, stored) ? session : null;
 }
 
 export async function requireSession(): Promise<SessionPayload> {

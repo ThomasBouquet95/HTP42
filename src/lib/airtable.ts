@@ -2,6 +2,7 @@ import { cache } from "react";
 import Airtable, { type FieldSet, type Record as AirtableRecord } from "airtable";
 import { env } from "./env";
 import { resolvePaymentEur } from "./fx";
+import type { PagePerms, RolePermissions } from "./permissions";
 
 type AirtableBase = ReturnType<Airtable["base"]>;
 
@@ -30,6 +31,7 @@ export const TABLES = {
   chatMessages: "Chat Messages",
   vendorInvoices: "Vendor Invoices",
   timesheetReviews: "Timesheet Reviews",
+  rolePermissions: "Role Permissions",
 } as const;
 
 export const FIELDS = {
@@ -176,6 +178,10 @@ export const FIELDS = {
     reviewComment: "Review Comment",
     reviewToken: "Review Token",
     reviewTokenExpiresAt: "Review Token Expires At",
+  },
+  rolePermissions: {
+    role: "Role",
+    permissions: "Permissions",
   },
   timesheetReviews: {
     entry: "Entry",
@@ -1220,6 +1226,90 @@ export async function adminCreateMember(input: MemberCreateInput): Promise<Membe
 
 export async function adminDeleteMember(recordId: string): Promise<void> {
   await base(TABLES.networkMembers).destroy([recordId]);
+}
+
+// ---------------------------------------------------------------------------
+// Admin role permissions (view/edit per role per admin page)
+// ---------------------------------------------------------------------------
+
+let rolePermissionsTableReady = false;
+
+async function ensureRolePermissionsSchema(): Promise<boolean> {
+  if (rolePermissionsTableReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { tables: Array<{ name: string }> };
+    if (data.tables.some((t) => t.name === TABLES.rolePermissions)) {
+      rolePermissionsTableReady = true;
+      return true;
+    }
+    const create = await fetch(metaUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: TABLES.rolePermissions,
+        description: "Per-role admin-panel access (view/edit per page), managed in the app.",
+        fields: [
+          { name: FIELDS.rolePermissions.role, type: "singleLineText" },
+          { name: FIELDS.rolePermissions.permissions, type: "multilineText" },
+        ],
+      }),
+    });
+    if (create.ok) {
+      rolePermissionsTableReady = true;
+      return true;
+    }
+    console.error("ensureRolePermissionsSchema: create failed:", await create.text().catch(() => ""));
+    return false;
+  } catch (e) {
+    console.error("ensureRolePermissionsSchema failed:", e);
+    return false;
+  }
+}
+
+// All saved role overrides as { role -> PagePerms }. Roles without a row fall
+// back to code defaults (handled by can() in lib/permissions).
+export const getRolePermissions = cache(async function getRolePermissions(): Promise<RolePermissions> {
+  try {
+    const ok = await ensureRolePermissionsSchema();
+    if (!ok) return {};
+    const records = await base(TABLES.rolePermissions).select().all();
+    const out: RolePermissions = {};
+    for (const r of records) {
+      const role = str(r, FIELDS.rolePermissions.role);
+      if (!role) continue;
+      try {
+        out[role] = JSON.parse(str(r, FIELDS.rolePermissions.permissions) || "{}") as PagePerms;
+      } catch {
+        out[role] = {};
+      }
+    }
+    return out;
+  } catch (e) {
+    console.error("getRolePermissions failed:", e);
+    return {};
+  }
+});
+
+export async function setRolePermissions(role: string, perms: PagePerms): Promise<void> {
+  await ensureRolePermissionsSchema();
+  const existing = await base(TABLES.rolePermissions)
+    .select({ filterByFormula: `{${FIELDS.rolePermissions.role}} = "${escape(role)}"`, maxRecords: 1 })
+    .firstPage();
+  const fields = {
+    [FIELDS.rolePermissions.role]: role,
+    [FIELDS.rolePermissions.permissions]: JSON.stringify(perms),
+  } as FieldSet;
+  if (existing[0]) {
+    await base(TABLES.rolePermissions).update([{ id: existing[0].id, fields }]);
+  } else {
+    await base(TABLES.rolePermissions).create([{ fields }]);
+  }
 }
 
 // Old → new member role for the one-shot migration. Returns null to leave a

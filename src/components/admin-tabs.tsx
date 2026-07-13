@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { DemoModeToggle } from "@/components/demo-mode";
+import { getSession } from "@/lib/auth";
+import { getRolePermissions } from "@/lib/airtable";
+import { can, SUPER_ADMIN_ROLE } from "@/lib/permissions";
 
 // Page keys are the individual admin sub-pages. Each one belongs to
 // exactly one category below. Pages pass their own key as `active`;
@@ -21,7 +24,8 @@ type PageKey =
   | "invoices"
   | "legalcockpit"
   | "contracts"
-  | "documents";
+  | "documents"
+  | "roles";
 
 type Page = { key: PageKey; href: string; label: string; hidden?: boolean };
 type Category = { key: string; label: string; pages: Page[] };
@@ -82,12 +86,35 @@ const CATEGORIES: Category[] = [
     label: "Documents",
     pages: [{ key: "documents", href: "/admin/documents", label: "Document search" }],
   },
+  {
+    key: "settings",
+    label: "Settings",
+    pages: [{ key: "roles", href: "/admin/roles", label: "Roles & access" }],
+  },
 ];
 
-export function AdminTabs({ active }: { active: PageKey }) {
+// Maps a category page-key list to the AdminTabs "cockpit" duplicates:
+// networkcockpit / cockpit / legalcockpit all render label "Cockpit".
+
+export async function AdminTabs({ active }: { active: PageKey }) {
+  const session = await getSession();
+  const role = session?.role ?? "";
+  const stored = await getRolePermissions();
+
+  // Only pages the role can view. "roles" is Managing-Partner-only (never in
+  // the configurable matrix); every other page uses the permission model.
+  const visibleKey = (key: PageKey): boolean =>
+    key === "roles" ? role === SUPER_ADMIN_ROLE : can(role, key, "view", stored);
+
+  const categories = CATEGORIES.map((c) => ({
+    ...c,
+    pages: c.pages.filter((p) => !p.hidden && visibleKey(p.key)),
+  })).filter((c) => c.pages.length > 0);
+
   const activeCategory =
-    CATEGORIES.find((c) => c.pages.some((p) => p.key === active)) ?? CATEGORIES[0];
-  const visiblePages = activeCategory.pages.filter((p) => !p.hidden);
+    categories.find((c) => c.pages.some((p) => p.key === active)) ?? categories[0];
+  if (!activeCategory) return null;
+  const visiblePages = activeCategory.pages;
   const showSubRow = visiblePages.length > 1;
 
   return (
@@ -95,7 +122,7 @@ export function AdminTabs({ active }: { active: PageKey }) {
       {/* Category row (pill style) + demo toggle. */}
       <div className="flex items-center justify-between gap-3">
         <nav className="flex items-center gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1">
-          {CATEGORIES.map((c) => {
+          {categories.map((c) => {
             const isActive = c.key === activeCategory.key;
             return (
               <Link
@@ -118,8 +145,7 @@ export function AdminTabs({ active }: { active: PageKey }) {
         </div>
       </div>
 
-      {/* Sub-page row for the active category. Hidden for single-page
-          categories where it would just duplicate the category tab. */}
+      {/* Sub-page row for the active category. */}
       {showSubRow ? (
         <nav className="flex items-center gap-1 border-b border-slate-200 -mb-px overflow-x-auto">
           {visiblePages.map((p) => {
