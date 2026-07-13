@@ -192,13 +192,46 @@ export async function GET(request: Request) {
       <h2>Fixing the stored records</h2>
       <p class="muted" style="font-size:12px">
         The app now resolves each invoice-linked payment's project from its invoice on the fly, so the
-        Payments screen and cockpit are already correct. To also repair the underlying Airtable records
-        (so native grid views match), run the backfill:
+        Payments screen and cockpit are already correct. Use the buttons below to also repair the
+        underlying Airtable records (so native grid views match). Always dry-run first.
       </p>
-      <pre style="background:#0f172a;color:#e2e8f0;padding:10px 12px;border-radius:6px;font-size:12px;overflow:auto">POST ${esc(new URL(request.url).pathname)}
-Content-Type: application/json
-
-{ "confirm": "APPLY" }        <span style="color:#94a3b8"># omit body / any other value = dry-run</span></pre>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:.5rem 0">
+        <button id="dry" type="button" style="cursor:pointer;border:1px solid #cbd5e1;background:#fff;color:#0f172a;padding:7px 12px;border-radius:6px;font-size:13px;font-weight:600">Dry run (preview)</button>
+        <button id="apply" type="button" style="cursor:pointer;border:1px solid #b91c1c;background:#b91c1c;color:#fff;padding:7px 12px;border-radius:6px;font-size:13px;font-weight:600">Apply fixes</button>
+        <span id="status" class="muted" style="font-size:12px"></span>
+      </div>
+      <pre id="result" style="display:none;background:#0f172a;color:#e2e8f0;padding:10px 12px;border-radius:6px;font-size:12px;overflow:auto;max-height:340px"></pre>
+      <script>
+        (function () {
+          var path = ${JSON.stringify(new URL(request.url).pathname)};
+          var dry = document.getElementById("dry");
+          var apply = document.getElementById("apply");
+          var status = document.getElementById("status");
+          var result = document.getElementById("result");
+          function run(applyFlag) {
+            if (applyFlag && !window.confirm("Rewrite the Project link on all mismatched payments in Airtable? Run a dry run first if you haven't.")) return;
+            status.textContent = applyFlag ? "Applying…" : "Running dry run…";
+            dry.disabled = apply.disabled = true;
+            fetch(path, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(applyFlag ? { confirm: "APPLY" } : {}),
+            })
+              .then(function (r) { return r.json(); })
+              .then(function (d) {
+                result.style.display = "block";
+                result.textContent = JSON.stringify(d, null, 2);
+                status.textContent = d.apply
+                  ? ("Applied — " + (d.updated || 0) + " payment(s) updated. Reload to re-audit.")
+                  : ((d.toFix || 0) + " payment(s) would change" + (d.unresolved ? (", " + d.unresolved + " unresolved (need a look)") : "") + ". Review below, then Apply.");
+              })
+              .catch(function (e) { status.textContent = "Failed: " + e; })
+              .finally(function () { dry.disabled = apply.disabled = false; });
+          }
+          dry.addEventListener("click", function () { run(false); });
+          apply.addEventListener("click", function () { run(true); });
+        })();
+      </script>
       <h2>All mismatches</h2>
       <table><thead><tr>
         <th>Payment</th><th>Dir</th><th>Beneficiary</th>
