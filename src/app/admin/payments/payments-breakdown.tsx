@@ -191,8 +191,8 @@ export function PaymentsByMember({
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-3">
-            <Stat label="Paid (sent)" value={eur(t.sent)} tone="success" />
-            <Stat label="Committed" value={eur(t.committed)} tone="warning" />
+            <Stat label="Paid" value={eur(t.sent)} tone="success" />
+            <Stat label="To be paid" value={eur(t.committed)} tone="warning" />
             <Stat label="Under review" value={eur(t.review)} tone="neutral" />
           </div>
 
@@ -277,6 +277,10 @@ function SummaryCard({
   const value = tone === "success" ? "text-emerald-800" : "text-rose-800";
   const sub = tone === "success" ? "text-emerald-700/80" : "text-rose-700/80";
   const total = t.sent + t.committed + t.review;
+  // Direction-aware wording: inflows are money coming in, outflows money going
+  // out — "committed" alone is ambiguous.
+  const settledLabel = tone === "success" ? "received" : "paid";
+  const committedLabel = tone === "success" ? "to receive" : "to be paid";
   return (
     <div className={`rounded-lg border p-3 ${card}`}>
       <div className={`text-[10px] uppercase tracking-wide ${label}`}>{title}</div>
@@ -284,9 +288,9 @@ function SummaryCard({
         {eur(total)} <span className="text-[11px] font-normal opacity-70">total</span>
       </div>
       <div className={`mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] demo-blur ${sub}`}>
-        <span>{eur(t.sent)} sent</span>
+        <span>{eur(t.sent)} {settledLabel}</span>
         <span aria-hidden className="opacity-40">·</span>
-        <span>{eur(t.committed)} committed</span>
+        <span>{eur(t.committed)} {committedLabel}</span>
         <span aria-hidden className="opacity-40">·</span>
         <span>{eur(t.review)} under review</span>
       </div>
@@ -309,7 +313,7 @@ function NetCard({
   const projected = received + committedIn - (sent + committedOut);
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div className="text-[10px] uppercase tracking-wide text-slate-400">Net (received − sent)</div>
+      <div className="text-[10px] uppercase tracking-wide text-slate-400">Net (received − paid)</div>
       <div className={`mt-1 text-lg font-semibold tabular-nums demo-blur ${net >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
         {eur(net)}
       </div>
