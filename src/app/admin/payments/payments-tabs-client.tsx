@@ -10,6 +10,14 @@ type Tab = "payments" | "review" | "byproject" | "bymember";
 
 type LinkOpt = { id: string; code: string; name: string };
 type ClientOpt = { id: string; code: string; name: string; subjectToDes: "Yes" | "No" | "" };
+type StaffingOpt = {
+  id: string;
+  staffingCode: string;
+  projectCode: string;
+  projectName: string;
+  memberRecordId: string;
+  memberCode: string;
+};
 type MemberInvoiceOpt = {
   id: string;
   invoiceCode: string;
@@ -33,6 +41,7 @@ export function PaymentsTabsClient({
   projects,
   clients,
   members,
+  staffings,
   memberInvoices,
   currencies,
   linkedPaymentIds,
@@ -46,6 +55,7 @@ export function PaymentsTabsClient({
   projects: LinkOpt[];
   clients: ClientOpt[];
   members: LinkOpt[];
+  staffings: StaffingOpt[];
   memberInvoices: MemberInvoiceOpt[];
   currencies: readonly Currency[];
   linkedPaymentIds: string[];
@@ -97,6 +107,7 @@ export function PaymentsTabsClient({
           projects={projects}
           clients={clients}
           members={members}
+          staffings={staffings}
           memberInvoices={memberInvoices}
           currencies={currencies}
           linkedPaymentIds={linkedPaymentIds}

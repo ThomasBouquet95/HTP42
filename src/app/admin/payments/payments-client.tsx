@@ -11,9 +11,19 @@ import { DownloadChip } from "@/components/download-chip";
 import { EditIcon } from "@/components/admin-icons";
 import { DateField } from "@/components/date-picker";
 import { PaidDateModal } from "@/components/paid-date-modal";
+import { SearchSelect } from "@/components/search-select";
 import type { Currency, PaymentRecord, PaymentStatus } from "@/lib/airtable";
 
 type LinkOpt = { id: string; code: string; name: string; subjectToDes?: "Yes" | "No" | "" };
+
+type StaffingOpt = {
+  id: string;
+  staffingCode: string;
+  projectCode: string;
+  projectName: string;
+  memberRecordId: string;
+  memberCode: string;
+};
 
 type MemberInvoiceOpt = {
   id: string;
@@ -36,6 +46,7 @@ type Props = {
   projects: LinkOpt[];
   clients: LinkOpt[];
   members: LinkOpt[];
+  staffings: StaffingOpt[];
   memberInvoices: MemberInvoiceOpt[];
   currencies: readonly Currency[];
   // Payment ids that mirror an automated (paid) vendor invoice. Deleting one
@@ -154,6 +165,7 @@ type FormState = {
   clientId: string;
   memberId: string;
   memberInvoiceId: string;
+  staffingId: string;
   invoiceDate: string;
   invoiceReference: string;
   invoiceCurrency: string;
@@ -175,6 +187,7 @@ const EMPTY_FORM: FormState = {
   clientId: "",
   memberId: "",
   memberInvoiceId: "",
+  staffingId: "",
   invoiceDate: "",
   invoiceReference: "",
   invoiceCurrency: "",
@@ -197,6 +210,7 @@ function fromRecord(p: PaymentRecord): FormState {
     clientId: p.clientRecordIds[0] ?? "",
     memberId: p.memberRecordIds[0] ?? "",
     memberInvoiceId: p.memberInvoiceRecordIds[0] ?? "",
+    staffingId: p.staffingRecordIds[0] ?? "",
     invoiceDate: p.invoiceDate ?? "",
     invoiceReference: p.invoiceReference,
     invoiceCurrency: p.invoiceCurrency,
@@ -222,6 +236,7 @@ export function PaymentsClient({
   projects,
   clients,
   members,
+  staffings,
   memberInvoices,
   currencies,
   linkedPaymentIds,
@@ -641,6 +656,9 @@ export function PaymentsClient({
         clientRecordIds: form.clientId ? [form.clientId] : [],
         memberRecordIds: form.memberId ? [form.memberId] : [],
         memberInvoiceRecordIds: form.memberInvoiceId ? [form.memberInvoiceId] : [],
+        // Link the staffing this payment settles; the server derives the
+        // project from it. Empty array = explicitly cleared.
+        staffingRecordIds: form.staffingId ? [form.staffingId] : [],
         invoiceDate: form.invoiceDate || null,
         invoiceReference: form.invoiceReference,
         invoiceCurrency: form.invoiceCurrency,
@@ -1202,42 +1220,94 @@ export function PaymentsClient({
               currencies={currencies}
             />
           </div>
-          <div className="grid gap-3 mt-3">
+          <div className="grid gap-3 sm:grid-cols-2 mt-3">
             {(() => {
-              // A payment that settles a member invoice inherits that invoice's
-              // project (the invoice's staffing is the single source of truth),
-              // so the field is read-only here — editing it wouldn't stick.
+              const projLabel = (code: string, name: string) =>
+                code ? `${code}${name ? ` — ${name}` : ""}` : "—";
+              // When the payment settles a member invoice, both the staffing and
+              // the project are inherited from that invoice (source of truth) —
+              // read-only, since editing them here wouldn't stick.
               const linkedInvoice = form.memberInvoiceId
                 ? memberInvoices.find((i) => i.id === form.memberInvoiceId)
                 : undefined;
               if (linkedInvoice) {
                 return (
-                  <FormField
-                    label="Project"
-                    value={
-                      linkedInvoice.projectCode
-                        ? `${linkedInvoice.projectCode}${linkedInvoice.projectName ? ` — ${linkedInvoice.projectName}` : ""}`
-                        : "—"
-                    }
-                    onChange={() => {}}
-                    readOnly
-                    hint={`Inherited from invoice ${linkedInvoice.invoiceCode} (its staffing's project). Unlink the invoice to set a project manually.`}
-                  />
+                  <>
+                    <FormField
+                      label="Staffing"
+                      value={linkedInvoice.staffingCode || "—"}
+                      onChange={() => {}}
+                      readOnly
+                      hint={`From invoice ${linkedInvoice.invoiceCode}.`}
+                    />
+                    <FormField
+                      label="Project"
+                      value={projLabel(linkedInvoice.projectCode, linkedInvoice.projectName)}
+                      onChange={() => {}}
+                      readOnly
+                      hint="Inherited from the invoice's staffing."
+                    />
+                  </>
                 );
               }
+              // Otherwise the admin picks the staffing directly; the project is
+              // derived from it. Prefer the payment member's staffings, falling
+              // back to all when the member isn't set / has none.
+              const memberStaffings = form.memberId
+                ? staffings.filter((s) => s.memberRecordId === form.memberId)
+                : [];
+              const optSource = memberStaffings.length > 0 ? memberStaffings : staffings;
+              const staffingOptions = optSource.map((s) => ({
+                value: s.id,
+                label: `${s.staffingCode} · ${s.projectCode}`,
+                hint: `${s.memberCode} · ${s.projectName}`,
+              }));
+              const picked = form.staffingId
+                ? staffings.find((s) => s.id === form.staffingId)
+                : undefined;
               return (
-                <FormSelect
-                  label="Project"
-                  value={form.projectId}
-                  onChange={(v) => updateField("projectId", v)}
-                >
-                  <option value="">No project</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.code} — {p.name}
-                    </option>
-                  ))}
-                </FormSelect>
+                <>
+                  <label className="block">
+                    <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+                      Staffing
+                    </span>
+                    <div className="mt-1">
+                      <SearchSelect
+                        value={form.staffingId}
+                        onChange={(v) => updateField("staffingId", v)}
+                        options={staffingOptions}
+                        placeholder="No staffing"
+                        searchPlaceholder="Search staffing…"
+                        allowClear
+                      />
+                    </div>
+                    <div className="mt-1 text-xs text-slate-400">
+                      Links the payment to a staffing; the project is set from it.
+                    </div>
+                  </label>
+                  {picked ? (
+                    <FormField
+                      label="Project"
+                      value={projLabel(picked.projectCode, picked.projectName)}
+                      onChange={() => {}}
+                      readOnly
+                      hint="Derived from the selected staffing."
+                    />
+                  ) : (
+                    <FormSelect
+                      label="Project"
+                      value={form.projectId}
+                      onChange={(v) => updateField("projectId", v)}
+                    >
+                      <option value="">No project</option>
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.code} — {p.name}
+                        </option>
+                      ))}
+                    </FormSelect>
+                  )}
+                </>
               );
             })()}
           </div>

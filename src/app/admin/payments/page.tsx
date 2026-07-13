@@ -94,6 +94,14 @@ export default async function AdminPaymentsPage({
             subjectToDes: c.subjectToDes,
           }))}
           members={members.map((m) => ({ id: m.id, code: m.memberCode, name: m.fullName }))}
+          staffings={staffings.map((s) => ({
+            id: s.id,
+            staffingCode: s.staffingCode,
+            projectCode: s.projectCode,
+            projectName: s.projectName,
+            memberRecordId: s.memberRecordIds[0] ?? "",
+            memberCode: s.memberCodes[0] ?? "",
+          }))}
           memberInvoices={invoices.map((i) => ({
             id: i.id,
             invoiceCode: i.invoiceCode,
