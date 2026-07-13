@@ -48,7 +48,7 @@ export default async function TimesheetsPrintPage({
   const rows = (await listAllTimesheets())
     .filter((t) => {
       // Exports only ever cover the billing lifecycle.
-      if (t.status !== "Submitted" && t.status !== "Invoiced" && t.status !== "Paid") return false;
+      if (!["Submitted", "Approved", "Invoiced", "Paid"].includes(t.status)) return false;
       if (statusFilter.length > 0 && !statusFilter.includes(t.status)) return false;
       if (member.length && !member.includes(t.memberCode)) return false;
       if (project.length && !project.includes(t.projectCode)) return false;

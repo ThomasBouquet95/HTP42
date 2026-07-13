@@ -5,6 +5,7 @@ import {
   TIMESHEET_STATUSES,
   adminUpdateTimesheetStatus,
   decideTimesheet,
+  getAdminTimesheetById,
   recordTimesheetReview,
   type TimesheetStatus,
 } from "@/lib/airtable";
@@ -36,9 +37,14 @@ export async function PATCH(
   const d = parsed.data;
   const reviewer = session.fullName || session.email || "Admin";
 
+  const existing = await getAdminTimesheetById(id);
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
   try {
     // Approve / Reject (from the action verb, or a direct status set to one of
-    // the decision states) go through the audited decision path.
+    // the decision states) go through the audited decision path. Only a
+    // timesheet currently Under Review can be decided — this prevents an
+    // approve/reject from silently un-settling an Invoiced/Paid week.
     const decision =
       d.action === "approve" || d.status === "Approved"
         ? "Approved"
@@ -47,8 +53,16 @@ export async function PATCH(
           : null;
 
     if (decision) {
+      if (existing.status !== "Submitted") {
+        return NextResponse.json(
+          { error: `Only timesheets under review can be ${decision.toLowerCase()} (this one is ${existing.status}).` },
+          { status: 409 },
+        );
+      }
       await decideTimesheet({
         recordId: id,
+        timesheetCode: existing.timesheetCode,
+        staffingCode: existing.staffingCode,
         decision,
         reviewMethod: "Admin",
         reviewedBy: reviewer,
@@ -57,11 +71,13 @@ export async function PATCH(
       return NextResponse.json({ ok: true });
     }
 
-    // Any other status is a raw admin correction.
+    // Any other status is a raw admin correction (kept deliberately flexible).
     await adminUpdateTimesheetStatus(id, d.status as TimesheetStatus);
     await recordTimesheetReview({
       timesheetId: id,
-      action: (d.status as string) === "Cancelled" ? "Cancelled" : "Submitted",
+      timesheetCode: existing.timesheetCode,
+      staffingCode: existing.staffingCode,
+      action: "Status Changed",
       actor: reviewer,
       method: "Admin",
       comment: `Admin set status to ${d.status}`,

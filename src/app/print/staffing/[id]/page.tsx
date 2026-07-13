@@ -33,7 +33,7 @@ export default async function StaffingTimesheetPrintPage({
     .filter(
       (t) =>
         t.staffingRecordId === id &&
-        (t.status === "Submitted" || t.status === "Invoiced" || t.status === "Paid"),
+        ["Submitted", "Approved", "Invoiced", "Paid"].includes(t.status),
     )
     .sort((a, b) => (a.startDate ?? "").localeCompare(b.startDate ?? ""));
 

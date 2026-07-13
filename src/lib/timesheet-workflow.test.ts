@@ -21,9 +21,13 @@ describe("timesheet transition state machine", () => {
     expect(canTransitionTimesheet("Rejected", "Submitted")).toBe(true);
   });
 
-  it("allows cancelling while under review", () => {
-    expect(canTransitionTimesheet("Draft", "Submitted")).toBe(true);
+  it("allows cancelling until approved, but not after", () => {
+    expect(canTransitionTimesheet("Draft", "Cancelled")).toBe(true);
     expect(canTransitionTimesheet("Submitted", "Cancelled")).toBe(true);
+    expect(canTransitionTimesheet("Rejected", "Cancelled")).toBe(true);
+    // Once approved (or invoiced/paid) it can no longer be cancelled by the flow.
+    expect(canTransitionTimesheet("Approved", "Cancelled")).toBe(false);
+    expect(canTransitionTimesheet("Invoiced", "Cancelled")).toBe(false);
   });
 
   it("rejects invoicing a timesheet that has not been approved", () => {

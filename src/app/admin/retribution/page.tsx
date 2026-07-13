@@ -58,7 +58,7 @@ export default async function AdminRetributionPage() {
 
   // Staffings offered per project for the per-day mode: which consultant's
   // logged days drive the amount. daysUsed is already hours/8 for the officially
-  // logged lifecycle (Submitted/Invoiced/Paid).
+  // logged lifecycle (Submitted/Approved/Invoiced/Paid).
   const staffingOpts: StaffingOpt[] = staffings
     .map((s) => {
       const proj = projectByCode.get(s.projectCode);

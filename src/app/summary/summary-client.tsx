@@ -301,9 +301,8 @@ export function SummaryClient({
     // submitted, regardless of where it sits in the billing lifecycle
     // (Submitted, Invoiced, Paid). Drafts and Deleted are excluded.
     const rows = toCsvRows(
-      filtered.filter(
-        (t) =>
-          t.status === "Submitted" || t.status === "Invoiced" || t.status === "Paid",
+      filtered.filter((t) =>
+        ["Submitted", "Approved", "Invoiced", "Paid"].includes(t.status),
       ),
     );
     const csv = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");

@@ -11,7 +11,7 @@ import { downloadTimesheetsCsv } from "./timesheets-export";
 
 // Breakdown default: the billing lifecycle only — Draft / Cancelled / Deleted
 // are excluded until the admin opts them in.
-const DEFAULT_BREAKDOWN_STATUS = ["Submitted", "Invoiced", "Paid"];
+const DEFAULT_BREAKDOWN_STATUS = ["Submitted", "Approved", "Invoiced", "Paid"];
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {

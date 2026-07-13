@@ -6,11 +6,11 @@ import type { AdminTimesheetRecord } from "@/lib/airtable";
 
 export const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 
-// Only the billing lifecycle is ever exported (shared outside finance) —
-// Draft / Cancelled / Deleted never leave the app.
-export const EXPORTABLE_STATUSES = ["Submitted", "Invoiced", "Paid"] as const;
+// Only the logged lifecycle is ever exported (shared outside finance) —
+// Draft / Rejected / Cancelled / Deleted never leave the app.
+export const EXPORTABLE_STATUSES = ["Submitted", "Approved", "Invoiced", "Paid"] as const;
 export function isExportable(t: AdminTimesheetRecord): boolean {
-  return t.status === "Submitted" || t.status === "Invoiced" || t.status === "Paid";
+  return (EXPORTABLE_STATUSES as readonly string[]).includes(t.status);
 }
 
 export function dayIsos(startIso: string | null): Record<(typeof DAY_KEYS)[number], string> {

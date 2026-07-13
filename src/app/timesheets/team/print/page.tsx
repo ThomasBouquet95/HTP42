@@ -135,8 +135,8 @@ export default async function ProjectSummaryPrintPage({
             </thead>
             <tbody>
               {members.map((m) => {
-                const submitted = m.timesheets.filter(
-                  (t) => t.status === "Submitted" || t.status === "Invoiced" || t.status === "Paid",
+                const submitted = m.timesheets.filter((t) =>
+                  ["Submitted", "Approved", "Invoiced", "Paid"].includes(t.status),
                 ).length;
                 const draft = m.timesheets.filter((t) => t.status === "Draft").length;
                 const over = m.hoursActualTotal > m.daysAllocatedTotal * HOURS_PER_DAY && m.daysAllocatedTotal > 0;
@@ -186,11 +186,11 @@ export default async function ProjectSummaryPrintPage({
 }
 
 function MemberSection({ member: m }: { member: ProjectTeamMember }) {
-  // Reports cover the full submitted lifecycle: Submitted, Invoiced, Paid.
-  // Drafts and Deleted are filtered out before counting and rendering. The
-  // internal status isn't surfaced in the printed PDF.
-  const submittedTimesheets = m.timesheets.filter(
-    (t) => t.status === "Submitted" || t.status === "Invoiced" || t.status === "Paid",
+  // Reports cover the logged lifecycle: Submitted, Approved, Invoiced, Paid.
+  // Draft / Rejected / Cancelled / Deleted are filtered out before counting and
+  // rendering. The internal status isn't surfaced in the printed PDF.
+  const submittedTimesheets = m.timesheets.filter((t) =>
+    ["Submitted", "Approved", "Invoiced", "Paid"].includes(t.status),
   );
   if (submittedTimesheets.length === 0) return null;
   return (

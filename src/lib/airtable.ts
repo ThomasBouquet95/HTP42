@@ -430,10 +430,10 @@ export const REVIEW_METHODS: ReviewMethod[] = ["Admin", "Client"];
 // Allowed status transitions (the single source of truth for the state
 // machine — every route validates against this).
 const TIMESHEET_TRANSITIONS: Record<TimesheetStatus, TimesheetStatus[]> = {
-  Draft: ["Submitted", "Deleted"],
+  Draft: ["Submitted", "Cancelled", "Deleted"],
   Submitted: ["Approved", "Rejected", "Cancelled"],
-  Approved: ["Invoiced", "Cancelled"],
-  Rejected: ["Draft", "Submitted", "Deleted"],
+  Approved: ["Invoiced"],
+  Rejected: ["Draft", "Submitted", "Cancelled", "Deleted"],
   Invoiced: ["Paid"],
   Paid: [],
   Cancelled: ["Draft"],
@@ -2639,7 +2639,8 @@ export type TimesheetReviewAction =
   | "Rejected"
   | "Cancelled"
   | "Resubmitted"
-  | "Reopened";
+  | "Reopened"
+  | "Status Changed";
 
 export type TimesheetReviewEntry = {
   id: string;
@@ -2760,6 +2761,39 @@ export async function getTimesheetByReviewToken(token: string): Promise<Timeshee
   } catch (e) {
     console.error("getTimesheetByReviewToken failed:", e);
     return null;
+  }
+}
+
+// Admin-side single-timesheet fetch (no member-ownership scoping) so admin
+// routes can read the current status before enforcing a transition.
+export async function getAdminTimesheetById(recordId: string): Promise<TimesheetRecord | null> {
+  try {
+    const [r, staffings] = await Promise.all([
+      base(TABLES.timesheets).find(recordId),
+      getStaffingMap(),
+    ]);
+    return toTimesheet(r, staffings);
+  } catch {
+    return null;
+  }
+}
+
+// Clear any live client-review token (used when a pending timesheet is
+// cancelled or reopened, so the emailed link stops resolving).
+export async function clearTimesheetReviewToken(recordId: string): Promise<void> {
+  try {
+    await ensureTimesheetApprovalSchema();
+    await base(TABLES.timesheets).update([
+      {
+        id: recordId,
+        fields: {
+          [FIELDS.timesheets.reviewToken]: "",
+          [FIELDS.timesheets.reviewTokenExpiresAt]: "",
+        } as FieldSet,
+      },
+    ]);
+  } catch (e) {
+    console.error("clearTimesheetReviewToken failed:", e);
   }
 }
 
@@ -3312,9 +3346,9 @@ export async function getProjectSummaryByCode(projectCode: string): Promise<Proj
     }
     const acc = memberIndex.get(mid)!;
     acc.timesheets.push({ ...ts, staffingCode: staffingCodeById.get(staffingId) ?? "" });
-    // Actual logged effort counts submitted work only — Drafts are
-    // work-in-progress, Deleted are tombstones.
-    if (ts.status === "Submitted" || ts.status === "Invoiced" || ts.status === "Paid") {
+    // Actual logged effort counts the same states as days-used (Submitted,
+    // Approved, Invoiced, Paid) — Draft/Rejected/Cancelled/Deleted don't.
+    if (LOGGED_TIMESHEET_STATUSES.includes(ts.status)) {
       acc.hoursActualTotal += ts.totalHours;
       acc.daysActualTotal = acc.hoursActualTotal / HOURS_PER_DAY;
     }
@@ -3478,8 +3512,9 @@ export async function listMyProjects(
     const status = (str(t, FIELDS.timesheets.status) as TimesheetStatus) || "Draft";
     if (status === "Submitted") acc.submittedTimesheets += 1;
     else if (status === "Draft") acc.draftTimesheets += 1;
-    // Actual logged effort counts submitted work only (skip Draft + Deleted).
-    if (status !== "Submitted" && status !== "Invoiced" && status !== "Paid") continue;
+    // Actual logged effort counts the same states as days-used (Submitted,
+    // Approved, Invoiced, Paid); skip Draft/Rejected/Cancelled/Deleted.
+    if (!LOGGED_TIMESHEET_STATUSES.includes(status)) continue;
     const hours =
       num(t, FIELDS.timesheets.mondayHours) +
       num(t, FIELDS.timesheets.tuesdayHours) +

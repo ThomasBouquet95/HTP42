@@ -42,6 +42,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   const staffing = ts.staffingRecordId ? await getStaffingById(ts.staffingRecordId) : null;
   const reviewer = staffing?.reviewerName || staffing?.reviewerEmail || "Client reviewer";
 
+  // Narrow the double-submit window: Airtable has no atomic compare-and-set, so
+  // re-read right before writing and bail if another request already decided
+  // (the token is cleared / status moved off Submitted on the first decision).
+  const fresh = await getTimesheetByReviewToken(token);
+  if (!fresh || fresh.status !== "Submitted") {
+    return NextResponse.json(
+      { error: "This timesheet has already been reviewed." },
+      { status: 409 },
+    );
+  }
+
   try {
     await decideTimesheet({
       recordId: ts.id,

@@ -213,7 +213,7 @@ function applyFilters(
     // Reports include the full submitted lifecycle (Submitted, Invoiced,
     // Paid). Draft and Deleted are always excluded; the internal status
     // itself isn't rendered to keep the billing lifecycle private.
-    if (t.status !== "Submitted" && t.status !== "Invoiced" && t.status !== "Paid") {
+    if (!["Submitted", "Approved", "Invoiced", "Paid"].includes(t.status)) {
       return false;
     }
     if (

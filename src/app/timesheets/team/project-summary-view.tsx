@@ -682,7 +682,9 @@ function exportCsv(summary: ProjectSummary) {
   ];
   const rows: string[][] = [rollupHeader];
   for (const m of members) {
-    const submitted = m.timesheets.filter((t) => t.status === "Submitted").length;
+    const submitted = m.timesheets.filter((t) =>
+      ["Submitted", "Approved", "Invoiced", "Paid"].includes(t.status),
+    ).length;
     const draft = m.timesheets.filter((t) => t.status === "Draft").length;
     rows.push([
       project.projectCode, project.projectName, m.memberCode, m.memberName,
@@ -700,9 +702,10 @@ function exportCsv(summary: ProjectSummary) {
   ];
   rows.push(tsHeader);
   for (const m of members) {
-    // Exports only contain the official record — Submitted timesheets only.
+    // Exports only contain the official record — the logged lifecycle
+    // (Submitted / Approved / Invoiced / Paid).
     for (const t of m.timesheets) {
-      if (t.status !== "Submitted") continue;
+      if (!["Submitted", "Approved", "Invoiced", "Paid"].includes(t.status)) continue;
       rows.push([
         project.projectCode, m.memberCode, m.memberName, t.timesheetCode, t.status, t.staffingCode,
         t.startDate ?? "", t.endDate ?? "", t.submissionDate ?? "",

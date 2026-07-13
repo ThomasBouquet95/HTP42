@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import {
+  clearTimesheetReviewToken,
   existsTimesheetForWeek,
   getStaffingsForMember,
   getTimesheetById,
@@ -139,6 +140,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         );
       }
       await updateTimesheetStatus(id, "Draft");
+      await clearTimesheetReviewToken(id);
       await recordTimesheetReview({
         timesheetId: id,
         timesheetCode: existing.timesheetCode,
@@ -161,6 +163,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         );
       }
       await updateTimesheetStatus(id, "Cancelled");
+      await clearTimesheetReviewToken(id);
       await recordTimesheetReview({
         timesheetId: id,
         timesheetCode: existing.timesheetCode,
