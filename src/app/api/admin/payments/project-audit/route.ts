@@ -175,9 +175,54 @@ export async function GET(request: Request) {
       ${summary.unlinkedPayments} standalone (not checkable) ·
       <span class="${summary.mismatchCount === 0 ? "ok" : "bad"}">${summary.mismatchCount} mismatch${summary.mismatchCount === 1 ? "" : "es"}</span>
     </p>
+
+    <h2>Fix the stored records</h2>
+    <p class="muted" style="font-size:12px">
+      The app already resolves each invoice-linked payment's project from its invoice on the fly, so the
+      Payments screen and cockpit are correct. These buttons also repair the underlying Airtable records
+      (so native grid views match). Always run the dry run first and review it before applying.
+    </p>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:.5rem 0">
+      <button id="dry" type="button" style="cursor:pointer;border:1px solid #cbd5e1;background:#fff;color:#0f172a;padding:8px 14px;border-radius:6px;font-size:13px;font-weight:600">1 · Dry run (preview)</button>
+      <button id="apply" type="button" style="cursor:pointer;border:1px solid #b91c1c;background:#b91c1c;color:#fff;padding:8px 14px;border-radius:6px;font-size:13px;font-weight:600">2 · Apply fixes</button>
+      <span id="status" class="muted" style="font-size:12px"></span>
+    </div>
+    <pre id="result" style="display:none;background:#0f172a;color:#e2e8f0;padding:10px 12px;border-radius:6px;font-size:12px;overflow:auto;max-height:340px"></pre>
+    <script>
+      (function () {
+        var path = ${JSON.stringify(new URL(request.url).pathname)};
+        var dry = document.getElementById("dry");
+        var apply = document.getElementById("apply");
+        var status = document.getElementById("status");
+        var result = document.getElementById("result");
+        function run(applyFlag) {
+          if (applyFlag && !window.confirm("Rewrite the Project link on all mismatched payments in Airtable? Run a dry run first if you haven't.")) return;
+          status.textContent = applyFlag ? "Applying…" : "Running dry run…";
+          dry.disabled = apply.disabled = true;
+          fetch(path, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(applyFlag ? { confirm: "APPLY" } : {}),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              result.style.display = "block";
+              result.textContent = JSON.stringify(d, null, 2);
+              status.textContent = d.apply
+                ? ("Applied — " + (d.updated || 0) + " payment(s) updated. Reload to re-audit.")
+                : ((d.toFix || 0) + " payment(s) would change" + (d.unresolved ? (", " + d.unresolved + " unresolved (need a look)") : "") + ". Review below, then Apply.");
+            })
+            .catch(function (e) { status.textContent = "Failed: " + e; })
+            .finally(function () { dry.disabled = apply.disabled = false; });
+        }
+        dry.addEventListener("click", function () { run(false); });
+        apply.addEventListener("click", function () { run(true); });
+      })();
+    </script>
+
     ${
       summary.mismatchCount === 0
-        ? `<p class="ok">No mismatches. Every invoice-linked payment matches its invoice/staffing project.</p>`
+        ? `<p class="ok">No mismatches right now. Every invoice-linked payment matches its invoice/staffing project.</p>`
         : `
       <h2>Why — by root cause</h2><ul>${list(byClass)}</ul>
       <p class="muted" style="font-size:12px">
@@ -189,49 +234,6 @@ export async function GET(request: Request) {
       <h2>Why — by payment source</h2><ul>${list(bySource)}</ul>
       <p class="muted" style="font-size:12px">${summary.invoicesWithoutStaffingLink} of the flagged invoices have no staffing link at all (pure legacy/import rows).</p>
       <h2>Project pairs (payment → staffing), most common first</h2><ul>${list(byPair)}</ul>
-      <h2>Fixing the stored records</h2>
-      <p class="muted" style="font-size:12px">
-        The app now resolves each invoice-linked payment's project from its invoice on the fly, so the
-        Payments screen and cockpit are already correct. Use the buttons below to also repair the
-        underlying Airtable records (so native grid views match). Always dry-run first.
-      </p>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:.5rem 0">
-        <button id="dry" type="button" style="cursor:pointer;border:1px solid #cbd5e1;background:#fff;color:#0f172a;padding:7px 12px;border-radius:6px;font-size:13px;font-weight:600">Dry run (preview)</button>
-        <button id="apply" type="button" style="cursor:pointer;border:1px solid #b91c1c;background:#b91c1c;color:#fff;padding:7px 12px;border-radius:6px;font-size:13px;font-weight:600">Apply fixes</button>
-        <span id="status" class="muted" style="font-size:12px"></span>
-      </div>
-      <pre id="result" style="display:none;background:#0f172a;color:#e2e8f0;padding:10px 12px;border-radius:6px;font-size:12px;overflow:auto;max-height:340px"></pre>
-      <script>
-        (function () {
-          var path = ${JSON.stringify(new URL(request.url).pathname)};
-          var dry = document.getElementById("dry");
-          var apply = document.getElementById("apply");
-          var status = document.getElementById("status");
-          var result = document.getElementById("result");
-          function run(applyFlag) {
-            if (applyFlag && !window.confirm("Rewrite the Project link on all mismatched payments in Airtable? Run a dry run first if you haven't.")) return;
-            status.textContent = applyFlag ? "Applying…" : "Running dry run…";
-            dry.disabled = apply.disabled = true;
-            fetch(path, {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(applyFlag ? { confirm: "APPLY" } : {}),
-            })
-              .then(function (r) { return r.json(); })
-              .then(function (d) {
-                result.style.display = "block";
-                result.textContent = JSON.stringify(d, null, 2);
-                status.textContent = d.apply
-                  ? ("Applied — " + (d.updated || 0) + " payment(s) updated. Reload to re-audit.")
-                  : ((d.toFix || 0) + " payment(s) would change" + (d.unresolved ? (", " + d.unresolved + " unresolved (need a look)") : "") + ". Review below, then Apply.");
-              })
-              .catch(function (e) { status.textContent = "Failed: " + e; })
-              .finally(function () { dry.disabled = apply.disabled = false; });
-          }
-          dry.addEventListener("click", function () { run(false); });
-          apply.addEventListener("click", function () { run(true); });
-        })();
-      </script>
       <h2>All mismatches</h2>
       <table><thead><tr>
         <th>Payment</th><th>Dir</th><th>Beneficiary</th>
