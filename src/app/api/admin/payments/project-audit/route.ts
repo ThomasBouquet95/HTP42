@@ -42,6 +42,10 @@ export async function GET(request: Request) {
   ]);
   const invoiceById = new Map(invoices.map((i) => [i.id, i]));
   const projectCodeById = new Map(projects.map((p) => [p.id, p.projectCode]));
+  const projectIdByCode = new Map(projects.map((p) => [p.projectCode, p.id]));
+  // Payment project links store record ids; resolve them to codes for display.
+  const codesOf = (recordIds: string[]) =>
+    recordIds.map((id) => projectCodeById.get(id) ?? id);
 
   type Row = {
     paymentCode: string;
@@ -73,18 +77,22 @@ export async function GET(request: Request) {
       continue;
     }
     linkedPayments += 1;
-    const payProjects = p.projectCodes.filter(Boolean);
+    // Compare by project RECORD ID — the payment's link stores ids, so comparing
+    // against the invoice's code string would flag false positives.
+    const payIds = p.projectRecordIds.filter(Boolean);
     for (const invId of p.memberInvoiceRecordIds) {
       const inv = invoiceById.get(invId);
       if (!inv || !inv.projectCode) continue;
-      const staffingProject = inv.projectCode; // live (staffing-derived when a staffing is linked)
-      if (payProjects.includes(staffingProject)) continue; // consistent — skip
+      const staffingProject = inv.projectCode; // code (staffing-derived when a staffing is linked)
+      const targetId = projectIdByCode.get(staffingProject); // the project this payment should link
+      if (targetId && payIds.includes(targetId)) continue; // consistent — skip
 
       const invoiceLinkProject = projectCodeById.get(inv.projectRecordId) ?? "";
+      const payCodes = codesOf(payIds);
       const classification: Row["classification"] =
-        invoiceLinkProject && payProjects.includes(invoiceLinkProject) && invoiceLinkProject !== staffingProject
+        invoiceLinkProject && payCodes.includes(invoiceLinkProject) && invoiceLinkProject !== staffingProject
           ? "staffing re-pointed"
-          : !payProjects.includes(invoiceLinkProject)
+          : !payCodes.includes(invoiceLinkProject)
             ? "payment ≠ invoice"
             : "other";
 
@@ -92,7 +100,7 @@ export async function GET(request: Request) {
         paymentCode: p.paymentCode || p.id,
         direction: p.direction || "—",
         beneficiary: p.beneficiary || p.memberCodes.join(", ") || "—",
-        paymentProject: payProjects.join(", ") || "(none)",
+        paymentProject: payCodes.join(", ") || "(none)",
         invoiceCode: inv.invoiceCode || inv.id,
         invoiceLinkProject: invoiceLinkProject || "(none)",
         staffingProject,

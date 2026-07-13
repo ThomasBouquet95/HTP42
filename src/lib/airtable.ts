@@ -2235,7 +2235,11 @@ export async function backfillPaymentProjects(apply: boolean): Promise<{
   changes: { paymentCode: string; from: string; to: string }[];
 }> {
   const raw = await listPaymentsRaw();
-  const [invIdx, idByCode] = await Promise.all([getInvoiceProjectIndex(), getProjectIdByCode()]);
+  const [invIdx, idByCode, projIdx] = await Promise.all([
+    getInvoiceProjectIndex(),
+    getProjectIdByCode(),
+    getProjectIndex(),
+  ]);
   const changes: { paymentCode: string; from: string; to: string }[] = [];
   const updates: { id: string; fields: FieldSet }[] = [];
   let unresolved = 0;
@@ -2250,14 +2254,18 @@ export async function backfillPaymentProjects(apply: boolean): Promise<{
       }
     }
     if (!code) continue; // linked invoice has no project — nothing to inherit
-    if (p.projectCodes.includes(code)) continue; // already correct
-    const recId = idByCode.get(code);
-    if (!recId) {
+    const targetId = idByCode.get(code);
+    if (!targetId) {
       unresolved += 1; // target project code has no matching Project record
       continue;
     }
-    changes.push({ paymentCode: p.paymentCode || p.id, from: p.projectCodes.join(", ") || "(none)", to: code });
-    updates.push({ id: p.id, fields: { [FIELDS.payments.project]: [recId] } as FieldSet });
+    // Compare by project RECORD ID (the reliable key) — a payment's project
+    // link stores record ids, so comparing against the code string would flag
+    // false positives. Skip when the payment already points at the right one.
+    if (p.projectRecordIds.includes(targetId)) continue;
+    const fromCodes = p.projectRecordIds.map((id) => projIdx.get(id)?.code ?? id).join(", ") || "(none)";
+    changes.push({ paymentCode: p.paymentCode || p.id, from: fromCodes, to: code });
+    updates.push({ id: p.id, fields: { [FIELDS.payments.project]: [targetId] } as FieldSet });
   }
   let updated = 0;
   if (apply) {
