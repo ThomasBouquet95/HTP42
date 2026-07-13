@@ -575,12 +575,16 @@ function ReviewCard({
   onDecide: (id: string, action: "approve" | "reject", comment: string) => void;
 }) {
   const decided = t.status === "Approved" || t.status === "Rejected";
+  // Under review AND configured for client review → the client decides by email;
+  // the admin isn't the reviewer here (but can still override).
+  const clientPending = t.status === "Submitted" && t.reviewMethod === "Client";
   const [open, setOpen] = useState(false);
   const [comment, setComment] = useState("");
-  // Decided cards stay clean: the Approve/Reject override is revealed on demand.
+  // Decided and client-pending cards stay clean: the admin Approve/Reject is an
+  // override, revealed on demand so it isn't mistaken for the primary action.
   const [overriding, setOverriding] = useState(false);
   const dates = dayIsos(t.startDate);
-  const showActions = !decided || overriding;
+  const showActions = (t.status === "Submitted" && !clientPending) || overriding;
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
@@ -595,7 +599,11 @@ function ReviewCard({
         <span className="text-[11px] font-medium text-slate-700">
           {t.startDate && t.endDate ? formatWeekRange(t.startDate, t.endDate) : "—"}
         </span>
-        {t.reviewMethod === "Client" ? (
+        {clientPending ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+            ✉ Awaiting client
+          </span>
+        ) : t.reviewMethod === "Client" ? (
           <span className="text-[10px] text-slate-400">client</span>
         ) : null}
         <StatusBadge
@@ -640,11 +648,11 @@ function ReviewCard({
               type="text"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder={decided ? "Reason for override (optional)" : "Comment (optional)"}
+              placeholder={overriding ? "Reason for override (optional)" : "Comment (optional)"}
               className="h-8 min-w-0 flex-1 rounded-md border border-slate-300 px-2.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
             />
             <Button
-              tone={decided ? "secondary" : "primary"}
+              tone={overriding ? "secondary" : "primary"}
               size="sm"
               disabled={saving || t.status === "Approved"}
               onClick={() => onDecide(t.id, "approve", comment)}
@@ -652,13 +660,26 @@ function ReviewCard({
               Approve
             </Button>
             <Button
-              tone={decided ? "secondary" : "danger"}
+              tone={overriding ? "secondary" : "danger"}
               size="sm"
               disabled={saving || t.status === "Rejected"}
               onClick={() => onDecide(t.id, "reject", comment)}
             >
               Reject
             </Button>
+          </>
+        ) : clientPending ? (
+          <>
+            <span className="min-w-0 flex-1 truncate text-[11px] text-amber-700">
+              Awaiting the client&apos;s decision — sent by email. No admin action needed.
+            </span>
+            <button
+              type="button"
+              onClick={() => setOverriding(true)}
+              className="shrink-0 text-[11px] font-medium text-slate-500 hover:text-slate-800"
+            >
+              Override
+            </button>
           </>
         ) : (
           <>
