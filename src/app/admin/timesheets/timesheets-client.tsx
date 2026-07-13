@@ -574,7 +574,7 @@ function AdminStatusSelect({
   disabled?: boolean;
   onChange: (v: TimesheetStatus) => void;
 }) {
-  if (disabled) return <StatusBadge status={value} />;
+  if (disabled) return <StatusBadge status={value} showIcon={false} />;
   const cls = STATUS_CHIP[value];
   return (
     <span
