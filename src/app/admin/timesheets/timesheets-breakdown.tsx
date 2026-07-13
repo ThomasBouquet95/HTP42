@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Badge, StatusPill } from "@/components/badge";
+import { StatusPill } from "@/components/badge";
 import { WeekChip } from "@/components/week-chip";
 import { Button } from "@/components/form-controls";
 import { FilterBar, FilterMultiSelect, FilterDateRange } from "@/components/filters";
@@ -354,37 +354,42 @@ function GroupedTimesheets({
   );
 }
 
-// Compact SOW indicator: shows the linked SOW reference tinted by its status,
-// or a faint "No SOW" when the staffing has none.
-export function SowChip({ sow }: { sow?: SowInfo }) {
-  if (!sow || (!sow.reference && !sow.url)) {
-    return <span className="text-[10px] text-slate-300">· No SOW</span>;
-  }
-  const tone =
-    sow.status === "Signed" ? "success" : sow.status === "Not Started" ? "neutral" : "warning";
-  const label = (
-    <Badge tone={tone}>
-      SOW{sow.reference ? ` ${sow.reference}` : ""}
-      {sow.status ? ` · ${sow.status}` : ""}
-      {sow.url ? " ↗" : ""}
-    </Badge>
-  );
+function SowDocIcon() {
   return (
-    <span className="inline-flex items-center gap-1">
-      <span className="text-slate-300">·</span>
-      {sow.url ? (
-        <a
-          href={sow.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          title="Open the SOW document"
-        >
-          {label}
-        </a>
-      ) : (
-        label
-      )}
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" strokeLinejoin="round" />
+      <path d="M14 3v6h6" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// Compact SOW indicator: a small "SOW" chip with a document icon. When a SOW
+// PDF is linked it downloads/opens on click; the reference + status show on
+// hover. Renders nothing when the staffing has no SOW at all.
+export function SowChip({ sow }: { sow?: SowInfo }) {
+  if (!sow || (!sow.reference && !sow.url)) return null;
+  const detail = [sow.reference, sow.status].filter(Boolean).join(" · ") || "SOW";
+  const cls =
+    "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium";
+  if (sow.url) {
+    return (
+      <a
+        href={sow.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        title={`Open SOW — ${detail}`}
+        className={`${cls} border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100`}
+      >
+        <SowDocIcon />
+        SOW
+      </a>
+    );
+  }
+  return (
+    <span title={`SOW — ${detail}`} className={`${cls} border-slate-200 bg-white text-slate-500`}>
+      <SowDocIcon />
+      SOW
     </span>
   );
 }
