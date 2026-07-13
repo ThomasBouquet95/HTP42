@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminPage } from "@/lib/auth";
 import { listSignInActivity } from "@/lib/airtable";
 import { AdminTabs } from "@/components/admin-tabs";
 import { SignInActivityClient } from "./sign-ins-client";
@@ -14,8 +14,8 @@ const RECENT_MS = 15 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export default async function AdminSignInsPage() {
-  const session = await requireAdminSession();
-  if (!session) redirect("/dashboard");
+  const access = await requireAdminPage("signins");
+  if (!access) redirect("/admin");
 
   const rows = await listSignInActivity();
 

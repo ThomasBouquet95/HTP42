@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminAction } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { sendMailViaGraph } from "@/lib/email";
 
@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 // message via Microsoft Graph using the same code path as a real invoice
 // submission, so a green response here means real invoices will deliver too.
 export async function POST(request: Request) {
-  const session = await requireAdminSession();
+  const session = await requireAdminAction("invoices", "edit");
   if (!session) {
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
   }

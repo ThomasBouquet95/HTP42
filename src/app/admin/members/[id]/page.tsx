@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { DownloadChip } from "@/components/download-chip";
 import { Badge, StatusPill } from "@/components/badge";
@@ -53,8 +53,8 @@ function initials(name: string, code: string): string {
 }
 
 export default async function AdminMemberPage({ params }: { params: Promise<{ id: string }> }) {
-  const session = await requireAdminSession();
-  if (!session) redirect("/dashboard");
+  const access = await requireAdminPage("members");
+  if (!access) redirect("/admin");
   const { id } = await params;
 
   const [members, signIns, invoices, timesheets, surveys, payments] = await Promise.all([

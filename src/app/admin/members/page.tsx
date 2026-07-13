@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -14,8 +14,8 @@ import { MembersAdminClient } from "./members-client";
 export const dynamic = "force-dynamic";
 
 export default async function AdminMembersPage() {
-  const session = await requireAdminSession();
-  if (!session) redirect("/dashboard");
+  const access = await requireAdminPage("members");
+  if (!access) redirect("/admin");
 
   const [members, legacyRoleCount] = await Promise.all([listAllMembers(), countLegacyMemberRoles()]);
 

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
 import { listAllMembers, listSurveys } from "@/lib/airtable";
@@ -12,8 +12,8 @@ export default async function AdminMemberReviewsPage({
 }: {
   searchParams: Promise<{ member?: string }>;
 }) {
-  const session = await requireAdminSession();
-  if (!session) redirect("/dashboard");
+  const access = await requireAdminPage("memberreviews");
+  if (!access) redirect("/admin");
 
   const { member: initialCode } = await searchParams;
   const [members, surveys] = await Promise.all([listAllMembers(), listSurveys()]);

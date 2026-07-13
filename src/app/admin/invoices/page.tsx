@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
 import { listAllInvoices, listPayments, listVendorInvoices } from "@/lib/airtable";
@@ -9,8 +9,8 @@ import { InvoicesTabsClient } from "./invoices-tabs-client";
 export const dynamic = "force-dynamic";
 
 export default async function AdminInvoicesPage() {
-  const session = await requireAdminSession();
-  if (!session) redirect("/dashboard");
+  const access = await requireAdminPage("invoices");
+  if (!access) redirect("/admin");
 
   const [invoices, payments, vendorInvoices] = await Promise.all([
     listAllInvoices(),

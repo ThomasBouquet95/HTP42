@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminAction } from "@/lib/auth";
 import {
   createOpportunity,
   type Currency,
@@ -12,7 +12,7 @@ import { apiError, zodMessage } from "@/lib/errors";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const session = await requireAdminSession();
+  const session = await requireAdminAction("opportunities", "edit");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await request.json().catch(() => null);

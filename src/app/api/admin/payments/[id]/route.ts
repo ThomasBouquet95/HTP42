@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminAction } from "@/lib/auth";
 import {
   cascadeInvoicePaidForPayment,
   CURRENCIES,
@@ -29,7 +29,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await requireAdminSession();
+  const session = await requireAdminAction("payments", "edit");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
   const body = await request.json().catch(() => null);
@@ -108,7 +108,7 @@ const schema = z.object({
 });
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await requireAdminSession();
+  const session = await requireAdminAction("payments", "edit");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await params;
@@ -177,7 +177,7 @@ function becamePaid(before: PaymentRecord, nextStatus: PaymentStatus | ""): bool
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await requireAdminSession();
+  const session = await requireAdminAction("payments", "edit");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
   try {

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -24,8 +24,8 @@ export default async function AdminPaymentsPage({
 }: {
   searchParams: Promise<{ search?: string; payment?: string }>;
 }) {
-  const session = await requireAdminSession();
-  if (!session) redirect("/dashboard");
+  const access = await requireAdminPage("payments");
+  if (!access) redirect("/admin");
   const { search, payment } = await searchParams;
 
   const [

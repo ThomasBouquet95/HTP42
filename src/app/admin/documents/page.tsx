@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
 import { listAllDocuments } from "@/lib/airtable";
@@ -8,8 +8,8 @@ import { DocumentSearchClient } from "./documents-client";
 export const dynamic = "force-dynamic";
 
 export default async function AdminDocumentsPage() {
-  const session = await requireAdminSession();
-  if (!session) redirect("/dashboard");
+  const access = await requireAdminPage("documents");
+  if (!access) redirect("/admin");
 
   const documents = await listAllDocuments();
 

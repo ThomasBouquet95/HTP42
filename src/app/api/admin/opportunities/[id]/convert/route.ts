@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminAction } from "@/lib/auth";
 import {
   attachContractPdf,
   createContract,
@@ -23,7 +23,7 @@ const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 // marks the opportunity Won and records the project code. Multipart so the SOW
 // file can ride along.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await requireAdminSession();
+  const session = await requireAdminAction("opportunities", "edit");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await params;

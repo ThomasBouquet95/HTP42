@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminAction } from "@/lib/auth";
 import { apiError } from "@/lib/errors";
 import { attachProjectSow, getProjectById } from "@/lib/airtable";
 
@@ -9,7 +9,7 @@ const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 // Attach/replace the SOW for a project. Creates or updates the project's
 // linked Client-side SOW contract in Legal and returns the PDF ref.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await requireAdminSession();
+  const session = await requireAdminAction("projects", "edit");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await params;

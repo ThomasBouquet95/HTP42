@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminAction } from "@/lib/auth";
 import { createContract } from "@/lib/airtable";
 import { apiError, zodMessage } from "@/lib/errors";
 
@@ -36,7 +36,7 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
-  const session = await requireAdminSession();
+  const session = await requireAdminAction("contracts", "edit");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await request.json().catch(() => ({}));

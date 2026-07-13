@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
 import { listAllMembers, listAllStaffings } from "@/lib/airtable";
@@ -8,8 +8,8 @@ import { NetworkCockpitClient } from "./network-cockpit-client";
 export const dynamic = "force-dynamic";
 
 export default async function AdminNetworkCockpitPage() {
-  const session = await requireAdminSession();
-  if (!session) redirect("/dashboard");
+  const access = await requireAdminPage("networkcockpit");
+  if (!access) redirect("/admin");
 
   const [members, staffings] = await Promise.all([
     listAllMembers(),

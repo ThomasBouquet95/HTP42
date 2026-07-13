@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import {
   listAllContracts,
@@ -14,8 +14,8 @@ import { ContractsAdminClient } from "./contracts-client";
 export const dynamic = "force-dynamic";
 
 export default async function AdminContractsPage() {
-  const session = await requireAdminSession();
-  if (!session) redirect("/dashboard");
+  const access = await requireAdminPage("contracts");
+  if (!access) redirect("/admin");
 
   // Staffings are pulled too so the Overview tab can compute per-project
   // "every staffed member has a network-side SOW" coverage.

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminAction } from "@/lib/auth";
 import { listAllMembers, listClients, listProjects } from "@/lib/airtable";
 import { env } from "@/lib/env";
 
@@ -69,7 +69,7 @@ const SYSTEM_PROMPT = [
 ].join("\n");
 
 export async function POST(request: Request) {
-  const session = await requireAdminSession();
+  const session = await requireAdminAction("contracts", "edit");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   if (!env.anthropicApiKey) {

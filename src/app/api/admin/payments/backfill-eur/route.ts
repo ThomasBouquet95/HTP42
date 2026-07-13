@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminAction, requireAdminSession } from "@/lib/auth";
 import { backfillPaymentEur } from "@/lib/airtable";
 import { apiError } from "@/lib/errors";
 
@@ -17,7 +17,7 @@ async function run() {
 
 // Admin-triggered (kept for manual re-runs / API use).
 export async function POST() {
-  const session = await requireAdminSession();
+  const session = await requireAdminAction("payments", "edit");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   try {
     return await run();

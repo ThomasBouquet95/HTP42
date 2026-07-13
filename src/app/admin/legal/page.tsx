@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -15,8 +15,8 @@ import { ContractsAdminClient } from "../contracts/contracts-client";
 export const dynamic = "force-dynamic";
 
 export default async function AdminLegalCockpitPage() {
-  const session = await requireAdminSession();
-  if (!session) redirect("/dashboard");
+  const access = await requireAdminPage("legalcockpit");
+  if (!access) redirect("/admin");
 
   const [contracts, allMembers, allClients, allProjects, allStaffings] = await Promise.all([
     listAllContracts(),

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminAction } from "@/lib/auth";
 import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
@@ -49,7 +49,7 @@ type AirtableField = { id: string; name: string };
 type AirtableTable = { id: string; name: string; fields: AirtableField[] };
 
 export async function POST() {
-  const session = await requireAdminSession();
+  const session = await requireAdminAction("contracts", "edit");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const baseId = env.airtableBaseId;

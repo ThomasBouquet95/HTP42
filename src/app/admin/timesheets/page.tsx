@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireAdminSession } from "@/lib/auth";
+import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import {
   listAllContracts,
@@ -20,8 +20,8 @@ export type SowInfo = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminTimesheetsPage() {
-  const session = await requireAdminSession();
-  if (!session) redirect("/dashboard");
+  const access = await requireAdminPage("timesheets");
+  if (!access) redirect("/admin");
 
   // Invoices ride along so an expanded timesheet row can show "related
   // invoices" (same staffing); payments let each invoice link to the payment
