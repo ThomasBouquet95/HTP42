@@ -276,14 +276,19 @@ function SummaryCard({
   const label = tone === "success" ? "text-emerald-700/70" : "text-rose-700/70";
   const value = tone === "success" ? "text-emerald-800" : "text-rose-800";
   const sub = tone === "success" ? "text-emerald-700/80" : "text-rose-700/80";
+  const total = t.sent + t.committed + t.review;
   return (
     <div className={`rounded-lg border p-3 ${card}`}>
       <div className={`text-[10px] uppercase tracking-wide ${label}`}>{title}</div>
       <div className={`mt-1 text-lg font-semibold tabular-nums demo-blur ${value}`}>
-        {eur(t.sent)} <span className="text-[11px] font-normal opacity-70">sent</span>
+        {eur(total)} <span className="text-[11px] font-normal opacity-70">total</span>
       </div>
-      <div className={`mt-0.5 text-[11px] demo-blur ${sub}`}>
-        {eur(t.committed)} committed · {eur(t.review)} under review
+      <div className={`mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] demo-blur ${sub}`}>
+        <span>{eur(t.sent)} sent</span>
+        <span aria-hidden className="opacity-40">·</span>
+        <span>{eur(t.committed)} committed</span>
+        <span aria-hidden className="opacity-40">·</span>
+        <span>{eur(t.review)} under review</span>
       </div>
     </div>
   );
