@@ -37,9 +37,13 @@ function fmtDate(iso: string | null): string {
 export function TimesheetReviewClient({
   timesheets,
   sowByStaffing,
+  scopeProjects,
 }: {
   timesheets: AdminTimesheetRecord[];
   sowByStaffing?: Record<string, SowInfo>;
+  // When set, this reviewer (a Project Manager) only sees these projects.
+  // Rendered as a banner so the limited scope is explicit, not implied.
+  scopeProjects?: string[] | null;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(timesheets);
@@ -139,6 +143,22 @@ export function TimesheetReviewClient({
       </div>
     ) : null;
 
+  // Scope banner: spell out that this reviewer only sees the projects they
+  // manage, and name them. Shown for Project Managers (scopeProjects set).
+  const scopeBanner =
+    scopeProjects && scopeProjects.length > 0 ? (
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-brand-200 bg-brand-50 px-4 py-2.5 text-xs text-brand-800">
+        <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0" fill="currentColor" aria-hidden>
+          <path d="M8 1a4 4 0 0 0-4 4v2H3.5A1.5 1.5 0 0 0 2 8.5v5A1.5 1.5 0 0 0 3.5 15h9a1.5 1.5 0 0 0 1.5-1.5v-5A1.5 1.5 0 0 0 12.5 7H12V5a4 4 0 0 0-4-4Zm2.5 6h-5V5a2.5 2.5 0 0 1 5 0v2Z" />
+        </svg>
+        <span>
+          You review timesheets only for the {scopeProjects.length} project
+          {scopeProjects.length === 1 ? "" : "s"} you manage:
+        </span>
+        <span className="font-semibold demo-blur">{scopeProjects.join(", ")}</span>
+      </div>
+    ) : null;
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return groups;
@@ -226,11 +246,14 @@ export function TimesheetReviewClient({
   if (groups.length === 0) {
     return (
       <div className="space-y-4">
+        {scopeBanner}
         {legacyBanner}
         <div className="rounded-lg border border-slate-200 bg-white p-10 text-center">
           <div className="text-sm font-medium text-slate-800">Nothing to review</div>
           <p className="mt-1 text-xs text-slate-500">
-            Submitted timesheets appear here for approval, grouped by member.
+            {scopeProjects && scopeProjects.length > 0
+              ? "Submitted timesheets on your projects appear here for approval, grouped by member."
+              : "Submitted timesheets appear here for approval, grouped by member."}
           </p>
         </div>
       </div>
@@ -239,6 +262,7 @@ export function TimesheetReviewClient({
 
   return (
     <div className="space-y-4">
+      {scopeBanner}
       {legacyBanner}
       <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       {/* Member list */}

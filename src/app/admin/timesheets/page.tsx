@@ -49,6 +49,18 @@ export default async function AdminTimesheetsPage() {
     ? allTimesheets.filter((t) => scopeCodes.has(t.projectCode))
     : allTimesheets;
 
+  // Names of the projects a Project Manager is scoped to, so the UI can spell
+  // out "you review only these projects" instead of leaving it implicit.
+  const scopeProjects = scopeCodes
+    ? [
+        ...new Map(
+          staffings
+            .filter((s) => scopeCodes.has(s.projectCode))
+            .map((s) => [s.projectCode, s.projectName || s.projectCode] as const),
+        ).values(),
+      ].sort((a, b) => a.localeCompare(b))
+    : null;
+
   // Which sub-tabs this role may see, from the level-two "timesheets.*"
   // permissions (e.g. a Project Manager gets Review only). Falls back to all
   // four if a role somehow has none granted, so the page is never empty.
@@ -109,6 +121,7 @@ export default async function AdminTimesheetsPage() {
           paymentByInvoiceId={paymentByInvoiceId}
           sowByStaffing={sowByStaffing}
           allowedViews={views}
+          scopeProjects={scopeProjects}
         />
     </main>
   );

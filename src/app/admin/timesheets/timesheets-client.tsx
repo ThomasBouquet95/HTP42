@@ -64,6 +64,9 @@ type Props = {
   // Sub-tabs this role may see (level-two permissions). The first one is the
   // landing tab. A Project Manager, for example, only gets "review".
   allowedViews: TimesheetView[];
+  // When set, this role only sees timesheets for these projects (Project
+  // Manager scoping). Null means "all projects" (unscoped admin roles).
+  scopeProjects: string[] | null;
 };
 
 // Invoices tied to a timesheet: same staffing first, else same member+project
@@ -81,7 +84,7 @@ function relatedInvoicesFor(
   );
 }
 
-export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId, sowByStaffing, allowedViews }: Props) {
+export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId, sowByStaffing, allowedViews, scopeProjects }: Props) {
   const router = useRouter();
   // Overview (filterable table) · By project · By member — the two breakdown
   // views live in their own tabs instead of inline cards above the table.
@@ -274,7 +277,7 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
       ) : null}
 
       {view === "review" ? (
-        <TimesheetReviewClient timesheets={rows} sowByStaffing={sowByStaffing} />
+        <TimesheetReviewClient timesheets={rows} sowByStaffing={sowByStaffing} scopeProjects={scopeProjects} />
       ) : view === "byproject" ? (
         <TimesheetsByProject timesheets={rows} sowByStaffing={sowByStaffing} onDrill={drillToOverview} />
       ) : view === "bymember" ? (
