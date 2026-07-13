@@ -9,7 +9,7 @@ import { TIMESHEET_STATUSES } from "@/lib/airtable";
 import type { AdminTimesheetRecord } from "@/lib/airtable";
 import { downloadTimesheetsCsv } from "./timesheets-export";
 
-export type SowInfo = { reference: string; status: string; daysAllocated: number | null };
+export type SowInfo = { reference: string; status: string; daysAllocated: number | null; url: string };
 type SowMap = Record<string, SowInfo>;
 
 // Breakdown default: the billing lifecycle only — Draft / Cancelled / Deleted
@@ -356,19 +356,35 @@ function GroupedTimesheets({
 
 // Compact SOW indicator: shows the linked SOW reference tinted by its status,
 // or a faint "No SOW" when the staffing has none.
-function SowChip({ sow }: { sow?: SowInfo }) {
-  if (!sow || !sow.reference) {
+export function SowChip({ sow }: { sow?: SowInfo }) {
+  if (!sow || (!sow.reference && !sow.url)) {
     return <span className="text-[10px] text-slate-300">· No SOW</span>;
   }
   const tone =
     sow.status === "Signed" ? "success" : sow.status === "Not Started" ? "neutral" : "warning";
+  const label = (
+    <Badge tone={tone}>
+      SOW{sow.reference ? ` ${sow.reference}` : ""}
+      {sow.status ? ` · ${sow.status}` : ""}
+      {sow.url ? " ↗" : ""}
+    </Badge>
+  );
   return (
     <span className="inline-flex items-center gap-1">
       <span className="text-slate-300">·</span>
-      <Badge tone={tone}>
-        SOW {sow.reference}
-        {sow.status ? ` · ${sow.status}` : ""}
-      </Badge>
+      {sow.url ? (
+        <a
+          href={sow.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          title="Open the SOW document"
+        >
+          {label}
+        </a>
+      ) : (
+        label
+      )}
     </span>
   );
 }

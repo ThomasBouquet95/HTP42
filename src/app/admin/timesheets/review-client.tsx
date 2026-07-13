@@ -7,8 +7,10 @@ import { Badge } from "@/components/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
+import { SegmentedTabs } from "@/components/filters";
 import { WeekChip } from "@/components/week-chip";
 import { dayIsos } from "./timesheets-export";
+import { SowChip, type SowInfo } from "./timesheets-breakdown";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 
@@ -32,7 +34,13 @@ function fmtDate(iso: string | null): string {
 // Admin timesheet review, master-detail like Payment Review: a left rail of
 // members (with a "to review" badge), and per-member Under review / Approved /
 // Rejected sections. Approve/Reject (and override) happen here, not in Overview.
-export function TimesheetReviewClient({ timesheets }: { timesheets: AdminTimesheetRecord[] }) {
+export function TimesheetReviewClient({
+  timesheets,
+  sowByStaffing,
+}: {
+  timesheets: AdminTimesheetRecord[];
+  sowByStaffing?: Record<string, SowInfo>;
+}) {
   const router = useRouter();
   const [rows, setRows] = useState(timesheets);
   useEffect(() => setRows(timesheets), [timesheets]);
@@ -73,6 +81,7 @@ export function TimesheetReviewClient({ timesheets }: { timesheets: AdminTimeshe
 
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(groups[0]?.memberId ?? null);
+  const [statusTab, setStatusTab] = useState<"underReview" | "approved" | "rejected">("underReview");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
@@ -164,9 +173,9 @@ export function TimesheetReviewClient({ timesheets }: { timesheets: AdminTimeshe
                       <div className={`truncate text-sm font-medium demo-blur ${active ? "text-brand-800" : "text-slate-900"}`}>
                         {g.memberName || g.memberCode || "—"}
                       </div>
-                      <div className="text-[11px] text-slate-400">
-                        {g.approved.length} approved · {g.rejected.length} rejected
-                      </div>
+                      {g.memberCode ? (
+                        <div className="font-mono text-[10px] text-slate-400">{g.memberCode}</div>
+                      ) : null}
                     </div>
                     {g.underReview.length > 0 ? (
                       <Badge tone="warning">{g.underReview.length} to review</Badge>
@@ -191,23 +200,48 @@ export function TimesheetReviewClient({ timesheets }: { timesheets: AdminTimeshe
             ) : null}
           </div>
 
-          <Section title="Under review" count={selected.underReview.length} empty="Nothing under review for this member.">
-            {selected.underReview.map((t) => (
-              <ReviewCard key={t.id} t={t} saving={savingId === t.id} onDecide={decide} />
-            ))}
-          </Section>
+          <SegmentedTabs
+            ariaLabel="Review status"
+            value={statusTab}
+            onChange={setStatusTab}
+            options={[
+              {
+                value: "underReview",
+                label: "Under review",
+                badge: <CountBadge n={selected.underReview.length} tone="warning" />,
+              },
+              {
+                value: "approved",
+                label: "Approved",
+                badge: <CountBadge n={selected.approved.length} tone="muted" />,
+              },
+              {
+                value: "rejected",
+                label: "Rejected",
+                badge: <CountBadge n={selected.rejected.length} tone="muted" />,
+              },
+            ]}
+          />
 
-          <Section title="Approved" count={selected.approved.length} empty="No approved timesheets yet.">
-            {selected.approved.map((t) => (
-              <ReviewCard key={t.id} t={t} saving={savingId === t.id} onDecide={decide} />
-            ))}
-          </Section>
-
-          <Section title="Rejected" count={selected.rejected.length} empty="No rejected timesheets.">
-            {selected.rejected.map((t) => (
-              <ReviewCard key={t.id} t={t} saving={savingId === t.id} onDecide={decide} />
-            ))}
-          </Section>
+          <ProjectGroups
+            items={
+              statusTab === "underReview"
+                ? selected.underReview
+                : statusTab === "approved"
+                  ? selected.approved
+                  : selected.rejected
+            }
+            empty={
+              statusTab === "underReview"
+                ? "Nothing under review for this member."
+                : statusTab === "approved"
+                  ? "No approved timesheets yet."
+                  : "No rejected timesheets."
+            }
+            savingId={savingId}
+            onDecide={decide}
+            sowByStaffing={sowByStaffing}
+          />
         </div>
       ) : null}
 
@@ -227,29 +261,79 @@ export function TimesheetReviewClient({ timesheets }: { timesheets: AdminTimeshe
   );
 }
 
-function Section({
-  title,
-  count,
-  empty,
-  children,
-}: {
-  title: string;
-  count: number;
-  empty: string;
-  children: React.ReactNode;
-}) {
+// Small count pill for the status tabs — amber for the actionable
+// "under review", muted slate otherwise. Hidden at zero.
+function CountBadge({ n, tone }: { n: number; tone: "warning" | "muted" }) {
+  if (n === 0) return null;
+  const cls =
+    tone === "warning" ? "bg-amber-100 text-amber-800" : "bg-slate-200 text-slate-600";
   return (
-    <div>
-      <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
-        {title} · {count}
-      </h3>
-      {count === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
-          {empty}
+    <span className={`inline-flex items-center rounded-full px-1.5 text-[10px] font-semibold ${cls}`}>
+      {n}
+    </span>
+  );
+}
+
+// The active status's timesheets, grouped by project. Each project heading
+// carries its SOW link and the member's total hours on that project.
+function ProjectGroups({
+  items,
+  empty,
+  savingId,
+  onDecide,
+  sowByStaffing,
+}: {
+  items: AdminTimesheetRecord[];
+  empty: string;
+  savingId: string | null;
+  onDecide: (id: string, action: "approve" | "reject", comment: string) => void;
+  sowByStaffing?: Record<string, SowInfo>;
+}) {
+  const groups = useMemo(() => {
+    const m = new Map<
+      string,
+      { code: string; name: string; staffingCode: string; hours: number; sheets: AdminTimesheetRecord[] }
+    >();
+    for (const t of items) {
+      const code = t.projectCode || "—";
+      const g =
+        m.get(code) ??
+        { code, name: t.projectName || t.projectCode || "—", staffingCode: t.staffingCode, hours: 0, sheets: [] };
+      g.hours += t.totalHours;
+      if (!g.staffingCode) g.staffingCode = t.staffingCode;
+      g.sheets.push(t);
+      m.set(code, g);
+    }
+    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [items]);
+
+  if (items.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
+        {empty}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {groups.map((g) => (
+        <div key={g.code}>
+          <div className="mb-1.5 flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-slate-800 demo-blur">{g.name}</span>
+            <span className="font-mono text-[10px] text-slate-400">{g.code}</span>
+            <SowChip sow={sowByStaffing?.[g.staffingCode]} />
+            <span className="ml-auto text-xs font-semibold tabular-nums text-slate-700">
+              {g.hours.toFixed(1)} h
+            </span>
+          </div>
+          <div className="space-y-3">
+            {g.sheets.map((t) => (
+              <ReviewCard key={t.id} t={t} saving={savingId === t.id} onDecide={onDecide} />
+            ))}
+          </div>
         </div>
-      ) : (
-        <div className="space-y-3">{children}</div>
-      )}
+      ))}
     </div>
   );
 }
@@ -274,7 +358,7 @@ function ReviewCard({
         <div className="flex items-center gap-2">
           <WeekChip startIso={t.startDate} endIso={t.endDate} />
           <span className="text-[11px] text-slate-500">
-            {[t.projectCode, t.staffingCode].filter(Boolean).join(" · ")}
+            {t.staffingCode}
             {t.reviewMethod === "Client" ? " · client review" : ""}
           </span>
         </div>

@@ -1,10 +1,21 @@
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
-import { listAllInvoices, listAllStaffings, listAllTimesheets, listPayments } from "@/lib/airtable";
+import {
+  listAllContracts,
+  listAllInvoices,
+  listAllStaffings,
+  listAllTimesheets,
+  listPayments,
+} from "@/lib/airtable";
 import { AdminTimesheetsClient } from "./timesheets-client";
 
-export type SowInfo = { reference: string; status: string; daysAllocated: number | null };
+export type SowInfo = {
+  reference: string;
+  status: string;
+  daysAllocated: number | null;
+  url: string;
+};
 
 export const dynamic = "force-dynamic";
 
@@ -15,12 +26,23 @@ export default async function AdminTimesheetsPage() {
   // Invoices ride along so an expanded timesheet row can show "related
   // invoices" (same staffing); payments let each invoice link to the payment
   // that settles it.
-  const [timesheets, invoices, payments, staffings] = await Promise.all([
+  const [timesheets, invoices, payments, staffings, contracts] = await Promise.all([
     listAllTimesheets(),
     listAllInvoices(),
     listPayments(),
     listAllStaffings(),
+    listAllContracts(),
   ]);
+
+  // SOW document link per project: the PDF of a SOW-type contract on that
+  // project (first match wins).
+  const sowUrlByProject: Record<string, string> = {};
+  for (const c of contracts) {
+    if (c.contractType !== "SOW" || !c.pdf?.url) continue;
+    for (const code of c.projectCodes) {
+      if (code && !sowUrlByProject[code]) sowUrlByProject[code] = c.pdf.url;
+    }
+  }
 
   // Map member-invoice id -> the payment referencing it.
   const paymentByInvoiceId: Record<string, { id: string; code: string; status: string }> = {};
@@ -40,6 +62,7 @@ export default async function AdminTimesheetsPage() {
       reference: s.sowReference,
       status: s.sowStatus,
       daysAllocated: s.daysAllocated,
+      url: sowUrlByProject[s.projectCode] ?? "",
     };
   }
 

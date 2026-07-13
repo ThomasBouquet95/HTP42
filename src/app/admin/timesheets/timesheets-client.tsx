@@ -55,7 +55,7 @@ const DEFAULT_FILTERS: Filters = {
 };
 
 type PaymentLink = { id: string; code: string; status: string };
-type SowInfo = { reference: string; status: string; daysAllocated: number | null };
+type SowInfo = { reference: string; status: string; daysAllocated: number | null; url: string };
 type Props = {
   timesheets: AdminTimesheetRecord[];
   invoices: MemberInvoiceRecord[];
@@ -265,7 +265,7 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
       />
 
       {view === "review" ? (
-        <TimesheetReviewClient timesheets={rows} />
+        <TimesheetReviewClient timesheets={rows} sowByStaffing={sowByStaffing} />
       ) : view === "byproject" ? (
         <TimesheetsByProject timesheets={rows} sowByStaffing={sowByStaffing} onDrill={drillToOverview} />
       ) : view === "bymember" ? (
