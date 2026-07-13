@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { StatusPill } from "@/components/badge";
+import { Badge, StatusPill } from "@/components/badge";
+import { StatusBadge } from "@/components/status-badge";
 import { DownloadChip } from "@/components/download-chip";
 import { effectiveEur } from "@/lib/fx";
 import type { PaymentRecord } from "@/lib/airtable";
@@ -456,7 +457,10 @@ function Column({
                     ) : null}
 
                     {bundle && bundle.timesheets.length > 0 ? (
-                      <TimesheetBreakdown timesheets={bundle.timesheets} />
+                      <TimesheetBreakdown
+                        timesheets={bundle.timesheets}
+                        approval={bundle.timesheetApproval}
+                      />
                     ) : null}
 
                     <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -510,7 +514,13 @@ const weekRange = (start: string | null, end: string | null) => {
 
 // Collapsed-by-default timesheet list for an expanded payment row. Each week
 // can be opened to reveal the per-day hours + task breakdown.
-function TimesheetBreakdown({ timesheets }: { timesheets: ReviewBundle["timesheets"] }) {
+function TimesheetBreakdown({
+  timesheets,
+  approval,
+}: {
+  timesheets: ReviewBundle["timesheets"];
+  approval: ReviewBundle["timesheetApproval"];
+}) {
   const [showAll, setShowAll] = useState(false);
   const [openWeeks, setOpenWeeks] = useState<Set<string>>(new Set());
   const toggleWeek = (id: string) =>
@@ -541,6 +551,7 @@ function TimesheetBreakdown({ timesheets }: { timesheets: ReviewBundle["timeshee
           <path d="M4.5 3 7.5 6 4.5 9" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
         Timesheets <span className="text-slate-400">· {timesheets.length}</span>
+        <ApprovalChip approval={approval} />
         <span className="ml-auto tabular-nums text-slate-400">{totalHours.toFixed(1)} h</span>
       </button>
 
@@ -567,7 +578,7 @@ function TimesheetBreakdown({ timesheets }: { timesheets: ReviewBundle["timeshee
                     <path d="M4.5 3 7.5 6 4.5 9" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                   <span className="text-slate-700">{weekRange(t.startDate, t.endDate)}</span>
-                  <StatusPill status={t.status} />
+                  <StatusBadge status={t.status} review={t.review} />
                   <span className="ml-auto tabular-nums text-slate-500">
                     {(Number(t.totalHours) || 0).toFixed(1)} h
                   </span>
@@ -593,6 +604,27 @@ function TimesheetBreakdown({ timesheets }: { timesheets: ReviewBundle["timeshee
         </ul>
       ) : null}
     </div>
+  );
+}
+
+// Compact approval rollup for a payment's linked weeks, shown in the timesheet
+// section header: emerald "all approved" when clean, amber/rose otherwise.
+function ApprovalChip({ approval }: { approval: ReviewBundle["timesheetApproval"] }) {
+  if (approval.total === 0) return null;
+  if (approval.allApproved) {
+    return (
+      <Badge tone="success" className="ml-1">
+        all approved
+      </Badge>
+    );
+  }
+  const parts: string[] = [];
+  if (approval.pending > 0) parts.push(`${approval.pending} pending`);
+  if (approval.rejected > 0) parts.push(`${approval.rejected} rejected`);
+  return (
+    <Badge tone={approval.rejected > 0 ? "danger" : "warning"} className="ml-1">
+      {parts.join(" · ")}
+    </Badge>
   );
 }
 

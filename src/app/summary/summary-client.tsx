@@ -12,7 +12,14 @@ import { CalendarRange } from "@/components/calendar-range";
 import { TimesheetDetailModal } from "@/components/timesheet-detail-modal";
 import { formatHumanDate, formatWeekRange, parseIsoDate, thisMondayIso, toIsoDate } from "@/lib/dates";
 
-const ALL_STATUSES: TimesheetStatus[] = ["Draft", "Submitted", "Deleted"];
+const ALL_STATUSES: TimesheetStatus[] = [
+  "Draft",
+  "Submitted",
+  "Approved",
+  "Rejected",
+  "Cancelled",
+  "Deleted",
+];
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
   monday: "Monday",
@@ -107,6 +114,12 @@ export function SummaryClient({
   const [deleteTarget, setDeleteTarget] = useState<TimesheetRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<TimesheetRecord | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  // Revise (reopen a Rejected timesheet back to Draft) fires inline per row.
+  const [reviseBusyId, setReviseBusyId] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<string | null>(null);
   async function confirmDelete() {
     if (!deleteTarget) return;
     setDeleting(true);
@@ -127,6 +140,53 @@ export function SummaryClient({
       setDeleteError(e instanceof Error ? e.message : "Delete failed.");
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function confirmCancel() {
+    if (!cancelTarget) return;
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      const res = await fetch(`/api/timesheets/${cancelTarget.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "cancel" }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Cancel failed.");
+      }
+      setCancelTarget(null);
+      router.refresh();
+    } catch (e) {
+      setCancelError(e instanceof Error ? e.message : "Cancel failed.");
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  // Revise: pull a Rejected timesheet back to Draft so the member can edit and
+  // resubmit it. No confirm needed — it's a non-destructive, reversible move.
+  async function revise(t: TimesheetRecord) {
+    if (reviseBusyId) return;
+    setReviseBusyId(t.id);
+    setRowError(null);
+    try {
+      const res = await fetch(`/api/timesheets/${t.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "reopen" }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Could not reopen for revision.");
+      }
+      router.refresh();
+    } catch (e) {
+      setRowError(e instanceof Error ? e.message : "Could not reopen for revision.");
+    } finally {
+      setReviseBusyId(null);
     }
   }
 
@@ -282,7 +342,7 @@ export function SummaryClient({
             onChange={(v) => update("status", v as Filters["status"])}
             options={[
               { value: "All", label: "All statuses" },
-              ...ALL_STATUSES.map((s) => ({ value: s, label: s })),
+              ...ALL_STATUSES.map((s) => ({ value: s, label: timesheetStatusLabel(s) })),
             ]}
           />
           <Select
@@ -416,6 +476,10 @@ export function SummaryClient({
         </>
       ) : null}
 
+      {rowError ? (
+        <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{rowError}</div>
+      ) : null}
+
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
         <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
           <h2 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Timesheets</h2>
@@ -467,7 +531,15 @@ export function SummaryClient({
                     </div>
                   </td>
                   <td className="px-2 py-1.5">
-                    <StatusBadge status={t.status} />
+                    <StatusBadge
+                      status={t.status}
+                      review={{
+                        reviewMethod: t.reviewMethod,
+                        reviewedBy: t.reviewedBy,
+                        reviewedAt: t.reviewedAt,
+                        reviewComment: t.reviewComment,
+                      }}
+                    />
                   </td>
                   {DAY_KEYS.map((k) => (
                     <td key={k} className="px-2 py-1.5 text-right tabular-nums">
@@ -482,10 +554,29 @@ export function SummaryClient({
                       <div className="inline-flex items-center gap-1">
                         <IconButton
                           onClick={() => setOpenTimesheetId(t.id)}
-                          title={t.status === "Draft" ? "Edit" : "View"}
+                          title={t.status === "Draft" || t.status === "Rejected" ? "Edit" : "View"}
                         >
-                          {t.status === "Draft" ? <EditIcon /> : <EyeIcon />}
+                          {t.status === "Draft" || t.status === "Rejected" ? <EditIcon /> : <EyeIcon />}
                         </IconButton>
+                        {t.status === "Rejected" ? (
+                          <IconButton
+                            onClick={() => revise(t)}
+                            title="Revise (return to Draft)"
+                            tone="brand"
+                          >
+                            <RefreshIcon />
+                          </IconButton>
+                        ) : null}
+                        {t.status === "Draft" ||
+                        t.status === "Submitted" ||
+                        t.status === "Rejected" ? (
+                          <IconButton
+                            onClick={() => setCancelTarget(t)}
+                            title="Cancel timesheet"
+                          >
+                            <BanIcon />
+                          </IconButton>
+                        ) : null}
                         {t.status !== "Deleted" ? (
                           <IconButton
                             onClick={() => setDeleteTarget(t)}
@@ -535,7 +626,43 @@ export function SummaryClient({
         onCancel={() => (deleting ? undefined : (setDeleteTarget(null), setDeleteError(null)))}
         onConfirm={confirmDelete}
       />
+
+      <ConfirmDialog
+        open={!!cancelTarget}
+        title="Cancel timesheet?"
+        message={
+          <>
+            <p>
+              This marks the timesheet for{" "}
+              <span className="font-medium">
+                {cancelTarget ? formatWeekRange(cancelTarget.startDate, cancelTarget.endDate) : ""}
+              </span>{" "}
+              as <span className="font-medium">Cancelled</span>. It won&apos;t be billed. You can
+              recreate it later if needed.
+            </p>
+            {cancelError ? (
+              <p className="mt-2 rounded-md bg-red-50 p-2 text-red-700">{cancelError}</p>
+            ) : null}
+          </>
+        }
+        confirmLabel="Cancel timesheet"
+        confirmTone="danger"
+        busy={cancelling}
+        onCancel={() => (cancelling ? undefined : (setCancelTarget(null), setCancelError(null)))}
+        onConfirm={confirmCancel}
+      />
     </div>
+  );
+}
+
+// Circle-slash glyph for the per-row Cancel action. Matches the 14px stroke
+// style of the shared admin icons without needing to extend that shared set.
+function BanIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M6 6l12 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
   );
 }
 

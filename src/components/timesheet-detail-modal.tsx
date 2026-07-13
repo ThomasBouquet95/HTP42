@@ -69,7 +69,9 @@ export function TimesheetDetailModal({ timesheetId, onClose, onSaved }: Props) {
         }
         const ts = tsBody.timesheet;
         let eligible: StaffingRecord[] | undefined;
-        if (ts.status === "Draft" && ts.startDate) {
+        // Draft and Rejected are both editable (revise + resubmit), so both
+        // need the eligible-staffing list for the embedded form's picker.
+        if ((ts.status === "Draft" || ts.status === "Rejected") && ts.startDate) {
           const sRes = await fetch(
             `/api/staffings?week=${encodeURIComponent(ts.startDate)}`,
           );
@@ -150,7 +152,17 @@ export function TimesheetDetailModal({ timesheetId, onClose, onSaved }: Props) {
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[11px] font-mono text-slate-500">
               {ts?.timesheetCode ?? "Timesheet"}
-              {ts ? <StatusBadge status={ts.status} /> : null}
+              {ts ? (
+                <StatusBadge
+                  status={ts.status}
+                  review={{
+                    reviewMethod: ts.reviewMethod,
+                    reviewedBy: ts.reviewedBy,
+                    reviewedAt: ts.reviewedAt,
+                    reviewComment: ts.reviewComment,
+                  }}
+                />
+              ) : null}
             </div>
             <h2 className="text-sm font-semibold text-slate-900 mt-0.5 truncate">
               {ts
@@ -180,24 +192,39 @@ export function TimesheetDetailModal({ timesheetId, onClose, onSaved }: Props) {
           {error ? (
             <div className="rounded-md bg-red-50 p-2.5 text-xs text-red-700">{error}</div>
           ) : ts ? (
-            ts.status === "Draft" ? (
-              <TimesheetForm
-                mode="edit"
-                existing={ts}
-                initialStaffings={data?.eligibleStaffings}
-                onCancel={requestClose}
-                onDirtyChange={setDirty}
-                onSaved={() => {
-                  // Save flushes the dirty state inside the form already;
-                  // clear our mirror too so the parent doesn't re-prompt.
-                  setDirty(false);
-                  onSaved?.();
-                  onClose();
-                }}
-              />
-            ) : (
-              <ReadOnlyTimesheet timesheet={ts} />
-            )
+            <>
+              {ts.status === "Rejected" ? (
+                <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+                  <div className="font-semibold">This timesheet was rejected.</div>
+                  {ts.reviewComment ? (
+                    <p className="mt-0.5 whitespace-pre-line">{ts.reviewComment}</p>
+                  ) : (
+                    <p className="mt-0.5">Revise the entries below and resubmit.</p>
+                  )}
+                  {ts.reviewedBy ? (
+                    <p className="mt-1 text-[11px] text-rose-600">Rejected by {ts.reviewedBy}.</p>
+                  ) : null}
+                </div>
+              ) : null}
+              {ts.status === "Draft" || ts.status === "Rejected" ? (
+                <TimesheetForm
+                  mode="edit"
+                  existing={ts}
+                  initialStaffings={data?.eligibleStaffings}
+                  onCancel={requestClose}
+                  onDirtyChange={setDirty}
+                  onSaved={() => {
+                    // Save flushes the dirty state inside the form already;
+                    // clear our mirror too so the parent doesn't re-prompt.
+                    setDirty(false);
+                    onSaved?.();
+                    onClose();
+                  }}
+                />
+              ) : (
+                <ReadOnlyTimesheet timesheet={ts} />
+              )}
+            </>
           ) : (
             <div className="text-xs text-slate-500">Loading timesheet…</div>
           )}

@@ -75,6 +75,31 @@ export function ReadOnlyTimesheet({ timesheet }: { timesheet: TimesheetRecord })
         </table>
       </div>
 
+      {/* Surface the reviewer's decision prominently. Approved shows an
+          emerald note; Rejected an amber/rose one (a rejected sheet is
+          normally routed to the editable form, this is a safe fallback). */}
+      {timesheet.status === "Approved" ? (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          <div className="font-semibold">This timesheet was approved.</div>
+          {timesheet.reviewComment ? (
+            <p className="mt-0.5 whitespace-pre-line">{timesheet.reviewComment}</p>
+          ) : null}
+          {timesheet.reviewedBy ? (
+            <p className="mt-1 text-[11px] text-emerald-600">Approved by {timesheet.reviewedBy}.</p>
+          ) : null}
+        </div>
+      ) : timesheet.status === "Rejected" ? (
+        <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+          <div className="font-semibold">This timesheet was rejected.</div>
+          {timesheet.reviewComment ? (
+            <p className="mt-0.5 whitespace-pre-line">{timesheet.reviewComment}</p>
+          ) : null}
+          {timesheet.reviewedBy ? (
+            <p className="mt-1 text-[11px] text-rose-600">Rejected by {timesheet.reviewedBy}.</p>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
         {timesheet.submissionDate ? (
           <span>Submitted on {timesheet.submissionDate}.</span>

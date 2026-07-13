@@ -629,16 +629,19 @@ function BundleDetail({
       <Section
         title="Timesheets"
         action={
-          selected.staffing ? (
-            <a
-              href={`/print/staffing/${encodeURIComponent(selected.staffing.id)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs font-medium text-brand-600 hover:text-brand-700"
-            >
-              Download PDF ↗
-            </a>
-          ) : null
+          <div className="flex items-center gap-3">
+            <ApprovalRollup rollup={selected.timesheetApproval} />
+            {selected.staffing ? (
+              <a
+                href={`/print/staffing/${encodeURIComponent(selected.staffing.id)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-medium text-brand-600 hover:text-brand-700"
+              >
+                Download PDF ↗
+              </a>
+            ) : null}
+          </div>
         }
       >
         {selected.timesheets.length === 0 ? (
@@ -670,7 +673,7 @@ function BundleDetail({
                       {t.startDate ? longDate(t.startDate) : "—"}
                       {t.endDate ? ` → ${longDate(t.endDate)}` : ""}
                     </span>
-                    <span className="text-[10px] text-slate-500">{t.status}</span>
+                    <StatusBadge status={t.status} review={t.review} />
                     <span className="w-16 text-right tabular-nums font-medium">
                       {t.totalHours.toFixed(2)} h
                     </span>
@@ -861,6 +864,41 @@ function InfoTip({ text }: { text: string }) {
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="text-xs text-slate-500">{children}</p>;
+}
+
+// At-a-glance approval state for the linked timesheets. Green when every week is
+// approved; amber/rose warning (with an explanation) when any week is still
+// under review or was rejected, so an admin immediately spots the anomaly.
+function ApprovalRollup({
+  rollup,
+}: {
+  rollup: ReviewBundle["timesheetApproval"];
+}) {
+  if (rollup.total === 0) return null;
+
+  if (rollup.allApproved) {
+    return (
+      <Badge tone="success" className="gap-1">
+        <span aria-hidden>✅</span>
+        All timesheets approved
+      </Badge>
+    );
+  }
+
+  const parts: string[] = [];
+  if (rollup.pending > 0) parts.push(`${rollup.pending} under review`);
+  if (rollup.rejected > 0) parts.push(`${rollup.rejected} rejected`);
+  const tone = rollup.rejected > 0 ? "danger" : "warning";
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Badge tone={tone} className="gap-1">
+        <span aria-hidden>{rollup.rejected > 0 ? "❌" : "⏳"}</span>
+        {parts.join(" · ")}
+      </Badge>
+      <InfoTip text="This payment links a timesheet that is not approved. Invoiced and paid weeks were approved by construction, so an under review or rejected week here needs attention before payment." />
+    </span>
+  );
 }
 
 function ValidityChip({ validity }: { validity: string }) {
