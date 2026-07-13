@@ -335,18 +335,33 @@ export type MemberStatus = "Active" | "Partially Active" | "Inactive";
 export const MEMBER_STATUSES: MemberStatus[] = ["Active", "Partially Active", "Inactive"];
 
 export type MemberRole =
-  | "Core Team"
-  | "Extended Core Team"
-  | "Network Member"
-  | "Support Member"
-  | "Admin";
+  | "Managing Partner"
+  | "Operating Partner"
+  | "Associate Partner"
+  | "Network Operations"
+  | "Network Expert"
+  | "Support";
 export const MEMBER_ROLES: MemberRole[] = [
-  "Core Team",
-  "Extended Core Team",
-  "Network Member",
-  "Support Member",
-  "Admin",
+  "Managing Partner",
+  "Operating Partner",
+  "Associate Partner",
+  "Network Operations",
+  "Network Expert",
+  "Support",
 ];
+
+// Roles granted access to the admin panel. Everyone else — Network Expert,
+// Support, and unassigned (no role) — is member-only.
+export const ADMIN_ROLES: MemberRole[] = [
+  "Managing Partner",
+  "Operating Partner",
+  "Associate Partner",
+  "Network Operations",
+];
+export function isAdminRole(role: string | null | undefined): boolean {
+  // "Admin" is the legacy pre-migration value, accepted for access only.
+  return !!role && ((ADMIN_ROLES as string[]).includes(role) || role === "Admin");
+}
 
 export type StaffingStatus = "Not Started" | "In Progress" | "Completed";
 export const STAFFING_STATUSES: StaffingStatus[] = [
@@ -1195,14 +1210,53 @@ export async function adminCreateMember(input: MemberCreateInput): Promise<Membe
   if (input.currency !== undefined && input.currency !== "") {
     fields[FIELDS.networkMembers.currency] = input.currency;
   }
-  const [created] = await base(TABLES.networkMembers).create([
-    { fields: fields as FieldSet },
-  ]);
+  const [created] = await base(TABLES.networkMembers).create(
+    [{ fields: fields as FieldSet }],
+    // typecast lets Airtable auto-add a new Role single-select choice on write.
+    { typecast: true },
+  );
   return memberAdminFromRecord(created);
 }
 
 export async function adminDeleteMember(recordId: string): Promise<void> {
   await base(TABLES.networkMembers).destroy([recordId]);
+}
+
+// Old → new member role for the one-shot migration. Returns null to leave a
+// record untouched (already a current role, or unassigned).
+function mapLegacyMemberRole(old: string): string | null {
+  if ((MEMBER_ROLES as string[]).includes(old)) return null; // already migrated
+  if (old === "") return null; // unassigned stays unassigned (no admin access)
+  if (old === "Admin") return "Managing Partner";
+  if (old === "Support Member") return "Support";
+  return "Network Expert"; // Core Team / Extended Core Team / Network Member / anything else
+}
+
+// Count of members still on a legacy role value, for the admin banner.
+export async function countLegacyMemberRoles(): Promise<number> {
+  const records = await base(TABLES.networkMembers)
+    .select({ fields: [FIELDS.networkMembers.role] })
+    .all();
+  return records.filter((r) => mapLegacyMemberRole(str(r, FIELDS.networkMembers.role)) !== null).length;
+}
+
+// One-shot role migration: Admin → Managing Partner, Support Member → Support,
+// every other assigned legacy role → Network Expert. Unassigned members are
+// left as-is (they have no admin access either way). Idempotent: current roles
+// are skipped, so a re-run is safe.
+export async function migrateMemberRoles(): Promise<{ updated: number }> {
+  const records = await base(TABLES.networkMembers)
+    .select({ fields: [FIELDS.networkMembers.role] })
+    .all();
+  const updates: { id: string; fields: FieldSet }[] = [];
+  for (const r of records) {
+    const next = mapLegacyMemberRole(str(r, FIELDS.networkMembers.role));
+    if (next) updates.push({ id: r.id, fields: { [FIELDS.networkMembers.role]: next } as FieldSet });
+  }
+  for (let i = 0; i < updates.length; i += 10) {
+    await base(TABLES.networkMembers).update(updates.slice(i, i + 10), { typecast: true });
+  }
+  return { updated: updates.length };
 }
 
 export async function findMemberByEmail(
@@ -1263,9 +1317,10 @@ export async function adminUpdateMember(
     const r = await base(TABLES.networkMembers).find(recordId);
     return memberAdminFromRecord(r);
   }
-  const [updated] = await base(TABLES.networkMembers).update([
-    { id: recordId, fields: fields as FieldSet },
-  ]);
+  const [updated] = await base(TABLES.networkMembers).update(
+    [{ id: recordId, fields: fields as FieldSet }],
+    { typecast: true },
+  );
   return memberAdminFromRecord(updated);
 }
 

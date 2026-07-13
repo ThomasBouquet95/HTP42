@@ -21,6 +21,7 @@ type Props = {
   roles: readonly MemberRole[];
   statuses: readonly MemberStatus[];
   currencies: readonly Currency[];
+  legacyRoleCount?: number;
 };
 
 type FormState = {
@@ -82,14 +83,51 @@ type CodeStatus =
   | { state: "ok" }
   | { state: "taken"; message: string };
 
-export function MembersAdminClient({ members, roles, statuses, currencies }: Props) {
+export function MembersAdminClient({
+  members,
+  roles,
+  statuses,
+  currencies,
+  legacyRoleCount = 0,
+}: Props) {
   const router = useRouter();
+  const [migratingRoles, setMigratingRoles] = useState(false);
+  async function migrateRoles() {
+    if (
+      !window.confirm(
+        `Migrate ${legacyRoleCount} member role(s) to the new model? Admin → Managing Partner, Support Member → Support, everyone else → Network Expert. Run once.`,
+      )
+    )
+      return;
+    setMigratingRoles(true);
+    try {
+      const res = await fetch("/api/admin/members/migrate-roles", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ confirm: "MIGRATE-MEMBER-ROLES" }),
+      });
+      const d = (await res.json().catch(() => ({}))) as { updated?: number; error?: string };
+      if (!res.ok) throw new Error(d.error ?? "Migration failed.");
+      setToast({ kind: "ok", msg: `Migrated ${d.updated ?? 0} member role(s)` });
+      router.refresh();
+    } catch (e) {
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Migration failed." });
+    } finally {
+      setMigratingRoles(false);
+    }
+  }
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<MemberAdminRecord | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
   const [codeStatus, setCodeStatus] = useState<CodeStatus>({ state: "idle" });
   const codeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nameTouchedRef = useRef(false);
@@ -378,6 +416,24 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
 
   return (
     <div className="space-y-4">
+      {legacyRoleCount > 0 ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
+          <span>
+            <strong>{legacyRoleCount}</strong> member{legacyRoleCount === 1 ? "" : "s"} still on a
+            legacy role. Migrate to the new model (Admin → Managing Partner, Support Member →
+            Support, others → Network Expert).
+          </span>
+          <button
+            type="button"
+            onClick={migrateRoles}
+            disabled={migratingRoles}
+            className="ml-auto rounded-md bg-amber-600 px-2.5 py-1 font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+          >
+            {migratingRoles ? "Migrating…" : "Migrate roles"}
+          </button>
+        </div>
+      ) : null}
+
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
         <SearchInput
           value={search}
@@ -771,6 +827,19 @@ export function MembersAdminClient({ members, roles, statuses, currencies }: Pro
         onCancel={() => setShowDiscard(false)}
         onConfirm={forceClose}
       />
+
+      {toast ? (
+        <div
+          role="status"
+          className={`pointer-events-none fixed bottom-4 right-4 z-[70] rounded-lg border px-3 py-2 text-xs shadow-lg ${
+            toast.kind === "error"
+              ? "border-red-300 bg-red-50 text-red-800"
+              : "border-emerald-300 bg-emerald-50 text-emerald-800"
+          }`}
+        >
+          {toast.msg}
+        </div>
+      ) : null}
     </div>
   );
 }

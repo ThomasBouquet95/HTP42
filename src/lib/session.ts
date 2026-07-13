@@ -7,10 +7,28 @@ export type SessionPayload = {
   memberCode: string;
   email: string;
   fullName: string;
-  role: string; // "Admin" gates admin UI; empty/other = regular member
+  role: string; // a partner/ops role gates admin UI; expert/support/empty = member
   photoUrl?: string | null; // optional Airtable photo URL for the header avatar
 };
 
+// Roles with admin-panel access. Kept inline here (not imported from airtable)
+// so this stays client-safe; mirrors ADMIN_ROLES in src/lib/airtable.ts.
+// "Admin" is a legacy value accepted for access only during the role
+// migration — existing admin JWT cookies and not-yet-migrated records keep
+// working until they re-login / the migration runs. It's intentionally NOT in
+// MEMBER_ROLES, so it can't be picked for a new/edited member.
+export const ADMIN_ACCESS_ROLES = [
+  "Managing Partner",
+  "Operating Partner",
+  "Associate Partner",
+  "Network Operations",
+  "Admin",
+] as const;
+
+export function isAdminRoleName(role: string | null | undefined): boolean {
+  return !!role && (ADMIN_ACCESS_ROLES as readonly string[]).includes(role);
+}
+
 export function isAdmin(session: SessionPayload | null | undefined): boolean {
-  return !!session && session.role === "Admin";
+  return !!session && isAdminRoleName(session.role);
 }

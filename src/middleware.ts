@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
+import { isAdminRoleName } from "@/lib/session";
 
 const PUBLIC_PATHS = ["/login", "/api/auth/signin", "/api/auth/callback"];
 const ADMIN_PATH_PREFIXES = ["/admin", "/api/admin"];
@@ -42,7 +43,7 @@ export async function middleware(req: NextRequest) {
     return rejectApiOrRedirectLogin(req);
   }
 
-  if (isAdminPath(pathname) && role !== "Admin") {
+  if (isAdminPath(pathname) && !isAdminRoleName(role)) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

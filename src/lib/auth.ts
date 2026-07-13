@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import { env } from "./env";
 import { findActiveMemberByEmail, type MemberRecord } from "./airtable";
-import { isAdmin, type SessionPayload } from "./session";
+import { isAdmin, isAdminRoleName, type SessionPayload } from "./session";
 
 const SESSION_COOKIE = "htp42_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
@@ -105,10 +105,12 @@ export async function getSession(): Promise<SessionPayload | null> {
 export async function requireAdminSession(): Promise<SessionPayload | null> {
   const session = await getSession();
   if (!session) return null;
-  if (session.role !== "Admin") return null;
+  if (!isAdminRoleName(session.role)) return null;
+  // Re-check the LIVE Airtable role so a demoted member loses access before
+  // their cookie expires.
   const member = await findActiveMemberByEmail(session.email);
   if (!member) return null;
-  if (member.role !== "Admin") return null;
+  if (!isAdminRoleName(member.role)) return null;
   return { ...session, role: member.role };
 }
 
