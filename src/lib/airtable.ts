@@ -1823,17 +1823,25 @@ function paymentFromRecord(r: AirtableRecord<FieldSet>): PaymentRecord {
   };
 }
 
-export async function listPayments(): Promise<PaymentRecord[]> {
+// Raw payments straight from the table, WITHOUT project inheritance applied.
+// The mismatch audit uses this to see the stored links as-is; everything else
+// should use listPayments (which resolves the project from the linked invoice).
+export async function listPaymentsRaw(): Promise<PaymentRecord[]> {
   const records = await base(TABLES.payments)
     .select({ sort: [{ field: FIELDS.payments.invoiceDate, direction: "desc" }] })
     .all();
   return records.map(paymentFromRecord);
 }
 
+export async function listPayments(): Promise<PaymentRecord[]> {
+  return applyInheritedProjects(await listPaymentsRaw());
+}
+
 export async function getPaymentById(recordId: string): Promise<PaymentRecord | null> {
   try {
     const r = await base(TABLES.payments).find(recordId);
-    return paymentFromRecord(r);
+    const [p] = await applyInheritedProjects([paymentFromRecord(r)]);
+    return p;
   } catch {
     return null;
   }
@@ -1897,8 +1905,9 @@ function paymentFields(input: PaymentInput): Record<string, unknown> {
 }
 
 export async function createPayment(input: PaymentInput): Promise<string> {
+  const resolved = await withInheritedProject(input);
   const [created] = await base(TABLES.payments).create([
-    { fields: paymentFields(input) as FieldSet },
+    { fields: paymentFields(resolved) as FieldSet },
   ]);
   return created.id;
 }
@@ -1923,8 +1932,9 @@ export async function updatePaymentStatus(
 }
 
 export async function updatePayment(recordId: string, input: PaymentInput): Promise<void> {
+  const resolved = await withInheritedProject(input);
   await base(TABLES.payments).update([
-    { id: recordId, fields: paymentFields(input) as FieldSet },
+    { id: recordId, fields: paymentFields(resolved) as FieldSet },
   ]);
 }
 
@@ -2139,6 +2149,125 @@ export async function listAllInvoices(): Promise<MemberInvoiceRecord[]> {
     getStaffingIndex(),
   ]);
   return records.map((r) => invoiceFromRecord(r, memberById, projectById, staffingById));
+}
+
+// ---------------------------------------------------------------------------
+// Payment project inheritance
+//
+// A payment that settles a member invoice must be filed under that invoice's
+// project — and the invoice derives its project from its staffing, which is the
+// single source of truth. Rather than trust the payment's own (frozen) Project
+// link, we resolve it from the linked invoice on both read and write. This makes
+// the project immune to drift (staffings re-pointed later, imports/manual edits
+// choosing a different project). Standalone payments (no linked invoice) keep
+// their own project.
+// ---------------------------------------------------------------------------
+
+// project code -> project record id (inverse of getProjectIndex).
+const getProjectIdByCode = cache(async function getProjectIdByCode(): Promise<Map<string, string>> {
+  const idx = await getProjectIndex();
+  const m = new Map<string, string>();
+  for (const [id, p] of idx) if (p.code) m.set(p.code, id);
+  return m;
+});
+
+// member-invoice record id -> its (staffing-derived) project code.
+const getInvoiceProjectIndex = cache(async function getInvoiceProjectIndex(): Promise<
+  Map<string, string>
+> {
+  const invoices = await listAllInvoices();
+  return new Map(invoices.map((i) => [i.id, i.projectCode] as const));
+});
+
+// The project a payment should inherit from its linked invoice(s): the first
+// linked invoice that resolves to a project wins. Null when the payment links
+// no invoice, or none of them resolve to a project (keep the existing link).
+async function inheritedPaymentProject(
+  memberInvoiceRecordIds: string[],
+): Promise<{ code: string; recordId: string } | null> {
+  if (memberInvoiceRecordIds.length === 0) return null;
+  const [invIdx, idByCode] = await Promise.all([getInvoiceProjectIndex(), getProjectIdByCode()]);
+  for (const invId of memberInvoiceRecordIds) {
+    const code = invIdx.get(invId);
+    if (code) return { code, recordId: idByCode.get(code) ?? "" };
+  }
+  return null;
+}
+
+// Read-side: override each invoice-linked payment's project with the inherited
+// one so the app always shows the correct project regardless of the stored link.
+async function applyInheritedProjects(payments: PaymentRecord[]): Promise<PaymentRecord[]> {
+  if (!payments.some((p) => p.memberInvoiceRecordIds.length > 0)) return payments;
+  const [invIdx, idByCode] = await Promise.all([getInvoiceProjectIndex(), getProjectIdByCode()]);
+  return payments.map((p) => {
+    if (p.memberInvoiceRecordIds.length === 0) return p;
+    for (const invId of p.memberInvoiceRecordIds) {
+      const code = invIdx.get(invId);
+      if (!code) continue;
+      const recId = idByCode.get(code);
+      return {
+        ...p,
+        projectCodes: [code],
+        projectRecordIds: recId ? [recId] : p.projectRecordIds,
+      };
+    }
+    return p;
+  });
+}
+
+// Write-side: replace the project link on an invoice-linked payment with the
+// inherited one before persisting, so the stored record can't disagree.
+async function withInheritedProject(input: PaymentInput): Promise<PaymentInput> {
+  const inh = await inheritedPaymentProject(input.memberInvoiceRecordIds);
+  return inh && inh.recordId ? { ...input, projectRecordIds: [inh.recordId] } : input;
+}
+
+// One-off (re-runnable) backfill: rewrite the stored Project link of every
+// invoice-linked payment to its inherited project, so Airtable-native views
+// match the app. Dry-run by default (apply=false) — returns the changes it
+// WOULD make; pass apply=true to persist. Idempotent: only touches rows that
+// are actually wrong.
+export async function backfillPaymentProjects(apply: boolean): Promise<{
+  scanned: number;
+  toFix: number;
+  updated: number;
+  unresolved: number;
+  changes: { paymentCode: string; from: string; to: string }[];
+}> {
+  const raw = await listPaymentsRaw();
+  const [invIdx, idByCode] = await Promise.all([getInvoiceProjectIndex(), getProjectIdByCode()]);
+  const changes: { paymentCode: string; from: string; to: string }[] = [];
+  const updates: { id: string; fields: FieldSet }[] = [];
+  let unresolved = 0;
+  for (const p of raw) {
+    if (p.memberInvoiceRecordIds.length === 0) continue;
+    let code: string | undefined;
+    for (const invId of p.memberInvoiceRecordIds) {
+      const c = invIdx.get(invId);
+      if (c) {
+        code = c;
+        break;
+      }
+    }
+    if (!code) continue; // linked invoice has no project — nothing to inherit
+    if (p.projectCodes.includes(code)) continue; // already correct
+    const recId = idByCode.get(code);
+    if (!recId) {
+      unresolved += 1; // target project code has no matching Project record
+      continue;
+    }
+    changes.push({ paymentCode: p.paymentCode || p.id, from: p.projectCodes.join(", ") || "(none)", to: code });
+    updates.push({ id: p.id, fields: { [FIELDS.payments.project]: [recId] } as FieldSet });
+  }
+  let updated = 0;
+  if (apply) {
+    // Airtable caps batch writes at 10 records.
+    for (let i = 0; i < updates.length; i += 10) {
+      await base(TABLES.payments).update(updates.slice(i, i + 10));
+      updated += Math.min(10, updates.length - i);
+    }
+  }
+  return { scanned: raw.length, toFix: changes.length, updated, unresolved, changes };
 }
 
 export async function getInvoiceById(recordId: string): Promise<MemberInvoiceRecord | null> {

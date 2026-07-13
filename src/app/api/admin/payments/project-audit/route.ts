@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireAdminAction } from "@/lib/auth";
-import { listAllInvoices, listPayments, listProjects } from "@/lib/airtable";
+import {
+  backfillPaymentProjects,
+  listAllInvoices,
+  listPaymentsRaw,
+  listProjects,
+} from "@/lib/airtable";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,8 +33,10 @@ export async function GET(request: Request) {
   const session = await requireAdminAction("payments", "view");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  // Raw payments (stored links, no inheritance applied) so the audit still sees
+  // real drift even though listPayments now resolves the project on read.
   const [payments, invoices, projects] = await Promise.all([
-    listPayments(),
+    listPaymentsRaw(),
     listAllInvoices(),
     listProjects(),
   ]);
@@ -182,6 +189,16 @@ export async function GET(request: Request) {
       <h2>Why — by payment source</h2><ul>${list(bySource)}</ul>
       <p class="muted" style="font-size:12px">${summary.invoicesWithoutStaffingLink} of the flagged invoices have no staffing link at all (pure legacy/import rows).</p>
       <h2>Project pairs (payment → staffing), most common first</h2><ul>${list(byPair)}</ul>
+      <h2>Fixing the stored records</h2>
+      <p class="muted" style="font-size:12px">
+        The app now resolves each invoice-linked payment's project from its invoice on the fly, so the
+        Payments screen and cockpit are already correct. To also repair the underlying Airtable records
+        (so native grid views match), run the backfill:
+      </p>
+      <pre style="background:#0f172a;color:#e2e8f0;padding:10px 12px;border-radius:6px;font-size:12px;overflow:auto">POST ${esc(new URL(request.url).pathname)}
+Content-Type: application/json
+
+{ "confirm": "APPLY" }        <span style="color:#94a3b8"># omit body / any other value = dry-run</span></pre>
       <h2>All mismatches</h2>
       <table><thead><tr>
         <th>Payment</th><th>Dir</th><th>Beneficiary</th>
@@ -192,4 +209,17 @@ export async function GET(request: Request) {
   </body></html>`;
 
   return new NextResponse(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+}
+
+// Backfill the stored Project link on every invoice-linked payment to its
+// inherited project. Dry-run by default; pass {"confirm":"APPLY"} to persist.
+// Requires "payments" edit. (Read-side inheritance already fixes the app view;
+// this repairs the underlying Airtable records so native grid views match too.)
+export async function POST(request: Request) {
+  const session = await requireAdminAction("payments", "edit");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const body = (await request.json().catch(() => ({}))) as { confirm?: string };
+  const apply = body.confirm === "APPLY";
+  const result = await backfillPaymentProjects(apply);
+  return NextResponse.json({ apply, ...result });
 }

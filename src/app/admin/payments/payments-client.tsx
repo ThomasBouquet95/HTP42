@@ -1195,18 +1195,43 @@ export function PaymentsClient({
             />
           </div>
           <div className="grid gap-3 mt-3">
-            <FormSelect
-              label="Project"
-              value={form.projectId}
-              onChange={(v) => updateField("projectId", v)}
-            >
-              <option value="">No project</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.code} — {p.name}
-                </option>
-              ))}
-            </FormSelect>
+            {(() => {
+              // A payment that settles a member invoice inherits that invoice's
+              // project (the invoice's staffing is the single source of truth),
+              // so the field is read-only here — editing it wouldn't stick.
+              const linkedInvoice = form.memberInvoiceId
+                ? memberInvoices.find((i) => i.id === form.memberInvoiceId)
+                : undefined;
+              if (linkedInvoice) {
+                return (
+                  <FormField
+                    label="Project"
+                    value={
+                      linkedInvoice.projectCode
+                        ? `${linkedInvoice.projectCode}${linkedInvoice.projectName ? ` — ${linkedInvoice.projectName}` : ""}`
+                        : "—"
+                    }
+                    onChange={() => {}}
+                    readOnly
+                    hint={`Inherited from invoice ${linkedInvoice.invoiceCode} (its staffing's project). Unlink the invoice to set a project manually.`}
+                  />
+                );
+              }
+              return (
+                <FormSelect
+                  label="Project"
+                  value={form.projectId}
+                  onChange={(v) => updateField("projectId", v)}
+                >
+                  <option value="">No project</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.code} — {p.name}
+                    </option>
+                  ))}
+                </FormSelect>
+              );
+            })()}
           </div>
         </FormSection>
 
