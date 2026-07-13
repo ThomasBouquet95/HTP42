@@ -7,16 +7,16 @@ import { SegmentedTabs } from "@/components/filters";
 import type { PagePerms } from "@/lib/permissions";
 
 export type RoleKind = "full" | "config" | "none";
-type PageDef = { key: string; label: string; category: string; href: string };
+type RowDef = { key: string; label: string; category: string; indent: boolean };
 type RoleDef = { name: string; kind: RoleKind; perms: PagePerms };
 
 export function RolesClient({
   roles,
-  pages,
+  rows,
   canEdit,
 }: {
   roles: RoleDef[];
-  pages: PageDef[];
+  rows: RowDef[];
   canEdit: boolean;
 }) {
   const router = useRouter();
@@ -38,17 +38,17 @@ export function RolesClient({
   const perms = state[role] ?? {};
 
   const grouped = useMemo(() => {
-    const out: { category: string; pages: PageDef[] }[] = [];
-    for (const p of pages) {
-      let g = out.find((x) => x.category === p.category);
+    const out: { category: string; rows: RowDef[] }[] = [];
+    for (const r of rows) {
+      let g = out.find((x) => x.category === r.category);
       if (!g) {
-        g = { category: p.category, pages: [] };
+        g = { category: r.category, rows: [] };
         out.push(g);
       }
-      g.pages.push(p);
+      g.rows.push(r);
     }
     return out;
-  }, [pages]);
+  }, [rows]);
 
   const dirty = JSON.stringify(state[role]) !== JSON.stringify(initial[role]);
 
@@ -71,10 +71,10 @@ export function RolesClient({
     if (!editable) return;
     setState((s) => {
       const next: PagePerms = { ...s[role] };
-      for (const p of pages) {
-        const cur = next[p.key] ?? { view: false, edit: false };
-        if (action === "view") next[p.key] = { view: value, edit: value ? cur.edit : false };
-        else next[p.key] = { view: value ? true : cur.view, edit: value };
+      for (const r of rows) {
+        const cur = next[r.key] ?? { view: false, edit: false };
+        if (action === "view") next[r.key] = { view: value, edit: value ? cur.edit : false };
+        else next[r.key] = { view: value ? true : cur.view, edit: value };
       }
       return { ...s, [role]: next };
     });
@@ -156,16 +156,19 @@ export function RolesClient({
                     {g.category}
                   </td>
                 </tr>
-                {g.pages.map((p) => {
-                  const perm = perms[p.key] ?? { view: false, edit: false };
+                {g.rows.map((r) => {
+                  const perm = perms[r.key] ?? { view: false, edit: false };
                   return (
-                    <tr key={p.key} className="border-t border-slate-100">
-                      <td className="px-4 py-2 text-slate-800">{p.label}</td>
-                      <td className="px-3 py-2 text-center">
-                        <Check checked={perm.view} disabled={!editable} onChange={() => toggleView(p.key)} label={`View ${p.label}`} />
+                    <tr key={r.key} className="border-t border-slate-100">
+                      <td className={`py-2 text-slate-800 ${r.indent ? "pl-10 pr-4 text-slate-500" : "px-4"}`}>
+                        {r.indent ? <span className="mr-1 text-slate-300">↳</span> : null}
+                        {r.label}
                       </td>
                       <td className="px-3 py-2 text-center">
-                        <Check checked={perm.edit} disabled={!editable} onChange={() => toggleEdit(p.key)} label={`Edit ${p.label}`} />
+                        <Check checked={perm.view} disabled={!editable} onChange={() => toggleView(r.key)} label={`View ${r.label}`} />
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <Check checked={perm.edit} disabled={!editable} onChange={() => toggleEdit(r.key)} label={`Edit ${r.label}`} />
                       </td>
                     </tr>
                   );

@@ -55,11 +55,15 @@ const DEFAULT_FILTERS: Filters = {
 
 type PaymentLink = { id: string; code: string; status: string };
 type SowInfo = { reference: string; status: string; daysAllocated: number | null; url: string };
+export type TimesheetView = "review" | "overview" | "byproject" | "bymember";
 type Props = {
   timesheets: AdminTimesheetRecord[];
   invoices: MemberInvoiceRecord[];
   paymentByInvoiceId: Record<string, PaymentLink>;
   sowByStaffing: Record<string, SowInfo>;
+  // Sub-tabs this role may see (level-two permissions). The first one is the
+  // landing tab. A Project Manager, for example, only gets "review".
+  allowedViews: TimesheetView[];
 };
 
 // Invoices tied to a timesheet: same staffing first, else same member+project
@@ -77,11 +81,15 @@ function relatedInvoicesFor(
   );
 }
 
-export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId, sowByStaffing }: Props) {
+export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId, sowByStaffing, allowedViews }: Props) {
   const router = useRouter();
   // Overview (filterable table) · By project · By member — the two breakdown
   // views live in their own tabs instead of inline cards above the table.
-  const [view, setView] = useState<"review" | "overview" | "byproject" | "bymember">("overview");
+  // A role may be limited to a subset of tabs (e.g. Project Manager → Review
+  // only); land on Overview when it's allowed, else the first allowed tab.
+  const [view, setView] = useState<TimesheetView>(
+    allowedViews.includes("overview") ? "overview" : allowedViews[0] ?? "overview",
+  );
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   // Jumping from a breakdown group into the Overview, pre-filtered to that
   // project + member.
@@ -240,28 +248,30 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
   // Count of timesheets awaiting a decision, for the Review tab badge.
   const underReviewCount = rows.filter((r) => r.status === "Submitted").length;
 
+  // Only render the tabs this role is allowed to see. A single-tab role (e.g.
+  // Project Manager → Review) still gets the content, just without a picker.
+  const allTabs = [
+    {
+      value: "review" as const,
+      label: "Review",
+      badge:
+        underReviewCount > 0 ? (
+          <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-800">
+            {underReviewCount}
+          </span>
+        ) : undefined,
+    },
+    { value: "overview" as const, label: "Overview" },
+    { value: "byproject" as const, label: "By project" },
+    { value: "bymember" as const, label: "By member" },
+  ];
+  const tabs = allTabs.filter((t) => allowedViews.includes(t.value));
+
   return (
     <div className="space-y-4">
-      <SegmentedTabs
-        ariaLabel="Timesheets view"
-        value={view}
-        onChange={setView}
-        options={[
-          {
-            value: "review",
-            label: "Review",
-            badge:
-              underReviewCount > 0 ? (
-                <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-800">
-                  {underReviewCount}
-                </span>
-              ) : undefined,
-          },
-          { value: "overview", label: "Overview" },
-          { value: "byproject", label: "By project" },
-          { value: "bymember", label: "By member" },
-        ]}
-      />
+      {tabs.length > 1 ? (
+        <SegmentedTabs ariaLabel="Timesheets view" value={view} onChange={setView} options={tabs} />
+      ) : null}
 
       {view === "review" ? (
         <TimesheetReviewClient timesheets={rows} sowByStaffing={sowByStaffing} />

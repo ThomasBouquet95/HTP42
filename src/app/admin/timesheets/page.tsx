@@ -3,13 +3,15 @@ import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import {
   getMemberStaffedProjectCodes,
+  getRolePermissions,
   listAllContracts,
   listAllInvoices,
   listAllStaffings,
   listAllTimesheets,
   listPayments,
 } from "@/lib/airtable";
-import { AdminTimesheetsClient } from "./timesheets-client";
+import { can } from "@/lib/permissions";
+import { AdminTimesheetsClient, type TimesheetView } from "./timesheets-client";
 
 export type SowInfo = {
   reference: string;
@@ -46,6 +48,16 @@ export default async function AdminTimesheetsPage() {
   const timesheets = scopeCodes
     ? allTimesheets.filter((t) => scopeCodes.has(t.projectCode))
     : allTimesheets;
+
+  // Which sub-tabs this role may see, from the level-two "timesheets.*"
+  // permissions (e.g. a Project Manager gets Review only). Falls back to all
+  // four if a role somehow has none granted, so the page is never empty.
+  const stored = await getRolePermissions();
+  const allowedViews = (["review", "overview", "byproject", "bymember"] as const).filter(
+    (v) => can(session.role, `timesheets.${v}`, "view", stored),
+  );
+  const views: TimesheetView[] =
+    allowedViews.length > 0 ? [...allowedViews] : ["review", "overview", "byproject", "bymember"];
 
   // SOW document link per project: the PDF of a SOW-type contract on that
   // project (first match wins).
@@ -96,6 +108,7 @@ export default async function AdminTimesheetsPage() {
           invoices={invoices}
           paymentByInvoiceId={paymentByInvoiceId}
           sowByStaffing={sowByStaffing}
+          allowedViews={views}
         />
     </main>
   );

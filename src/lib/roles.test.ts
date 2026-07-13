@@ -62,6 +62,20 @@ describe("can() permission resolution", () => {
     expect(can("Project Manager", "settings", "view")).toBe(false);
   });
 
+  it("Project Manager sees only the Timesheets Review sub-tab by default", () => {
+    expect(can("Project Manager", "timesheets.review", "view")).toBe(true);
+    expect(can("Project Manager", "timesheets.review", "edit")).toBe(true);
+    expect(can("Project Manager", "timesheets.overview", "view")).toBe(false);
+    expect(can("Project Manager", "timesheets.byproject", "view")).toBe(false);
+    expect(can("Project Manager", "timesheets.bymember", "view")).toBe(false);
+  });
+
+  it("configurable admin roles see every Timesheets sub-tab by default", () => {
+    for (const sub of ["overview", "review", "byproject", "bymember"]) {
+      expect(can("Network Operations", `timesheets.${sub}`, "view")).toBe(true);
+    }
+  });
+
   it("fails closed for a page key missing from an existing stored row", () => {
     const stored = { "Network Operations": { payments: { view: true, edit: true } } };
     expect(can("Network Operations", "contracts", "view", stored)).toBe(false);
