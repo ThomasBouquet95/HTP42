@@ -14,14 +14,10 @@ export function RolesClient({
   roles,
   pages,
   canEdit,
-  superAdminRole,
-  configurableRoles,
 }: {
   roles: RoleDef[];
   pages: PageDef[];
   canEdit: boolean;
-  superAdminRole: string;
-  configurableRoles: string[];
 }) {
   const router = useRouter();
   const kindByRole = useMemo(
@@ -116,14 +112,6 @@ export function RolesClient({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-        <p>
-          <strong className="text-slate-800">{superAdminRole}</strong> and{" "}
-          <strong className="text-slate-800">Operating Partner</strong> have full, locked access and
-          can open this page. Configurable roles: {configurableRoles.join(", ")}. Edit implies view.
-        </p>
-      </div>
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SegmentedTabs
           ariaLabel="Role"

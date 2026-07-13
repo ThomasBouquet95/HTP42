@@ -6,9 +6,7 @@ import { getRolePermissions, MEMBER_ROLES } from "@/lib/airtable";
 import { ADMIN_ACCESS_ROLES } from "@/lib/session";
 import {
   ADMIN_PAGES,
-  CONFIGURABLE_ADMIN_ROLES,
   LOCKED_FULL_ROLES,
-  SUPER_ADMIN_ROLE,
   defaultPermsFor,
   type PagePerms,
 } from "@/lib/permissions";
@@ -54,13 +52,7 @@ export default async function AdminRolesPage() {
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <AdminTabs active="settings" />
       <PageHeader title="Roles & access" subtitle="· who can view and edit each admin page" />
-      <RolesClient
-        roles={roles}
-        pages={ADMIN_PAGES}
-        canEdit={canEdit}
-        superAdminRole={SUPER_ADMIN_ROLE}
-        configurableRoles={CONFIGURABLE_ADMIN_ROLES}
-      />
+      <RolesClient roles={roles} pages={ADMIN_PAGES} canEdit={canEdit} />
     </main>
   );
 }

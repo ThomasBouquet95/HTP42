@@ -352,8 +352,8 @@ export const MEMBER_ROLES: MemberRole[] = [
   "Managing Partner",
   "Operating Partner",
   "Associate Partner",
-  "Project Manager",
   "Network Operations",
+  "Project Manager",
   "Network Expert",
   "Support",
 ];
