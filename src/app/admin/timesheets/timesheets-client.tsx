@@ -15,21 +15,20 @@ import { dayIsos, downloadTimesheetsCsv } from "./timesheets-export";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 
-// Statuses the admin can pick from the inline row dropdown for a raw
-// correction. Covers every lifecycle state except "Deleted" so admins don't
-// accidentally tombstone a row from the listing — that path stays a deliberate
-// member action. Approved/Rejected are normally reached through the review
-// action bar, but they're kept here so the select's value always matches an
-// option (and stays available for corrections).
+// Statuses the admin can pick from the inline row dropdown. Only the
+// review-lifecycle states are manually settable — Invoiced and Paid are
+// system-driven (the invoice flow flips Approved → Invoiced, and the payment
+// cascade flips Invoiced → Paid), so they're never offered here. Rows already
+// in those states (or Deleted) render as a read-only badge instead of a select.
 const ADMIN_EDITABLE_STATUSES: TimesheetStatus[] = [
   "Draft",
   "Submitted",
   "Approved",
   "Rejected",
-  "Invoiced",
-  "Paid",
   "Cancelled",
 ];
+// System-driven states shown read-only in the Overview table.
+const LOCKED_TIMESHEET_STATUSES: TimesheetStatus[] = ["Invoiced", "Paid", "Deleted"];
 
 type Filters = {
   // Multi-select: a timesheet matches when its status is in this set. An empty
@@ -388,7 +387,7 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
                   <td className="px-2 py-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     <AdminStatusSelect
                       value={t.status}
-                      disabled={savingIds.has(t.id) || t.status === "Deleted"}
+                      disabled={savingIds.has(t.id) || LOCKED_TIMESHEET_STATUSES.includes(t.status)}
                       onChange={(v) => updateStatus(t.id, v)}
                     />
                   </td>
