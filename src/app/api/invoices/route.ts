@@ -100,8 +100,9 @@ export async function POST(request: Request) {
 
   // Validate the timesheet selection before any writes: each id must be one
   // of the member's own timesheets, be on the picked staffing, and be in a
-  // status we can legitimately flip to Invoiced (only Submitted; Draft
-  // shouldn't be invoiced, Invoiced/Paid can't be re-invoiced).
+  // status we can legitimately flip to Invoiced (only Approved — a timesheet
+  // must clear review first; Draft/Under Review/Rejected can't be invoiced,
+  // and Invoiced/Paid can't be re-invoiced).
   let timesheetsToInvoice: string[] = [];
   // We keep the resolved records so we can both bake them into a PDF
   // attachment and list them in the email body without re-fetching.
@@ -124,9 +125,10 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
-      if (t.status !== "Submitted") {
+      if (t.status !== "Approved") {
+        const shown = t.status === "Submitted" ? "Under Review" : t.status;
         return NextResponse.json(
-          { error: `Timesheet ${t.timesheetCode} is ${t.status}, can't be invoiced.` },
+          { error: `Timesheet ${t.timesheetCode} is ${shown}; only approved timesheets can be invoiced.` },
           { status: 400 },
         );
       }

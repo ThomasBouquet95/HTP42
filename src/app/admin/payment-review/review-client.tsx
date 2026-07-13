@@ -7,7 +7,9 @@ import { DownloadChip } from "@/components/download-chip";
 import { PaidDateModal } from "@/components/paid-date-modal";
 import { SearchInput } from "@/components/search-input";
 import { Badge, StatusPill } from "@/components/badge";
+import { StatusBadge, type ReviewInfo } from "@/components/status-badge";
 import { Button } from "@/components/form-controls";
+import type { TimesheetStatus } from "@/lib/airtable";
 
 export type ReviewBundle = {
   payment: {
@@ -50,13 +52,21 @@ export type ReviewBundle = {
     startDate: string | null;
     endDate: string | null;
   } | null;
+  timesheetApproval: {
+    total: number;
+    approved: number;
+    pending: number;
+    rejected: number;
+    allApproved: boolean;
+  };
   timesheets: Array<{
     id: string;
     code: string;
     startDate: string | null;
     endDate: string | null;
     totalHours: number;
-    status: string;
+    status: TimesheetStatus;
+    review?: ReviewInfo;
     days: Record<
       "monday" | "tuesday" | "wednesday" | "thursday" | "friday",
       { hours: number; task: string }

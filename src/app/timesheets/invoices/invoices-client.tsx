@@ -363,8 +363,8 @@ function NewInvoiceModal({
           </label>
 
           {/* Timesheet picker. Appears once a staffing is chosen and shows
-              only Submitted timesheets on that staffing (Draft / Invoiced /
-              Paid are filtered out server-side already). Selected ones get
+              only Approved timesheets on that staffing (Draft / Under Review /
+              Rejected / Invoiced / Paid are filtered out). Selected ones get
               flipped to Invoiced when the invoice is created. */}
           {staffingId ? (
             <div>

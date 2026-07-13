@@ -3,10 +3,10 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TimesheetRecord, TimesheetStatus } from "@/lib/airtable";
-import { StatusBadge } from "@/components/status-badge";
+import { StatusBadge, timesheetStatusLabel } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/modal";
 import { Button } from "@/components/form-controls";
-import { EditIcon, EyeIcon, IconButton, TrashIcon } from "@/components/admin-icons";
+import { EditIcon, EyeIcon, IconButton, RefreshIcon, TrashIcon } from "@/components/admin-icons";
 import { WeekChip } from "@/components/week-chip";
 import { CalendarRange } from "@/components/calendar-range";
 import { TimesheetDetailModal } from "@/components/timesheet-detail-modal";

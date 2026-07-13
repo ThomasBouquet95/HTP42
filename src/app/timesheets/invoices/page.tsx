@@ -47,11 +47,12 @@ export default async function InvoicesPage() {
     projectName: s.projectName,
   }));
 
-  // Timesheets the member can attach to an invoice: only Submitted ones, and
-  // only those whose staffing is in the picker above (so Draft / already
-  // Invoiced / Paid / Deleted rows are filtered out client-side too).
+  // Timesheets the member can attach to an invoice: only Approved ones (they
+  // must clear review first), and only those whose staffing is in the picker
+  // above (so Draft / Under Review / Rejected / Invoiced / Paid / Deleted rows
+  // are filtered out client-side too).
   const invoiceableTimesheets = timesheets
-    .filter((t) => t.status === "Submitted")
+    .filter((t) => t.status === "Approved")
     .map((t) => ({
       id: t.id,
       staffingRecordId: t.staffingRecordId,

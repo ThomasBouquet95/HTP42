@@ -4,7 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AdminTimesheetRecord, MemberInvoiceRecord, TimesheetStatus } from "@/lib/airtable";
 import { TIMESHEET_STATUSES } from "@/lib/airtable";
-import { StatusBadge } from "@/components/status-badge";
+import { StatusBadge, timesheetStatusLabel } from "@/components/status-badge";
 import { WeekChip } from "@/components/week-chip";
 import { Button } from "@/components/form-controls";
 import { FilterBar, FilterMultiSelect, FilterDateRange, SegmentedTabs } from "@/components/filters";
@@ -14,12 +14,17 @@ import { dayIsos, downloadTimesheetsCsv } from "./timesheets-export";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 
-// Statuses the admin can pick from the inline row dropdown. We exclude
-// "Deleted" so admins don't accidentally tombstone a row from the listing —
-// that path stays a deliberate member action.
+// Statuses the admin can pick from the inline row dropdown for a raw
+// correction. Covers every lifecycle state except "Deleted" so admins don't
+// accidentally tombstone a row from the listing — that path stays a deliberate
+// member action. Approved/Rejected are normally reached through the review
+// action bar, but they're kept here so the select's value always matches an
+// option (and stays available for corrections).
 const ADMIN_EDITABLE_STATUSES: TimesheetStatus[] = [
   "Draft",
   "Submitted",
+  "Approved",
+  "Rejected",
   "Invoiced",
   "Paid",
   "Cancelled",
@@ -36,11 +41,12 @@ type Filters = {
   to: string;
 };
 
-// Admins land on the billing lifecycle — Submitted, Invoiced, Paid — which is
-// the actionable pile. Drafts (members' work-in-progress) and Deleted are
-// hidden by default but can be toggled on.
+// Admins land on the billing lifecycle — Submitted (Under Review), Approved,
+// Invoiced, Paid — which is the actionable pile. Drafts (members' work-in-
+// progress), Rejected, Cancelled and Deleted are hidden by default but can be
+// toggled on.
 const DEFAULT_FILTERS: Filters = {
-  status: ["Submitted", "Invoiced", "Paid"],
+  status: ["Submitted", "Approved", "Invoiced", "Paid"],
   memberCodes: [],
   projectCodes: [],
   from: "",
@@ -137,6 +143,39 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
         const next = new Set(s);
         next.delete(id);
         return next;
+      });
+    }
+  }
+
+  // Record an audited review decision (approve/reject) for a Submitted row.
+  // Same optimistic pattern as updateStatus, but hits the decision path of the
+  // admin API ({ action, comment }) instead of a raw { status } write.
+  async function decide(id: string, action: "approve" | "reject", comment: string) {
+    const previous = rows.find((r) => r.id === id)?.status;
+    if (!previous) return;
+    const next: TimesheetStatus = action === "approve" ? "Approved" : "Rejected";
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, status: next } : r)));
+    setSavingIds((s) => new Set(s).add(id));
+    try {
+      const res = await fetch(`/api/admin/timesheets/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, comment: comment.trim() || undefined }),
+      });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? `Update failed (HTTP ${res.status})`);
+      }
+      setToast({ kind: "ok", msg: action === "approve" ? "Timesheet approved" : "Timesheet rejected" });
+      router.refresh();
+    } catch (e) {
+      setRows((rs) => rs.map((r) => (r.id === id ? { ...r, status: previous } : r)));
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Update failed" });
+    } finally {
+      setSavingIds((s) => {
+        const nextSet = new Set(s);
+        nextSet.delete(id);
+        return nextSet;
       });
     }
   }
@@ -413,6 +452,12 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
                         </tbody>
                       </table>
 
+                      <ApprovalBar
+                        timesheet={t}
+                        saving={savingIds.has(t.id)}
+                        onDecide={decide}
+                      />
+
                       <RelatedInvoices
                         invoices={relatedInvoicesFor(t, invoices)}
                         paymentByInvoiceId={paymentByInvoiceId}
@@ -520,6 +565,105 @@ function RelatedInvoices({
   );
 }
 
+function fmtReviewDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+// Approval action bar shown inside an expanded timesheet row. While a row is
+// Submitted (Under Review) it offers an optional comment plus Approve / Reject
+// buttons that hit the audited decision API. Once decided it collapses to a
+// read-only summary of who reviewed it, how, when, and any comment.
+function ApprovalBar({
+  timesheet,
+  saving,
+  onDecide,
+}: {
+  timesheet: AdminTimesheetRecord;
+  saving: boolean;
+  onDecide: (id: string, action: "approve" | "reject", comment: string) => void;
+}) {
+  const [comment, setComment] = useState("");
+
+  if (timesheet.status === "Submitted") {
+    return (
+      <div className="mt-3 border-t border-slate-100 pt-2">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+          Review
+        </div>
+        <div className="mt-1 flex flex-wrap items-end gap-2">
+          <label className="block min-w-[16rem] flex-1">
+            <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+              Comment (optional)
+            </span>
+            <input
+              type="text"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Add a note for this decision"
+              className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+            />
+          </label>
+          <div className="flex gap-2">
+            <Button
+              tone="primary"
+              size="sm"
+              disabled={saving}
+              onClick={() => onDecide(timesheet.id, "approve", comment)}
+            >
+              Approve
+            </Button>
+            <Button
+              tone="danger"
+              size="sm"
+              disabled={saving}
+              onClick={() => onDecide(timesheet.id, "reject", comment)}
+            >
+              Reject
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (timesheet.status === "Approved" || timesheet.status === "Rejected") {
+    const summary = [
+      timesheet.reviewedBy || null,
+      timesheet.reviewMethod ? `${timesheet.reviewMethod} review` : null,
+      fmtReviewDate(timesheet.reviewedAt) || null,
+    ].filter(Boolean) as string[];
+    return (
+      <div className="mt-3 border-t border-slate-100 pt-2">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+          Review
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+          <StatusBadge
+            status={timesheet.status}
+            review={{
+              reviewMethod: timesheet.reviewMethod || undefined,
+              reviewedBy: timesheet.reviewedBy || undefined,
+              reviewedAt: timesheet.reviewedAt,
+              reviewComment: timesheet.reviewComment || undefined,
+            }}
+          />
+          {summary.length ? <span>{summary.join(" · ")}</span> : null}
+        </div>
+        {timesheet.reviewComment ? (
+          <p className="mt-1 whitespace-pre-line text-[11px] text-slate-500">
+            &ldquo;{timesheet.reviewComment}&rdquo;
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  return null;
+}
+
 // Inline status editor for the admin table. Looks like the StatusBadge with a
 // small chevron tacked on so admins can see at a glance that it's editable.
 // Mirrors StatusBadge: neutral → amber → blue → solid green across the
@@ -553,7 +697,7 @@ function AdminStatusSelect({
       className={`relative inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${cls} ring-1 ring-transparent transition hover:ring-slate-300`}
       title="Click to change status"
     >
-      <span>{value}</span>
+      <span>{timesheetStatusLabel(value)}</span>
       <svg
         viewBox="0 0 16 16"
         className="h-3 w-3 opacity-60"
@@ -572,7 +716,7 @@ function AdminStatusSelect({
       >
         {ADMIN_EDITABLE_STATUSES.map((s) => (
           <option key={s} value={s}>
-            {s}
+            {timesheetStatusLabel(s)}
           </option>
         ))}
       </select>

@@ -39,10 +39,21 @@ export function buildReviewGroups(input: Inputs): {
   const memberById = new Map(members.map((m) => [m.id, m]));
   const projectByCode = new Map(projects.map((p) => [p.projectCode, p]));
 
+  // Statuses shown in the review context. Includes the full approval workflow
+  // (Approved/Rejected) alongside the settled/in-flight states so an admin sees
+  // the complete picture and can spot a linked week that is Under Review or
+  // Rejected. Draft/Cancelled/Deleted stay hidden.
+  const REVIEW_TS_STATUSES = new Set<TimesheetRecord["status"]>([
+    "Submitted",
+    "Approved",
+    "Rejected",
+    "Invoiced",
+    "Paid",
+  ]);
   const tsByStaffing = new Map<string, TimesheetRecord[]>();
   for (const t of timesheets) {
     if (!t.staffingRecordId) continue;
-    if (t.status !== "Submitted" && t.status !== "Invoiced" && t.status !== "Paid") continue;
+    if (!REVIEW_TS_STATUSES.has(t.status)) continue;
     const arr = tsByStaffing.get(t.staffingRecordId) ?? [];
     arr.push(t);
     tsByStaffing.set(t.staffingRecordId, arr);
@@ -77,6 +88,26 @@ export function buildReviewGroups(input: Inputs): {
       (a.startDate ?? "").localeCompare(b.startDate ?? ""),
     );
     const sow = projectId ? (contractsByProjectId.get(projectId) ?? []) : [];
+
+    // Approval rollup for the linked weeks. pending = Under Review (Submitted);
+    // approved = Approved/Invoiced/Paid (invoiced/paid were approved by
+    // construction); rejected = Rejected. allApproved is only true when there is
+    // at least one week and none is pending or rejected.
+    let approved = 0;
+    let pending = 0;
+    let rejected = 0;
+    for (const t of timesheetsSorted) {
+      if (t.status === "Rejected") rejected += 1;
+      else if (t.status === "Submitted") pending += 1;
+      else approved += 1; // Approved / Invoiced / Paid
+    }
+    const timesheetApproval = {
+      total: timesheetsSorted.length,
+      approved,
+      pending,
+      rejected,
+      allApproved: timesheetsSorted.length > 0 && pending === 0 && rejected === 0,
+    };
 
     return {
       payment: {
@@ -123,6 +154,7 @@ export function buildReviewGroups(input: Inputs): {
             endDate: staffing.endDate,
           }
         : null,
+      timesheetApproval,
       timesheets: timesheetsSorted.map((t) => ({
         id: t.id,
         code: t.timesheetCode,
@@ -130,6 +162,12 @@ export function buildReviewGroups(input: Inputs): {
         endDate: t.endDate,
         totalHours: t.totalHours,
         status: t.status,
+        review: {
+          reviewMethod: t.reviewMethod || undefined,
+          reviewedBy: t.reviewedBy || undefined,
+          reviewedAt: t.reviewedAt,
+          reviewComment: t.reviewComment || undefined,
+        },
         days: {
           monday: { hours: t.monday.hours, task: t.monday.task },
           tuesday: { hours: t.tuesday.hours, task: t.tuesday.task },
