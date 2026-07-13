@@ -79,7 +79,7 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
   const router = useRouter();
   // Overview (filterable table) · By project · By member — the two breakdown
   // views live in their own tabs instead of inline cards above the table.
-  const [view, setView] = useState<"overview" | "byproject" | "bymember">("overview");
+  const [view, setView] = useState<"review" | "overview" | "byproject" | "bymember">("overview");
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   // Jumping from a breakdown group into the Overview, pre-filtered to that
   // project + member.
@@ -264,6 +264,9 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
     window.open(`/print/timesheets?${p.toString()}`, "_blank", "noopener");
   }
 
+  // Count of timesheets awaiting a decision, for the Review tab badge.
+  const underReviewCount = rows.filter((r) => r.status === "Submitted").length;
+
   return (
     <div className="space-y-4">
       <SegmentedTabs
@@ -271,13 +274,29 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
         value={view}
         onChange={setView}
         options={[
+          {
+            value: "review",
+            label: "Review",
+            badge:
+              underReviewCount > 0 ? (
+                <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-800">
+                  {underReviewCount}
+                </span>
+              ) : undefined,
+          },
           { value: "overview", label: "Overview" },
           { value: "byproject", label: "By project" },
           { value: "bymember", label: "By member" },
         ]}
       />
 
-      {view === "byproject" ? (
+      {view === "review" ? (
+        <ReviewQueue
+          rows={rows.filter((r) => r.status === "Submitted")}
+          savingIds={savingIds}
+          onDecide={decide}
+        />
+      ) : view === "byproject" ? (
         <TimesheetsByProject timesheets={rows} onDrill={drillToOverview} />
       ) : view === "bymember" ? (
         <TimesheetsByMember timesheets={rows} onDrill={drillToOverview} />
@@ -657,11 +676,112 @@ function ApprovalBar({
             &ldquo;{timesheet.reviewComment}&rdquo;
           </p>
         ) : null}
+        {/* Admin override: flip a client's (or a prior) decision. Blocked once
+            Invoiced/Paid server-side, so this only shows here. */}
+        <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-2">
+          <label className="block min-w-[14rem] flex-1">
+            <span className="text-[10px] uppercase tracking-wide font-medium text-slate-400">
+              Override decision (comment optional)
+            </span>
+            <input
+              type="text"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Reason for overriding"
+              className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+            />
+          </label>
+          <div className="flex gap-2">
+            <Button
+              tone="secondary"
+              size="sm"
+              disabled={saving || timesheet.status === "Approved"}
+              onClick={() => onDecide(timesheet.id, "approve", comment)}
+            >
+              Approve
+            </Button>
+            <Button
+              tone="secondary"
+              size="sm"
+              disabled={saving || timesheet.status === "Rejected"}
+              onClick={() => onDecide(timesheet.id, "reject", comment)}
+            >
+              Reject
+            </Button>
+          </div>
+        </div>
       </div>
     );
   }
 
   return null;
+}
+
+// Dedicated review queue: the timesheets awaiting a decision, as action-first
+// cards (member · project · week · hours + day breakdown + Approve/Reject).
+function ReviewQueue({
+  rows,
+  savingIds,
+  onDecide,
+}: {
+  rows: AdminTimesheetRecord[];
+  savingIds: Set<string>;
+  onDecide: (id: string, action: "approve" | "reject", comment: string) => void;
+}) {
+  const sorted = [...rows].sort((a, b) => (a.startDate ?? "").localeCompare(b.startDate ?? ""));
+  if (sorted.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-200 bg-white p-12 text-center text-sm text-slate-400">
+        Nothing awaiting review. Submitted timesheets appear here for approval.
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      {sorted.map((t) => {
+        const dates = dayIsos(t.startDate);
+        return (
+          <div key={t.id} className="rounded-lg border border-slate-200 bg-white p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-slate-800 demo-blur">
+                  {t.memberName || t.memberCode}
+                  <span className="ml-1.5 font-mono text-[10px] text-slate-400">{t.memberCode}</span>
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {[t.projectCode, t.projectName].filter(Boolean).join(" · ")} · {t.staffingCode}
+                  {t.reviewMethod === "Client" ? " · client review" : ""}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <WeekChip startIso={t.startDate} endIso={t.endDate} />
+                <span className="text-sm font-semibold tabular-nums text-slate-900">
+                  {t.totalHours.toFixed(2)} h
+                </span>
+              </div>
+            </div>
+            <dl className="mt-2 divide-y divide-slate-100 border-t border-slate-100 text-[11px]">
+              {DAY_KEYS.map((k) => (
+                <div key={k} className="flex gap-3 py-1">
+                  <dt className="w-24 shrink-0 text-slate-500">
+                    {k.slice(0, 3).replace(/^./, (c) => c.toUpperCase())}
+                    {dates[k] ? <span className="ml-1 text-slate-400">{dates[k]}</span> : null}
+                  </dt>
+                  <dd className="w-12 shrink-0 tabular-nums text-slate-700">
+                    {t[k].hours ? t[k].hours.toFixed(2) : <span className="text-slate-300">—</span>}
+                  </dd>
+                  <dd className="min-w-0 flex-1 whitespace-pre-line text-slate-600 demo-blur">
+                    {t[k].task || <span className="text-slate-300">—</span>}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <ApprovalBar timesheet={t} saving={savingIds.has(t.id)} onDecide={onDecide} />
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // Inline status editor for the admin table. Looks like the StatusBadge with a

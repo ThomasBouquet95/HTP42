@@ -2764,6 +2764,35 @@ export async function getTimesheetByReviewToken(token: string): Promise<Timeshee
   }
 }
 
+// One-shot cutover migration for the approval workflow. Legacy "Submitted"
+// timesheets meant "turned in, ready to invoice" (there was no approval step),
+// so they map to the new "Approved" state — otherwise existing billable work
+// would be stranded behind a review that never happened. Stamped with a
+// Migration marker in the review fields for provenance. Idempotent in effect
+// only at cutover: run ONCE right after deploy, before new submissions pile up
+// (a later re-run would also approve genuinely-pending weeks).
+export async function migrateLegacySubmittedTimesheets(): Promise<{ updated: number }> {
+  await ensureTimesheetApprovalSchema();
+  const records = await base(TABLES.timesheets)
+    .select({ filterByFormula: `{${FIELDS.timesheets.status}} = "Submitted"` })
+    .all();
+  const at = new Date().toISOString();
+  const updates = records.map((r) => ({
+    id: r.id,
+    fields: {
+      [FIELDS.timesheets.status]: "Approved",
+      [FIELDS.timesheets.reviewMethod]: "Admin",
+      [FIELDS.timesheets.reviewedBy]: "Migration",
+      [FIELDS.timesheets.reviewedAt]: at,
+      [FIELDS.timesheets.reviewComment]: "Auto-approved during approval-workflow migration.",
+    } as FieldSet,
+  }));
+  for (let i = 0; i < updates.length; i += 10) {
+    await base(TABLES.timesheets).update(updates.slice(i, i + 10), { typecast: true });
+  }
+  return { updated: updates.length };
+}
+
 // Admin-side single-timesheet fetch (no member-ownership scoping) so admin
 // routes can read the current status before enforcing a transition.
 export async function getAdminTimesheetById(recordId: string): Promise<TimesheetRecord | null> {

@@ -53,9 +53,13 @@ export async function PATCH(
           : null;
 
     if (decision) {
-      if (existing.status !== "Submitted") {
+      // Admins may decide a timesheet that is Under Review, and may OVERRIDE an
+      // existing Approved/Rejected decision (e.g. a client's) — but never once
+      // it has been Invoiced/Paid, to avoid un-settling billing.
+      const OVERRIDABLE: TimesheetStatus[] = ["Submitted", "Approved", "Rejected"];
+      if (!OVERRIDABLE.includes(existing.status)) {
         return NextResponse.json(
-          { error: `Only timesheets under review can be ${decision.toLowerCase()} (this one is ${existing.status}).` },
+          { error: `A ${existing.status} timesheet can no longer be ${decision.toLowerCase()}.` },
           { status: 409 },
         );
       }
