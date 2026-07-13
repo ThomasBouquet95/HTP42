@@ -10,6 +10,7 @@ import { Button } from "@/components/form-controls";
 import { FilterBar, FilterMultiSelect, FilterDateRange, SegmentedTabs } from "@/components/filters";
 import { StatusPill } from "@/components/badge";
 import { TimesheetsByProject, TimesheetsByMember } from "./timesheets-breakdown";
+import { TimesheetReviewClient } from "./review-client";
 import { dayIsos, downloadTimesheetsCsv } from "./timesheets-export";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
@@ -150,35 +151,6 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
   // Record an audited review decision (approve/reject) for a Submitted row.
   // Same optimistic pattern as updateStatus, but hits the decision path of the
   // admin API ({ action, comment }) instead of a raw { status } write.
-  async function decide(id: string, action: "approve" | "reject", comment: string) {
-    const previous = rows.find((r) => r.id === id)?.status;
-    if (!previous) return;
-    const next: TimesheetStatus = action === "approve" ? "Approved" : "Rejected";
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, status: next } : r)));
-    setSavingIds((s) => new Set(s).add(id));
-    try {
-      const res = await fetch(`/api/admin/timesheets/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action, comment: comment.trim() || undefined }),
-      });
-      if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? `Update failed (HTTP ${res.status})`);
-      }
-      setToast({ kind: "ok", msg: action === "approve" ? "Timesheet approved" : "Timesheet rejected" });
-      router.refresh();
-    } catch (e) {
-      setRows((rs) => rs.map((r) => (r.id === id ? { ...r, status: previous } : r)));
-      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Update failed" });
-    } finally {
-      setSavingIds((s) => {
-        const nextSet = new Set(s);
-        nextSet.delete(id);
-        return nextSet;
-      });
-    }
-  }
 
   // Open the printable (Save-as-PDF) staffing report in a new tab. It lives at
   // /print/staffing/[id] (no app header) and auto-opens the print dialog.
@@ -291,11 +263,7 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
       />
 
       {view === "review" ? (
-        <ReviewQueue
-          rows={rows.filter((r) => r.status === "Submitted")}
-          savingIds={savingIds}
-          onDecide={decide}
-        />
+        <TimesheetReviewClient timesheets={rows} />
       ) : view === "byproject" ? (
         <TimesheetsByProject timesheets={rows} onDrill={drillToOverview} />
       ) : view === "bymember" ? (
@@ -471,12 +439,6 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
                         </tbody>
                       </table>
 
-                      <ApprovalBar
-                        timesheet={t}
-                        saving={savingIds.has(t.id)}
-                        onDecide={decide}
-                      />
-
                       <RelatedInvoices
                         invoices={relatedInvoicesFor(t, invoices)}
                         paymentByInvoiceId={paymentByInvoiceId}
@@ -580,206 +542,6 @@ function RelatedInvoices({
           })}
         </ul>
       )}
-    </div>
-  );
-}
-
-function fmtReviewDate(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
-
-// Approval action bar shown inside an expanded timesheet row. While a row is
-// Submitted (Under Review) it offers an optional comment plus Approve / Reject
-// buttons that hit the audited decision API. Once decided it collapses to a
-// read-only summary of who reviewed it, how, when, and any comment.
-function ApprovalBar({
-  timesheet,
-  saving,
-  onDecide,
-}: {
-  timesheet: AdminTimesheetRecord;
-  saving: boolean;
-  onDecide: (id: string, action: "approve" | "reject", comment: string) => void;
-}) {
-  const [comment, setComment] = useState("");
-
-  if (timesheet.status === "Submitted") {
-    return (
-      <div className="mt-3 border-t border-slate-100 pt-2">
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-          Review
-        </div>
-        <div className="mt-1 flex flex-wrap items-end gap-2">
-          <label className="block min-w-[16rem] flex-1">
-            <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-              Comment (optional)
-            </span>
-            <input
-              type="text"
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              placeholder="Add a note for this decision"
-              className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-            />
-          </label>
-          <div className="flex gap-2">
-            <Button
-              tone="primary"
-              size="sm"
-              disabled={saving}
-              onClick={() => onDecide(timesheet.id, "approve", comment)}
-            >
-              Approve
-            </Button>
-            <Button
-              tone="danger"
-              size="sm"
-              disabled={saving}
-              onClick={() => onDecide(timesheet.id, "reject", comment)}
-            >
-              Reject
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (timesheet.status === "Approved" || timesheet.status === "Rejected") {
-    const summary = [
-      timesheet.reviewedBy || null,
-      timesheet.reviewMethod ? `${timesheet.reviewMethod} review` : null,
-      fmtReviewDate(timesheet.reviewedAt) || null,
-    ].filter(Boolean) as string[];
-    return (
-      <div className="mt-3 border-t border-slate-100 pt-2">
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-          Review
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
-          <StatusBadge
-            status={timesheet.status}
-            review={{
-              reviewMethod: timesheet.reviewMethod || undefined,
-              reviewedBy: timesheet.reviewedBy || undefined,
-              reviewedAt: timesheet.reviewedAt,
-              reviewComment: timesheet.reviewComment || undefined,
-            }}
-          />
-          {summary.length ? <span>{summary.join(" · ")}</span> : null}
-        </div>
-        {timesheet.reviewComment ? (
-          <p className="mt-1 whitespace-pre-line text-[11px] text-slate-500">
-            &ldquo;{timesheet.reviewComment}&rdquo;
-          </p>
-        ) : null}
-        {/* Admin override: flip a client's (or a prior) decision. Blocked once
-            Invoiced/Paid server-side, so this only shows here. */}
-        <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-2">
-          <label className="block min-w-[14rem] flex-1">
-            <span className="text-[10px] uppercase tracking-wide font-medium text-slate-400">
-              Override decision (comment optional)
-            </span>
-            <input
-              type="text"
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              placeholder="Reason for overriding"
-              className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-            />
-          </label>
-          <div className="flex gap-2">
-            <Button
-              tone="secondary"
-              size="sm"
-              disabled={saving || timesheet.status === "Approved"}
-              onClick={() => onDecide(timesheet.id, "approve", comment)}
-            >
-              Approve
-            </Button>
-            <Button
-              tone="secondary"
-              size="sm"
-              disabled={saving || timesheet.status === "Rejected"}
-              onClick={() => onDecide(timesheet.id, "reject", comment)}
-            >
-              Reject
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return null;
-}
-
-// Dedicated review queue: the timesheets awaiting a decision, as action-first
-// cards (member · project · week · hours + day breakdown + Approve/Reject).
-function ReviewQueue({
-  rows,
-  savingIds,
-  onDecide,
-}: {
-  rows: AdminTimesheetRecord[];
-  savingIds: Set<string>;
-  onDecide: (id: string, action: "approve" | "reject", comment: string) => void;
-}) {
-  const sorted = [...rows].sort((a, b) => (a.startDate ?? "").localeCompare(b.startDate ?? ""));
-  if (sorted.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-slate-200 bg-white p-12 text-center text-sm text-slate-400">
-        Nothing awaiting review. Submitted timesheets appear here for approval.
-      </div>
-    );
-  }
-  return (
-    <div className="space-y-3">
-      {sorted.map((t) => {
-        const dates = dayIsos(t.startDate);
-        return (
-          <div key={t.id} className="rounded-lg border border-slate-200 bg-white p-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-sm font-medium text-slate-800 demo-blur">
-                  {t.memberName || t.memberCode}
-                  <span className="ml-1.5 font-mono text-[10px] text-slate-400">{t.memberCode}</span>
-                </div>
-                <div className="text-[11px] text-slate-500">
-                  {[t.projectCode, t.projectName].filter(Boolean).join(" · ")} · {t.staffingCode}
-                  {t.reviewMethod === "Client" ? " · client review" : ""}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <WeekChip startIso={t.startDate} endIso={t.endDate} />
-                <span className="text-sm font-semibold tabular-nums text-slate-900">
-                  {t.totalHours.toFixed(2)} h
-                </span>
-              </div>
-            </div>
-            <dl className="mt-2 divide-y divide-slate-100 border-t border-slate-100 text-[11px]">
-              {DAY_KEYS.map((k) => (
-                <div key={k} className="flex gap-3 py-1">
-                  <dt className="w-24 shrink-0 text-slate-500">
-                    {k.slice(0, 3).replace(/^./, (c) => c.toUpperCase())}
-                    {dates[k] ? <span className="ml-1 text-slate-400">{dates[k]}</span> : null}
-                  </dt>
-                  <dd className="w-12 shrink-0 tabular-nums text-slate-700">
-                    {t[k].hours ? t[k].hours.toFixed(2) : <span className="text-slate-300">—</span>}
-                  </dd>
-                  <dd className="min-w-0 flex-1 whitespace-pre-line text-slate-600 demo-blur">
-                    {t[k].task || <span className="text-slate-300">—</span>}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            <ApprovalBar timesheet={t} saving={savingIds.has(t.id)} onDecide={onDecide} />
-          </div>
-        );
-      })}
     </div>
   );
 }
