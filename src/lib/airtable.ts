@@ -203,6 +203,10 @@ export const FIELDS = {
     member: "Member",
     client: "Client",
     memberInvoice: "Member Invoice",
+    // Link to the exact Project Staffing the payment settles (the member + project
+    // + SOW the invoice was raised against). Source of truth for the payment's
+    // project. Lazily created via meta API — see ensurePaymentStaffingField.
+    staffing: "Staffing",
     invoiceDate: "Invoice Date",
     invoiceReference: "Invoice Reference",
     invoiceCurrency: "Invoice Currency",
@@ -618,6 +622,7 @@ export type PaymentRecord = {
   clientRecordIds: string[];
   memberRecordIds: string[];
   memberInvoiceRecordIds: string[];
+  staffingRecordIds: string[];
   projectCodes: string[];
   clientCodes: string[];
   memberCodes: string[];
@@ -1803,6 +1808,7 @@ function paymentFromRecord(r: AirtableRecord<FieldSet>): PaymentRecord {
     clientRecordIds: linkedIds(r, FIELDS.payments.client),
     memberRecordIds: linkedIds(r, FIELDS.payments.member),
     memberInvoiceRecordIds: linkedIds(r, FIELDS.payments.memberInvoice),
+    staffingRecordIds: linkedIds(r, FIELDS.payments.staffing),
     projectCodes: linkedDisplay(r, FIELDS.payments.project),
     clientCodes: linkedDisplay(r, FIELDS.payments.client),
     memberCodes: linkedDisplay(r, FIELDS.payments.member),
@@ -1854,6 +1860,10 @@ export type PaymentInput = {
   clientRecordIds: string[];
   memberRecordIds: string[];
   memberInvoiceRecordIds: string[];
+  // Optional: the staffing this payment settles. When omitted (undefined) the
+  // stored value is left untouched; pass [] to clear. createPayment/updatePayment
+  // fill it automatically from the linked invoice when the payment settles one.
+  staffingRecordIds?: string[];
   invoiceDate: string | null;
   invoiceReference: string;
   invoiceCurrency: Currency | "";
@@ -1885,6 +1895,11 @@ function paymentFields(input: PaymentInput): Record<string, unknown> {
     [FIELDS.payments.client]: input.clientRecordIds,
     [FIELDS.payments.member]: input.memberRecordIds,
     [FIELDS.payments.memberInvoice]: input.memberInvoiceRecordIds,
+    // Only touch Staffing when the caller provided a value (undefined = leave
+    // as-is so an unrelated admin edit doesn't wipe the link).
+    ...(input.staffingRecordIds !== undefined
+      ? { [FIELDS.payments.staffing]: input.staffingRecordIds }
+      : {}),
     [FIELDS.payments.invoiceDate]: input.invoiceDate,
     [FIELDS.payments.invoiceReference]: input.invoiceReference,
     [FIELDS.payments.invoiceCurrency]: input.invoiceCurrency === "" ? null : input.invoiceCurrency,
@@ -1905,7 +1920,7 @@ function paymentFields(input: PaymentInput): Record<string, unknown> {
 }
 
 export async function createPayment(input: PaymentInput): Promise<string> {
-  const resolved = await withInheritedProject(input);
+  const resolved = await prepPaymentWrite(input);
   const [created] = await base(TABLES.payments).create([
     { fields: paymentFields(resolved) as FieldSet },
   ]);
@@ -1932,10 +1947,22 @@ export async function updatePaymentStatus(
 }
 
 export async function updatePayment(recordId: string, input: PaymentInput): Promise<void> {
-  const resolved = await withInheritedProject(input);
+  const resolved = await prepPaymentWrite(input);
   await base(TABLES.payments).update([
     { id: recordId, fields: paymentFields(resolved) as FieldSet },
   ]);
+}
+
+// Resolve staffing + project for a write, and make sure the Staffing field
+// exists before we try to write it. If the field can't be created (meta API
+// hiccup), drop the staffing from the write so the payment still saves.
+async function prepPaymentWrite(input: PaymentInput): Promise<PaymentInput> {
+  const resolved = await withInheritedProject(input);
+  if (resolved.staffingRecordIds !== undefined) {
+    const ok = await ensurePaymentStaffingField();
+    if (!ok) return { ...resolved, staffingRecordIds: undefined };
+  }
+  return resolved;
 }
 
 export async function deletePayment(recordId: string): Promise<void> {
@@ -2152,15 +2179,14 @@ export async function listAllInvoices(): Promise<MemberInvoiceRecord[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Payment project inheritance
+// Payment ↔ staffing linkage + project inheritance
 //
-// A payment that settles a member invoice must be filed under that invoice's
-// project — and the invoice derives its project from its staffing, which is the
-// single source of truth. Rather than trust the payment's own (frozen) Project
-// link, we resolve it from the linked invoice on both read and write. This makes
-// the project immune to drift (staffings re-pointed later, imports/manual edits
-// choosing a different project). Standalone payments (no linked invoice) keep
-// their own project.
+// When a member submits an invoice they pick a STAFFING (member + project +
+// SOW). The invoice links that staffing; the auto-created payment must link the
+// SAME staffing — that's the source of truth. The payment's project is then
+// DERIVED from the staffing's project, never chosen independently. This holds on
+// read, on write, and via a backfill for legacy rows. Standalone payments (no
+// linked invoice/staffing) keep their own project.
 // ---------------------------------------------------------------------------
 
 // project code -> project record id (inverse of getProjectIndex).
@@ -2171,101 +2197,207 @@ const getProjectIdByCode = cache(async function getProjectIdByCode(): Promise<Ma
   return m;
 });
 
-// member-invoice record id -> its (staffing-derived) project code.
-const getInvoiceProjectIndex = cache(async function getInvoiceProjectIndex(): Promise<
+// member-invoice record id -> the staffing record id it was raised against.
+const getInvoiceStaffingIndex = cache(async function getInvoiceStaffingIndex(): Promise<
   Map<string, string>
 > {
   const invoices = await listAllInvoices();
-  return new Map(invoices.map((i) => [i.id, i.projectCode] as const));
+  return new Map(
+    invoices.filter((i) => i.staffingRecordId).map((i) => [i.id, i.staffingRecordId] as const),
+  );
 });
 
-// The project a payment should inherit from its linked invoice(s): the first
-// linked invoice that resolves to a project wins. Null when the payment links
-// no invoice, or none of them resolve to a project (keep the existing link).
-async function inheritedPaymentProject(
-  memberInvoiceRecordIds: string[],
-): Promise<{ code: string; recordId: string } | null> {
-  if (memberInvoiceRecordIds.length === 0) return null;
-  const [invIdx, idByCode] = await Promise.all([getInvoiceProjectIndex(), getProjectIdByCode()]);
-  for (const invId of memberInvoiceRecordIds) {
-    const code = invIdx.get(invId);
-    if (code) return { code, recordId: idByCode.get(code) ?? "" };
+// Resolve the staffing a payment settles: its own Staffing link first, else the
+// staffing of the first linked invoice. Then the project that staffing belongs
+// to. Returns nulls for a standalone payment (nothing to inherit).
+async function resolvePaymentStaffingProject(p: {
+  staffingRecordIds: string[];
+  memberInvoiceRecordIds: string[];
+}): Promise<{ staffingId: string | null; projectCode: string | null; projectId: string | null }> {
+  let staffingId = p.staffingRecordIds[0] ?? null;
+  if (!staffingId && p.memberInvoiceRecordIds.length > 0) {
+    const invStaffing = await getInvoiceStaffingIndex();
+    for (const invId of p.memberInvoiceRecordIds) {
+      const s = invStaffing.get(invId);
+      if (s) {
+        staffingId = s;
+        break;
+      }
+    }
   }
-  return null;
+  if (!staffingId) return { staffingId: null, projectCode: null, projectId: null };
+  const [staffingIdx, idByCode] = await Promise.all([getStaffingIndex(), getProjectIdByCode()]);
+  const projectCode = staffingIdx.get(staffingId)?.projectCode ?? null;
+  const projectId = projectCode ? idByCode.get(projectCode) ?? null : null;
+  return { staffingId, projectCode, projectId };
 }
 
-// Read-side: override each invoice-linked payment's project with the inherited
-// one so the app always shows the correct project regardless of the stored link.
+// Read-side: for every payment that settles a staffing/invoice, surface the
+// staffing link and the project derived from it, so the app is always correct
+// regardless of what's stored on the row.
 async function applyInheritedProjects(payments: PaymentRecord[]): Promise<PaymentRecord[]> {
-  if (!payments.some((p) => p.memberInvoiceRecordIds.length > 0)) return payments;
-  const [invIdx, idByCode] = await Promise.all([getInvoiceProjectIndex(), getProjectIdByCode()]);
+  const needs = payments.some(
+    (p) => p.staffingRecordIds.length > 0 || p.memberInvoiceRecordIds.length > 0,
+  );
+  if (!needs) return payments;
+  const [staffingIdx, idByCode, invStaffing, projIdx] = await Promise.all([
+    getStaffingIndex(),
+    getProjectIdByCode(),
+    getInvoiceStaffingIndex(),
+    getProjectIndex(),
+  ]);
   return payments.map((p) => {
-    if (p.memberInvoiceRecordIds.length === 0) return p;
-    for (const invId of p.memberInvoiceRecordIds) {
-      const code = invIdx.get(invId);
-      if (!code) continue;
-      const recId = idByCode.get(code);
-      return {
-        ...p,
-        projectCodes: [code],
-        projectRecordIds: recId ? [recId] : p.projectRecordIds,
-      };
+    let staffingId = p.staffingRecordIds[0] ?? null;
+    if (!staffingId) {
+      for (const invId of p.memberInvoiceRecordIds) {
+        const s = invStaffing.get(invId);
+        if (s) {
+          staffingId = s;
+          break;
+        }
+      }
     }
-    return p;
+    if (!staffingId) return p;
+    const code = staffingIdx.get(staffingId)?.projectCode ?? null;
+    const recId = code ? idByCode.get(code) : undefined;
+    return {
+      ...p,
+      staffingRecordIds: [staffingId],
+      projectCodes: recId ? [projIdx.get(recId)?.code ?? code!] : code ? [code] : p.projectCodes,
+      projectRecordIds: recId ? [recId] : p.projectRecordIds,
+    };
   });
 }
 
-// Write-side: replace the project link on an invoice-linked payment with the
-// inherited one before persisting, so the stored record can't disagree.
+// Write-side: before persisting, link the payment to its governing staffing
+// (from the linked invoice when not set) and set the project from that staffing.
 async function withInheritedProject(input: PaymentInput): Promise<PaymentInput> {
-  const inh = await inheritedPaymentProject(input.memberInvoiceRecordIds);
-  return inh && inh.recordId ? { ...input, projectRecordIds: [inh.recordId] } : input;
+  const { staffingId, projectId } = await resolvePaymentStaffingProject({
+    staffingRecordIds: input.staffingRecordIds ?? [],
+    memberInvoiceRecordIds: input.memberInvoiceRecordIds,
+  });
+  if (!staffingId) return input; // standalone — leave project/staffing as given
+  return {
+    ...input,
+    staffingRecordIds: [staffingId],
+    ...(projectId ? { projectRecordIds: [projectId] } : {}),
+  };
 }
 
-// One-off (re-runnable) backfill: rewrite the stored Project link of every
-// invoice-linked payment to its inherited project, so Airtable-native views
-// match the app. Dry-run by default (apply=false) — returns the changes it
-// WOULD make; pass apply=true to persist. Idempotent: only touches rows that
-// are actually wrong.
+// Lazily add the "Staffing" link field to the Payments table (meta API), same
+// pattern as ensurePaymentInvoicePdfField. Best-effort; returns whether the
+// field exists so callers can decide to write to it.
+let paymentStaffingFieldReady = false;
+async function ensurePaymentStaffingField(): Promise<boolean> {
+  if (paymentStaffingFieldReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.payments);
+    if (!table) return false;
+    if (table.fields.some((f) => f.name === FIELDS.payments.staffing)) {
+      paymentStaffingFieldReady = true;
+      return true;
+    }
+    const staffingTable = data.tables.find((t) => t.name === TABLES.projectStaffing);
+    if (!staffingTable) return false;
+    const create = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.airtablePat}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: FIELDS.payments.staffing,
+          type: "multipleRecordLinks",
+          options: { linkedTableId: staffingTable.id },
+          description:
+            "The Project Staffing this payment settles (member + project + SOW). Drives the payment's project. Set by the HTP42 portal.",
+        }),
+      },
+    );
+    if (create.ok) paymentStaffingFieldReady = true;
+    return paymentStaffingFieldReady;
+  } catch (e) {
+    console.error("ensurePaymentStaffingField failed:", e);
+    return false;
+  }
+}
+
+// One-off (re-runnable) backfill: for every payment that settles a member
+// invoice, link it to the invoice's staffing and set its project from that
+// staffing. Dry-run by default (apply=false). Idempotent — only touches rows
+// whose staffing or project is missing/wrong.
 export async function backfillPaymentProjects(apply: boolean): Promise<{
   scanned: number;
   toFix: number;
   updated: number;
   unresolved: number;
-  changes: { paymentCode: string; from: string; to: string }[];
+  changes: {
+    paymentCode: string;
+    staffingFrom: string;
+    staffingTo: string;
+    projectFrom: string;
+    projectTo: string;
+  }[];
 }> {
   const raw = await listPaymentsRaw();
-  const [invIdx, idByCode, projIdx] = await Promise.all([
-    getInvoiceProjectIndex(),
+  const [invStaffing, staffingIdx, idByCode, projIdx] = await Promise.all([
+    getInvoiceStaffingIndex(),
+    getStaffingIndex(),
     getProjectIdByCode(),
     getProjectIndex(),
   ]);
-  const changes: { paymentCode: string; from: string; to: string }[] = [];
+  if (apply) await ensurePaymentStaffingField();
+  const changes: {
+    paymentCode: string;
+    staffingFrom: string;
+    staffingTo: string;
+    projectFrom: string;
+    projectTo: string;
+  }[] = [];
   const updates: { id: string; fields: FieldSet }[] = [];
   let unresolved = 0;
   for (const p of raw) {
     if (p.memberInvoiceRecordIds.length === 0) continue;
-    let code: string | undefined;
+    // Governing staffing = the invoice's staffing.
+    let staffingId: string | undefined;
     for (const invId of p.memberInvoiceRecordIds) {
-      const c = invIdx.get(invId);
-      if (c) {
-        code = c;
+      const s = invStaffing.get(invId);
+      if (s) {
+        staffingId = s;
         break;
       }
     }
-    if (!code) continue; // linked invoice has no project — nothing to inherit
-    const targetId = idByCode.get(code);
-    if (!targetId) {
-      unresolved += 1; // target project code has no matching Project record
+    if (!staffingId) {
+      unresolved += 1; // invoice has no staffing link — can't resolve
       continue;
     }
-    // Compare by project RECORD ID (the reliable key) — a payment's project
-    // link stores record ids, so comparing against the code string would flag
-    // false positives. Skip when the payment already points at the right one.
-    if (p.projectRecordIds.includes(targetId)) continue;
-    const fromCodes = p.projectRecordIds.map((id) => projIdx.get(id)?.code ?? id).join(", ") || "(none)";
-    changes.push({ paymentCode: p.paymentCode || p.id, from: fromCodes, to: code });
-    updates.push({ id: p.id, fields: { [FIELDS.payments.project]: [targetId] } as FieldSet });
+    const code = staffingIdx.get(staffingId)?.projectCode;
+    const targetProjectId = code ? idByCode.get(code) : undefined;
+    const staffingOk = p.staffingRecordIds.includes(staffingId);
+    const projectOk = targetProjectId ? p.projectRecordIds.includes(targetProjectId) : true;
+    if (staffingOk && projectOk) continue; // already correct
+    const staffingCodeOf = (id: string) => staffingIdx.get(id)?.code ?? id;
+    changes.push({
+      paymentCode: p.paymentCode || p.id,
+      staffingFrom: p.staffingRecordIds.map(staffingCodeOf).join(", ") || "(none)",
+      staffingTo: staffingIdx.get(staffingId)?.code ?? staffingId,
+      projectFrom: p.projectRecordIds.map((id) => projIdx.get(id)?.code ?? id).join(", ") || "(none)",
+      projectTo: code ?? "(unresolved)",
+    });
+    const fields: Record<string, unknown> = { [FIELDS.payments.staffing]: [staffingId] };
+    if (targetProjectId) fields[FIELDS.payments.project] = [targetProjectId];
+    updates.push({ id: p.id, fields: fields as FieldSet });
   }
   let updated = 0;
   if (apply) {

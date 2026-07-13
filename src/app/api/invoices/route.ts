@@ -169,6 +169,9 @@ export async function POST(request: Request) {
       clientRecordIds: [],
       memberRecordIds: [session.sub],
       memberInvoiceRecordIds: [invoiceId],
+      // Link the exact staffing the member selected — the source of truth for
+      // this payment's project (createPayment derives the project from it).
+      staffingRecordIds: [staffing.id],
       invoiceDate: new Date().toISOString().slice(0, 10),
       invoiceReference: "",
       invoiceCurrency: paymentCurrency,
