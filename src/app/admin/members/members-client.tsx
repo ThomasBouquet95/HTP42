@@ -77,12 +77,6 @@ function fromRecord(m: MemberAdminRecord): FormState {
   };
 }
 
-type CodeStatus =
-  | { state: "idle" }
-  | { state: "checking" }
-  | { state: "ok" }
-  | { state: "taken"; message: string };
-
 export function MembersAdminClient({
   members,
   roles,
@@ -128,10 +122,7 @@ export function MembersAdminClient({
     const t = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(t);
   }, [toast]);
-  const [codeStatus, setCodeStatus] = useState<CodeStatus>({ state: "idle" });
-  const codeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nameTouchedRef = useRef(false);
-  const codeTouchedRef = useRef(false);
   const [deleteTarget, setDeleteTarget] = useState<MemberAdminRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [cvBusy, setCvBusy] = useState(false);
@@ -204,12 +195,6 @@ export function MembersAdminClient({
     }
   }
 
-  useEffect(() => {
-    return () => {
-      if (codeTimerRef.current) clearTimeout(codeTimerRef.current);
-    };
-  }, []);
-
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return members;
@@ -219,40 +204,6 @@ export function MembersAdminClient({
     );
   }, [members, search]);
 
-  function originalCode(): string {
-    return editing?.memberCode ?? "";
-  }
-
-  function checkCodeAvailability(code: string) {
-    setCodeStatus({ state: "idle" });
-    if (codeTimerRef.current) clearTimeout(codeTimerRef.current);
-    if (!code) return;
-    if (code === originalCode()) {
-      setCodeStatus({ state: "ok" });
-      return;
-    }
-    setCodeStatus({ state: "checking" });
-    codeTimerRef.current = setTimeout(async () => {
-      try {
-        const params = new URLSearchParams({ code });
-        if (editing) params.set("excludeId", editing.id);
-        const res = await fetch(`/api/admin/members/check-code?${params.toString()}`);
-        const data = (await res.json()) as { available?: boolean; valid?: boolean };
-        if (!data.valid) {
-          setCodeStatus({ state: "idle" });
-          return;
-        }
-        setCodeStatus(
-          data.available
-            ? { state: "ok" }
-            : { state: "taken", message: `${code} is already used.` },
-        );
-      } catch {
-        setCodeStatus({ state: "idle" });
-      }
-    }, 300);
-  }
-
   function openCreate() {
     setEditing(null);
     setCreating(true);
@@ -260,9 +211,7 @@ export function MembersAdminClient({
     setBaseline(EMPTY);
     setError(null);
     setCvMsg(null);
-    setCodeStatus({ state: "idle" });
     nameTouchedRef.current = false;
-    codeTouchedRef.current = false;
   }
 
   function openEdit(m: MemberAdminRecord) {
@@ -273,9 +222,7 @@ export function MembersAdminClient({
     setBaseline(initial);
     setError(null);
     setCvMsg(null);
-    setCodeStatus({ state: "idle" });
     nameTouchedRef.current = true;
-    codeTouchedRef.current = true;
   }
 
   async function updateStatus(id: string, next: string) {
@@ -320,16 +267,15 @@ export function MembersAdminClient({
   async function onFullNameChange(v: string) {
     nameTouchedRef.current = true;
     updateField("fullName", v);
-    // When creating and the user hasn't edited the code manually, suggest one.
-    if (creating && !codeTouchedRef.current && v.trim().length >= 2) {
+    // On create, the member code is auto-generated from the full name.
+    if (creating && v.trim().length >= 2) {
       try {
         const res = await fetch(
           `/api/admin/members/suggest-code?fullName=${encodeURIComponent(v.trim())}`,
         );
         const data = (await res.json()) as { code?: string };
-        if (data.code && !codeTouchedRef.current) {
+        if (data.code) {
           setForm((f) => ({ ...f, memberCode: data.code! }));
-          checkCodeAvailability(data.code);
         }
       } catch {
         // ignore
@@ -337,21 +283,10 @@ export function MembersAdminClient({
     }
   }
 
-  function onCodeChange(raw: string) {
-    codeTouchedRef.current = true;
-    const v = raw.trim().toUpperCase().replace(/\s+/g, "");
-    updateField("memberCode", v);
-    checkCodeAvailability(v);
-  }
-
   async function submit() {
     setError(null);
     if (!form.memberCode.trim()) {
       setError("Member code is required.");
-      return;
-    }
-    if (codeStatus.state === "taken") {
-      setError(codeStatus.message);
       return;
     }
     setSaving(true);
@@ -741,10 +676,10 @@ export function MembersAdminClient({
           <FormField
             label="Member code"
             value={form.memberCode}
-            onChange={onCodeChange}
-            required
+            onChange={() => {}}
+            readOnly
             inputClassName="font-mono uppercase tracking-wide"
-            hint={<CodeHint status={codeStatus} suggestion={creating} />}
+            hint={<span className="text-slate-400">Auto-generated.</span>}
           />
           <FormSelect label="Status" value={form.status} onChange={(v) => updateField("status", v)}>
             {statuses.map((s) => (
@@ -890,17 +825,6 @@ function Field({
       </dd>
     </div>
   );
-}
-
-function CodeHint({ status, suggestion }: { status: CodeStatus; suggestion: boolean }) {
-  if (status.state === "idle") {
-    return suggestion ? (
-      <span className="text-slate-400">Auto-filled from name — edit if needed.</span>
-    ) : null;
-  }
-  if (status.state === "checking") return <span className="text-slate-500">Checking…</span>;
-  if (status.state === "ok") return <span className="text-green-600">Available.</span>;
-  return <span className="text-red-600">{status.message}</span>;
 }
 
 function memberInitials(name: string): string {

@@ -1572,6 +1572,38 @@ export async function findClientByCode(
   return match ? clientFromRecord(match) : null;
 }
 
+// Derive a client code from the client name and guarantee it is unique against
+// the existing clients (append a numeric suffix on collision). Mirrors the
+// shape of suggestMemberCode / nextProjectCode.
+export async function suggestClientCode(name: string): Promise<string> {
+  const cleaned = name.trim();
+  if (cleaned.length === 0) return "";
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  let stem = "";
+  if (tokens.length > 1) {
+    // First letter of each of the first three words.
+    stem = tokens
+      .map((t) => t.replace(/[^A-Za-z]/g, "").charAt(0))
+      .filter(Boolean)
+      .slice(0, 3)
+      .join("")
+      .toUpperCase();
+  }
+  if (stem.length < 3) {
+    // Single word (or too few initials): first three letters of the name.
+    stem = cleaned.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase();
+  }
+  if (stem.length === 0) return "";
+  const existing = await listClients();
+  const used = new Set(existing.map((c) => c.clientCode));
+  if (!used.has(stem)) return stem;
+  for (let n = 1; n < 100; n += 1) {
+    const candidate = `${stem}${n}`;
+    if (!used.has(candidate)) return candidate;
+  }
+  return stem;
+}
+
 // ---------------------------------------------------------------------------
 // Admin: Projects
 // ---------------------------------------------------------------------------

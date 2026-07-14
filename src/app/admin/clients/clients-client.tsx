@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
@@ -46,13 +46,6 @@ function fromRecord(c: ClientRecord): FormState {
   };
 }
 
-type CodeStatus =
-  | { state: "idle" }
-  | { state: "checking" }
-  | { state: "ok" }
-  | { state: "taken"; message: string }
-  | { state: "invalid"; message: string };
-
 export function ClientsAdminClient({ clients }: Props) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -63,8 +56,6 @@ export function ClientsAdminClient({ clients }: Props) {
   const [showDiscard, setShowDiscard] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [codeStatus, setCodeStatus] = useState<CodeStatus>({ state: "idle" });
-  const codeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ClientRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -89,7 +80,6 @@ export function ClientsAdminClient({ clients }: Props) {
     setForm(EMPTY);
     setBaseline(EMPTY);
     setError(null);
-    setCodeStatus({ state: "idle" });
   }
 
   function openEdit(c: ClientRecord) {
@@ -99,7 +89,6 @@ export function ClientsAdminClient({ clients }: Props) {
     setForm(initial);
     setBaseline(initial);
     setError(null);
-    setCodeStatus({ state: "idle" });
   }
 
   // Guarded close (X, backdrop, Cancel): warn before dropping unsaved edits.
@@ -122,54 +111,26 @@ export function ClientsAdminClient({ clients }: Props) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  function onCodeChange(raw: string) {
-    const value = raw.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3);
-    updateField("clientCode", value);
-    setCodeStatus({ state: "idle" });
-    if (codeTimerRef.current) clearTimeout(codeTimerRef.current);
-    if (value.length === 0) return;
-    if (!/^[A-Z]{3}$/.test(value)) {
-      setCodeStatus({ state: "invalid", message: "Must be 3 uppercase letters." });
-      return;
+  // The client code is auto-generated from the name while creating. It is never
+  // typed by hand, and an existing client's code is never changed.
+  async function onNameChange(v: string) {
+    updateField("clientName", v);
+    if (!creating || v.trim().length < 2) return;
+    try {
+      const res = await fetch(
+        `/api/admin/clients/suggest-code?name=${encodeURIComponent(v.trim())}`,
+      );
+      const data = (await res.json()) as { code?: string };
+      if (data.code) setForm((f) => ({ ...f, clientCode: data.code! }));
+    } catch {
+      // ignore
     }
-    if (editing && value === editing.clientCode) {
-      setCodeStatus({ state: "ok" });
-      return;
-    }
-    setCodeStatus({ state: "checking" });
-    codeTimerRef.current = setTimeout(async () => {
-      try {
-        const params = new URLSearchParams({ code: value });
-        if (editing) params.set("excludeId", editing.id);
-        const res = await fetch(`/api/admin/clients/check-code?${params.toString()}`);
-        const data = (await res.json()) as { available?: boolean; valid?: boolean; error?: string };
-        if (!data.valid) {
-          setCodeStatus({ state: "invalid", message: data.error ?? "Invalid." });
-          return;
-        }
-        setCodeStatus(
-          data.available ? { state: "ok" } : { state: "taken", message: `${value} already used.` },
-        );
-      } catch {
-        setCodeStatus({ state: "idle" });
-      }
-    }, 300);
   }
-
-  useEffect(() => {
-    return () => {
-      if (codeTimerRef.current) clearTimeout(codeTimerRef.current);
-    };
-  }, []);
 
   async function submit() {
     setError(null);
-    if (!/^[A-Z]{3}$/.test(form.clientCode)) {
-      setError("Client code must be exactly 3 uppercase letters.");
-      return;
-    }
-    if (codeStatus.state === "taken" || codeStatus.state === "invalid") {
-      setError(codeStatus.message);
+    if (creating && !form.clientCode.trim()) {
+      setError("Enter a client name so a code can be generated.");
       return;
     }
     setSaving(true);
@@ -216,11 +177,7 @@ export function ClientsAdminClient({ clients }: Props) {
   }
 
   const modalOpen = creating || !!editing;
-  const submitDisabled =
-    saving ||
-    codeStatus.state === "checking" ||
-    codeStatus.state === "taken" ||
-    codeStatus.state === "invalid";
+  const submitDisabled = saving;
 
   return (
     <div className="space-y-4">
@@ -316,17 +273,19 @@ export function ClientsAdminClient({ clients }: Props) {
           <FormField
             label="Client code"
             value={form.clientCode}
-            onChange={onCodeChange}
-            required
-            maxLength={3}
-            placeholder="AGX"
+            onChange={() => {}}
+            readOnly
             inputClassName="font-mono uppercase tracking-widest"
-            hint={<CodeHint status={codeStatus} />}
+            hint={
+              <span className="text-slate-400">
+                {creating ? "Auto-generated from the client name." : "Auto-generated. Cannot be changed."}
+              </span>
+            }
           />
           <FormField
             label="Client name"
             value={form.clientName}
-            onChange={(v) => updateField("clientName", v)}
+            onChange={onNameChange}
             required
           />
           <FormSelect
@@ -410,11 +369,4 @@ function KindPill({ kind }: { kind: ClientKind }) {
 function DesPill({ value }: { value: "Yes" | "No" | "" }) {
   if (!value) return <span className="text-slate-300">—</span>;
   return <Badge tone={value === "Yes" ? "warning" : "neutral"}>{value}</Badge>;
-}
-
-function CodeHint({ status }: { status: CodeStatus }) {
-  if (status.state === "idle") return <span className="text-slate-400">3 uppercase letters.</span>;
-  if (status.state === "checking") return <span className="text-slate-500">Checking…</span>;
-  if (status.state === "ok") return <span className="text-green-600">Available.</span>;
-  return <span className="text-red-600">{status.message}</span>;
 }

@@ -4,10 +4,22 @@ import { useEffect, useMemo, useState } from "react";
 import { StatusPill } from "@/components/badge";
 import { SearchInput } from "@/components/search-input";
 import { EditIcon, IconButton } from "@/components/admin-icons";
+import { formatWeekRange } from "@/lib/dates";
 import type { StaffingAdminRecord } from "@/lib/airtable";
 
 type MemberLite = { id: string; code: string; name: string };
 type ProjectLite = { code: string; name: string; clientName?: string };
+type StaffingTimesheet = {
+  id: string;
+  staffingRecordId: string;
+  staffingCode: string;
+  timesheetCode: string;
+  startDate: string | null;
+  endDate: string | null;
+  totalHours: number;
+  status: string;
+};
+type TsMap = Map<string, StaffingTimesheet[]>;
 
 // Days meter: used vs allocated, amber/rose when over. Mirrors the timesheet
 // review meter so the breakdowns read consistently across the app.
@@ -40,6 +52,14 @@ function money(v: number | null, ccy: string): string {
   return `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}${ccy ? ` ${ccy}` : ""}`;
 }
 
+function fmtDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? "—"
+    : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
 function Chevron({ open }: { open: boolean }) {
   return (
     <svg
@@ -66,34 +86,117 @@ function sumDays(rows: StaffingAdminRecord[]) {
   );
 }
 
-// One staffing line — leads with `primary` (member or project) and a secondary
-// note (role), then rate, days meter, status, and edit.
+function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
+      <div className={`text-slate-700 demo-blur ${mono ? "font-mono text-[11px]" : "text-xs"}`}>{value || "—"}</div>
+    </div>
+  );
+}
+
+// One staffing line, expandable. Collapsed row leads with `primary` (member or
+// project) + its code, role, rate, days meter, status. Expanded, it reveals the
+// full staffing detail and the timesheets submitted against it.
 function StaffingRow({
   s,
   primary,
+  primaryCode,
   secondary,
+  timesheets,
   onEdit,
 }: {
   s: StaffingAdminRecord;
   primary: string;
+  primaryCode: string;
   secondary: string;
+  timesheets: StaffingTimesheet[];
   onEdit: (s: StaffingAdminRecord) => void;
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 px-3 py-2 first:border-t-0">
-      <span className="min-w-[9rem] flex-1 truncate text-sm text-slate-800 demo-blur">{primary}</span>
-      {secondary ? (
-        <span className="hidden min-w-[7rem] flex-1 truncate text-xs text-slate-500 sm:block">{secondary}</span>
+    <li className="border-t border-slate-100 first:border-t-0">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex min-w-[9rem] flex-1 items-center gap-2 text-left"
+        >
+          <Chevron open={open} />
+          <span className="min-w-0">
+            <span className="block truncate text-sm text-slate-800 demo-blur">{primary}</span>
+            {primaryCode ? (
+              <span className="block truncate font-mono text-[10px] text-slate-400">{primaryCode}</span>
+            ) : null}
+          </span>
+        </button>
+        {secondary ? (
+          <span className="hidden min-w-[7rem] flex-1 truncate text-xs text-slate-500 sm:block">{secondary}</span>
+        ) : null}
+        <span className="hidden font-mono text-[10px] text-slate-400 md:block" title="Staffing code">
+          {s.staffingCode || "—"}
+        </span>
+        <span className="text-xs tabular-nums text-slate-500 demo-blur">
+          {money(s.ratePerDay, s.currency)}
+          {s.ratePerDay != null ? " / d" : ""}
+        </span>
+        <DaysMeter used={s.daysUsed} allocated={s.daysAllocated} />
+        <StatusPill status={s.status || "—"} />
+        <IconButton title="Edit staffing" onClick={() => onEdit(s)}>
+          <EditIcon />
+        </IconButton>
+      </div>
+
+      {open ? (
+        <div className="border-t border-slate-100 bg-slate-50/60 px-3 py-3">
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+            <Field label="Staffing" value={s.staffingCode} mono />
+            <Field label="Project" value={`${s.projectCode}${s.projectName ? ` — ${s.projectName}` : ""}`} />
+            <Field label="Role" value={s.projectRole || s.roleInProject} />
+            <Field label="Rate" value={money(s.ratePerDay, s.currency) + (s.ratePerDay != null ? " / d" : "")} />
+            <Field label="Days allocated" value={s.daysAllocated != null ? String(s.daysAllocated) : "—"} />
+            <Field label="Days used" value={s.daysUsed ? s.daysUsed.toFixed(2) : "—"} />
+            <Field label="SOW" value={s.sowReference} />
+            <Field label="SOW status" value={s.sowStatus} />
+            <Field label="Start" value={fmtDate(s.startDate)} />
+            <Field label="End" value={fmtDate(s.endDate)} />
+          </dl>
+
+          <div className="mt-3">
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-slate-400">
+              Timesheets submitted · {timesheets.length}
+            </div>
+            {timesheets.length === 0 ? (
+              <div className="rounded-md border border-dashed border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-400">
+                No timesheets submitted for this staffing yet.
+              </div>
+            ) : (
+              <ul className="overflow-hidden rounded-md border border-slate-200 bg-white">
+                {timesheets.map((t) => (
+                  <li
+                    key={t.id}
+                    className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 px-2.5 py-1.5 text-[11px] first:border-t-0"
+                  >
+                    <span className="min-w-[9rem] flex-1 text-slate-700">
+                      {t.startDate ? formatWeekRange(t.startDate, t.endDate ?? t.startDate) : t.timesheetCode || "—"}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-400">{t.timesheetCode}</span>
+                    <StatusPill status={t.status || "—"} />
+                    <span className="tabular-nums text-slate-500">{(t.totalHours || 0).toFixed(1)} h</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="mt-2 flex justify-end">
+            <IconButton title="Edit staffing" onClick={() => onEdit(s)}>
+              <EditIcon />
+            </IconButton>
+          </div>
+        </div>
       ) : null}
-      <span className="text-xs tabular-nums text-slate-500 demo-blur">
-        {money(s.ratePerDay, s.currency)}
-        {s.ratePerDay != null ? " / d" : ""}
-      </span>
-      <DaysMeter used={s.daysUsed} allocated={s.daysAllocated} />
-      <StatusPill status={s.status || "—"} />
-      <IconButton title="Edit staffing" onClick={() => onEdit(s)}>
-        <EditIcon />
-      </IconButton>
     </li>
   );
 }
@@ -104,19 +207,21 @@ function Group({
   subtitle,
   rows,
   rowPrimary,
+  rowPrimaryCode,
   rowSecondary,
+  tsFor,
   onEdit,
-  defaultOpen = true,
 }: {
   title: string;
   subtitle?: string;
   rows: StaffingAdminRecord[];
   rowPrimary: (s: StaffingAdminRecord) => string;
+  rowPrimaryCode: (s: StaffingAdminRecord) => string;
   rowSecondary: (s: StaffingAdminRecord) => string;
+  tsFor: (s: StaffingAdminRecord) => StaffingTimesheet[];
   onEdit: (s: StaffingAdminRecord) => void;
-  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(true);
   const d = sumDays(rows);
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -141,7 +246,15 @@ function Group({
       {open ? (
         <ul className="border-t border-slate-100">
           {rows.map((s) => (
-            <StaffingRow key={s.id} s={s} primary={rowPrimary(s)} secondary={rowSecondary(s)} onEdit={onEdit} />
+            <StaffingRow
+              key={s.id}
+              s={s}
+              primary={rowPrimary(s)}
+              primaryCode={rowPrimaryCode(s)}
+              secondary={rowSecondary(s)}
+              timesheets={tsFor(s)}
+              onEdit={onEdit}
+            />
           ))}
         </ul>
       ) : null}
@@ -155,14 +268,12 @@ function Rail({
   items,
   selectedId,
   onSelect,
-  searchable,
   searchPlaceholder,
 }: {
   items: RailItem[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  searchable?: boolean;
-  searchPlaceholder?: string;
+  searchPlaceholder: string;
 }) {
   const [q, setQ] = useState("");
   const query = q.trim().toLowerCase();
@@ -173,11 +284,9 @@ function Rail({
     : items;
   return (
     <div className="self-start overflow-hidden rounded-lg border border-slate-200 bg-white">
-      {searchable ? (
-        <div className="border-b border-slate-100 p-2">
-          <SearchInput value={q} onChange={setQ} placeholder={searchPlaceholder ?? "Search…"} className="w-full" />
-        </div>
-      ) : null}
+      <div className="border-b border-slate-100 p-2">
+        <SearchInput value={q} onChange={setQ} placeholder={searchPlaceholder} className="w-full" />
+      </div>
       <ul className="max-h-[72vh] divide-y divide-slate-100 overflow-y-auto">
         {shown.length === 0 ? (
           <li className="p-6 text-center text-xs text-slate-400">No matches.</li>
@@ -215,6 +324,10 @@ function Rail({
   );
 }
 
+function makeTsFor(map: TsMap) {
+  return (s: StaffingAdminRecord) => map.get(s.id) ?? map.get(s.staffingCode) ?? [];
+}
+
 // ---------------------------------------------------------------------------
 // By project: clients on the left, that client's projects (each a group of
 // staffings) on the right.
@@ -223,11 +336,13 @@ export function StaffingsByProject({
   staffings,
   members,
   projects,
+  timesheetsByStaffing,
   onEdit,
 }: {
   staffings: StaffingAdminRecord[];
   members: MemberLite[];
   projects: ProjectLite[];
+  timesheetsByStaffing: TsMap;
   onEdit: (s: StaffingAdminRecord) => void;
 }) {
   const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
@@ -235,12 +350,14 @@ export function StaffingsByProject({
     () => new Map(projects.map((p) => [p.code, p.clientName || ""])),
     [projects],
   );
+  const tsFor = useMemo(() => makeTsFor(timesheetsByStaffing), [timesheetsByStaffing]);
   const nameOf = (s: StaffingAdminRecord) =>
     s.memberRecordIds
       .map((mid, i) => memberById.get(mid)?.name || memberById.get(mid)?.code || s.memberCodes[i] || mid)
       .join(", ") || "—";
+  const codeOf = (s: StaffingAdminRecord) =>
+    s.memberRecordIds.map((mid, i) => memberById.get(mid)?.code || s.memberCodes[i] || "").filter(Boolean).join(", ");
 
-  // Group by client → then the client's staffings (later grouped by project).
   const clients = useMemo(() => {
     const m = new Map<string, StaffingAdminRecord[]>();
     for (const s of staffings) {
@@ -262,7 +379,6 @@ export function StaffingsByProject({
 
   const current = clients.find((c) => c.id === selected) ?? null;
 
-  // The selected client's staffings, grouped by project.
   const projectGroups = useMemo(() => {
     if (!current) return [] as { code: string; name: string; rows: StaffingAdminRecord[] }[];
     const m = new Map<string, { code: string; name: string; rows: StaffingAdminRecord[] }>();
@@ -289,7 +405,6 @@ export function StaffingsByProject({
         items={clients.map((c) => ({ id: c.id, label: c.label, count: c.count }))}
         selectedId={selected}
         onSelect={setSelected}
-        searchable
         searchPlaceholder="Search clients…"
       />
       <div className="space-y-3">
@@ -309,7 +424,9 @@ export function StaffingsByProject({
             subtitle={g.code}
             rows={g.rows.slice().sort((a, b) => nameOf(a).localeCompare(nameOf(b)))}
             rowPrimary={(s) => nameOf(s)}
+            rowPrimaryCode={(s) => codeOf(s)}
             rowSecondary={(s) => s.projectRole || s.roleInProject || ""}
+            tsFor={tsFor}
             onEdit={onEdit}
           />
         ))}
@@ -320,18 +437,21 @@ export function StaffingsByProject({
 
 // ---------------------------------------------------------------------------
 // By member: members (searchable) on the left, that member's staffings on the
-// right.
+// right, grouped by project.
 // ---------------------------------------------------------------------------
 export function StaffingsByMember({
   staffings,
   members,
+  timesheetsByStaffing,
   onEdit,
 }: {
   staffings: StaffingAdminRecord[];
   members: MemberLite[];
+  timesheetsByStaffing: TsMap;
   onEdit: (s: StaffingAdminRecord) => void;
 }) {
   const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
+  const tsFor = useMemo(() => makeTsFor(timesheetsByStaffing), [timesheetsByStaffing]);
 
   const groups = useMemo(() => {
     const m = new Map<string, { label: string; code: string; rows: StaffingAdminRecord[] }>();
@@ -359,6 +479,19 @@ export function StaffingsByMember({
 
   const current = groups.find((g) => g.id === selected) ?? null;
 
+  // The selected member's staffings, grouped by project.
+  const projectGroups = useMemo(() => {
+    if (!current) return [] as { code: string; name: string; rows: StaffingAdminRecord[] }[];
+    const m = new Map<string, { code: string; name: string; rows: StaffingAdminRecord[] }>();
+    for (const s of current.rows) {
+      const code = s.projectCode || "—";
+      const g = m.get(code) ?? { code, name: s.projectName || code, rows: [] };
+      g.rows.push(s);
+      m.set(code, g);
+    }
+    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [current]);
+
   if (groups.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
@@ -373,34 +506,28 @@ export function StaffingsByMember({
         items={groups.map((g) => ({ id: g.id, label: g.label, sublabel: g.code, count: g.rows.length }))}
         selectedId={selected}
         onSelect={setSelected}
-        searchable
         searchPlaceholder="Search members…"
       />
       <div className="space-y-3">
         {current ? (
-          <>
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900 demo-blur">{current.label}</h2>
-              {current.code ? <div className="font-mono text-xs text-slate-500">{current.code}</div> : null}
-            </div>
-            <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-              <ul>
-                {current.rows
-                  .slice()
-                  .sort((a, b) => (a.projectName || a.projectCode).localeCompare(b.projectName || b.projectCode))
-                  .map((s) => (
-                    <StaffingRow
-                      key={s.id}
-                      s={s}
-                      primary={s.projectName || s.projectCode || "—"}
-                      secondary={s.projectRole || s.roleInProject || ""}
-                      onEdit={onEdit}
-                    />
-                  ))}
-              </ul>
-            </div>
-          </>
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900 demo-blur">{current.label}</h2>
+            {current.code ? <div className="font-mono text-xs text-slate-500">{current.code}</div> : null}
+          </div>
         ) : null}
+        {projectGroups.map((g) => (
+          <Group
+            key={g.code}
+            title={g.name}
+            subtitle={g.code}
+            rows={g.rows}
+            rowPrimary={(s) => s.projectName || s.projectCode || "—"}
+            rowPrimaryCode={(s) => s.projectCode}
+            rowSecondary={(s) => s.projectRole || s.roleInProject || ""}
+            tsFor={tsFor}
+            onEdit={onEdit}
+          />
+        ))}
       </div>
     </div>
   );

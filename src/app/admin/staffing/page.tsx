@@ -6,6 +6,7 @@ import {
   CURRENCIES,
   listAllMembers,
   listAllStaffings,
+  listAllTimesheets,
   listClients,
   listProjects,
   PROJECT_ROLES,
@@ -20,14 +21,28 @@ export default async function AdminStaffingPage() {
   const access = await requireAdminPage("staffing");
   if (!access) redirect("/admin");
 
-  const [staffings, projects, members, clients] = await Promise.all([
+  const [staffings, projects, members, clients, timesheets] = await Promise.all([
     listAllStaffings(),
     listProjects(),
     listAllMembers(),
     listClients(),
+    listAllTimesheets(),
   ]);
   // Resolve each project's client so the By project view can group by client.
   const clientById = new Map(clients.map((c) => [c.id, c]));
+
+  // Compact timesheet rows per staffing, so the breakdown expansions can list
+  // the weeks submitted against each staffing without shipping full records.
+  const staffingTimesheets = timesheets.map((t) => ({
+    id: t.id,
+    staffingRecordId: t.staffingRecordId,
+    staffingCode: t.staffingCode,
+    timesheetCode: t.timesheetCode,
+    startDate: t.startDate,
+    endDate: t.endDate,
+    totalHours: t.totalHours,
+    status: t.status,
+  }));
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
@@ -65,6 +80,7 @@ export default async function AdminStaffingPage() {
           staffingStatuses={STAFFING_STATUSES}
           sowStatuses={SOW_STATUSES}
           projectRoles={PROJECT_ROLES}
+          timesheets={staffingTimesheets}
         />
     </main>
   );

@@ -148,7 +148,6 @@ export function ProjectsAdminClient({
   const [showDiscard, setShowDiscard] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [codeLoading, setCodeLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ProjectRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
   // SOW attach/replace for the project being edited (links to Legal). On
@@ -297,38 +296,6 @@ export function ProjectsAdminClient({
   function yearFromStart(iso: string): number {
     const y = parseInt(iso.slice(0, 4), 10);
     return Number.isFinite(y) ? y : currentYear;
-  }
-
-  async function suggestCode() {
-    if (!form.clientId) {
-      setError("Pick a client first.");
-      return;
-    }
-    const client = clientById.get(form.clientId);
-    if (!client || !/^[A-Z]{3}$/.test(client.clientCode)) {
-      setError("Client code must be 3 uppercase letters.");
-      return;
-    }
-    setCodeLoading(true);
-    setError(null);
-    try {
-      const year = yearFromStart(form.startDate || `${currentYear}-01-01`);
-      const params = new URLSearchParams({
-        clientCode: client.clientCode,
-        year: String(year),
-      });
-      const res = await fetch(`/api/admin/projects/next-code?${params.toString()}`);
-      if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? "Could not suggest code.");
-      }
-      const data = (await res.json()) as { code?: string };
-      if (data.code) updateField("projectCode", data.code);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not suggest code.");
-    } finally {
-      setCodeLoading(false);
-    }
   }
 
   async function onClientChange(id: string) {
@@ -735,26 +702,17 @@ export function ProjectsAdminClient({
               <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
                 Project code <span className="text-red-500">*</span>
               </span>
-              <div className="mt-1 flex gap-2">
+              <div className="mt-1">
                 <input
                   type="text"
                   value={form.projectCode}
-                  onChange={(e) => updateField("projectCode", e.target.value)}
+                  readOnly
                   required
-                  className="block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-mono focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-                  placeholder="AGX-2026-01"
+                  className="block w-full rounded-md border border-slate-300 bg-slate-100 px-2.5 py-1.5 text-xs font-mono text-slate-500 cursor-not-allowed focus:outline-none"
+                  placeholder={creating ? "Pick a client first" : ""}
                 />
-                <Button
-                  tone="secondary"
-                  size="sm"
-                  disabled={codeLoading || !form.clientId}
-                  onClick={suggestCode}
-                  title={!form.clientId ? "Pick a client first" : "Suggest next available code"}
-                >
-                  {codeLoading ? "…" : "Auto"}
-                </Button>
               </div>
-              <div className="mt-1 text-xs text-slate-400">Format: CLIENT-YEAR-NN</div>
+              <div className="mt-1 text-xs text-slate-400">Auto-generated. Format: CLIENT-YEAR-NN</div>
             </div>
             <FormField
               label="Project name"

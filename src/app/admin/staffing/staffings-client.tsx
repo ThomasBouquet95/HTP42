@@ -37,6 +37,17 @@ type MemberOpt = {
   currency: string;
 };
 
+export type StaffingTimesheet = {
+  id: string;
+  staffingRecordId: string;
+  staffingCode: string;
+  timesheetCode: string;
+  startDate: string | null;
+  endDate: string | null;
+  totalHours: number;
+  status: string;
+};
+
 type Props = {
   staffings: StaffingAdminRecord[];
   projects: ProjectOpt[];
@@ -45,6 +56,7 @@ type Props = {
   staffingStatuses: readonly StaffingStatus[];
   sowStatuses: readonly SowStatus[];
   projectRoles: readonly ProjectRole[];
+  timesheets: StaffingTimesheet[];
 };
 
 type FormState = {
@@ -160,6 +172,7 @@ export function StaffingsAdminClient({
   staffingStatuses,
   sowStatuses,
   projectRoles,
+  timesheets,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -173,6 +186,23 @@ export function StaffingsAdminClient({
   const [view, setView] = useState<"overview" | "byproject" | "bymember">("overview");
   const [memberOpen, setMemberOpen] = useState<MemberOpt | null>(null);
   const membersById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
+  // Timesheets grouped by staffing (record id, with a staffing-code fallback),
+  // sorted newest week first — fed to the breakdown expansions.
+  const timesheetsByStaffing = useMemo(() => {
+    const m = new Map<string, StaffingTimesheet[]>();
+    const push = (key: string, t: StaffingTimesheet) => {
+      if (!key) return;
+      const arr = m.get(key) ?? [];
+      arr.push(t);
+      m.set(key, arr);
+    };
+    for (const t of timesheets) {
+      push(t.staffingRecordId, t);
+      if (t.staffingCode && t.staffingCode !== t.staffingRecordId) push(t.staffingCode, t);
+    }
+    for (const arr of m.values()) arr.sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
+    return m;
+  }, [timesheets]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   function toggleRow(id: string) {
     setExpandedRows((prev) => {
@@ -259,6 +289,20 @@ export function StaffingsAdminClient({
     }
   }
 
+
+  // Picking a member pre-fills the rate + currency from that member's own
+  // daily rate/currency when those fields are still empty (so an admin doesn't
+  // re-type what we already know). Both remain editable, and the currency
+  // change also fetches the FX rate. Existing values are never overwritten.
+  function onMemberChange(memberId: string) {
+    const m = membersById.get(memberId);
+    setForm((f) => ({
+      ...f,
+      memberId,
+      ratePerDay: f.ratePerDay === "" && m?.dailyRate != null ? String(m.dailyRate) : f.ratePerDay,
+    }));
+    if (m && m.currency && !form.currency) updateCurrency(m.currency);
+  }
 
   async function updateCurrency(currency: string) {
     setForm((f) => ({ ...f, currency }));
@@ -391,9 +435,20 @@ export function StaffingsAdminClient({
       />
 
       {view === "byproject" ? (
-        <StaffingsByProject staffings={filtered} members={members} projects={projects} onEdit={openEdit} />
+        <StaffingsByProject
+          staffings={filtered}
+          members={members}
+          projects={projects}
+          timesheetsByStaffing={timesheetsByStaffing}
+          onEdit={openEdit}
+        />
       ) : view === "bymember" ? (
-        <StaffingsByMember staffings={filtered} members={members} onEdit={openEdit} />
+        <StaffingsByMember
+          staffings={filtered}
+          members={members}
+          timesheetsByStaffing={timesheetsByStaffing}
+          onEdit={openEdit}
+        />
       ) : (
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full text-xs">
@@ -601,7 +656,7 @@ export function StaffingsAdminClient({
             <SearchSelect
               className="mt-1"
               value={form.memberId}
-              onChange={(v) => updateField("memberId", v)}
+              onChange={(v) => onMemberChange(v)}
               placeholder="Select member…"
               searchPlaceholder="Search members…"
               options={members.map((m) => ({ value: m.id, label: `${m.code} · ${m.name}`, hint: m.code }))}
