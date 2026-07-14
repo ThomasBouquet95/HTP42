@@ -20,7 +20,7 @@ import type {
   StaffingStatus,
 } from "@/lib/airtable";
 
-type ProjectOpt = { code: string; name: string };
+type ProjectOpt = { code: string; name: string; clientName?: string };
 type MemberOpt = {
   id: string;
   code: string;
@@ -391,7 +391,7 @@ export function StaffingsAdminClient({
       />
 
       {view === "byproject" ? (
-        <StaffingsByProject staffings={filtered} members={members} onEdit={openEdit} />
+        <StaffingsByProject staffings={filtered} members={members} projects={projects} onEdit={openEdit} />
       ) : view === "bymember" ? (
         <StaffingsByMember staffings={filtered} members={members} onEdit={openEdit} />
       ) : (

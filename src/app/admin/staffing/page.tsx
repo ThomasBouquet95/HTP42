@@ -6,6 +6,7 @@ import {
   CURRENCIES,
   listAllMembers,
   listAllStaffings,
+  listClients,
   listProjects,
   PROJECT_ROLES,
   SOW_STATUSES,
@@ -19,11 +20,14 @@ export default async function AdminStaffingPage() {
   const access = await requireAdminPage("staffing");
   if (!access) redirect("/admin");
 
-  const [staffings, projects, members] = await Promise.all([
+  const [staffings, projects, members, clients] = await Promise.all([
     listAllStaffings(),
     listProjects(),
     listAllMembers(),
+    listClients(),
   ]);
+  // Resolve each project's client so the By project view can group by client.
+  const clientById = new Map(clients.map((c) => [c.id, c]));
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
@@ -34,7 +38,14 @@ export default async function AdminStaffingPage() {
         />
         <StaffingsAdminClient
           staffings={staffings}
-          projects={projects.map((p) => ({ code: p.projectCode, name: p.projectName }))}
+          projects={projects.map((p) => ({
+            code: p.projectCode,
+            name: p.projectName,
+            clientName:
+              (p.clientRecordIds[0] && clientById.get(p.clientRecordIds[0])?.clientName) ||
+              p.clientCodes[0] ||
+              "",
+          }))}
           members={members.map((m) => ({
             id: m.id,
             code: m.memberCode,
