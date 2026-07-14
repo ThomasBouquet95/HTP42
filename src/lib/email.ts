@@ -81,7 +81,10 @@ export async function sendMailViaGraph(
   args: SendArgs,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const result = await doSendMailViaGraph(args);
-  void logEmailSend({
+  // Await the log write (it swallows its own errors). Firing it un-awaited
+  // would let Vercel's serverless runtime freeze the function after the
+  // response returns, dropping the log row before it is written.
+  await logEmailSend({
     label: args.logLabel ?? "",
     status: result.ok ? "Sent" : "Failed",
     from: (args.from?.trim() || env.invoiceSender) ?? "",
