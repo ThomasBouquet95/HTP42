@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
+import { FilterBar, FilterMultiSelect } from "@/components/filters";
 import { Badge } from "@/components/badge";
 import { EditIcon, IconButton } from "@/components/admin-icons";
 import { CLIENT_KINDS, type ClientKind, type ClientRecord } from "@/lib/airtable";
@@ -49,6 +50,10 @@ function fromRecord(c: ClientRecord): FormState {
 export function ClientsAdminClient({ clients }: Props) {
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
+  const [industryFilter, setIndustryFilter] = useState<string[]>([]);
+  const [countryFilter, setCountryFilter] = useState<string[]>([]);
+  const [desFilter, setDesFilter] = useState<string[]>([]);
   const [editing, setEditing] = useState<ClientRecord | null>(null);
   const [creating, setCreating] = useState(false);
   // On create, once the admin hand-edits the code we stop re-deriving it from
@@ -68,15 +73,30 @@ export function ClientsAdminClient({ clients }: Props) {
     [form, baseline],
   );
 
+  // Option lists for the faceted filters, derived from the clients present.
+  // Empty values are skipped and each list is sorted for a stable order.
+  const sortedOptions = (values: string[]) =>
+    Array.from(new Set(values.filter((v) => v && v.trim())))
+      .sort((a, b) => a.localeCompare(b))
+      .map((v) => ({ value: v, label: v }));
+  const typeOptions = useMemo(() => sortedOptions(clients.map((c) => c.kind)), [clients]);
+  const industryOptions = useMemo(() => sortedOptions(clients.map((c) => c.industry)), [clients]);
+  const countryOptions = useMemo(() => sortedOptions(clients.map((c) => c.country)), [clients]);
+  const desOptions = useMemo(() => sortedOptions(clients.map((c) => c.subjectToDes)), [clients]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return clients;
-    return clients.filter((c) =>
-      [c.clientCode, c.clientName, c.kind, c.industry, c.country, c.keyContact].some(
+    return clients.filter((c) => {
+      if (typeFilter.length > 0 && !typeFilter.includes(c.kind)) return false;
+      if (industryFilter.length > 0 && !industryFilter.includes(c.industry)) return false;
+      if (countryFilter.length > 0 && !countryFilter.includes(c.country)) return false;
+      if (desFilter.length > 0 && !desFilter.includes(c.subjectToDes)) return false;
+      if (!q) return true;
+      return [c.clientCode, c.clientName, c.kind, c.industry, c.country, c.keyContact].some(
         (v) => v && v.toLowerCase().includes(q),
-      ),
-    );
-  }, [clients, search]);
+      );
+    });
+  }, [clients, search, typeFilter, industryFilter, countryFilter, desFilter]);
 
   function openCreate() {
     setEditing(null);
@@ -209,6 +229,33 @@ export function ClientsAdminClient({ clients }: Props) {
         <Button tone="primary" size="sm" onClick={openCreate}>+ New client</Button>
       </div>
 
+      <FilterBar>
+        <FilterMultiSelect
+          label="Type"
+          selected={typeFilter}
+          onChange={setTypeFilter}
+          options={typeOptions}
+        />
+        <FilterMultiSelect
+          label="Industry"
+          selected={industryFilter}
+          onChange={setIndustryFilter}
+          options={industryOptions}
+        />
+        <FilterMultiSelect
+          label="Country"
+          selected={countryFilter}
+          onChange={setCountryFilter}
+          options={countryOptions}
+        />
+        <FilterMultiSelect
+          label="Subject to DES"
+          selected={desFilter}
+          onChange={setDesFilter}
+          options={desOptions}
+        />
+      </FilterBar>
+
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full table-fixed text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
@@ -227,7 +274,7 @@ export function ClientsAdminClient({ clients }: Props) {
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={8} className="text-center text-slate-500 py-10">
-                  No clients match this search.
+                  No clients match these filters.
                 </td>
               </tr>
             ) : (

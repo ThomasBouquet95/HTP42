@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
+import { FilterBar, FilterMultiSelect } from "@/components/filters";
+import { StatusPill } from "@/components/badge";
 import { EditIcon, IconButton, ChevronRightIcon } from "@/components/admin-icons";
 import { DownloadChip } from "@/components/download-chip";
 import { StatusSelect } from "@/components/status-select";
@@ -111,6 +113,9 @@ export function MembersAdminClient({
     }
   }
   const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [countryFilter, setCountryFilter] = useState<string[]>([]);
   const [editing, setEditing] = useState<MemberAdminRecord | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY);
@@ -202,14 +207,25 @@ export function MembersAdminClient({
     }
   }
 
+  // Country options derived from the members actually present, so the filter
+  // only offers values that can match something.
+  const countryOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of members) if (m.country) set.add(m.country);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [members]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return members;
-    return members.filter((m) =>
-      [m.memberCode, m.fullName, m.email, m.role, m.country]
-        .some((v) => v && v.toLowerCase().includes(q)),
-    );
-  }, [members, search]);
+    return members.filter((m) => {
+      if (roleFilter.length > 0 && !roleFilter.includes(m.role)) return false;
+      if (statusFilter.length > 0 && !statusFilter.includes(m.status)) return false;
+      if (countryFilter.length > 0 && !countryFilter.includes(m.country)) return false;
+      if (!q) return true;
+      return [m.memberCode, m.fullName, m.email, m.role, m.country]
+        .some((v) => v && v.toLowerCase().includes(q));
+    });
+  }, [members, search, roleFilter, statusFilter, countryFilter]);
 
   function openCreate() {
     setEditing(null);
@@ -411,6 +427,27 @@ export function MembersAdminClient({
         </Button>
       </div>
 
+      <FilterBar>
+        <FilterMultiSelect
+          label="Role"
+          selected={roleFilter}
+          onChange={setRoleFilter}
+          options={roles.map((r) => ({ value: r, label: r }))}
+        />
+        <FilterMultiSelect
+          label="Status"
+          selected={statusFilter}
+          onChange={setStatusFilter}
+          options={statuses.map((s) => ({ value: s, label: s }))}
+        />
+        <FilterMultiSelect
+          label="Country"
+          selected={countryFilter}
+          onChange={setCountryFilter}
+          options={countryOptions.map((c) => ({ value: c, label: c }))}
+        />
+      </FilterBar>
+
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full table-fixed text-xs">
           <colgroup>
@@ -551,7 +588,9 @@ export function MembersAdminClient({
                           {m.personalEmail || "—"}
                         </Field>
                         <Field label="Role">{m.role || "—"}</Field>
-                        <Field label="Status">{m.status || "—"}</Field>
+                        <Field label="Status">
+                          {m.status ? <StatusPill status={m.status} /> : "—"}
+                        </Field>
                         <Field label="Title">{m.title || "—"}</Field>
                         <Field label="Country">{m.country || "—"}</Field>
                         <Field label="Phone" blur>

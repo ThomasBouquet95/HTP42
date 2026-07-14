@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { StatusPill } from "@/components/badge";
 import type { MemberRole, MemberStatus, StaffingStatus } from "@/lib/airtable";
 
 type MemberLite = {
@@ -168,8 +169,9 @@ export function NetworkCockpitClient({
                 <span className="truncate demo-blur">
                   <span className="font-mono text-[10px] text-slate-500">{m.code}</span> {m.name}
                 </span>
-                <span className="shrink-0 text-[11px] text-slate-500">
-                  {m.role || "—"} · {m.status}
+                <span className="flex shrink-0 items-center gap-2 text-[11px] text-slate-500">
+                  <span>{m.role || "—"}</span>
+                  {m.status ? <StatusPill status={m.status} /> : null}
                 </span>
               </li>
             ))}

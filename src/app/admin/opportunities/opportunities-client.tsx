@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
+import { FilterBar, FilterMultiSelect } from "@/components/filters";
 import { Badge, StatusPill } from "@/components/badge";
 import { DateField } from "@/components/date-picker";
 import {
@@ -86,6 +87,8 @@ export function OpportunitiesClient({
   // the change immediately (a one-shot useState snapshot went stale).
   const rows = opportunities;
   const [clientFilter, setClientFilter] = useState<string>("All");
+  const [stageFilter, setStageFilter] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
@@ -136,6 +139,8 @@ export function OpportunitiesClient({
     const q = search.trim().toLowerCase();
     return rows.filter((o) => {
       if (clientFilter !== "All" && o.clientRecordIds[0] !== clientFilter) return false;
+      if (stageFilter.length > 0 && !stageFilter.includes(o.stage)) return false;
+      if (statusFilter.length > 0 && !statusFilter.includes(o.status)) return false;
       if (q) {
         const hay = [o.title, o.clientName, o.clientCode, o.contact, o.description, o.statusNote]
           .join(" ")
@@ -144,7 +149,7 @@ export function OpportunitiesClient({
       }
       return true;
     });
-  }, [rows, clientFilter, search]);
+  }, [rows, clientFilter, stageFilter, statusFilter, search]);
 
   function openCreate() {
     const initial = {
@@ -298,17 +303,29 @@ export function OpportunitiesClient({
 
       {/* Opportunities (right) */}
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
+        <FilterBar>
           <SearchInput
             value={search}
             onChange={setSearch}
             placeholder="Search opportunities…"
             className="flex-1 min-w-[12rem]"
           />
+          <FilterMultiSelect
+            label="Stage"
+            selected={stageFilter}
+            onChange={setStageFilter}
+            options={OPPORTUNITY_STAGES.map((s) => ({ value: s, label: s }))}
+          />
+          <FilterMultiSelect
+            label="Status"
+            selected={statusFilter}
+            onChange={setStatusFilter}
+            options={OPPORTUNITY_STATUSES.map((s) => ({ value: s, label: s }))}
+          />
           <Button tone="primary" size="sm" onClick={openCreate}>
             + New opportunity
           </Button>
-        </div>
+        </FilterBar>
 
         {filtered.length === 0 ? (
           <div className="rounded-lg border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
@@ -365,10 +382,10 @@ export function OpportunitiesClient({
                       type="button"
                       onClick={() => setConvertTarget(o)}
                       disabled={converted}
-                      title={converted ? "Already converted to a project" : "Create a project from this"}
+                      title={converted ? "Already converted to a project" : "Convert to a project"}
                       className="text-xs font-medium text-brand-600 hover:text-brand-700 disabled:text-slate-300"
                     >
-                      Move to project →
+                      Convert to project →
                     </button>
                     <button
                       type="button"
@@ -681,7 +698,7 @@ function ConvertModal({
       if (data.warning) {
         onConverted(data.warning, "error");
       } else {
-        onConverted(`Project ${form.projectCode.trim()} created from opportunity`);
+        onConverted(`Converted to project ${form.projectCode.trim()}`);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Conversion failed.");
@@ -695,7 +712,7 @@ function ConvertModal({
       open={!!opportunity}
       onClose={() => (saving ? undefined : onClose())}
       busy={saving}
-      title="Move to project"
+      title="Convert to project"
       size="lg"
       footer={
         <>
@@ -742,7 +759,7 @@ function ConvertModal({
               Project code
             </span>
             <div className="mt-1 flex items-center gap-2">
-              <span className="flex-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-800">
+              <span className="flex-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 font-mono text-xs text-slate-800">
                 {suggesting ? "Calculating…" : form.projectCode || "—"}
               </span>
               <button

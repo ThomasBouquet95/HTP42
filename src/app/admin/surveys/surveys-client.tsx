@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormSelect } from "@/components/form-controls";
+import { SearchInput } from "@/components/search-input";
 import { TrashIcon } from "@/components/admin-icons";
 import { Badge } from "@/components/badge";
 import { StarRating } from "@/components/star-rating";
@@ -20,6 +21,7 @@ export function SurveysClient({
   projects: ProjectOpt[];
 }) {
   const router = useRouter();
+  const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const [projectCode, setProjectCode] = useState("");
   const [recipients, setRecipients] = useState<Recipient[]>([{ name: "", email: "" }]);
@@ -79,6 +81,18 @@ export function SurveysClient({
       })
       .sort((a, b) => a.code.localeCompare(b.code));
   }, [surveys]);
+
+  // Search across project code/name and the members rated within each group.
+  const visibleGroups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return groups;
+    return groups.filter(
+      (g) =>
+        g.code.toLowerCase().includes(q) ||
+        g.name.toLowerCase().includes(q) ||
+        g.members.some((m) => m.name.toLowerCase().includes(q) || m.code.toLowerCase().includes(q)),
+    );
+  }, [groups, search]);
 
   function toggle(code: string) {
     setExpanded((s) => {
@@ -154,7 +168,13 @@ export function SurveysClient({
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search by project or member…"
+          className="flex-1"
+        />
         <Button tone="primary" size="sm" onClick={() => setCreating(true)}>
           + New survey
         </Button>
@@ -164,9 +184,13 @@ export function SurveysClient({
         <div className="rounded-lg border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
           No surveys yet. Click <span className="font-medium">+ New survey</span> to send one.
         </div>
+      ) : visibleGroups.length === 0 ? (
+        <div className="rounded-lg border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+          No surveys match your search.
+        </div>
       ) : (
         <div className="space-y-3">
-          {groups.map((g) => {
+          {visibleGroups.map((g) => {
             const open = expanded.has(g.code);
             return (
               <div key={g.code} className="rounded-lg border border-slate-200 bg-white">

@@ -133,6 +133,14 @@ function fromRecord(p: ProjectRecord): FormState {
   };
 }
 
+function CountBadge({ n }: { n: number }) {
+  return (
+    <span className="inline-flex items-center rounded-full bg-slate-200 px-1.5 text-[10px] font-semibold text-slate-600">
+      {n}
+    </span>
+  );
+}
+
 export function ProjectsAdminClient({
   projects,
   clients,
@@ -519,8 +527,12 @@ export function ProjectsAdminClient({
         value={view}
         onChange={setView}
         options={[
-          { value: "overview", label: "Overview" },
-          { value: "byclient", label: "By client" },
+          { value: "overview", label: "Overview", badge: <CountBadge n={filtered.length} /> },
+          {
+            value: "byclient",
+            label: "By client",
+            badge: <CountBadge n={new Set(filtered.map((p) => p.clientRecordIds[0] ?? "—")).size} />,
+          },
         ]}
       />
 
