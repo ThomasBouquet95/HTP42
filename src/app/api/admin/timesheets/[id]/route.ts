@@ -7,10 +7,12 @@ import {
   decideTimesheet,
   getAdminTimesheetById,
   getMemberStaffedProjectCodes,
+  getStaffingById,
   recordTimesheetReview,
   updateTimesheet,
   type TimesheetStatus,
 } from "@/lib/airtable";
+import { fridayOfWeek, mondayOf } from "@/lib/dates";
 import { apiError, zodMessage } from "@/lib/errors";
 
 const dayCell = z.object({
@@ -36,9 +38,13 @@ const patchSchema = z
         friday: dayCell,
       })
       .optional(),
+    // Optional content edits: move the week to a different staffing (project)
+    // and/or a different week (any date snaps to that week's Monday).
+    staffingRecordId: z.string().trim().min(1).optional(),
+    startDate: z.string().trim().min(1).optional(),
   })
-  .refine((d) => d.action || d.status || d.days, {
-    message: "Provide an action, a status, or edited days.",
+  .refine((d) => d.action || d.status || d.days || d.staffingRecordId || d.startDate, {
+    message: "Provide an action, a status, or an edit.",
   });
 
 export async function PATCH(
@@ -68,30 +74,53 @@ export async function PATCH(
   }
 
   try {
-    // Content edit: rewrite the week's day hours/tasks, preserving everything
-    // else (member, staffing, dates, status). Audited as an "Edited" entry.
-    if (d.days) {
+    // Content edit: rewrite the week's day hours/tasks, and optionally move it
+    // to a different staffing (project) and/or week. Member and status are
+    // preserved. Audited as an "Edited" entry.
+    if (d.days || d.staffingRecordId || d.startDate) {
+      // Resolve the (possibly new) staffing. Changing staffing keeps the same
+      // member — this is a re-filing, not a re-assignment.
+      let staffingRecordId = existing.staffingRecordId;
+      let staffingCode = existing.staffingCode;
+      let projectCode = existing.projectCode;
+      if (d.staffingRecordId && d.staffingRecordId !== existing.staffingRecordId) {
+        const st = await getStaffingById(d.staffingRecordId);
+        if (!st) return NextResponse.json({ error: "Unknown staffing." }, { status: 400 });
+        staffingRecordId = st.id;
+        staffingCode = st.staffingCode;
+        projectCode = st.projectCode;
+        // A Project Manager can only move it onto one of their own projects.
+        if (session.role === "Project Manager") {
+          const scope = new Set(await getMemberStaffedProjectCodes(session.memberCode));
+          if (!scope.has(projectCode)) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+          }
+        }
+      }
+      // Week: snap any picked date to that week's Monday; end is the Friday.
+      const start = d.startDate ? mondayOf(d.startDate) : existing.startDate ?? "";
+      const end = start ? fridayOfWeek(start) : existing.endDate ?? "";
       await updateTimesheet(id, {
         memberRecordId: existing.memberRecordId,
-        staffingRecordId: existing.staffingRecordId,
-        startDate: existing.startDate ?? "",
-        endDate: existing.endDate ?? "",
-        monday: d.days.monday,
-        tuesday: d.days.tuesday,
-        wednesday: d.days.wednesday,
-        thursday: d.days.thursday,
-        friday: d.days.friday,
+        staffingRecordId,
+        startDate: start,
+        endDate: end,
+        monday: d.days ? d.days.monday : existing.monday,
+        tuesday: d.days ? d.days.tuesday : existing.tuesday,
+        wednesday: d.days ? d.days.wednesday : existing.wednesday,
+        thursday: d.days ? d.days.thursday : existing.thursday,
+        friday: d.days ? d.days.friday : existing.friday,
         status: existing.status,
         submissionDate: existing.submissionDate,
       });
       await recordTimesheetReview({
         timesheetId: id,
         timesheetCode: existing.timesheetCode,
-        staffingCode: existing.staffingCode,
+        staffingCode,
         action: "Edited",
         actor: reviewer,
         method: "Admin",
-        comment: d.comment || "Admin edited the week's hours/tasks",
+        comment: d.comment || "Admin edited the timesheet (hours/tasks, staffing or week)",
       });
       return NextResponse.json({ ok: true });
     }

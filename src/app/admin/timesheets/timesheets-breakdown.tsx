@@ -5,6 +5,7 @@ import { StatusPill } from "@/components/badge";
 import { WeekChip } from "@/components/week-chip";
 import { Button } from "@/components/form-controls";
 import { FilterBar, FilterMultiSelect, FilterDateRange } from "@/components/filters";
+import { SearchSelect } from "@/components/search-select";
 import { TIMESHEET_STATUSES } from "@/lib/airtable";
 import type { AdminTimesheetRecord } from "@/lib/airtable";
 import { downloadTimesheetsCsv } from "./timesheets-export";
@@ -486,20 +487,17 @@ function Picker({
   options: { value: string; label: string }[];
 }) {
   return (
-    <label className="inline-flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
+    <div className="inline-flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
       {label}
-      <select
+      <SearchSelect
+        className="min-w-[16rem]"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-8 max-w-[24rem] rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-800 focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
+        onChange={onChange}
+        options={options}
+        placeholder={`Select ${label.toLowerCase()}…`}
+        searchPlaceholder={`Search ${label.toLowerCase()}…`}
+      />
+    </div>
   );
 }
 

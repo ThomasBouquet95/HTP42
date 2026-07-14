@@ -68,6 +68,16 @@ type Props = {
   // When set, this role only sees timesheets for these projects (Project
   // Manager scoping). Null means "all projects" (unscoped admin roles).
   scopeProjects: string[] | null;
+  // Staffings, for the edit modal's project + week reassignment.
+  staffings: EditStaffingOpt[];
+};
+
+export type EditStaffingOpt = {
+  id: string;
+  staffingCode: string;
+  projectCode: string;
+  projectName: string;
+  memberCode: string;
 };
 
 // Invoices tied to a timesheet: same staffing first, else same member+project
@@ -85,7 +95,7 @@ function relatedInvoicesFor(
   );
 }
 
-export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId, sowByStaffing, allowedViews, scopeProjects }: Props) {
+export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId, sowByStaffing, allowedViews, scopeProjects, staffings }: Props) {
   const router = useRouter();
   // Overview (filterable table) · By project · By member — the two breakdown
   // views live in their own tabs instead of inline cards above the table.
@@ -504,7 +514,7 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
         </div>
       ) : null}
 
-      <TimesheetEditModal timesheet={editTs} onClose={() => setEditTs(null)} />
+      <TimesheetEditModal timesheet={editTs} staffings={staffings} onClose={() => setEditTs(null)} />
     </div>
   );
 }

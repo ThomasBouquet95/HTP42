@@ -122,6 +122,13 @@ export default async function AdminTimesheetsPage() {
           sowByStaffing={sowByStaffing}
           allowedViews={views}
           scopeProjects={scopeProjects}
+          staffings={staffings.map((s) => ({
+            id: s.id,
+            staffingCode: s.staffingCode,
+            projectCode: s.projectCode,
+            projectName: s.projectName,
+            memberCode: s.memberCodes[0] ?? "",
+          }))}
         />
     </main>
   );

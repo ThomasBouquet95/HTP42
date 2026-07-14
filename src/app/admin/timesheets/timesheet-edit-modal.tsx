@@ -4,8 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/modal";
 import { Button } from "@/components/form-controls";
-import { formatWeekRange } from "@/lib/dates";
+import { SearchSelect } from "@/components/search-select";
+import { DateField } from "@/components/date-picker";
+import { formatWeekRange, mondayOf, fridayOfWeek } from "@/lib/dates";
 import type { AdminTimesheetRecord } from "@/lib/airtable";
+import type { EditStaffingOpt } from "./timesheets-client";
 
 const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
 const DAY_LABELS: Record<(typeof DAYS)[number], string> = {
@@ -18,18 +21,22 @@ const DAY_LABELS: Record<(typeof DAYS)[number], string> = {
 
 type DayForm = { hours: string; task: string };
 
-// Admin edit of a single timesheet's day-by-day hours + tasks. Status, member,
-// staffing and week are preserved — this only corrects what was logged. Any
-// view can open it; on save it refreshes the page and calls onClose.
+// Admin edit of a single timesheet: day-by-day hours + tasks, and optionally
+// the project (staffing) and week. Member and status are preserved. Any view
+// can open it; on save it refreshes the page and calls onClose.
 export function TimesheetEditModal({
   timesheet,
+  staffings,
   onClose,
 }: {
   timesheet: AdminTimesheetRecord | null;
+  staffings: EditStaffingOpt[];
   onClose: () => void;
 }) {
   const router = useRouter();
   const [days, setDays] = useState<Record<string, DayForm>>({});
+  const [staffingId, setStaffingId] = useState("");
+  const [weekStart, setWeekStart] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
@@ -44,6 +51,8 @@ export function TimesheetEditModal({
       };
     }
     setDays(seed);
+    setStaffingId(timesheet.staffingRecordId || "");
+    setWeekStart(timesheet.startDate || "");
     setLoadedFor(timesheet.id);
     setError(null);
   }
@@ -51,6 +60,16 @@ export function TimesheetEditModal({
   if (!timesheet) return null;
 
   const total = DAYS.reduce((n, d) => n + (Number(days[d]?.hours) || 0), 0);
+  // Only the same member's staffings — moving a timesheet to another person is
+  // not a re-filing. Always include the current one so it shows even if the
+  // member code lookup is imperfect.
+  const staffingOptions = staffings
+    .filter((s) => s.memberCode === timesheet.memberCode || s.id === timesheet.staffingRecordId)
+    .map((s) => ({
+      value: s.id,
+      label: `${s.staffingCode || s.projectCode} · ${s.projectCode}`,
+      hint: s.projectName,
+    }));
 
   function setDay(d: string, patch: Partial<DayForm>) {
     setDays((prev) => ({ ...prev, [d]: { ...prev[d], ...patch } }));
@@ -60,11 +79,13 @@ export function TimesheetEditModal({
     setSaving(true);
     setError(null);
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         days: Object.fromEntries(
           DAYS.map((d) => [d, { hours: Number(days[d]?.hours) || 0, task: (days[d]?.task ?? "").trim() }]),
         ),
       };
+      if (staffingId && staffingId !== timesheet!.staffingRecordId) payload.staffingRecordId = staffingId;
+      if (weekStart && weekStart !== timesheet!.startDate) payload.startDate = weekStart;
       const res = await fetch(`/api/admin/timesheets/${encodeURIComponent(timesheet!.id)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -108,19 +129,31 @@ export function TimesheetEditModal({
         </>
       }
     >
-      <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
-        <div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-400">Member</div>
-          <div className="text-slate-700 demo-blur">{timesheet.memberName || timesheet.memberCode || "—"}</div>
+      <div className="mb-3">
+        <div className="text-[10px] uppercase tracking-wide text-slate-400">Member</div>
+        <div className="text-xs text-slate-700 demo-blur">
+          {timesheet.memberName || timesheet.memberCode || "—"}
         </div>
+      </div>
+
+      <div className="mb-3 grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="text-[10px] uppercase tracking-wide text-slate-400">Project (staffing)</span>
+          <SearchSelect
+            className="mt-1"
+            value={staffingId}
+            onChange={setStaffingId}
+            options={staffingOptions}
+            placeholder="Select staffing…"
+            searchPlaceholder="Search staffing…"
+          />
+        </label>
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-400">Project</div>
-          <div className="text-slate-700 demo-blur">{timesheet.projectCode || "—"}</div>
-        </div>
-        <div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-400">Week</div>
-          <div className="text-slate-700">
-            {timesheet.startDate ? formatWeekRange(timesheet.startDate, timesheet.endDate ?? timesheet.startDate) : "—"}
+          <DateField label="Week" value={weekStart} onChange={setWeekStart} placeholder="Pick a week" />
+          <div className="mt-1 text-[11px] text-slate-400">
+            {weekStart
+              ? `Week of ${formatWeekRange(mondayOf(weekStart), fridayOfWeek(mondayOf(weekStart)))}`
+              : "Any date snaps to that week (Monday to Friday)."}
           </div>
         </div>
       </div>
