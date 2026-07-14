@@ -7,6 +7,7 @@ import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-c
 import { DateField } from "@/components/date-picker";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { SearchInput } from "@/components/search-input";
+import { FilterMultiSelect } from "@/components/filters";
 import { StatusPill } from "@/components/badge";
 import { EditIcon } from "@/components/admin-icons";
 import type { VendorInvoiceRecord } from "@/lib/airtable";
@@ -74,7 +75,7 @@ export function VendorInvoicesClient({
 
   // Client-side filters over the invoices prop.
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
 
   // Edit modal state — mirrors the payments screen: the expanded row is a
   // read-only panel, edits happen in a modal.
@@ -238,11 +239,7 @@ export function VendorInvoicesClient({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return invoices.filter((inv) => {
-      if (
-        statusFilter !== "All" &&
-        derivedStatus(inv).toLowerCase() !== statusFilter.toLowerCase()
-      )
-        return false;
+      if (statusFilter.length > 0 && !statusFilter.includes(derivedStatus(inv))) return false;
       if (q) {
         const haystack = [inv.vendor, inv.invoiceNumber, inv.emailSubject]
           .filter(Boolean)
@@ -282,22 +279,12 @@ export function VendorInvoicesClient({
           ariaLabel="Search vendor invoices"
           className="w-64"
         />
-        <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
-          <span className="uppercase tracking-wide">Status</span>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className={`rounded-md border bg-white px-2 py-1 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 ${
-              statusFilter !== "All" ? "border-brand-300 text-brand-800" : "border-slate-300 text-slate-700"
-            }`}
-          >
-            {STATUS_FILTERS.map((s) => (
-              <option key={s} value={s}>
-                {s === "All" ? "All statuses" : s}
-              </option>
-            ))}
-          </select>
-        </label>
+        <FilterMultiSelect
+          label="Status"
+          selected={statusFilter}
+          onChange={setStatusFilter}
+          options={STATUS_FILTERS.filter((s) => s !== "All").map((s) => ({ value: s, label: s }))}
+        />
         <div className="ml-auto text-xs text-slate-500">
           Total on file:{" "}
           <span className="demo-blur font-medium text-slate-700">{money(totalEur, "EUR")}</span>

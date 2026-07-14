@@ -72,6 +72,7 @@ type Filters = {
   status: string[];
   currency: string[];
   project: string[];
+  member: string[];
   counterparty: string[];
   dueFrom: string;
   dueTo: string;
@@ -85,6 +86,7 @@ const DEFAULT_FILTERS: Filters = {
   status: [],
   currency: [],
   project: [],
+  member: [],
   counterparty: [],
   dueFrom: "",
   dueTo: "",
@@ -396,6 +398,22 @@ export function PaymentsClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows]);
 
+  // Members linked to any payment (mostly outflows / subcontractor), for the
+  // dedicated Member filter.
+  const memberOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of rows) {
+      for (const id of p.memberRecordIds) {
+        const m = membersById.get(id);
+        if (m && !map.has(id)) map.set(id, m.name || m.code || id);
+      }
+    }
+    return [...map.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+
   const filtered = useMemo(() => {
     // A deep link to a specific payment isolates exactly that record — a code
     // substring search (e.g. "139") could otherwise match several rows.
@@ -409,6 +427,7 @@ export function PaymentsClient({
       if (filters.status.length && !filters.status.includes(effectiveStatus(p.paymentStatus))) return false;
       if (filters.currency.length && !filters.currency.includes(p.invoiceCurrency)) return false;
       if (filters.project.length && !p.projectRecordIds.some((id) => filters.project.includes(id))) return false;
+      if (filters.member.length && !p.memberRecordIds.some((id) => filters.member.includes(id))) return false;
       if (filters.counterparty.length && !counterpartyValues(p).some((c) => filters.counterparty.includes(c)))
         return false;
       // Date range filters apply only once the user has picked BOTH ends —
@@ -500,6 +519,7 @@ export function PaymentsClient({
     filters.status.length > 0 ||
     filters.currency.length > 0 ||
     filters.project.length > 0 ||
+    filters.member.length > 0 ||
     filters.counterparty.length > 0 ||
     filters.dueFrom !== "" ||
     filters.dueTo !== "" ||
@@ -895,6 +915,16 @@ export function PaymentsClient({
             onChange={(v) => update("counterparty", v)}
             options={counterpartyOptions.map((c) => ({ value: c, label: c }))}
           />
+          {/* Dedicated Member filter — mainly for outflows (subcontractor
+              payments), which are the ones linked to a network member. */}
+          {memberOptions.length > 0 ? (
+            <FilterMultiSelect
+              label="Member"
+              selected={filters.member}
+              onChange={(v) => update("member", v)}
+              options={memberOptions}
+            />
+          ) : null}
           <FilterMultiSelect
             label="Status"
             selected={filters.status}

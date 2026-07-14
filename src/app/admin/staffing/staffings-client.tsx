@@ -7,7 +7,7 @@ import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-c
 import { SearchInput } from "@/components/search-input";
 import { SearchSelect } from "@/components/search-select";
 import { Badge } from "@/components/badge";
-import { FilterSelect } from "@/components/filters";
+import { FilterMultiSelect } from "@/components/filters";
 import { DateField } from "@/components/date-picker";
 import { EditIcon, IconButton } from "@/components/admin-icons";
 import { StatusSelect } from "@/components/status-select";
@@ -168,7 +168,7 @@ export function StaffingsAdminClient({
     const p = searchParams?.get("project");
     if (p) setSearch(p);
   }, [searchParams]);
-  const [statusFilter, setStatusFilter] = useState<"All" | StaffingStatus>("All");
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [memberOpen, setMemberOpen] = useState<MemberOpt | null>(null);
   const membersById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -197,7 +197,7 @@ export function StaffingsAdminClient({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return staffings.filter((s) => {
-      if (statusFilter !== "All" && s.status !== statusFilter) return false;
+      if (statusFilter.length > 0 && !statusFilter.includes(s.status)) return false;
       if (!q) return true;
       return [s.staffingCode, s.projectCode, s.projectName, s.roleInProject, ...s.memberCodes]
         .some((v) => v && v.toLowerCase().includes(q));
@@ -359,11 +359,10 @@ export function StaffingsAdminClient({
           placeholder="Search by staffing, project, member, role…"
           className="flex-1"
         />
-        <FilterSelect
+        <FilterMultiSelect
           label="Status"
-          value={statusFilter}
-          onChange={(v) => setStatusFilter(v as "All" | StaffingStatus)}
-          allLabel="All statuses"
+          selected={statusFilter}
+          onChange={setStatusFilter}
           options={staffingStatuses.map((s) => ({ value: s, label: s }))}
         />
         <Button tone="primary" size="sm" onClick={openCreate}>+ New staffing</Button>

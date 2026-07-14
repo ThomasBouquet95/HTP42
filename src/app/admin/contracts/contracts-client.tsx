@@ -6,7 +6,7 @@ import { DownloadChip } from "@/components/download-chip";
 import { DateField, formatFriendlyDate } from "@/components/date-picker";
 import { SearchInput } from "@/components/search-input";
 import { Button, ButtonLink } from "@/components/form-controls";
-import { SegmentedTabs } from "@/components/filters";
+import { FilterBar, FilterMultiSelect, SegmentedTabs } from "@/components/filters";
 import { EditIcon, IconButton } from "@/components/admin-icons";
 import {
   CONTRACT_SIDES,
@@ -78,26 +78,27 @@ type Props = {
 
 type Filters = {
   search: string;
-  type: "All" | string;
+  // Multi-select list filters: empty array = no filter (show all).
+  type: string[];
   side: "All" | ContractSide;
-  stage: "All" | string;
+  stage: string[];
   validity: "All" | ValidityBucket;
-  // Project record id, or "All". Matches directly-linked contracts
-  // (SOWs) plus the indirectly-related NDAs/MSAs for the project's
-  // client and staffed members.
-  project: "All" | string;
+  // Project record ids. Empty = no filter. A picked project matches its
+  // directly-linked contracts (SOWs) plus the indirectly-related
+  // NDAs/MSAs for the project's client and staffed members.
+  project: string[];
 };
 
-// Land on All by default — admins typically want the full picture and
-// then filter down by side or type. (Most-recent-signature sort happens
-// server-side.)
+// Land on the full picture by default — admins typically want everything
+// and then filter down by side or type. (Most-recent-signature sort
+// happens server-side.)
 const DEFAULT_FILTERS: Filters = {
   search: "",
-  type: "All",
+  type: [],
   side: "All",
-  stage: "All",
+  stage: [],
   validity: "All",
-  project: "All",
+  project: [],
 };
 
 export function ContractsAdminClient({
@@ -349,15 +350,18 @@ export function ContractsAdminClient({
 
   const filtered = useMemo(() => {
     const q = filters.search.trim().toLowerCase();
-    const projectIds =
-      filters.project !== "All"
-        ? projectContractIds.get(filters.project) ?? new Set<string>()
+    // Union of the relevant-contract id sets for every picked project.
+    const projectIdSets =
+      filters.project.length > 0
+        ? filters.project.map(
+            (pid) => projectContractIds.get(pid) ?? new Set<string>(),
+          )
         : null;
     return contracts.filter((c) => {
-      if (filters.type !== "All" && c.contractType !== filters.type) return false;
+      if (filters.type.length > 0 && !filters.type.includes(c.contractType)) return false;
       if (filters.side !== "All" && resolveSide(c) !== filters.side) return false;
-      if (filters.stage !== "All" && c.stage !== filters.stage) return false;
-      if (projectIds && !projectIds.has(c.id)) return false;
+      if (filters.stage.length > 0 && !filters.stage.includes(c.stage)) return false;
+      if (projectIdSets && !projectIdSets.some((set) => set.has(c.id))) return false;
       if (filters.validity !== "All") {
         const bucket = validityBucket(c.validity);
         if (bucket !== filters.validity) return false;
@@ -485,42 +489,33 @@ export function ContractsAdminClient({
       />
 
       <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Select
-            label="Search"
-            renderAs="search"
+        <FilterBar>
+          <SearchInput
             value={filters.search}
             onChange={(v) => update("search", v)}
             placeholder="Project, member, client, signatory…"
+            ariaLabel="Search contracts"
+            className="w-full sm:w-64"
           />
-          <Select
+          <FilterMultiSelect
             label="Project"
-            value={filters.project}
-            onChange={(v) => update("project", v)}
-            options={[
-              { value: "All", label: "All projects" },
-              ...projectFilterOptions.map((p) => ({ value: p.id, label: p.label })),
-            ]}
+            selected={filters.project}
+            onChange={(next) => update("project", next)}
+            options={projectFilterOptions.map((p) => ({ value: p.id, label: p.label }))}
           />
-          <Select
+          <FilterMultiSelect
             label="Contract type"
-            value={filters.type}
-            onChange={(v) => update("type", v)}
-            options={[
-              { value: "All", label: "All types" },
-              ...typeOptions.map((t) => ({ value: t, label: t })),
-            ]}
+            selected={filters.type}
+            onChange={(next) => update("type", next)}
+            options={typeOptions.map((t) => ({ value: t, label: t }))}
           />
-          <Select
+          <FilterMultiSelect
             label="Status"
-            value={filters.stage}
-            onChange={(v) => update("stage", v)}
-            options={[
-              { value: "All", label: "All statuses" },
-              ...stageOptions.map((s) => ({ value: s, label: s })),
-            ]}
+            selected={filters.stage}
+            onChange={(next) => update("stage", next)}
+            options={stageOptions.map((s) => ({ value: s, label: s }))}
           />
-        </div>
+        </FilterBar>
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
           <SegmentedTabs
@@ -1574,31 +1569,40 @@ function ActiveFilterChips({
   onClear: <K extends keyof Filters>(key: K, value: Filters[K]) => void;
   projectLabel?: (id: string) => string;
 }) {
-  const chips: { label: string; clear: () => void }[] = [];
+  const chips: { key: string; label: string; clear: () => void }[] = [];
   if (filters.side !== "All") {
-    chips.push({ label: filters.side, clear: () => onClear("side", "All") });
+    chips.push({ key: `side:${filters.side}`, label: filters.side, clear: () => onClear("side", "All") });
   }
-  if (filters.project !== "All") {
+  for (const id of filters.project) {
     chips.push({
-      label: projectLabel?.(filters.project) ?? "Project",
-      clear: () => onClear("project", "All"),
+      key: `project:${id}`,
+      label: projectLabel?.(id) ?? "Project",
+      clear: () => onClear("project", filters.project.filter((p) => p !== id)),
     });
   }
-  if (filters.type !== "All") {
-    chips.push({ label: filters.type, clear: () => onClear("type", "All") });
+  for (const t of filters.type) {
+    chips.push({
+      key: `type:${t}`,
+      label: t,
+      clear: () => onClear("type", filters.type.filter((x) => x !== t)),
+    });
   }
-  if (filters.stage !== "All") {
-    chips.push({ label: filters.stage, clear: () => onClear("stage", "All") });
+  for (const s of filters.stage) {
+    chips.push({
+      key: `stage:${s}`,
+      label: s,
+      clear: () => onClear("stage", filters.stage.filter((x) => x !== s)),
+    });
   }
   if (filters.validity !== "All") {
-    chips.push({ label: filters.validity, clear: () => onClear("validity", "All") });
+    chips.push({ key: `validity:${filters.validity}`, label: filters.validity, clear: () => onClear("validity", "All") });
   }
   if (chips.length === 0) return null;
   return (
     <span className="flex flex-wrap items-center gap-1">
       {chips.map((c) => (
         <button
-          key={c.label}
+          key={c.key}
           type="button"
           onClick={c.clear}
           className="inline-flex items-center gap-1 rounded-full bg-brand-50 border border-brand-200 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-100"
@@ -1609,58 +1613,6 @@ function ActiveFilterChips({
         </button>
       ))}
     </span>
-  );
-}
-
-function Select(
-  props:
-    | {
-        label: string;
-        value: string;
-        onChange: (v: string) => void;
-        options: { value: string; label: string }[];
-        renderAs?: undefined;
-      }
-    | {
-        label: string;
-        value: string;
-        onChange: (v: string) => void;
-        renderAs: "search";
-        placeholder?: string;
-      },
-) {
-  if (props.renderAs === "search") {
-    return (
-      <label className="block">
-        <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-          {props.label}
-        </span>
-        <SearchInput
-          value={props.value}
-          onChange={props.onChange}
-          placeholder={props.placeholder}
-          className="mt-1 w-full"
-        />
-      </label>
-    );
-  }
-  return (
-    <label className="block">
-      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-        {props.label}
-      </span>
-      <select
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-      >
-        {props.options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }
 

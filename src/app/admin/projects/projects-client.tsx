@@ -7,7 +7,7 @@ import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
 import { Badge } from "@/components/badge";
-import { FilterSelect } from "@/components/filters";
+import { FilterMultiSelect } from "@/components/filters";
 import { EditIcon, IconButton } from "@/components/admin-icons";
 import { DownloadChip } from "@/components/download-chip";
 import { StatusSelect } from "@/components/status-select";
@@ -116,12 +116,6 @@ function fromRecord(p: ProjectRecord): FormState {
   };
 }
 
-type StatusFilter = "All" | ProjectStatus;
-
-// Default to "In Progress": that's the actionable pile for admin work.
-// Same pattern as the redesigned /admin/timesheets page.
-const DEFAULT_STATUS_FILTER: StatusFilter = "In Progress";
-
 export function ProjectsAdminClient({
   projects,
   clients,
@@ -134,8 +128,10 @@ export function ProjectsAdminClient({
   const router = useRouter();
   const currentYear = new Date().getUTCFullYear();
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>(DEFAULT_STATUS_FILTER);
-  const [typeFilter, setTypeFilter] = useState<"All" | ProjectType>("All");
+  // Default to the actionable "In Progress" pile (matches the prior behaviour);
+  // empty array would mean "no filter". Multi-select so more can be added.
+  const [statuses, setStatuses] = useState<string[]>(["In Progress"]);
+  const [types, setTypes] = useState<string[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   function toggleRow(id: string) {
     setExpandedRows((prev) => {
@@ -174,14 +170,14 @@ export function ProjectsAdminClient({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return projects.filter((p) => {
-      if (statusFilter !== "All" && p.status !== statusFilter) return false;
-      if (typeFilter !== "All" && p.type !== typeFilter) return false;
+      if (statuses.length > 0 && !statuses.includes(p.status)) return false;
+      if (types.length > 0 && !types.includes(p.type)) return false;
       if (!q) return true;
       return [p.projectCode, p.projectName, p.status, p.type, ...p.clientCodes].some(
         (v) => v && v.toLowerCase().includes(q),
       );
     });
-  }, [projects, search, statusFilter, typeFilter]);
+  }, [projects, search, statuses, types]);
 
   // Status pill counts — show in the filter row so admins can see the
   // shape of the pipeline at a glance.
@@ -460,21 +456,19 @@ export function ProjectsAdminClient({
             placeholder="Code, name, client, type, status…"
             className="w-64"
           />
-          <FilterSelect
+          <FilterMultiSelect
             label="Status"
-            value={statusFilter}
-            onChange={(v) => setStatusFilter(v as StatusFilter)}
-            allLabel="All statuses"
+            selected={statuses}
+            onChange={setStatuses}
             options={projectStatuses.map((s) => ({
               value: s,
               label: `${s}${statusCounts.get(s) ? ` (${statusCounts.get(s)})` : ""}`,
             }))}
           />
-          <FilterSelect
+          <FilterMultiSelect
             label="Type"
-            value={typeFilter}
-            onChange={(v) => setTypeFilter(v as "All" | ProjectType)}
-            allLabel="All types"
+            selected={types}
+            onChange={setTypes}
             options={projectTypes.map((t) => ({ value: t, label: t }))}
           />
           <Button tone="primary" size="sm" onClick={openCreate} className="ml-auto">
@@ -482,38 +476,16 @@ export function ProjectsAdminClient({
           </Button>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-sm text-slate-600">
-          <div className="flex flex-wrap items-center gap-2">
-            <span>
-              {filtered.length} project{filtered.length === 1 ? "" : "s"}
-            </span>
-            {statusFilter !== "All" ? (
-              <button
-                type="button"
-                onClick={() => setStatusFilter("All")}
-                className="inline-flex items-center gap-1 rounded-full bg-brand-50 border border-brand-200 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-100"
-              >
-                {statusFilter}
-                <span aria-hidden>×</span>
-              </button>
-            ) : null}
-            {typeFilter !== "All" ? (
-              <button
-                type="button"
-                onClick={() => setTypeFilter("All")}
-                className="inline-flex items-center gap-1 rounded-full bg-brand-50 border border-brand-200 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-100"
-              >
-                {typeFilter}
-                <span aria-hidden>×</span>
-              </button>
-            ) : null}
-          </div>
+          <span>
+            {filtered.length} project{filtered.length === 1 ? "" : "s"}
+          </span>
           <Button
             tone="secondary"
             size="sm"
             onClick={() => {
               setSearch("");
-              setStatusFilter(DEFAULT_STATUS_FILTER);
-              setTypeFilter("All");
+              setStatuses([]);
+              setTypes([]);
             }}
           >
             Reset
