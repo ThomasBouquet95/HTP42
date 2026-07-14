@@ -24,6 +24,7 @@ type TimesheetOpt = {
   endDate: string | null;
   totalHours: number;
   timesheetCode: string;
+  status: string;
 };
 
 export function InvoicesClient({
@@ -261,9 +262,17 @@ function NewInvoiceModal({
   }, [staffingId]);
 
   // Timesheets that live under the picked staffing, sorted newest first.
+  // Show every submitted-or-later week on the staffing (with its status), but
+  // only Approved ones can actually be invoiced. Draft/Cancelled/Deleted are
+  // hidden. `approvedIds` drives select-all and the submit guard.
   const eligible = timesheets
-    .filter((t) => t.staffingRecordId === staffingId)
+    .filter(
+      (t) =>
+        t.staffingRecordId === staffingId &&
+        !["Draft", "Cancelled", "Deleted"].includes(t.status),
+    )
     .sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
+  const approvedIds = eligible.filter((t) => t.status === "Approved").map((t) => t.id);
 
   useEffect(() => {
     if (!open) return;
@@ -290,6 +299,15 @@ function NewInvoiceModal({
     }
     if (!currency) return onError("Currency is required.");
     if (!comment.trim()) return onError("Comment is required.");
+    // Guard: only approved timesheets can be invoiced.
+    const notApproved = [...selectedTimesheetIds].filter(
+      (id) => !approvedIds.includes(id),
+    );
+    if (notApproved.length > 0) {
+      return onError(
+        "Some selected timesheets are not approved yet. Timesheets need to be approved by an admin or the client before they can be invoiced.",
+      );
+    }
     if (!file) return onError("Attach a PDF.");
     if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
       return onError("Only PDF files are accepted.");
@@ -375,21 +393,21 @@ function NewInvoiceModal({
                     (optional, flips to Invoiced when you submit)
                   </span>
                 </span>
-                {eligible.length > 1 ? (
+                {approvedIds.length > 1 ? (
                   <button
                     type="button"
                     onClick={() => {
-                      if (selectedTimesheetIds.size === eligible.length) {
+                      if (approvedIds.every((id) => selectedTimesheetIds.has(id))) {
                         setSelectedTimesheetIds(new Set());
                       } else {
-                        setSelectedTimesheetIds(new Set(eligible.map((t) => t.id)));
+                        setSelectedTimesheetIds(new Set(approvedIds));
                       }
                     }}
                     className="text-[10px] font-medium text-brand-700 hover:underline"
                   >
-                    {selectedTimesheetIds.size === eligible.length
+                    {approvedIds.length > 0 && approvedIds.every((id) => selectedTimesheetIds.has(id))
                       ? "Clear all"
-                      : "Select all"}
+                      : "Select all approved"}
                   </button>
                 ) : null}
               </div>
@@ -401,14 +419,21 @@ function NewInvoiceModal({
                 ) : (
                   eligible.map((t) => {
                     const checked = selectedTimesheetIds.has(t.id);
+                    // Only approved weeks can be invoiced; others show their
+                    // status and are not selectable.
+                    const canPick = t.status === "Approved";
                     return (
                       <label
                         key={t.id}
-                        className="flex items-center gap-2 rounded px-1.5 py-1 hover:bg-white"
+                        className={`flex items-center gap-2 rounded px-1.5 py-1 ${
+                          canPick ? "hover:bg-white" : "opacity-70"
+                        }`}
+                        title={canPick ? undefined : "Only approved timesheets can be invoiced."}
                       >
                         <input
                           type="checkbox"
                           checked={checked}
+                          disabled={!canPick}
                           onChange={(e) => {
                             setSelectedTimesheetIds((prev) => {
                               const next = new Set(prev);
@@ -417,14 +442,13 @@ function NewInvoiceModal({
                               return next;
                             });
                           }}
-                          className="rounded border-slate-300"
+                          className="rounded border-slate-300 disabled:opacity-50"
                         />
                         <span className="font-mono text-[10px] text-slate-500">
                           {t.timesheetCode}
                         </span>
-                        <span>
-                          Week of {t.startDate ?? "—"}
-                        </span>
+                        <span>Week of {t.startDate ?? "—"}</span>
+                        <StatusPill status={t.status} />
                         <span className="ml-auto tabular-nums text-slate-500">
                           {t.totalHours.toFixed(1)} h
                         </span>
@@ -432,6 +456,12 @@ function NewInvoiceModal({
                     );
                   })
                 )}
+                {eligible.length > 0 && approvedIds.length === 0 ? (
+                  <div className="mt-1 px-1.5 text-[11px] text-amber-700">
+                    None of these are approved yet. Timesheets must be approved by an admin or the client
+                    before they can be invoiced.
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}
