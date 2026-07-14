@@ -33,6 +33,7 @@ export const ADMIN_PAGES: { key: string; label: string; category: string; href: 
   // The role manager itself is a governed page. Access to it (view) = who can
   // open Settings; edit = who can change permissions.
   { key: "settings", label: "Roles & access", category: "Settings", href: "/admin/roles" },
+  { key: "documentation", label: "Documentation", category: "Help", href: "/admin/docs" },
 ];
 
 // Level-two sub-sections of a page, each independently grantable. Today only
