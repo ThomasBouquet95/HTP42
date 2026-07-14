@@ -1,15 +1,11 @@
-import { env } from "./env";
 import { sendMailViaGraph } from "./email";
 import { resolveEmail } from "./email-templates-server";
+import { env } from "./env";
 import { listClients, listProjects, type PaymentRecord } from "./airtable";
 
-// Accounting inboxes that must be CC'd on every "payment paid" recap (Fulll
-// bookkeeping + Qonto receipts). Kept here so the payments route and the
-// automated-invoice import both send an identical recap.
-const PAID_RECAP_CC = [
-  "factures+cHEA-072a8f@m.fulll.io",
-  "receipts-ukcbzgcdo9a6@inbox.qonto.com",
-];
+// The recipients (finance inbox + the Fulll/Qonto bookkeeping CCs) and sender
+// are resolved from the editable "payment_paid" email template, so an admin can
+// change them in Admin → Emails.
 
 // Graph caps inline attachments at ~3 MB; larger PDFs are skipped (email still
 // goes out with a note + the invoice URL).
@@ -91,7 +87,7 @@ export async function notifyPaymentPaid(p: PaymentRecord): Promise<void> {
     html: pdfFailure ? `<p><em>PDF not attached — ${safe(pdfFailure)}</em></p>` : `<p>PDF attached.</p>`,
   };
 
-  const { subject, textBody, htmlBody } = await resolveEmail("payment_paid", {
+  const { subject, textBody, htmlBody, to, cc, from } = await resolveEmail("payment_paid", {
     heading,
     label,
     intro: introText,
@@ -108,8 +104,9 @@ export async function notifyPaymentPaid(p: PaymentRecord): Promise<void> {
   });
 
   const result = await sendMailViaGraph({
-    to: env.invoiceRecipient,
-    cc: PAID_RECAP_CC,
+    to,
+    cc,
+    from,
     subject,
     textBody,
     htmlBody,

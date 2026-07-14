@@ -74,20 +74,25 @@ export async function POST(
     [existing.paymentCode, existing.invoiceReference, counterparty]
       .filter(Boolean)
       .join(" · ") || existing.id;
-  const { subject, textBody, htmlBody } = await resolveEmail("payment_invoice_uploaded", {
-    label,
-    direction: existing.direction || "n/a",
-    type: existing.type || "n/a",
-    counterparty: counterparty || "n/a",
-    invoiceReference: existing.invoiceReference || "n/a",
-    amount,
-    paymentStatus: existing.paymentStatus || "n/a",
-    uploadedBy: session.fullName || session.email || session.memberCode,
-    portalUrl: `${env.appUrl}/admin/payments`,
-  });
+  const { subject, textBody, htmlBody, to, cc, from } = await resolveEmail(
+    "payment_invoice_uploaded",
+    {
+      label,
+      direction: existing.direction || "n/a",
+      type: existing.type || "n/a",
+      counterparty: counterparty || "n/a",
+      invoiceReference: existing.invoiceReference || "n/a",
+      amount,
+      paymentStatus: existing.paymentStatus || "n/a",
+      uploadedBy: session.fullName || session.email || session.memberCode,
+      portalUrl: `${env.appUrl}/admin/payments`,
+    },
+  );
 
   void sendMailViaGraph({
-    to: env.invoiceRecipient,
+    to,
+    cc,
+    from,
     subject,
     textBody,
     htmlBody,

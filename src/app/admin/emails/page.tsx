@@ -4,6 +4,7 @@ import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
 import { getEmailTemplateOverrides } from "@/lib/airtable";
 import { EMAIL_TEMPLATES } from "@/lib/email-templates";
+import { env } from "@/lib/env";
 import { EmailsClient } from "./emails-client";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +29,11 @@ export default async function AdminEmailsPage() {
         title="Emails"
         subtitle="· every automated email the portal sends, with editable subject and body"
       />
-      <EmailsClient templates={templates} canEdit={canEdit} />
+      <EmailsClient
+        templates={templates}
+        canEdit={canEdit}
+        defaults={{ sender: env.invoiceSender || "", financeInbox: env.invoiceRecipient || "" }}
+      />
     </main>
   );
 }

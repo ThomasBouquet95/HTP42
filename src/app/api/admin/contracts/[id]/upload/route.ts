@@ -77,7 +77,7 @@ export async function POST(
     .filter((s) => s.name)
     .map((s) => `${s.name}${s.role ? ` (${s.role})` : ""}${s.date ? ` on ${s.date}` : ""}`)
     .join("; ");
-  const { subject, textBody, htmlBody } = await resolveEmail("contract_uploaded", {
+  const { subject, textBody, htmlBody, to, cc, from } = await resolveEmail("contract_uploaded", {
     label,
     contractType: existing.contractType || "n/a",
     counterparty: counterparty || "n/a",
@@ -92,7 +92,9 @@ export async function POST(
   });
 
   void sendMailViaGraph({
-    to: env.invoiceRecipient,
+    to,
+    cc,
+    from,
     subject,
     textBody,
     htmlBody,

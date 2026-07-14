@@ -30,19 +30,41 @@ export type EmailTemplateDef = {
   recipient: string;
   trigger: string;
   conditions: string;
+  // How the "To" address is determined:
+  //  - "fixed": a configurable address, defaulting to the finance inbox.
+  //  - "dynamic": derived per record (a reviewer, a survey contact, a member)
+  //    and therefore not a single editable address.
+  toMode: "fixed" | "dynamic";
+  // Human description of the dynamic recipient (shown when toMode is dynamic).
+  dynamicRecipient?: string;
+  // Built-in CC list (editable). Empty for most; the paid recap CCs bookkeeping.
+  defaultCc: string[];
   // Placeholders available to subject + body.
   placeholders: PlaceholderDoc[];
   defaultSubject: string;
   defaultBody: string;
 };
 
-// The editable override an admin saves for a template (subject and/or body).
+// The editable override an admin saves for a template. Any blank field falls
+// back to the coded default. `to`/`cc` are comma/newline separated address
+// lists; `from` overrides the sender mailbox.
 export type EmailTemplateOverride = {
   key: string;
   subject: string;
   body: string;
+  to: string;
+  cc: string;
+  from: string;
   updatedAt: string | null;
 };
+
+// Parse a comma / semicolon / newline separated address list.
+export function parseAddressList(s: string | undefined | null): string[] {
+  return (s || "")
+    .split(/[,;\n]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
 
 export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
   {
@@ -54,6 +76,9 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
     trigger: "A signed-in member submits an invoice (PDF + staffing + amount + comment) from Timesheets → Submit an invoice.",
     conditions:
       "Sent after the invoice record is created and the member's PDF is attached. The uploaded invoice PDF is always attached; a generated week-by-week timesheet summary PDF is attached when the member selected covered timesheets.",
+    toMode: "fixed",
+    dynamicRecipient: "The submitting member is always CC'd (their @htp42.com address).",
+    defaultCc: [],
     placeholders: [
       { token: "member", description: "Submitting member's name (falls back to email, then member code)." },
       { token: "memberEmail", description: "Member's @htp42.com login email." },
@@ -89,6 +114,9 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
     trigger: "A member submits (or resubmits) a timesheet on a staffing whose review method is Client.",
     conditions:
       "Only sent when the staffing's review method is Client and a reviewer email is set. A single-use token with a 14-day expiry is minted first. Best-effort: a send failure never blocks the submit and is logged to the review audit trail.",
+    toMode: "dynamic",
+    dynamicRecipient: "The reviewer email set on the staffing (per staffing, not editable here).",
+    defaultCc: [],
     placeholders: [
       { token: "reviewerName", description: "Reviewer's name (falls back to 'there')." },
       { token: "memberName", description: "Member who submitted the timesheet." },
@@ -128,6 +156,8 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
       "A payment transitions into Paid — from the payments list/modal, the payment review page, or when an automated vendor-invoice import creates a Paid payment.",
     conditions:
       "Fires exactly once on the transition into Paid. The invoice PDF is attached when available and under the 3 MB inline cap; otherwise a note explains why it is missing. A send failure is only logged.",
+    toMode: "fixed",
+    defaultCc: ["factures+cHEA-072a8f@m.fulll.io", "receipts-ukcbzgcdo9a6@inbox.qonto.com"],
     placeholders: [
       { token: "heading", description: "Inflow received / Outflow paid / Payment recorded (by direction)." },
       { token: "label", description: "Best identifier: reference, beneficiary, payment code, or project codes." },
@@ -168,6 +198,9 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
     recipient: "To: each client contact entered by the admin when sending the survey.",
     trigger: "An admin sends surveys for a project from Clients → Client feedback.",
     conditions: "One email per recipient. A survey-recipient record + token is created first; per-recipient send failures are reported but don't stop the batch.",
+    toMode: "dynamic",
+    dynamicRecipient: "Each client contact entered when sending the survey.",
+    defaultCc: [],
     placeholders: [
       { token: "who", description: "Recipient's name (falls back to 'there')." },
       { token: "projectCode", description: "Project code (used in the subject)." },
@@ -194,6 +227,8 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
     recipient: "To: the finance inbox (INVOICE_RECIPIENT_EMAIL).",
     trigger: "An admin uploads a contract PDF on a contract record.",
     conditions: "Fire-and-forget after a successful attach; only logs on failure. The uploaded PDF is attached.",
+    toMode: "fixed",
+    defaultCc: [],
     placeholders: [
       { token: "label", description: "Contract type · counterparty · project (used in the subject)." },
       { token: "contractType", description: "Contract type (MSA, SOW, …)." },
@@ -231,6 +266,8 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
     recipient: "To: the finance inbox (INVOICE_RECIPIENT_EMAIL).",
     trigger: "An admin uploads an invoice PDF against a payment.",
     conditions: "Fire-and-forget after a successful attach; only logs on failure. The uploaded PDF is attached.",
+    toMode: "fixed",
+    defaultCc: [],
     placeholders: [
       { token: "label", description: "Payment code · reference · counterparty (used in the subject)." },
       { token: "direction", description: "Inflow or Outflow." },
@@ -264,6 +301,9 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
     recipient: "To: an address entered by the admin, else the finance inbox.",
     trigger: "An admin clicks the test-email button in Finance → Invoices.",
     conditions: "Admin-only. Not a business event — used only to verify sending works.",
+    toMode: "fixed",
+    dynamicRecipient: "Defaults to the finance inbox unless the admin types a test address.",
+    defaultCc: [],
     placeholders: [
       { token: "triggeredBy", description: "Admin member code + subject id." },
       { token: "sender", description: "Configured sender mailbox (INVOICE_SENDER_UPN)." },

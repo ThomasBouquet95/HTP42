@@ -10,6 +10,9 @@ const schema = z.object({
   action: z.enum(["save", "reset"]),
   subject: z.string().max(500).default(""),
   body: z.string().max(20000).default(""),
+  to: z.string().max(2000).default(""),
+  cc: z.string().max(2000).default(""),
+  from: z.string().max(320).default(""),
 });
 
 export async function POST(request: Request) {
@@ -30,7 +33,13 @@ export async function POST(request: Request) {
     if (d.action === "reset") {
       await resetEmailTemplateOverride(d.key);
     } else {
-      await setEmailTemplateOverride(d.key, d.subject.trim(), d.body);
+      await setEmailTemplateOverride(d.key, {
+        subject: d.subject.trim(),
+        body: d.body,
+        to: d.to.trim(),
+        cc: d.cc.trim(),
+        from: d.from.trim(),
+      });
     }
     return NextResponse.json({ ok: true });
   } catch (e) {

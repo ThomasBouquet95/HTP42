@@ -13,6 +13,7 @@ import {
 } from "@/lib/email-templates";
 
 type Item = { def: EmailTemplateDef; override: EmailTemplateOverride | null };
+type Defaults = { sender: string; financeInbox: string };
 
 // Build sample vars so the live preview renders with readable stand-ins for
 // each placeholder (scalars as «token», blocks as a small sample fragment).
@@ -26,30 +27,69 @@ function sampleVars(def: EmailTemplateDef): EmailVars {
   return vars;
 }
 
-function Meta({ label, value }: { label: string; value: string }) {
+function Labelled({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="grid grid-cols-[7rem_1fr] gap-2 text-xs">
-      <span className="font-semibold uppercase tracking-wide text-slate-400">{label}</span>
-      <span className="text-slate-600">{value}</span>
-    </div>
+    <label className="block">
+      <span className="mb-1 block text-xs font-semibold text-slate-600">{label}</span>
+      {children}
+      {hint ? <span className="mt-1 block text-[11px] text-slate-400">{hint}</span> : null}
+    </label>
   );
 }
 
-function TemplateCard({ item, canEdit }: { item: Item; canEdit: boolean }) {
+const inputCls =
+  "w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:outline-none disabled:bg-slate-50";
+
+function TemplateCard({
+  item,
+  canEdit,
+  defaults,
+}: {
+  item: Item;
+  canEdit: boolean;
+  defaults: Defaults;
+}) {
   const router = useRouter();
   const { def, override } = item;
   const [open, setOpen] = useState(false);
-  const [subject, setSubject] = useState(override?.subject || def.defaultSubject);
-  const [body, setBody] = useState(override?.body || def.defaultBody);
+  const init = {
+    subject: override?.subject || def.defaultSubject,
+    body: override?.body || def.defaultBody,
+    to: override?.to || "",
+    cc: override?.cc || "",
+    from: override?.from || "",
+  };
+  const [subject, setSubject] = useState(init.subject);
+  const [body, setBody] = useState(init.body);
+  const [to, setTo] = useState(init.to);
+  const [cc, setCc] = useState(init.cc);
+  const [from, setFrom] = useState(init.from);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
   const isCustom = !!override;
-  const dirty = subject !== (override?.subject || def.defaultSubject) || body !== (override?.body || def.defaultBody);
+  const dirty =
+    subject !== init.subject ||
+    body !== init.body ||
+    to !== init.to ||
+    cc !== init.cc ||
+    from !== init.from;
 
   const vars = useMemo(() => sampleVars(def), [def]);
   const previewSubject = interpolateSubject(subject, vars);
   const previewHtml = interpolateHtml(body, vars);
+
+  const defaultCcLabel = def.defaultCc.length ? def.defaultCc.join(", ") : "none";
+  const toDefaultLabel =
+    def.toMode === "fixed" ? defaults.financeInbox || "finance inbox" : def.dynamicRecipient || "per record";
 
   async function post(action: "save" | "reset") {
     setBusy(true);
@@ -58,7 +98,7 @@ function TemplateCard({ item, canEdit }: { item: Item; canEdit: boolean }) {
       const res = await fetch("/api/admin/emails", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: def.key, action, subject, body }),
+        body: JSON.stringify({ key: def.key, action, subject, body, to, cc, from }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -67,8 +107,11 @@ function TemplateCard({ item, canEdit }: { item: Item; canEdit: boolean }) {
         if (action === "reset") {
           setSubject(def.defaultSubject);
           setBody(def.defaultBody);
+          setTo("");
+          setCc("");
+          setFrom("");
         }
-        setMsg(action === "reset" ? "Reverted to the default." : "Saved.");
+        setMsg(action === "reset" ? "Reverted to the default." : "Saved. Applies to future sends.");
         router.refresh();
       }
     } catch {
@@ -104,47 +147,79 @@ function TemplateCard({ item, canEdit }: { item: Item; canEdit: boolean }) {
       </button>
 
       {open ? (
-        <div className="space-y-4 border-t border-slate-100 px-4 py-4">
-          {/* Documentation */}
-          <div className="space-y-1.5 rounded-md bg-slate-50 p-3">
-            <Meta label="Recipient" value={def.recipient} />
-            <Meta label="Trigger" value={def.trigger} />
-            <Meta label="Conditions" value={def.conditions} />
-          </div>
-
-          {/* Placeholders */}
-          <div>
-            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Placeholders
+        <div className="space-y-5 border-t border-slate-100 px-4 py-4">
+          {/* Reference: how it fires */}
+          <div className="grid gap-x-6 gap-y-1.5 rounded-md bg-slate-50 p-3 text-xs sm:grid-cols-2">
+            <div>
+              <span className="font-semibold uppercase tracking-wide text-slate-400">Trigger</span>
+              <p className="text-slate-600">{def.trigger}</p>
             </div>
-            <div className="space-y-1">
-              {def.placeholders.map((p) => (
-                <div key={p.token} className="flex flex-wrap items-baseline gap-2 text-xs">
-                  <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-brand-700">
-                    {`{{${p.token}}}`}
-                  </code>
-                  <span className="text-slate-500">
-                    {p.description}
-                    {p.block ? " (structured — inserted as-is)" : ""}
-                  </span>
-                </div>
-              ))}
+            <div>
+              <span className="font-semibold uppercase tracking-wide text-slate-400">Conditions</span>
+              <p className="text-slate-600">{def.conditions}</p>
             </div>
           </div>
 
-          {/* Editor */}
+          {/* Routing: from / to / cc */}
           <div className="space-y-3">
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold text-slate-600">Subject</span>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Routing
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Labelled label="From (sender)" hint={`Default: ${defaults.sender || "not configured"}. Must be a mailbox authorised in Microsoft 365.`}>
+                <input
+                  value={from}
+                  onChange={(e) => setFrom(e.target.value)}
+                  disabled={!canEdit}
+                  placeholder={defaults.sender || "sender@htp42.com"}
+                  className={inputCls}
+                />
+              </Labelled>
+              <Labelled
+                label="To (recipient)"
+                hint={
+                  def.toMode === "fixed"
+                    ? `Default: ${toDefaultLabel}. Comma-separate multiple addresses.`
+                    : `Sent to ${toDefaultLabel} automatically. Leave blank to keep that, or set an address to force every send to a fixed inbox.`
+                }
+              >
+                <input
+                  value={to}
+                  onChange={(e) => setTo(e.target.value)}
+                  disabled={!canEdit}
+                  placeholder={def.toMode === "fixed" ? toDefaultLabel : `(${toDefaultLabel})`}
+                  className={inputCls}
+                />
+              </Labelled>
+            </div>
+            <Labelled label="CC" hint={`Default: ${defaultCcLabel}. Comma-separate multiple addresses; leave blank to use the default.`}>
+              <input
+                value={cc}
+                onChange={(e) => setCc(e.target.value)}
+                disabled={!canEdit}
+                placeholder={defaultCcLabel}
+                className={inputCls}
+              />
+            </Labelled>
+          </div>
+
+          {/* Content: subject / body */}
+          <div className="space-y-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Content
+            </div>
+            <Labelled label="Subject">
               <input
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
                 disabled={!canEdit}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none disabled:bg-slate-50"
+                className={inputCls}
               />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold text-slate-600">Body</span>
+            </Labelled>
+            <Labelled
+              label="Body"
+              hint="Blank lines separate paragraphs. Use the placeholders below; links become clickable automatically."
+            >
               <textarea
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
@@ -152,17 +227,24 @@ function TemplateCard({ item, canEdit }: { item: Item; canEdit: boolean }) {
                 rows={12}
                 className="w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-xs leading-relaxed focus:border-brand-500 focus:outline-none disabled:bg-slate-50"
               />
-              <span className="mt-1 block text-[11px] text-slate-400">
-                Blank lines separate paragraphs. Use the placeholders above; links become clickable
-                automatically.
-              </span>
-            </label>
+            </Labelled>
+            <div className="flex flex-wrap gap-1.5">
+              {def.placeholders.map((p) => (
+                <span
+                  key={p.token}
+                  title={p.description + (p.block ? " (structured — inserted as-is)" : "")}
+                  className="cursor-help rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-brand-700"
+                >
+                  {`{{${p.token}}}`}
+                </span>
+              ))}
+            </div>
           </div>
 
           {/* Live preview */}
           <div>
             <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Preview (with sample values)
+              Preview (sample values)
             </div>
             <div className="rounded-md border border-slate-200">
               <div className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs">
@@ -170,7 +252,7 @@ function TemplateCard({ item, canEdit }: { item: Item; canEdit: boolean }) {
                 <span className="text-slate-800">{previewSubject}</span>
               </div>
               <div
-                className="prose-sm px-3 py-3 text-sm text-slate-700"
+                className="px-3 py-3 text-sm text-slate-700"
                 dangerouslySetInnerHTML={{ __html: previewHtml }}
               />
             </div>
@@ -179,7 +261,7 @@ function TemplateCard({ item, canEdit }: { item: Item; canEdit: boolean }) {
           {canEdit ? (
             <div className="flex items-center gap-2">
               <Button tone="primary" size="sm" disabled={busy || !dirty} onClick={() => post("save")}>
-                {busy ? "Saving…" : "Save"}
+                {busy ? "Saving…" : "Save changes"}
               </Button>
               {isCustom ? (
                 <Button tone="ghost" size="sm" disabled={busy} onClick={() => post("reset")}>
@@ -197,7 +279,15 @@ function TemplateCard({ item, canEdit }: { item: Item; canEdit: boolean }) {
   );
 }
 
-export function EmailsClient({ templates, canEdit }: { templates: Item[]; canEdit: boolean }) {
+export function EmailsClient({
+  templates,
+  canEdit,
+  defaults,
+}: {
+  templates: Item[];
+  canEdit: boolean;
+  defaults: Defaults;
+}) {
   const [q, setQ] = useState("");
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -212,17 +302,18 @@ export function EmailsClient({ templates, canEdit }: { templates: Item[]; canEdi
 
   return (
     <div className="space-y-4">
-      <div className="rounded-md border border-brand-100 bg-brand-50 px-3 py-2 text-xs text-brand-900">
-        These are every automated email the portal sends. Edit the subject and body inline; changes
-        take effect immediately for future sends. Recipients, attachments and triggers are fixed by
-        the workflow and shown for reference. Revert any email to its built-in default at any time.
+      <div className="rounded-md border border-brand-100 bg-brand-50 px-3 py-2.5 text-xs leading-relaxed text-brand-900">
+        Every automated email the portal sends is listed here. Edit the sender, recipients (To / CC),
+        subject and body — changes are saved to the database and{" "}
+        <strong>take effect on the next send</strong>, not just in this preview. Triggers and
+        attachments are fixed by the workflow. Revert any email to its built-in default at any time.
       </div>
       <div className="max-w-xs">
         <SearchInput value={q} onChange={setQ} placeholder="Search emails…" />
       </div>
       <div className="space-y-2">
         {filtered.map((t) => (
-          <TemplateCard key={t.def.key} item={t} canEdit={canEdit} />
+          <TemplateCard key={t.def.key} item={t} canEdit={canEdit} defaults={defaults} />
         ))}
         {filtered.length === 0 ? (
           <p className="py-8 text-center text-sm text-slate-400">No emails match your search.</p>

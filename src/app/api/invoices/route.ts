@@ -258,7 +258,14 @@ export async function POST(request: Request) {
           }
         : { text: "", html: "" };
 
-    const { subject, textBody: text, htmlBody: html } = await resolveEmail("invoice_submitted", {
+    const {
+      subject,
+      textBody: text,
+      htmlBody: html,
+      to,
+      cc,
+      from,
+    } = await resolveEmail("invoice_submitted", {
       member,
       memberEmail: session.email || "",
       staffingOrProject: staffing.staffingCode || project.projectCode,
@@ -270,6 +277,9 @@ export async function POST(request: Request) {
       coveredTimesheets,
       portalUrl: `${env.appUrl}/admin/payments`,
     });
+    // Always copy the submitting member on their own invoice (their @htp42.com
+    // login address), in addition to any configured CC.
+    const ccList = [session.email, ...cc].filter((v): v is string => !!v);
 
     // Build the attachments array. The user's own invoice PDF always
     // ships; the generated timesheet summary only when timesheets were
@@ -323,10 +333,9 @@ export async function POST(request: Request) {
     }
 
     const sendResult = await sendMailViaGraph({
-      to: env.invoiceRecipient,
-      // Copy the submitting member on their own invoice, using their @htp42.com
-      // login address (never a personal email).
-      cc: session.email || undefined,
+      to,
+      cc: ccList,
+      from,
       subject,
       textBody: text,
       htmlBody: html,

@@ -1,20 +1,49 @@
-import { getEmailTemplateDef, renderEmail, type EmailVars } from "./email-templates";
+import {
+  getEmailTemplateDef,
+  renderEmail,
+  parseAddressList,
+  type EmailVars,
+} from "./email-templates";
 import { getEmailTemplateOverride } from "./airtable";
+import { env } from "./env";
+
+export type ResolvedEmail = {
+  subject: string;
+  textBody: string;
+  htmlBody: string;
+  // Effective sender + recipients after applying any admin override. For
+  // dynamic-recipient emails `to` is empty here — the caller supplies the
+  // per-record recipient and uses `cc`/`from` from this result.
+  to: string[];
+  cc: string[];
+  from: string;
+};
 
 // Server-side bridge: given a template key + runtime vars, load any admin
-// override from Airtable and render the ready-to-send subject + bodies. Falls
-// back to the coded defaults when no override is saved.
-export async function resolveEmail(
-  key: string,
-  vars: EmailVars,
-): Promise<{ subject: string; textBody: string; htmlBody: string }> {
+// override from Airtable and render the ready-to-send subject, bodies,
+// recipients and sender. Falls back to the coded defaults / env when no
+// override is saved.
+export async function resolveEmail(key: string, vars: EmailVars): Promise<ResolvedEmail> {
   const def = getEmailTemplateDef(key);
   if (!def) throw new Error(`Unknown email template: ${key}`);
-  let override: { subject: string; body: string } | null = null;
+  let override: Awaited<ReturnType<typeof getEmailTemplateOverride>> = null;
   try {
     override = await getEmailTemplateOverride(key);
   } catch {
     override = null;
   }
-  return renderEmail(def, override, vars);
+  const rendered = renderEmail(def, override, vars);
+
+  const from = override?.from?.trim() || env.invoiceSender || env.invoiceRecipient;
+  const cc = override?.cc?.trim() ? parseAddressList(override.cc) : def.defaultCc;
+  let to: string[] = [];
+  if (def.toMode === "fixed") {
+    to = override?.to?.trim() ? parseAddressList(override.to) : [env.invoiceRecipient];
+  } else {
+    // Dynamic recipient: the caller sets `to`. An override To can still force a
+    // fixed address if an admin really wants to redirect it.
+    to = override?.to?.trim() ? parseAddressList(override.to) : [];
+  }
+
+  return { ...rendered, to, cc, from };
 }

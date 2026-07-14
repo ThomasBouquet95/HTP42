@@ -7,9 +7,16 @@ import { SegmentedTabs } from "@/components/filters";
 // Presentational helpers
 // ---------------------------------------------------------------------------
 
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
 function Section({ id, title, intro, children }: { id?: string; title: string; intro?: string; children: ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-24">
+    <section id={id ?? slugify(title)} className="scroll-mt-24">
       <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
       {intro ? <p className="mt-1 text-xs text-slate-500">{intro}</p> : null}
       <div className="mt-3 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700">
@@ -18,6 +25,46 @@ function Section({ id, title, intro, children }: { id?: string; title: string; i
     </section>
   );
 }
+
+// Sticky chip row that jumps to each section on the current tab.
+function QuickNav({ titles }: { titles: string[] }) {
+  return (
+    <nav className="sticky top-0 z-10 -mx-1 flex flex-wrap gap-1.5 rounded-lg bg-white/85 px-1 py-2 backdrop-blur">
+      {titles.map((t) => (
+        <a
+          key={t}
+          href={`#${slugify(t)}`}
+          className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-700"
+        >
+          {t}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
+const BUSINESS_SECTIONS = [
+  "Roles & access",
+  "Members & staffing",
+  "Timesheet lifecycle",
+  "Timesheet review — admin vs client",
+  "Invoicing — member submits an invoice",
+  "Payments",
+  "Automated invoicing (vendor / IT invoices)",
+  "Projects, clients & opportunities",
+  "Contracts & legal",
+  "Automated emails",
+];
+
+const TECHNICAL_SECTIONS = [
+  "Stack & hosting",
+  "Authentication & authorization",
+  "Data layer & schema",
+  "Key derivations & rules in code",
+  "Integrations",
+  "Core data flow",
+  "Auditability",
+];
 
 // Horizontal flow of pill "nodes" separated by arrows; wraps on small screens.
 function Flow({ nodes }: { nodes: { label: string; tone?: "neutral" | "brand" | "success" | "warning" | "danger" }[] }) {
@@ -402,6 +449,52 @@ function BusinessProcesses() {
         </Rule>
       </Section>
 
+      <Section title="Automated invoicing (vendor / IT invoices)" intro="How paid supplier invoices flow into the portal from a mailbox, hands-off.">
+        <p>
+          Besides member-submitted invoices, the portal can ingest already-paid{" "}
+          <strong>vendor / IT invoices</strong> automatically from a dedicated billing mailbox — no
+          manual entry.
+        </p>
+        <Flow
+          nodes={[
+            { label: "Invoice PDF lands in the billing mailbox" },
+            { label: "Import reads it (Graph)", tone: "brand" },
+            { label: "AI extracts vendor / amount / date" },
+            { label: "Paid outflow payment created", tone: "success" },
+          ]}
+        />
+        <Steps
+          items={[
+            <>
+              The importer scans the configured mailbox (newest first) via Microsoft Graph and pulls
+              the PDF attachments. It <strong>de-duplicates</strong> on the message id, so re-running
+              never creates a payment twice.
+            </>,
+            <>
+              For each new invoice, Claude extracts the header fields (vendor, invoice number, date,
+              amount, currency) from the PDF for record-keeping.
+            </>,
+            <>
+              These invoices are <strong>already paid</strong>, so when an amount was extracted the
+              app creates the matching <strong>Paid outflow payment</strong> (payment date = invoice
+              date if known, else the received date) under the internal IT project, attaches the PDF,
+              and sends the payment recap email.
+            </>,
+            <>
+              If the amount could not be read, the invoice is flagged for a quick human review
+              instead — the Paid payment is created later, when an admin fills the amount in and
+              saves.
+            </>,
+          ]}
+        />
+        <Rule tone="warning">
+          <strong>Exceptions &amp; safeguards:</strong> the import needs the Azure app&apos;s
+          Mail.Read permission and an Anthropic API key — without either it imports nothing and
+          records why, leaving the rest of the portal unaffected. Extraction is best-effort and
+          always meant to be sanity-checked by a human before the numbers are trusted.
+        </Rule>
+      </Section>
+
       <Section title="Projects, clients & opportunities" intro="The commercial pipeline.">
         <Bullets
           items={[
@@ -444,10 +537,13 @@ function BusinessProcesses() {
 
       <Section title="Automated emails" intro="Every email the portal sends — who gets it, when, under what conditions, and what it says.">
         <p>
-          All the emails below are sent from the configured mailbox via Microsoft Graph. Their{" "}
-          <strong>subject and body are editable</strong> by an admin in <Term>Admin → Emails</Term>,
-          where each also lists its placeholders and a live preview. Recipients, triggers and
-          attachments are fixed by the workflow.
+          All the emails below are sent via Microsoft Graph. In <Term>Admin → Emails</Term> an admin
+          can edit each email&apos;s <strong>sender (From), recipients (To / CC), subject and
+          body</strong> — every change is saved to the database and applies to the next send, not
+          just the preview. Each email lists its placeholders and shows a live preview. Some
+          recipients are inherently per-record (a timesheet&apos;s client reviewer, a survey
+          contact, the submitting member) and are set automatically; triggers and attachments are
+          fixed by the workflow.
         </p>
         <Table
           head={["Email", "Recipient", "When / condition", "Contains"]}
@@ -688,6 +784,7 @@ export function DocsClient() {
           { value: "technical", label: "Technical implementation" },
         ]}
       />
+      <QuickNav titles={tab === "business" ? BUSINESS_SECTIONS : TECHNICAL_SECTIONS} />
       {tab === "business" ? <BusinessProcesses /> : <TechnicalImplementation />}
     </div>
   );

@@ -20,6 +20,9 @@ type SendArgs = {
   to: string | string[];
   // Optional CC recipients, also visible to everyone on the mail.
   cc?: string | string[];
+  // Optional sender mailbox override. Defaults to INVOICE_SENDER_UPN. The Azure
+  // app must have Mail.Send on whatever mailbox is used.
+  from?: string;
   subject: string;
   textBody: string;
   htmlBody?: string;
@@ -56,13 +59,14 @@ async function getAppToken(): Promise<string> {
 export async function sendMailViaGraph({
   to,
   cc,
+  from,
   subject,
   textBody,
   htmlBody,
   attachments,
 }: SendArgs): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const sender = env.invoiceSender;
+    const sender = from?.trim() || env.invoiceSender;
     if (!sender) {
       return { ok: false, error: "INVOICE_SENDER_UPN is not configured" };
     }

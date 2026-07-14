@@ -16,16 +16,24 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json().catch(() => ({}))) as { to?: string };
-  const to = (body.to?.trim() || env.invoiceRecipient).toLowerCase();
-  const sender = env.invoiceSender;
   const started = Date.now();
 
-  const { subject, textBody, htmlBody } = await resolveEmail("invoice_email_test", {
+  const resolved = await resolveEmail("invoice_email_test", {
     triggeredBy: `${session.memberCode} (${session.sub})`,
-    sender: sender || "not set",
+    sender: env.invoiceSender || "not set",
     recipient: env.invoiceRecipient,
   });
-  const result = await sendMailViaGraph({ to, subject, textBody, htmlBody });
+  // An address typed into the test box wins; otherwise use the template's To.
+  const to = (body.to?.trim() || resolved.to[0] || env.invoiceRecipient).toLowerCase();
+  const sender = resolved.from;
+  const result = await sendMailViaGraph({
+    to,
+    cc: resolved.cc,
+    from: resolved.from,
+    subject: resolved.subject,
+    textBody: resolved.textBody,
+    htmlBody: resolved.htmlBody,
+  });
   const tookMs = Date.now() - started;
 
   if (result.ok) {

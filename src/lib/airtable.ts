@@ -188,6 +188,9 @@ export const FIELDS = {
     key: "Key",
     subject: "Subject",
     body: "Body",
+    to: "To",
+    cc: "Cc",
+    from: "From",
     updatedAt: "Updated At",
   },
   timesheetReviews: {
@@ -1343,12 +1346,41 @@ async function ensureEmailTemplatesSchema(): Promise<boolean> {
       cache: "no-store",
     });
     if (!res.ok) return false;
-    const data = (await res.json()) as { tables: Array<{ name: string }> };
-    if (data.tables.some((t) => t.name === TABLES.emailTemplates)) {
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const E = FIELDS.emailTemplates;
+    const wanted = [
+      { name: E.key, type: "singleLineText" },
+      { name: E.subject, type: "singleLineText" },
+      { name: E.body, type: "multilineText" },
+      { name: E.to, type: "singleLineText" },
+      { name: E.cc, type: "singleLineText" },
+      { name: E.from, type: "singleLineText" },
+      { name: E.updatedAt, type: "singleLineText" },
+    ];
+    const existingTable = data.tables.find((t) => t.name === TABLES.emailTemplates);
+    if (existingTable) {
+      // Add any fields introduced after the table was first created (e.g. the
+      // To/Cc/From recipient overrides) so writes don't fail on unknown fields.
+      const have = new Set((existingTable.fields ?? []).map((f) => f.name));
+      const missing = wanted.filter((f) => !have.has(f.name));
+      for (const field of missing) {
+        await fetch(
+          `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${existingTable.id}/fields`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${env.airtablePat}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(field),
+          },
+        ).catch(() => null);
+      }
       emailTemplatesTableReady = true;
       return true;
     }
-    const E = FIELDS.emailTemplates;
     const create = await fetch(metaUrl, {
       method: "POST",
       headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
@@ -1359,6 +1391,9 @@ async function ensureEmailTemplatesSchema(): Promise<boolean> {
           { name: E.key, type: "singleLineText" },
           { name: E.subject, type: "singleLineText" },
           { name: E.body, type: "multilineText" },
+          { name: E.to, type: "singleLineText" },
+          { name: E.cc, type: "singleLineText" },
+          { name: E.from, type: "singleLineText" },
           { name: E.updatedAt, type: "singleLineText" },
         ],
       }),
@@ -1393,6 +1428,9 @@ export const getEmailTemplateOverrides = cache(async function getEmailTemplateOv
         key,
         subject: str(r, E.subject),
         body: str(r, E.body),
+        to: str(r, E.to),
+        cc: str(r, E.cc),
+        from: str(r, E.from),
         updatedAt: str(r, E.updatedAt) || null,
       };
     }
@@ -1407,6 +1445,9 @@ export type StoredEmailTemplate = {
   key: string;
   subject: string;
   body: string;
+  to: string;
+  cc: string;
+  from: string;
   updatedAt: string | null;
 };
 
@@ -1419,8 +1460,7 @@ export async function getEmailTemplateOverride(
 
 export async function setEmailTemplateOverride(
   key: string,
-  subject: string,
-  body: string,
+  input: { subject: string; body: string; to: string; cc: string; from: string },
 ): Promise<void> {
   await ensureEmailTemplatesSchema();
   const E = FIELDS.emailTemplates;
@@ -1429,8 +1469,11 @@ export async function setEmailTemplateOverride(
     .firstPage();
   const fields = {
     [E.key]: key,
-    [E.subject]: subject,
-    [E.body]: body,
+    [E.subject]: input.subject,
+    [E.body]: input.body,
+    [E.to]: input.to,
+    [E.cc]: input.cc,
+    [E.from]: input.from,
     [E.updatedAt]: new Date().toISOString(),
   } as FieldSet;
   if (existing[0]) {
