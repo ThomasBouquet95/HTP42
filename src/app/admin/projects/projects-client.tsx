@@ -155,6 +155,9 @@ export function ProjectsAdminClient({
   // Edit-mode guard: confirm before persisting a changed project code, since the
   // code is referenced by timesheets, invoices and payments.
   const [codeChangeConfirm, setCodeChangeConfirm] = useState(false);
+  // On create, once the admin hand-edits the code we stop auto-deriving it from
+  // the client (so a manual code isn't clobbered when the client changes).
+  const [codeTouched, setCodeTouched] = useState(false);
   // SOW attach/replace for the project being edited (links to Legal). On
   // create there's no record yet, so a picked file is held and uploaded after
   // the project is saved.
@@ -201,6 +204,7 @@ export function ProjectsAdminClient({
     setForm(initial);
     setBaseline(initial);
     setError(null);
+    setCodeTouched(false);
     setSowUrl(null);
     setSowMsg(null);
     setSowFile(null);
@@ -213,6 +217,7 @@ export function ProjectsAdminClient({
     setForm(initial);
     setBaseline(initial);
     setError(null);
+    setCodeTouched(false);
     setSowUrl(sowByProjectId[p.id]?.url ?? null);
     setSowMsg(null);
     setSowFile(null);
@@ -307,9 +312,8 @@ export function ProjectsAdminClient({
     updateField("clientId", id);
     // On create the code is derived from the client. Re-derive on every change
     // (not only when empty) so mispicking a client then choosing another
-    // refreshes the code to match. Clear first so a failed lookup doesn't leave
-    // a stale code from the previous client.
-    if (!creating) return;
+    // refreshes the code to match — unless the admin has hand-edited it.
+    if (!creating || codeTouched) return;
     updateField("projectCode", "");
     if (!id) return;
     const client = clientById.get(id);
@@ -742,20 +746,18 @@ export function ProjectsAdminClient({
                 <input
                   type="text"
                   value={form.projectCode}
-                  readOnly={creating}
                   required
-                  onChange={creating ? undefined : (e) => updateField("projectCode", e.target.value)}
-                  className={
-                    creating
-                      ? "block w-full rounded-md border border-slate-300 bg-slate-100 px-2.5 py-1.5 text-xs font-mono text-slate-500 cursor-not-allowed focus:outline-none"
-                      : "block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-mono text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-                  }
-                  placeholder={creating ? "Pick a client first" : ""}
+                  onChange={(e) => {
+                    if (creating) setCodeTouched(true);
+                    updateField("projectCode", e.target.value);
+                  }}
+                  className="block w-full rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-mono text-slate-800 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  placeholder={creating ? "Pick a client to auto-generate" : ""}
                 />
               </div>
-              <div className="mt-1 text-xs text-slate-400">
+              <div className="mt-1 text-xs text-amber-700">
                 {creating
-                  ? "Auto-generated. Format: CLIENT-YEAR-NN"
+                  ? "Auto-generated from the client (format CLIENT-YEAR-NN). Editable if needed."
                   : "Editable. Changing it can break links to timesheets, invoices and payments."}
               </div>
             </div>

@@ -51,6 +51,9 @@ export function ClientsAdminClient({ clients }: Props) {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<ClientRecord | null>(null);
   const [creating, setCreating] = useState(false);
+  // On create, once the admin hand-edits the code we stop re-deriving it from
+  // the name so a manual code isn't clobbered.
+  const [codeTouched, setCodeTouched] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY);
   const [baseline, setBaseline] = useState<FormState>(EMPTY);
   const [showDiscard, setShowDiscard] = useState(false);
@@ -81,6 +84,7 @@ export function ClientsAdminClient({ clients }: Props) {
     setForm(EMPTY);
     setBaseline(EMPTY);
     setError(null);
+    setCodeTouched(false);
   }
 
   function openEdit(c: ClientRecord) {
@@ -90,6 +94,7 @@ export function ClientsAdminClient({ clients }: Props) {
     setForm(initial);
     setBaseline(initial);
     setError(null);
+    setCodeTouched(false);
   }
 
   // Guarded close (X, backdrop, Cancel): warn before dropping unsaved edits.
@@ -118,7 +123,7 @@ export function ClientsAdminClient({ clients }: Props) {
   // code is typed by hand and the name never touches it.
   async function onNameChange(v: string) {
     updateField("clientName", v);
-    if (!creating || v.trim().length < 2) return;
+    if (!creating || codeTouched || v.trim().length < 2) return;
     try {
       const res = await fetch(
         `/api/admin/clients/suggest-code?name=${encodeURIComponent(v.trim())}`,
@@ -286,13 +291,15 @@ export function ClientsAdminClient({ clients }: Props) {
           <FormField
             label="Client code"
             value={form.clientCode}
-            onChange={creating ? () => {} : (v) => updateField("clientCode", v)}
-            readOnly={creating}
-            inputClassName="font-mono uppercase tracking-widest"
+            onChange={(v) => {
+              if (creating) setCodeTouched(true);
+              updateField("clientCode", v);
+            }}
+            inputClassName="font-mono uppercase tracking-widest bg-amber-50 border-amber-300 focus:border-amber-500 focus:ring-amber-500"
             hint={
-              <span className="text-slate-400">
+              <span className="text-amber-700">
                 {creating
-                  ? "Auto-generated from the client name."
+                  ? "Auto-generated from the client name. Editable if needed."
                   : "Editable. Changing it can break links to projects, contracts and payments."}
               </span>
             }

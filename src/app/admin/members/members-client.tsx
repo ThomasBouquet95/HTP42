@@ -126,6 +126,9 @@ export function MembersAdminClient({
   // Sequence guard so out-of-order suggest-code responses can't clobber the
   // code derived from a newer name (keeps the code tracking the latest name).
   const codeReqSeq = useRef(0);
+  // On create, once the admin hand-edits the code we stop re-deriving it from
+  // the name so a manual code isn't clobbered.
+  const [codeTouched, setCodeTouched] = useState(false);
   const [showCodeChangeConfirm, setShowCodeChangeConfirm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<MemberAdminRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -216,6 +219,7 @@ export function MembersAdminClient({
     setError(null);
     setCvMsg(null);
     nameTouchedRef.current = false;
+    setCodeTouched(false);
   }
 
   function openEdit(m: MemberAdminRecord) {
@@ -227,6 +231,7 @@ export function MembersAdminClient({
     setError(null);
     setCvMsg(null);
     nameTouchedRef.current = true;
+    setCodeTouched(false);
   }
 
   async function updateStatus(id: string, next: string) {
@@ -272,9 +277,10 @@ export function MembersAdminClient({
   async function onFullNameChange(v: string) {
     nameTouchedRef.current = true;
     updateField("fullName", v);
-    // On create, the member code always tracks the full name, so fixing a typo
-    // in the name re-derives the code. In edit mode the code is left alone.
-    if (!creating) return;
+    // On create, the member code tracks the full name (so fixing a typo in the
+    // name re-derives the code) unless the admin has hand-edited the code. In
+    // edit mode the code is left alone.
+    if (!creating || codeTouched) return;
     const trimmed = v.trim();
     const seq = ++codeReqSeq.current;
     if (trimmed.length < 2) {
@@ -700,14 +706,16 @@ export function MembersAdminClient({
           <FormField
             label="Member code"
             value={form.memberCode}
-            onChange={creating ? () => {} : (v) => updateField("memberCode", v)}
-            readOnly={creating}
-            inputClassName="font-mono uppercase tracking-wide"
+            onChange={(v) => {
+              if (creating) setCodeTouched(true);
+              updateField("memberCode", v);
+            }}
+            inputClassName="font-mono uppercase tracking-wide bg-amber-50 border-amber-300 focus:border-amber-500 focus:ring-amber-500"
             hint={
               creating ? (
-                <span className="text-slate-400">Auto-generated from the full name.</span>
+                <span className="text-amber-700">Auto-generated from the full name. Editable if needed.</span>
               ) : (
-                <span className="text-slate-400">
+                <span className="text-amber-700">
                   Editable. Changing it can break links to staffings, timesheets and payments.
                 </span>
               )
