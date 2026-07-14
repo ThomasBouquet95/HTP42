@@ -1,4 +1,5 @@
 import { env } from "./env";
+import { logEmailSend } from "./airtable";
 
 // Send transactional mail via Microsoft Graph using the same Azure app the
 // portal already uses for SSO. Requires the app to have the application-
@@ -27,7 +28,26 @@ type SendArgs = {
   textBody: string;
   htmlBody?: string;
   attachments?: Attachment[];
+  // Human label for the email log (the template name). Optional.
+  logLabel?: string;
 };
+
+const joinAddr = (v: string | string[] | undefined) =>
+  (Array.isArray(v) ? v : v ? [v] : []).map((a) => a.trim()).filter(Boolean).join(", ");
+
+// Approximate byte size of a base64 string (4 chars ≈ 3 bytes).
+function base64Bytes(b64: string): number {
+  const len = b64.length;
+  const pad = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+  return Math.max(0, (len * 3) / 4 - pad);
+}
+
+function attachmentSummary(attachments: Attachment[] | undefined): string {
+  if (!attachments || attachments.length === 0) return "";
+  return attachments
+    .map((a) => `${a.filename} (${(base64Bytes(a.base64) / 1024 / 1024).toFixed(2)} MB)`)
+    .join(", ");
+}
 
 export async function getGraphAppToken(): Promise<string> {
   return getAppToken();
@@ -56,7 +76,26 @@ async function getAppToken(): Promise<string> {
   return data.access_token;
 }
 
-export async function sendMailViaGraph({
+// Public entry: send, then record the attempt to the email log (best-effort).
+export async function sendMailViaGraph(
+  args: SendArgs,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const result = await doSendMailViaGraph(args);
+  void logEmailSend({
+    label: args.logLabel ?? "",
+    status: result.ok ? "Sent" : "Failed",
+    from: (args.from?.trim() || env.invoiceSender) ?? "",
+    to: joinAddr(args.to),
+    cc: joinAddr(args.cc),
+    subject: args.subject,
+    attachments: attachmentSummary(args.attachments),
+    error: result.ok ? "" : result.error,
+    body: args.textBody,
+  });
+  return result;
+}
+
+async function doSendMailViaGraph({
   to,
   cc,
   from,

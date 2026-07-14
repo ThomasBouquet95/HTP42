@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
-import { getEmailTemplateOverrides } from "@/lib/airtable";
+import { getEmailTemplateOverrides, listEmailLogs } from "@/lib/airtable";
 import { EMAIL_TEMPLATES } from "@/lib/email-templates";
 import { env } from "@/lib/env";
 import { EmailsClient } from "./emails-client";
@@ -16,7 +16,7 @@ export default async function AdminEmailsPage() {
   if (!access) redirect("/admin");
   const { canEdit } = access;
 
-  const overrides = await getEmailTemplateOverrides();
+  const [overrides, logs] = await Promise.all([getEmailTemplateOverrides(), listEmailLogs(200)]);
   const templates = EMAIL_TEMPLATES.map((t) => ({
     def: t,
     override: overrides[t.key] ?? null,
@@ -33,6 +33,7 @@ export default async function AdminEmailsPage() {
         templates={templates}
         canEdit={canEdit}
         defaults={{ sender: env.invoiceSender || "", financeInbox: env.invoiceRecipient || "" }}
+        logs={logs}
       />
     </main>
   );

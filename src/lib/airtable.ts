@@ -33,6 +33,7 @@ export const TABLES = {
   timesheetReviews: "Timesheet Reviews",
   rolePermissions: "Role Permissions",
   emailTemplates: "Email Templates",
+  emailLog: "Email Log",
 } as const;
 
 export const FIELDS = {
@@ -192,6 +193,18 @@ export const FIELDS = {
     cc: "Cc",
     from: "From",
     updatedAt: "Updated At",
+  },
+  emailLog: {
+    sentAt: "Sent At",
+    label: "Email",
+    status: "Status",
+    from: "From",
+    to: "To",
+    cc: "Cc",
+    subject: "Subject",
+    attachments: "Attachments",
+    error: "Error",
+    body: "Body",
   },
   timesheetReviews: {
     entry: "Entry",
@@ -1492,6 +1505,140 @@ export async function resetEmailTemplateOverride(key: string): Promise<void> {
     .all();
   if (existing.length > 0) {
     await base(TABLES.emailTemplates).destroy(existing.map((r) => r.id));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Email send log (every message dispatched through Microsoft Graph)
+// ---------------------------------------------------------------------------
+
+let emailLogTableReady = false;
+
+async function ensureEmailLogSchema(): Promise<boolean> {
+  if (emailLogTableReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { tables: Array<{ name: string }> };
+    if (data.tables.some((t) => t.name === TABLES.emailLog)) {
+      emailLogTableReady = true;
+      return true;
+    }
+    const L = FIELDS.emailLog;
+    const create = await fetch(metaUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: TABLES.emailLog,
+        description: "Audit log of every automated email the portal dispatched (metadata only).",
+        fields: [
+          { name: L.sentAt, type: "singleLineText" },
+          { name: L.label, type: "singleLineText" },
+          { name: L.status, type: "singleLineText" },
+          { name: L.from, type: "singleLineText" },
+          { name: L.to, type: "singleLineText" },
+          { name: L.cc, type: "singleLineText" },
+          { name: L.subject, type: "singleLineText" },
+          { name: L.attachments, type: "multilineText" },
+          { name: L.error, type: "multilineText" },
+          { name: L.body, type: "multilineText" },
+        ],
+      }),
+    });
+    if (create.ok) {
+      emailLogTableReady = true;
+      return true;
+    }
+    console.error("ensureEmailLogSchema: create failed:", await create.text().catch(() => ""));
+    return false;
+  } catch (e) {
+    console.error("ensureEmailLogSchema failed:", e);
+    return false;
+  }
+}
+
+export type EmailLogInput = {
+  label: string;
+  status: "Sent" | "Failed";
+  from: string;
+  to: string;
+  cc: string;
+  subject: string;
+  attachments: string;
+  error: string;
+  body: string;
+};
+
+// Append one row to the email log. Best-effort: a logging failure must never
+// affect the send it is recording.
+export async function logEmailSend(input: EmailLogInput): Promise<void> {
+  try {
+    const ok = await ensureEmailLogSchema();
+    if (!ok) return;
+    const L = FIELDS.emailLog;
+    await base(TABLES.emailLog).create([
+      {
+        fields: {
+          [L.sentAt]: new Date().toISOString(),
+          [L.label]: input.label,
+          [L.status]: input.status,
+          [L.from]: input.from,
+          [L.to]: input.to,
+          [L.cc]: input.cc,
+          [L.subject]: input.subject,
+          [L.attachments]: input.attachments,
+          [L.error]: input.error,
+          [L.body]: input.body.slice(0, 8000),
+        } as FieldSet,
+      },
+    ]);
+  } catch (e) {
+    console.error("logEmailSend failed:", e);
+  }
+}
+
+export type EmailLogEntry = {
+  id: string;
+  sentAt: string | null;
+  label: string;
+  status: string;
+  from: string;
+  to: string;
+  cc: string;
+  subject: string;
+  attachments: string;
+  error: string;
+  body: string;
+};
+
+export async function listEmailLogs(limit = 200): Promise<EmailLogEntry[]> {
+  try {
+    const ok = await ensureEmailLogSchema();
+    if (!ok) return [];
+    const L = FIELDS.emailLog;
+    const records = await base(TABLES.emailLog)
+      .select({ sort: [{ field: L.sentAt, direction: "desc" }], maxRecords: limit })
+      .all();
+    return records.map((r) => ({
+      id: r.id,
+      sentAt: (r.get(L.sentAt) as string | undefined) ?? null,
+      label: str(r, L.label),
+      status: str(r, L.status),
+      from: str(r, L.from),
+      to: str(r, L.to),
+      cc: str(r, L.cc),
+      subject: str(r, L.subject),
+      attachments: str(r, L.attachments),
+      error: str(r, L.error),
+      body: str(r, L.body),
+    }));
+  } catch (e) {
+    console.error("listEmailLogs failed:", e);
+    return [];
   }
 }
 

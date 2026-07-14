@@ -55,14 +55,22 @@ export async function POST(request: Request) {
           members,
         });
         const link = `${env.appUrl}/survey/${token}`;
-        const { subject, textBody, htmlBody, cc, from } = await resolveEmail("survey_invite", {
+        const { name, subject, textBody, htmlBody, cc, from } = await resolveEmail("survey_invite", {
           who: r.name || "there",
           projectCode,
           projectNameSuffix: projectName ? ` — ${projectName}` : "",
           projectNamePhrase: projectName ? ` on ${projectName}` : "",
           link,
         });
-        const res = await sendMailViaGraph({ to: r.email, cc, from, subject, textBody, htmlBody });
+        const res = await sendMailViaGraph({
+          to: r.email,
+          cc,
+          from,
+          subject,
+          textBody,
+          htmlBody,
+          logLabel: name,
+        });
         await markSurveyEmail(id, res.ok ? { ok: true } : { ok: false, error: res.error });
         if (!res.ok) failures.push(`${r.email}: ${res.error}`);
         sent += 1;

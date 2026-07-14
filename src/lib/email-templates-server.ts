@@ -8,6 +8,8 @@ import { getEmailTemplateOverride } from "./airtable";
 import { env } from "./env";
 
 export type ResolvedEmail = {
+  // The catalog display name — used as the label in the email send log.
+  name: string;
   subject: string;
   textBody: string;
   htmlBody: string;
@@ -45,5 +47,5 @@ export async function resolveEmail(key: string, vars: EmailVars): Promise<Resolv
     to = override?.to?.trim() ? parseAddressList(override.to) : [];
   }
 
-  return { ...rendered, to, cc, from };
+  return { name: def.name, ...rendered, to, cc, from };
 }

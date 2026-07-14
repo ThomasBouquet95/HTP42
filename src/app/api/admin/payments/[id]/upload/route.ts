@@ -74,7 +74,7 @@ export async function POST(
     [existing.paymentCode, existing.invoiceReference, counterparty]
       .filter(Boolean)
       .join(" · ") || existing.id;
-  const { subject, textBody, htmlBody, to, cc, from } = await resolveEmail(
+  const { name, subject, textBody, htmlBody, to, cc, from } = await resolveEmail(
     "payment_invoice_uploaded",
     {
       label,
@@ -97,6 +97,7 @@ export async function POST(
     textBody,
     htmlBody,
     attachments: [{ filename, contentType: "application/pdf", base64 }],
+    logLabel: name,
   }).then((result) => {
     if (!result.ok) {
       console.error("Payment invoice notification email failed:", result.error);

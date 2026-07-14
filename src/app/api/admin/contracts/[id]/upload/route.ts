@@ -77,7 +77,7 @@ export async function POST(
     .filter((s) => s.name)
     .map((s) => `${s.name}${s.role ? ` (${s.role})` : ""}${s.date ? ` on ${s.date}` : ""}`)
     .join("; ");
-  const { subject, textBody, htmlBody, to, cc, from } = await resolveEmail("contract_uploaded", {
+  const { name, subject, textBody, htmlBody, to, cc, from } = await resolveEmail("contract_uploaded", {
     label,
     contractType: existing.contractType || "n/a",
     counterparty: counterparty || "n/a",
@@ -99,6 +99,7 @@ export async function POST(
     textBody,
     htmlBody,
     attachments: [{ filename, contentType: "application/pdf", base64 }],
+    logLabel: name,
   }).then((result) => {
     if (!result.ok) {
       console.error("Contract upload notification email failed:", result.error);

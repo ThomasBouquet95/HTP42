@@ -66,7 +66,7 @@ export async function sendTimesheetReviewRequest(
     args.expiresAtIso,
   )} and can be used once. No account needed.`;
 
-  const { subject, textBody, htmlBody, cc, from } = await resolveEmail("timesheet_review_request", {
+  const { name, subject, textBody, htmlBody, cc, from } = await resolveEmail("timesheet_review_request", {
     reviewerName: args.reviewerName || "there",
     memberName: args.memberName,
     projectLabel: args.projectLabel,
@@ -78,5 +78,5 @@ export async function sendTimesheetReviewRequest(
     expiryNote,
   });
 
-  return sendMailViaGraph({ to: args.reviewerEmail, cc, from, subject, textBody, htmlBody });
+  return sendMailViaGraph({ to: args.reviewerEmail, cc, from, subject, textBody, htmlBody, logLabel: name });
 }

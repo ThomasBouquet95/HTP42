@@ -755,6 +755,10 @@ function TechnicalImplementation() {
               and comment.
             </>,
             <>
+              Every automated email is logged (sender, recipients, subject, attachments and the
+              send outcome) and shown under <Term>Admin → Emails → Sent log</Term>.
+            </>,
+            <>
               App sign-ins are logged so the Network / HR → App activity view shows who used the
               portal and when.
             </>,

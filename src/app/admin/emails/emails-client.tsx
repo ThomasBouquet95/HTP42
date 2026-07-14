@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
+import { SegmentedTabs } from "@/components/filters";
 import {
   interpolateSubject,
   interpolateHtml,
@@ -14,6 +15,19 @@ import {
 
 type Item = { def: EmailTemplateDef; override: EmailTemplateOverride | null };
 type Defaults = { sender: string; financeInbox: string };
+export type EmailLogRow = {
+  id: string;
+  sentAt: string | null;
+  label: string;
+  status: string;
+  from: string;
+  to: string;
+  cc: string;
+  subject: string;
+  attachments: string;
+  error: string;
+  body: string;
+};
 
 // Build sample vars so the live preview renders with readable stand-ins for
 // each placeholder (scalars as «token», blocks as a small sample fragment).
@@ -60,12 +74,14 @@ function TemplateCard({
   const router = useRouter();
   const { def, override } = item;
   const [open, setOpen] = useState(false);
+  // Pre-fill the routing fields with the *effective* values so the admin sees
+  // the real sender / recipients (e.g. invoices@…) rather than a blank box.
   const init = {
     subject: override?.subject || def.defaultSubject,
     body: override?.body || def.defaultBody,
-    to: override?.to || "",
-    cc: override?.cc || "",
-    from: override?.from || "",
+    to: override?.to || (def.toMode === "fixed" ? defaults.financeInbox : ""),
+    cc: override?.cc || def.defaultCc.join(", "),
+    from: override?.from || defaults.sender,
   };
   const [subject, setSubject] = useState(init.subject);
   const [body, setBody] = useState(init.body);
@@ -107,9 +123,9 @@ function TemplateCard({
         if (action === "reset") {
           setSubject(def.defaultSubject);
           setBody(def.defaultBody);
-          setTo("");
-          setCc("");
-          setFrom("");
+          setTo(def.toMode === "fixed" ? defaults.financeInbox : "");
+          setCc(def.defaultCc.join(", "));
+          setFrom(defaults.sender);
         }
         setMsg(action === "reset" ? "Reverted to the default." : "Saved. Applies to future sends.");
         router.refresh();
@@ -279,7 +295,7 @@ function TemplateCard({
   );
 }
 
-export function EmailsClient({
+function TemplatesView({
   templates,
   canEdit,
   defaults,
@@ -319,6 +335,168 @@ export function EmailsClient({
           <p className="py-8 text-center text-sm text-slate-400">No emails match your search.</p>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function fmtStamp(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function StatusPill({ status }: { status: string }) {
+  const sent = status.toLowerCase() === "sent";
+  return (
+    <span
+      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+        sent ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+      }`}
+    >
+      {status || "—"}
+    </span>
+  );
+}
+
+function LogRow({ log }: { log: EmailLogRow }) {
+  const [open, setOpen] = useState(false);
+  const attachmentCount = log.attachments ? log.attachments.split(",").filter(Boolean).length : 0;
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-3 px-4 py-2.5 text-left"
+      >
+        <StatusPill status={log.status} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-medium text-slate-800">
+              {log.label || log.subject || "(email)"}
+            </span>
+            {attachmentCount > 0 ? (
+              <span
+                title={log.attachments}
+                className="inline-flex items-center gap-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500"
+              >
+                📎 {attachmentCount}
+              </span>
+            ) : null}
+          </div>
+          <p className="truncate text-xs text-slate-500">
+            to {log.to || "—"} · {log.subject}
+          </p>
+        </div>
+        <span className="shrink-0 text-xs text-slate-400">{fmtStamp(log.sentAt)}</span>
+      </button>
+      {open ? (
+        <div className="space-y-2 border-t border-slate-100 px-4 py-3 text-xs">
+          <div className="grid grid-cols-[5rem_1fr] gap-1.5">
+            <span className="font-semibold text-slate-400">From</span>
+            <span className="text-slate-700">{log.from || "—"}</span>
+            <span className="font-semibold text-slate-400">To</span>
+            <span className="text-slate-700">{log.to || "—"}</span>
+            <span className="font-semibold text-slate-400">Cc</span>
+            <span className="text-slate-700">{log.cc || "—"}</span>
+            <span className="font-semibold text-slate-400">Subject</span>
+            <span className="text-slate-700">{log.subject || "—"}</span>
+            <span className="font-semibold text-slate-400">Attachments</span>
+            <span className="text-slate-700">{log.attachments || "none"}</span>
+            {log.error ? (
+              <>
+                <span className="font-semibold text-rose-500">Error</span>
+                <span className="text-rose-600">{log.error}</span>
+              </>
+            ) : null}
+          </div>
+          {log.body ? (
+            <div>
+              <div className="mb-1 font-semibold text-slate-400">Body</div>
+              <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-slate-50 p-3 font-mono text-[11px] leading-relaxed text-slate-700">
+                {log.body}
+              </pre>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function LogsView({ logs }: { logs: EmailLogRow[] }) {
+  const [q, setQ] = useState("");
+  const filtered = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    if (!term) return logs;
+    return logs.filter((l) =>
+      [l.label, l.subject, l.to, l.cc, l.from, l.status, l.attachments]
+        .join(" ")
+        .toLowerCase()
+        .includes(term),
+    );
+  }, [q, logs]);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600">
+        Every email the portal has dispatched, newest first (last {logs.length}). Each entry records
+        the sender, recipients, subject, the attachments that went with it, and the delivery outcome.
+        Expand a row to see the full recipients and the message body.
+      </div>
+      <div className="max-w-xs">
+        <SearchInput value={q} onChange={setQ} placeholder="Search logs…" />
+      </div>
+      <div className="space-y-2">
+        {filtered.map((l) => (
+          <LogRow key={l.id} log={l} />
+        ))}
+        {logs.length === 0 ? (
+          <p className="py-8 text-center text-sm text-slate-400">
+            No emails have been sent yet. Sent emails will appear here.
+          </p>
+        ) : filtered.length === 0 ? (
+          <p className="py-8 text-center text-sm text-slate-400">No logs match your search.</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export function EmailsClient({
+  templates,
+  canEdit,
+  defaults,
+  logs,
+}: {
+  templates: Item[];
+  canEdit: boolean;
+  defaults: Defaults;
+  logs: EmailLogRow[];
+}) {
+  const [tab, setTab] = useState<"templates" | "logs">("templates");
+  return (
+    <div className="space-y-4">
+      <SegmentedTabs
+        ariaLabel="Emails section"
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "templates", label: "Templates" },
+          { value: "logs", label: "Sent log", badge: logs.length || undefined },
+        ]}
+      />
+      {tab === "templates" ? (
+        <TemplatesView templates={templates} canEdit={canEdit} defaults={defaults} />
+      ) : (
+        <LogsView logs={logs} />
+      )}
     </div>
   );
 }

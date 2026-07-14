@@ -87,7 +87,7 @@ export async function notifyPaymentPaid(p: PaymentRecord): Promise<void> {
     html: pdfFailure ? `<p><em>PDF not attached — ${safe(pdfFailure)}</em></p>` : `<p>PDF attached.</p>`,
   };
 
-  const { subject, textBody, htmlBody, to, cc, from } = await resolveEmail("payment_paid", {
+  const { name, subject, textBody, htmlBody, to, cc, from } = await resolveEmail("payment_paid", {
     heading,
     label,
     intro: introText,
@@ -111,6 +111,7 @@ export async function notifyPaymentPaid(p: PaymentRecord): Promise<void> {
     textBody,
     htmlBody,
     attachments: attachment ? [attachment] : [],
+    logLabel: name,
   });
   if (!result.ok) {
     console.error("Payment-paid email failed:", result.error);

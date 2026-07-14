@@ -33,6 +33,7 @@ export async function POST(request: Request) {
     subject: resolved.subject,
     textBody: resolved.textBody,
     htmlBody: resolved.htmlBody,
+    logLabel: resolved.name,
   });
   const tookMs = Date.now() - started;
 

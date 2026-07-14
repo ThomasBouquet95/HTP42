@@ -259,6 +259,7 @@ export async function POST(request: Request) {
         : { text: "", html: "" };
 
     const {
+      name,
       subject,
       textBody: text,
       htmlBody: html,
@@ -340,6 +341,7 @@ export async function POST(request: Request) {
       textBody: text,
       htmlBody: html,
       attachments,
+      logLabel: name,
     });
     if (sendResult.ok) {
       await markInvoiceEmail(invoiceId, { ok: true, sentAt: new Date().toISOString() });
