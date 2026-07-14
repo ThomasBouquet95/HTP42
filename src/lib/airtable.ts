@@ -1715,24 +1715,65 @@ export async function listEmailLogs(limit = 200): Promise<EmailLogEntry[]> {
   }
 }
 
-// The set of source ids already in the log, so a backfill import can skip
-// messages it has already recorded (idempotent re-runs).
-export async function getLoggedSourceIds(): Promise<Set<string>> {
+// Resolve a single attachment on a log row to a *fresh* URL + metadata. Airtable
+// attachment URLs are short-lived, so we read the record at click time rather
+// than trusting a URL captured at page render.
+export async function getEmailLogAttachment(
+  logId: string,
+  index: number,
+): Promise<{ url: string; filename: string; type: string } | null> {
+  try {
+    const r = await base(TABLES.emailLog).find(logId);
+    const files = (
+      (r.get(FIELDS.emailLog.files) as
+        | Array<{ url?: string; filename?: string; type?: string }>
+        | undefined) ?? []
+    ).filter((a) => a.url);
+    const f = files[index];
+    if (!f?.url) return null;
+    return {
+      url: f.url,
+      filename: f.filename ?? "attachment",
+      type: f.type ?? "application/octet-stream",
+    };
+  } catch (e) {
+    console.error("getEmailLogAttachment failed:", e);
+    return null;
+  }
+}
+
+export type LoggedSource = { recordId: string; hasFiles: boolean };
+
+// Index of already-logged messages by source id → { record id, whether files
+// are already stored }. Lets a backfill skip messages it has (idempotent) while
+// still upfilling attachments onto rows imported before files were captured.
+export async function getLoggedSourceIndex(): Promise<Map<string, LoggedSource>> {
+  const out = new Map<string, LoggedSource>();
   try {
     const ok = await ensureEmailLogSchema();
-    if (!ok) return new Set();
+    if (!ok) return out;
     const L = FIELDS.emailLog;
-    const records = await base(TABLES.emailLog).select({ fields: [L.sourceId] }).all();
-    const out = new Set<string>();
+    const records = await base(TABLES.emailLog).select({ fields: [L.sourceId, L.files] }).all();
     for (const r of records) {
       const id = str(r, L.sourceId);
-      if (id) out.add(id);
+      if (!id) continue;
+      const files = (r.get(L.files) as unknown[] | undefined) ?? [];
+      out.set(id, { recordId: r.id, hasFiles: files.length > 0 });
     }
     return out;
   } catch (e) {
-    console.error("getLoggedSourceIds failed:", e);
-    return new Set();
+    console.error("getLoggedSourceIndex failed:", e);
+    return out;
   }
+}
+
+// Attach files onto an existing log row (used to upfill historical rows that
+// were imported before attachments were captured).
+export async function addEmailLogFiles(
+  recordId: string,
+  files: { filename: string; contentType: string; base64: string }[],
+): Promise<void> {
+  await uploadEmailLogFiles(recordId, files);
 }
 
 export type EmailLogImportRow = {

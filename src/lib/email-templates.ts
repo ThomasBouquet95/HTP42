@@ -325,6 +325,30 @@ export function getEmailTemplateDef(key: string): EmailTemplateDef | undefined {
   return EMAIL_TEMPLATES.find((t) => t.key === key);
 }
 
+// Classify an email by its subject line into one of the catalog type names.
+// Used to label historical (backfilled) emails, which carry no template key,
+// so they can be filtered/grouped by type like live-sent ones. Returns "Other"
+// when nothing matches (e.g. a hand-sent message in the mailbox).
+export function emailTypeFromSubject(subject: string): string {
+  const s = (subject || "").trim();
+  const rules: Array<[RegExp, string]> = [
+    [/^invoice from /i, "Invoice submitted"],
+    [/timesheet approval/i, "Timesheet review request (client)"],
+    [/inflow received|outflow paid|payment recorded/i, "Payment recap (paid / received)"],
+    [/^your feedback on /i, "Client survey invitation"],
+    [/^contract uploaded/i, "Contract uploaded"],
+    [/^payment invoice uploaded/i, "Payment invoice uploaded"],
+    [/invoice email test/i, "Email pipeline test (diagnostic)"],
+  ];
+  for (const [re, name] of rules) if (re.test(s)) return name;
+  return "Other";
+}
+
+// The effective type of a log row: its saved label, else inferred from subject.
+export function emailTypeOf(label: string, subject: string): string {
+  return label?.trim() || emailTypeFromSubject(subject);
+}
+
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------

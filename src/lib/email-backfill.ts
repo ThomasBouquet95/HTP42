@@ -1,6 +1,12 @@
 import { env } from "./env";
 import { getGraphAppToken } from "./email";
-import { createEmailLogRows, getLoggedSourceIds, type EmailLogImportRow } from "./airtable";
+import { emailTypeFromSubject } from "./email-templates";
+import {
+  createEmailLogRows,
+  getLoggedSourceIndex,
+  addEmailLogFiles,
+  type EmailLogImportRow,
+} from "./airtable";
 
 // Backfill the email send log from the sender mailbox's Sent Items folder.
 // Every automated email is sent with saveToSentItems=true, so the mailbox holds
@@ -63,7 +69,7 @@ async function fetchAttachments(
 }
 
 export type BackfillResult =
-  | { ok: true; imported: number; scanned: number; skipped: number }
+  | { ok: true; imported: number; scanned: number; skipped: number; filled: number }
   | { ok: false; error: string };
 
 export async function backfillEmailLogFromSentItems(limit = 200): Promise<BackfillResult> {
@@ -77,7 +83,7 @@ export async function backfillEmailLogFromSentItems(limit = 200): Promise<Backfi
     return { ok: false, error: e instanceof Error ? e.message : "Could not get a Graph token." };
   }
 
-  const seen = await getLoggedSourceIds();
+  const seen = await getLoggedSourceIndex();
   const messages: GraphSentMessage[] = [];
   let url =
     `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/mailFolders/sentitems/messages` +
@@ -111,21 +117,37 @@ export async function backfillEmailLogFromSentItems(limit = 200): Promise<Backfi
   }
 
   const scanned = messages.length;
-  const fresh = messages.filter((m) => {
-    const id = m.internetMessageId || m.id;
-    return id && !seen.has(id);
-  });
+  const asFiles = (files: FetchedAttachment[]) =>
+    files.map((f) => ({ filename: f.filename, contentType: f.contentType, base64: f.base64 }));
 
   const rows: EmailLogImportRow[] = [];
-  for (const m of fresh) {
+  let filled = 0;
+  for (const m of messages) {
     const sourceId = m.internetMessageId || m.id;
+    if (!sourceId) continue;
+    const existing = seen.get(sourceId);
+
+    // Already logged and already has its files → nothing to do.
+    if (existing && (existing.hasFiles || !m.hasAttachments)) continue;
+
     const files = m.hasAttachments ? await fetchAttachments(token, mailbox, m.id) : [];
+
+    // Already logged but missing its attachments → upfill them onto the row.
+    if (existing) {
+      if (files.length > 0) {
+        await addEmailLogFiles(existing.recordId, asFiles(files));
+        filled += 1;
+      }
+      continue;
+    }
+
+    // New message → create a row (with files).
     const attachments = files
       .map((f) => `${f.filename} (${(f.size / 1024 / 1024).toFixed(2)} MB)`)
       .join(", ");
     rows.push({
       sentAt: m.sentDateTime ?? "",
-      label: "",
+      label: emailTypeFromSubject(m.subject ?? ""),
       status: "Sent",
       from: addr(m.from) || mailbox,
       to: addrs(m.toRecipients),
@@ -133,17 +155,13 @@ export async function backfillEmailLogFromSentItems(limit = 200): Promise<Backfi
       subject: m.subject ?? "",
       attachments,
       sourceId,
-      files: files.map((f) => ({
-        filename: f.filename,
-        contentType: f.contentType,
-        base64: f.base64,
-      })),
+      files: asFiles(files),
     });
   }
 
   try {
     const imported = await createEmailLogRows(rows);
-    return { ok: true, imported, scanned, skipped: scanned - fresh.length };
+    return { ok: true, imported, scanned, skipped: scanned - rows.length - filled, filled };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not write log rows." };
   }

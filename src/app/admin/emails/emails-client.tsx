@@ -8,6 +8,7 @@ import { SegmentedTabs, FilterBar, FilterMultiSelect, FilterDateRange } from "@/
 import {
   interpolateSubject,
   interpolateHtml,
+  emailTypeOf,
   type EmailTemplateDef,
   type EmailTemplateOverride,
   type EmailVars,
@@ -416,9 +417,7 @@ function LogRow({ log }: { log: EmailLogRow }) {
                   {log.files.map((f, i) => (
                     <a
                       key={i}
-                      href={f.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      href={`/api/admin/emails/attachment?id=${encodeURIComponent(log.id)}&i=${i}`}
                       className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:border-brand-300 hover:bg-brand-50"
                     >
                       📎 {f.filename}
@@ -450,6 +449,39 @@ function LogRow({ log }: { log: EmailLogRow }) {
   );
 }
 
+function TypeTab({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+        active
+          ? "border-brand-300 bg-brand-50 text-brand-800"
+          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+      }`}
+    >
+      {label}
+      <span
+        className={`rounded-full px-1.5 text-[10px] font-semibold ${
+          active ? "bg-brand-200 text-brand-800" : "bg-slate-100 text-slate-500"
+        }`}
+      >
+        {count}
+      </span>
+    </button>
+  );
+}
+
 function dayOf(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -459,7 +491,7 @@ function dayOf(iso: string | null): string {
 function LogsView({ logs, canEdit }: { logs: EmailLogRow[]; canEdit: boolean }) {
   const router = useRouter();
   const [q, setQ] = useState("");
-  const [emails, setEmails] = useState<string[]>([]);
+  const [type, setType] = useState("");
   const [statuses, setStatuses] = useState<string[]>([]);
   const [attach, setAttach] = useState<string[]>([]);
   const [from, setFrom] = useState("");
@@ -467,21 +499,27 @@ function LogsView({ logs, canEdit }: { logs: EmailLogRow[]; canEdit: boolean }) 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const emailOptions = useMemo(() => {
-    const names = Array.from(new Set(logs.map((l) => l.label).filter(Boolean))).sort();
-    return names.map((n) => ({ value: n, label: n }));
+  // Bucket every row (live or backfilled) by its type, so the tabs cover the
+  // whole log — historical imports included.
+  const typeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of logs) {
+      const t = emailTypeOf(l.label, l.subject);
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
   }, [logs]);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     return logs.filter((l) => {
+      if (type && emailTypeOf(l.label, l.subject) !== type) return false;
       if (term) {
         const hay = [l.label, l.subject, l.to, l.cc, l.from, l.status, l.attachments]
           .join(" ")
           .toLowerCase();
         if (!hay.includes(term)) return false;
       }
-      if (emails.length && !emails.includes(l.label)) return false;
       if (statuses.length && !statuses.includes(l.status)) return false;
       if (attach.length) {
         const has = l.files.length > 0 || !!l.attachments;
@@ -493,9 +531,9 @@ function LogsView({ logs, canEdit }: { logs: EmailLogRow[]; canEdit: boolean }) 
       if (to && day && day > to) return false;
       return true;
     });
-  }, [q, logs, emails, statuses, attach, from, to]);
+  }, [q, logs, type, statuses, attach, from, to]);
 
-  const anyFilter = emails.length || statuses.length || attach.length || from || to || q;
+  const anyFilter = type || statuses.length || attach.length || from || to || q;
 
   async function backfill() {
     setBusy(true);
@@ -507,8 +545,9 @@ function LogsView({ logs, canEdit }: { logs: EmailLogRow[]; canEdit: boolean }) 
         setMsg(data.error || "Import failed.");
       } else {
         setMsg(
-          `Imported ${data.imported} email${data.imported === 1 ? "" : "s"} from Sent Items` +
-            (data.skipped ? ` (${data.skipped} already logged).` : "."),
+          `Imported ${data.imported} email${data.imported === 1 ? "" : "s"}` +
+            (data.filled ? `, added attachments to ${data.filled} existing` : "") +
+            (data.skipped ? ` (${data.skipped} already up to date).` : "."),
         );
         router.refresh();
       }
@@ -538,8 +577,14 @@ function LogsView({ logs, canEdit }: { logs: EmailLogRow[]; canEdit: boolean }) 
         ) : null}
         {msg ? <span className="text-xs text-slate-500">{msg}</span> : null}
       </div>
+      {/* Type tabs — switch between the different kinds of email. */}
+      <div className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-2">
+        <TypeTab label="All" count={logs.length} active={type === ""} onClick={() => setType("")} />
+        {typeCounts.map(([t, n]) => (
+          <TypeTab key={t} label={t} count={n} active={type === t} onClick={() => setType(t)} />
+        ))}
+      </div>
       <FilterBar>
-        <FilterMultiSelect label="Email" selected={emails} onChange={setEmails} options={emailOptions} />
         <FilterMultiSelect
           label="Status"
           selected={statuses}
@@ -564,7 +609,7 @@ function LogsView({ logs, canEdit }: { logs: EmailLogRow[]; canEdit: boolean }) 
             type="button"
             onClick={() => {
               setQ("");
-              setEmails([]);
+              setType("");
               setStatuses([]);
               setAttach([]);
               setFrom("");
