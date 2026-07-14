@@ -308,29 +308,40 @@ export function ProjectsAdminClient({
     return Number.isFinite(y) ? y : currentYear;
   }
 
-  async function onClientChange(id: string) {
-    updateField("clientId", id);
-    // On create the code is derived from the client. Re-derive on every change
-    // (not only when empty) so mispicking a client then choosing another
-    // refreshes the code to match — unless the admin has hand-edited it.
+  // Derive the project code from the client + the start-date YEAR. The year is
+  // never hardcoded — it comes from the project's start date (defaulting to the
+  // current year), so codes roll over automatically each year. Called whenever
+  // the client OR the start date changes on create, unless the admin has
+  // hand-edited the code.
+  async function deriveCode(clientId: string, startIso: string) {
     if (!creating || codeTouched) return;
     updateField("projectCode", "");
-    if (!id) return;
-    const client = clientById.get(id);
-    if (client && /^[A-Z]{3}$/.test(client.clientCode)) {
-      try {
-        const year = yearFromStart(form.startDate || `${currentYear}-01-01`);
-        const res = await fetch(
-          `/api/admin/projects/next-code?clientCode=${client.clientCode}&year=${year}`,
-        );
-        if (res.ok) {
-          const data = (await res.json()) as { code?: string };
-          if (data.code) updateField("projectCode", data.code);
-        }
-      } catch {
-        // ignore
+    const client = clientById.get(clientId);
+    if (!client || !/^[A-Z]{3}$/.test(client.clientCode)) return;
+    try {
+      const year = yearFromStart(startIso || `${currentYear}-01-01`);
+      const res = await fetch(
+        `/api/admin/projects/next-code?clientCode=${client.clientCode}&year=${year}`,
+      );
+      if (res.ok) {
+        const data = (await res.json()) as { code?: string };
+        if (data.code) updateField("projectCode", data.code);
       }
+    } catch {
+      // ignore
     }
+  }
+
+  function onClientChange(id: string) {
+    updateField("clientId", id);
+    if (id) void deriveCode(id, form.startDate);
+    else if (creating && !codeTouched) updateField("projectCode", "");
+  }
+
+  function onStartDateChange(v: string) {
+    updateField("startDate", v);
+    // Re-derive so the code's year tracks the start-date year on create.
+    if (form.clientId) void deriveCode(form.clientId, v);
   }
 
   async function submit() {
@@ -783,7 +794,7 @@ export function ProjectsAdminClient({
             <DateField
               label="Start date"
               value={form.startDate}
-              onChange={(v) => updateField("startDate", v)}
+              onChange={onStartDateChange}
             />
             <DateField
               label="End date"
