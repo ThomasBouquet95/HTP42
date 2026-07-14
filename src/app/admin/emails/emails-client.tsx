@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
-import { SegmentedTabs } from "@/components/filters";
+import { SegmentedTabs, FilterBar, FilterMultiSelect, FilterDateRange } from "@/components/filters";
 import {
   interpolateSubject,
   interpolateHtml,
@@ -27,6 +27,7 @@ export type EmailLogRow = {
   attachments: string;
   error: string;
   body: string;
+  files: { filename: string; url: string }[];
 };
 
 // Build sample vars so the live preview renders with readable stand-ins for
@@ -367,7 +368,8 @@ function StatusPill({ status }: { status: string }) {
 
 function LogRow({ log }: { log: EmailLogRow }) {
   const [open, setOpen] = useState(false);
-  const attachmentCount = log.attachments ? log.attachments.split(",").filter(Boolean).length : 0;
+  const attachmentCount =
+    log.files.length || (log.attachments ? log.attachments.split(",").filter(Boolean).length : 0);
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
       <button
@@ -408,7 +410,25 @@ function LogRow({ log }: { log: EmailLogRow }) {
             <span className="font-semibold text-slate-400">Subject</span>
             <span className="text-slate-700">{log.subject || "—"}</span>
             <span className="font-semibold text-slate-400">Attachments</span>
-            <span className="text-slate-700">{log.attachments || "none"}</span>
+            <span className="text-slate-700">
+              {log.files.length > 0 ? (
+                <span className="flex flex-wrap gap-1.5">
+                  {log.files.map((f, i) => (
+                    <a
+                      key={i}
+                      href={f.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:border-brand-300 hover:bg-brand-50"
+                    >
+                      📎 {f.filename}
+                    </a>
+                  ))}
+                </span>
+              ) : (
+                log.attachments || "none"
+              )}
+            </span>
             {log.error ? (
               <>
                 <span className="font-semibold text-rose-500">Error</span>
@@ -430,21 +450,52 @@ function LogRow({ log }: { log: EmailLogRow }) {
   );
 }
 
+function dayOf(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+}
+
 function LogsView({ logs, canEdit }: { logs: EmailLogRow[]; canEdit: boolean }) {
   const router = useRouter();
   const [q, setQ] = useState("");
+  const [emails, setEmails] = useState<string[]>([]);
+  const [statuses, setStatuses] = useState<string[]>([]);
+  const [attach, setAttach] = useState<string[]>([]);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+
+  const emailOptions = useMemo(() => {
+    const names = Array.from(new Set(logs.map((l) => l.label).filter(Boolean))).sort();
+    return names.map((n) => ({ value: n, label: n }));
+  }, [logs]);
+
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    if (!term) return logs;
-    return logs.filter((l) =>
-      [l.label, l.subject, l.to, l.cc, l.from, l.status, l.attachments]
-        .join(" ")
-        .toLowerCase()
-        .includes(term),
-    );
-  }, [q, logs]);
+    return logs.filter((l) => {
+      if (term) {
+        const hay = [l.label, l.subject, l.to, l.cc, l.from, l.status, l.attachments]
+          .join(" ")
+          .toLowerCase();
+        if (!hay.includes(term)) return false;
+      }
+      if (emails.length && !emails.includes(l.label)) return false;
+      if (statuses.length && !statuses.includes(l.status)) return false;
+      if (attach.length) {
+        const has = l.files.length > 0 || !!l.attachments;
+        if (attach.includes("yes") && !has) return false;
+        if (attach.includes("no") && has) return false;
+      }
+      const day = dayOf(l.sentAt);
+      if (from && day && day < from) return false;
+      if (to && day && day > to) return false;
+      return true;
+    });
+  }, [q, logs, emails, statuses, attach, from, to]);
+
+  const anyFilter = emails.length || statuses.length || attach.length || from || to || q;
 
   async function backfill() {
     setBusy(true);
@@ -477,8 +528,8 @@ function LogsView({ logs, canEdit }: { logs: EmailLogRow[]; canEdit: boolean }) 
         feature went live; use <strong>Import from Sent Items</strong> to pull in the mailbox history.
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <div className="max-w-xs flex-1">
-          <SearchInput value={q} onChange={setQ} placeholder="Search logs…" />
+        <div className="w-full sm:w-64">
+          <SearchInput value={q} onChange={setQ} placeholder="Search subject, recipient…" />
         </div>
         {canEdit ? (
           <Button tone="secondary" size="sm" disabled={busy} onClick={backfill}>
@@ -487,6 +538,47 @@ function LogsView({ logs, canEdit }: { logs: EmailLogRow[]; canEdit: boolean }) 
         ) : null}
         {msg ? <span className="text-xs text-slate-500">{msg}</span> : null}
       </div>
+      <FilterBar>
+        <FilterMultiSelect label="Email" selected={emails} onChange={setEmails} options={emailOptions} />
+        <FilterMultiSelect
+          label="Status"
+          selected={statuses}
+          onChange={setStatuses}
+          options={[
+            { value: "Sent", label: "Sent" },
+            { value: "Failed", label: "Failed" },
+          ]}
+        />
+        <FilterMultiSelect
+          label="Attachments"
+          selected={attach}
+          onChange={setAttach}
+          options={[
+            { value: "yes", label: "With attachment" },
+            { value: "no", label: "No attachment" },
+          ]}
+        />
+        <FilterDateRange label="Sent" from={from} to={to} onFrom={setFrom} onTo={setTo} />
+        {anyFilter ? (
+          <button
+            type="button"
+            onClick={() => {
+              setQ("");
+              setEmails([]);
+              setStatuses([]);
+              setAttach([]);
+              setFrom("");
+              setTo("");
+            }}
+            className="text-xs font-medium text-slate-500 hover:text-slate-800"
+          >
+            Reset
+          </button>
+        ) : null}
+        <span className="text-xs text-slate-400">
+          {filtered.length} of {logs.length}
+        </span>
+      </FilterBar>
       <div className="space-y-2">
         {filtered.map((l) => (
           <LogRow key={l.id} log={l} />
@@ -496,7 +588,7 @@ function LogsView({ logs, canEdit }: { logs: EmailLogRow[]; canEdit: boolean }) 
             No emails have been sent yet. Sent emails will appear here.
           </p>
         ) : filtered.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-400">No logs match your search.</p>
+          <p className="py-8 text-center text-sm text-slate-400">No logs match your filters.</p>
         ) : null}
       </div>
     </div>

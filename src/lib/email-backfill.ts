@@ -24,26 +24,41 @@ const addr = (r: GraphRecipient | undefined): string => r?.emailAddress?.address
 const addrs = (list: GraphRecipient[] | undefined): string =>
   (list ?? []).map(addr).filter(Boolean).join(", ");
 
-async function fetchAttachmentSummary(
+type FetchedAttachment = { filename: string; contentType: string; base64: string; size: number };
+
+// Pull the real file bytes for a message's attachments so they can be stored on
+// the log row (and thus opened later). Skips inline images and non-file parts.
+async function fetchAttachments(
   token: string,
   mailbox: string,
   messageId: string,
-): Promise<string> {
+): Promise<FetchedAttachment[]> {
   try {
     const url =
       `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}` +
-      `/messages/${messageId}/attachments?$select=name,size,isInline`;
+      `/messages/${messageId}/attachments`;
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) return "";
+    if (!res.ok) return [];
     const data = (await res.json()) as {
-      value?: Array<{ name?: string; size?: number; isInline?: boolean }>;
+      value?: Array<{
+        "@odata.type"?: string;
+        name?: string;
+        size?: number;
+        contentType?: string;
+        contentBytes?: string;
+        isInline?: boolean;
+      }>;
     };
     return (data.value ?? [])
-      .filter((a) => !a.isInline && a.name)
-      .map((a) => `${a.name} (${((a.size ?? 0) / 1024 / 1024).toFixed(2)} MB)`)
-      .join(", ");
+      .filter((a) => !a.isInline && a.contentBytes && a.name)
+      .map((a) => ({
+        filename: a.name as string,
+        contentType: a.contentType || "application/octet-stream",
+        base64: a.contentBytes as string,
+        size: a.size ?? 0,
+      }));
   } catch {
-    return "";
+    return [];
   }
 }
 
@@ -104,9 +119,10 @@ export async function backfillEmailLogFromSentItems(limit = 200): Promise<Backfi
   const rows: EmailLogImportRow[] = [];
   for (const m of fresh) {
     const sourceId = m.internetMessageId || m.id;
-    const attachments = m.hasAttachments
-      ? await fetchAttachmentSummary(token, mailbox, m.id)
-      : "";
+    const files = m.hasAttachments ? await fetchAttachments(token, mailbox, m.id) : [];
+    const attachments = files
+      .map((f) => `${f.filename} (${(f.size / 1024 / 1024).toFixed(2)} MB)`)
+      .join(", ");
     rows.push({
       sentAt: m.sentDateTime ?? "",
       label: "",
@@ -117,6 +133,11 @@ export async function backfillEmailLogFromSentItems(limit = 200): Promise<Backfi
       subject: m.subject ?? "",
       attachments,
       sourceId,
+      files: files.map((f) => ({
+        filename: f.filename,
+        contentType: f.contentType,
+        base64: f.base64,
+      })),
     });
   }
 

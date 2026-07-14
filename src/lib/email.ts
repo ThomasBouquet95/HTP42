@@ -94,6 +94,11 @@ export async function sendMailViaGraph(
     attachments: attachmentSummary(args.attachments),
     error: result.ok ? "" : result.error,
     body: args.textBody,
+    files: args.attachments?.map((a) => ({
+      filename: a.filename,
+      contentType: a.contentType,
+      base64: a.base64,
+    })),
   });
   return result;
 }

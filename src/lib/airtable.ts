@@ -208,6 +208,8 @@ export const FIELDS = {
     // Stable id from the mailbox (Graph internetMessageId) for backfilled rows,
     // used to dedupe imports. Empty for live app-logged rows.
     sourceId: "Source Id",
+    // The actual attachment files, so they can be opened from the log.
+    files: "Files",
   },
   timesheetReviews: {
     entry: "Entry",
@@ -1542,6 +1544,7 @@ async function ensureEmailLogSchema(): Promise<boolean> {
       { name: L.error, type: "multilineText" },
       { name: L.body, type: "multilineText" },
       { name: L.sourceId, type: "singleLineText" },
+      { name: L.files, type: "multipleAttachments" },
     ];
     const existingTable = data.tables.find((t) => t.name === TABLES.emailLog);
     if (existingTable) {
@@ -1594,7 +1597,46 @@ export type EmailLogInput = {
   attachments: string;
   error: string;
   body: string;
+  files?: { filename: string; contentType: string; base64: string }[];
 };
+
+// The content API rejects very large uploads; skip anything over this so a
+// single big PDF can't fail the whole log row (the summary text still records
+// it). Well above any real invoice / timesheet PDF.
+const MAX_LOG_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+
+// Attach the email's files to a log row so they can be opened from the log.
+// Best-effort per file; the content endpoint appends to the attachment field.
+async function uploadEmailLogFiles(
+  recordId: string,
+  files: { filename: string; contentType: string; base64: string }[] | undefined,
+): Promise<void> {
+  if (!files || files.length === 0) return;
+  const fieldName = FIELDS.emailLog.files;
+  for (const f of files) {
+    if (!f.base64) continue;
+    const bytes = (f.base64.length * 3) / 4;
+    if (bytes > MAX_LOG_ATTACHMENT_BYTES) continue;
+    try {
+      const url = `https://content.airtable.com/v0/${env.airtableBaseId}/${recordId}/${encodeURIComponent(fieldName)}/uploadAttachment`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.airtablePat}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contentType: f.contentType || "application/pdf",
+          filename: f.filename || "attachment.pdf",
+          file: f.base64,
+        }),
+      });
+      if (!res.ok) console.error("email log attach failed:", res.status);
+    } catch (e) {
+      console.error("email log attach error:", e);
+    }
+  }
+}
 
 // Append one row to the email log. Best-effort: a logging failure must never
 // affect the send it is recording.
@@ -1603,7 +1645,7 @@ export async function logEmailSend(input: EmailLogInput): Promise<void> {
     const ok = await ensureEmailLogSchema();
     if (!ok) return;
     const L = FIELDS.emailLog;
-    await base(TABLES.emailLog).create([
+    const [created] = await base(TABLES.emailLog).create([
       {
         fields: {
           [L.sentAt]: new Date().toISOString(),
@@ -1619,6 +1661,7 @@ export async function logEmailSend(input: EmailLogInput): Promise<void> {
         } as FieldSet,
       },
     ]);
+    if (created) await uploadEmailLogFiles(created.id, input.files);
   } catch (e) {
     console.error("logEmailSend failed:", e);
   }
@@ -1636,6 +1679,7 @@ export type EmailLogEntry = {
   attachments: string;
   error: string;
   body: string;
+  files: { filename: string; url: string }[];
 };
 
 export async function listEmailLogs(limit = 200): Promise<EmailLogEntry[]> {
@@ -1646,19 +1690,25 @@ export async function listEmailLogs(limit = 200): Promise<EmailLogEntry[]> {
     const records = await base(TABLES.emailLog)
       .select({ sort: [{ field: L.sentAt, direction: "desc" }], maxRecords: limit })
       .all();
-    return records.map((r) => ({
-      id: r.id,
-      sentAt: (r.get(L.sentAt) as string | undefined) ?? null,
-      label: str(r, L.label),
-      status: str(r, L.status),
-      from: str(r, L.from),
-      to: str(r, L.to),
-      cc: str(r, L.cc),
-      subject: str(r, L.subject),
-      attachments: str(r, L.attachments),
-      error: str(r, L.error),
-      body: str(r, L.body),
-    }));
+    return records.map((r) => {
+      const raw = (r.get(L.files) as Array<{ filename?: string; url?: string }> | undefined) ?? [];
+      return {
+        id: r.id,
+        sentAt: (r.get(L.sentAt) as string | undefined) ?? null,
+        label: str(r, L.label),
+        status: str(r, L.status),
+        from: str(r, L.from),
+        to: str(r, L.to),
+        cc: str(r, L.cc),
+        subject: str(r, L.subject),
+        attachments: str(r, L.attachments),
+        error: str(r, L.error),
+        body: str(r, L.body),
+        files: raw
+          .filter((a) => a.url)
+          .map((a) => ({ filename: a.filename ?? "attachment", url: a.url as string })),
+      };
+    });
   } catch (e) {
     console.error("listEmailLogs failed:", e);
     return [];
@@ -1695,32 +1745,39 @@ export type EmailLogImportRow = {
   subject: string;
   attachments: string;
   sourceId: string;
+  files?: { filename: string; contentType: string; base64: string }[];
 };
 
 // Bulk-insert backfilled rows (from the mailbox Sent Items). Preserves the
 // original sent date and records the source id for dedupe. Batched by 10 to
-// respect Airtable's create limit.
+// respect Airtable's create limit, then uploads each row's attachment files.
 export async function createEmailLogRows(rows: EmailLogImportRow[]): Promise<number> {
   if (rows.length === 0) return 0;
   await ensureEmailLogSchema();
   const L = FIELDS.emailLog;
   let created = 0;
   for (let i = 0; i < rows.length; i += 10) {
-    const batch = rows.slice(i, i + 10).map((row) => ({
-      fields: {
-        [L.sentAt]: row.sentAt,
-        [L.label]: row.label,
-        [L.status]: row.status,
-        [L.from]: row.from,
-        [L.to]: row.to,
-        [L.cc]: row.cc,
-        [L.subject]: row.subject,
-        [L.attachments]: row.attachments,
-        [L.sourceId]: row.sourceId,
-      } as FieldSet,
-    }));
-    await base(TABLES.emailLog).create(batch);
-    created += batch.length;
+    const slice = rows.slice(i, i + 10);
+    const recs = await base(TABLES.emailLog).create(
+      slice.map((row) => ({
+        fields: {
+          [L.sentAt]: row.sentAt,
+          [L.label]: row.label,
+          [L.status]: row.status,
+          [L.from]: row.from,
+          [L.to]: row.to,
+          [L.cc]: row.cc,
+          [L.subject]: row.subject,
+          [L.attachments]: row.attachments,
+          [L.sourceId]: row.sourceId,
+        } as FieldSet,
+      })),
+    );
+    created += recs.length;
+    // Upload attachments onto the rows just created (order matches input).
+    for (let j = 0; j < recs.length; j += 1) {
+      await uploadEmailLogFiles(recs[j].id, slice[j]?.files);
+    }
   }
   return created;
 }
