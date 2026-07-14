@@ -67,7 +67,7 @@ export function SearchSelect({
         }}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`flex h-9 w-full items-center justify-between gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 disabled:cursor-not-allowed disabled:bg-slate-50 ${
+        className={`flex w-full items-center justify-between gap-2 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 disabled:cursor-not-allowed disabled:bg-slate-50 ${
           selected ? "text-slate-800" : "text-slate-400"
         }`}
       >
@@ -96,7 +96,7 @@ export function SearchSelect({
                 }
               }}
               placeholder={searchPlaceholder}
-              className="h-8 w-full rounded-md border border-slate-300 px-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+              className="h-8 w-full rounded-md border border-slate-300 px-2.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
             />
           </div>
           <ul className="max-h-64 overflow-y-auto py-1" role="listbox">
@@ -105,7 +105,7 @@ export function SearchSelect({
                 <button
                   type="button"
                   onClick={() => { onChange(""); setOpen(false); }}
-                  className="flex w-full items-center px-3 py-1.5 text-left text-sm text-slate-400 hover:bg-slate-50"
+                  className="flex w-full items-center px-3 py-1.5 text-left text-xs text-slate-400 hover:bg-slate-50"
                 >
                   {placeholder}
                 </button>
@@ -121,7 +121,7 @@ export function SearchSelect({
                     <button
                       type="button"
                       onClick={() => { onChange(o.value); setOpen(false); }}
-                      className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50 ${
+                      className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-slate-50 ${
                         active ? "bg-brand-50 text-brand-800" : "text-slate-700"
                       }`}
                     >

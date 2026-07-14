@@ -1302,24 +1302,19 @@ export function PaymentsClient({
                       <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
                         Staffing<span className="text-red-500 ml-0.5">*</span>
                       </span>
-                      <div className="mt-1">
-                        <SearchSelect
-                          value={form.staffingId}
-                          onChange={(v) => updateField("staffingId", v)}
-                          options={staffingOptions}
-                          placeholder={form.memberId ? "Select staffing" : "Select a member first"}
-                          searchPlaceholder="Search staffing…"
-                          disabled={!form.memberId}
-                          allowClear
-                        />
-                      </div>
-                      <div className="mt-1 text-xs text-slate-400">
-                        {!form.memberId
-                          ? "Pick the member above to list their staffings."
-                          : memberStaffings.length === 0
-                            ? "This member has no staffings."
-                            : "The project is set automatically from the staffing."}
-                      </div>
+                      <SearchSelect
+                        className="mt-1"
+                        value={form.staffingId}
+                        onChange={(v) => updateField("staffingId", v)}
+                        options={staffingOptions}
+                        placeholder={form.memberId ? "Select staffing…" : "Select a member first"}
+                        searchPlaceholder="Search staffing…"
+                        disabled={!form.memberId}
+                        allowClear
+                      />
+                      {form.memberId && memberStaffings.length === 0 ? (
+                        <span className="mt-1 block text-xs text-amber-600">This member has no staffings.</span>
+                      ) : null}
                     </label>
                     <FormField
                       label="Project"
@@ -1695,18 +1690,22 @@ function PaymentDetails({
         <DirectionPill direction={p.direction} />
         {p.type ? <span className="text-[11px] text-slate-500">{p.type}</span> : null}
         <span className="ml-auto" />
-        <span
-          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${
-            des === "Yes"
-              ? "bg-amber-50 text-amber-700 ring-amber-200"
-              : des === "No"
-              ? "bg-slate-100 text-slate-600 ring-slate-200"
-              : "bg-slate-50 text-slate-400 ring-slate-200"
-          }`}
-          title="Whether the linked client's services must be reported on the DES"
-        >
-          Subject to DES: {des || "not set"}
-        </span>
+        {/* DES concerns the client's incoming services — only meaningful for
+            inflows (client payments), so it's hidden on outflows. */}
+        {p.direction === "Inflow" ? (
+          <span
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${
+              des === "Yes"
+                ? "bg-amber-50 text-amber-700 ring-amber-200"
+                : des === "No"
+                ? "bg-slate-100 text-slate-600 ring-slate-200"
+                : "bg-slate-50 text-slate-400 ring-slate-200"
+            }`}
+            title="Whether the linked client's services must be reported on the DES"
+          >
+            Subject to DES: {des || "not set"}
+          </span>
+        ) : null}
       </div>
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
