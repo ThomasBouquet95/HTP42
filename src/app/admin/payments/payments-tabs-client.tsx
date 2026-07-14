@@ -17,6 +17,7 @@ type StaffingOpt = {
   projectName: string;
   memberRecordId: string;
   memberCode: string;
+  startDate: string | null;
 };
 type MemberInvoiceOpt = {
   id: string;

@@ -25,6 +25,7 @@ type StaffingOpt = {
   projectName: string;
   memberRecordId: string;
   memberCode: string;
+  startDate: string | null;
 };
 
 type MemberInvoiceOpt = {
@@ -1278,13 +1279,19 @@ export function PaymentsClient({
               // plain project picker.
               const isSubcontractor = form.direction === "Outflow" && form.type === "Subcontractor";
               if (isSubcontractor) {
-                const memberStaffings = form.memberId
-                  ? staffings.filter((s) => s.memberRecordId === form.memberId)
-                  : [];
+                const memberStaffings = (
+                  form.memberId ? staffings.filter((s) => s.memberRecordId === form.memberId) : []
+                )
+                  .slice()
+                  // Latest first (most recent start date), undated last.
+                  .sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
+                // Staffing code as the (always-visible) label; short project
+                // code as the hint — the long project name would squeeze the
+                // code to "A…", so it's shown only in the derived Project field.
                 const staffingOptions = memberStaffings.map((s) => ({
                   value: s.id,
-                  label: `${s.staffingCode} · ${s.projectCode}`,
-                  hint: `${s.projectName}`,
+                  label: s.staffingCode || s.projectCode,
+                  hint: s.projectCode,
                 }));
                 const picked = form.staffingId
                   ? staffings.find((s) => s.id === form.staffingId)

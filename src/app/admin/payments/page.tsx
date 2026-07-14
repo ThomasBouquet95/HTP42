@@ -101,6 +101,7 @@ export default async function AdminPaymentsPage({
             projectName: s.projectName,
             memberRecordId: s.memberRecordIds[0] ?? "",
             memberCode: s.memberCodes[0] ?? "",
+            startDate: s.startDate,
           }))}
           memberInvoices={invoices.map((i) => ({
             id: i.id,
