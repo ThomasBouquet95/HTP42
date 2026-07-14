@@ -205,6 +205,9 @@ export const FIELDS = {
     attachments: "Attachments",
     error: "Error",
     body: "Body",
+    // Stable id from the mailbox (Graph internetMessageId) for backfilled rows,
+    // used to dedupe imports. Empty for live app-logged rows.
+    sourceId: "Source Id",
   },
   timesheetReviews: {
     entry: "Entry",
@@ -1523,30 +1526,50 @@ async function ensureEmailLogSchema(): Promise<boolean> {
       cache: "no-store",
     });
     if (!res.ok) return false;
-    const data = (await res.json()) as { tables: Array<{ name: string }> };
-    if (data.tables.some((t) => t.name === TABLES.emailLog)) {
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const L = FIELDS.emailLog;
+    const wanted = [
+      { name: L.sentAt, type: "singleLineText" },
+      { name: L.label, type: "singleLineText" },
+      { name: L.status, type: "singleLineText" },
+      { name: L.from, type: "singleLineText" },
+      { name: L.to, type: "singleLineText" },
+      { name: L.cc, type: "singleLineText" },
+      { name: L.subject, type: "singleLineText" },
+      { name: L.attachments, type: "multilineText" },
+      { name: L.error, type: "multilineText" },
+      { name: L.body, type: "multilineText" },
+      { name: L.sourceId, type: "singleLineText" },
+    ];
+    const existingTable = data.tables.find((t) => t.name === TABLES.emailLog);
+    if (existingTable) {
+      const have = new Set((existingTable.fields ?? []).map((f) => f.name));
+      const missing = wanted.filter((f) => !have.has(f.name));
+      for (const field of missing) {
+        await fetch(
+          `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${existingTable.id}/fields`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${env.airtablePat}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(field),
+          },
+        ).catch(() => null);
+      }
       emailLogTableReady = true;
       return true;
     }
-    const L = FIELDS.emailLog;
     const create = await fetch(metaUrl, {
       method: "POST",
       headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         name: TABLES.emailLog,
         description: "Audit log of every automated email the portal dispatched (metadata only).",
-        fields: [
-          { name: L.sentAt, type: "singleLineText" },
-          { name: L.label, type: "singleLineText" },
-          { name: L.status, type: "singleLineText" },
-          { name: L.from, type: "singleLineText" },
-          { name: L.to, type: "singleLineText" },
-          { name: L.cc, type: "singleLineText" },
-          { name: L.subject, type: "singleLineText" },
-          { name: L.attachments, type: "multilineText" },
-          { name: L.error, type: "multilineText" },
-          { name: L.body, type: "multilineText" },
-        ],
+        fields: wanted,
       }),
     });
     if (create.ok) {
@@ -1640,6 +1663,66 @@ export async function listEmailLogs(limit = 200): Promise<EmailLogEntry[]> {
     console.error("listEmailLogs failed:", e);
     return [];
   }
+}
+
+// The set of source ids already in the log, so a backfill import can skip
+// messages it has already recorded (idempotent re-runs).
+export async function getLoggedSourceIds(): Promise<Set<string>> {
+  try {
+    const ok = await ensureEmailLogSchema();
+    if (!ok) return new Set();
+    const L = FIELDS.emailLog;
+    const records = await base(TABLES.emailLog).select({ fields: [L.sourceId] }).all();
+    const out = new Set<string>();
+    for (const r of records) {
+      const id = str(r, L.sourceId);
+      if (id) out.add(id);
+    }
+    return out;
+  } catch (e) {
+    console.error("getLoggedSourceIds failed:", e);
+    return new Set();
+  }
+}
+
+export type EmailLogImportRow = {
+  sentAt: string;
+  label: string;
+  status: string;
+  from: string;
+  to: string;
+  cc: string;
+  subject: string;
+  attachments: string;
+  sourceId: string;
+};
+
+// Bulk-insert backfilled rows (from the mailbox Sent Items). Preserves the
+// original sent date and records the source id for dedupe. Batched by 10 to
+// respect Airtable's create limit.
+export async function createEmailLogRows(rows: EmailLogImportRow[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  await ensureEmailLogSchema();
+  const L = FIELDS.emailLog;
+  let created = 0;
+  for (let i = 0; i < rows.length; i += 10) {
+    const batch = rows.slice(i, i + 10).map((row) => ({
+      fields: {
+        [L.sentAt]: row.sentAt,
+        [L.label]: row.label,
+        [L.status]: row.status,
+        [L.from]: row.from,
+        [L.to]: row.to,
+        [L.cc]: row.cc,
+        [L.subject]: row.subject,
+        [L.attachments]: row.attachments,
+        [L.sourceId]: row.sourceId,
+      } as FieldSet,
+    }));
+    await base(TABLES.emailLog).create(batch);
+    created += batch.length;
+  }
+  return created;
 }
 
 // Old → new member role for the one-shot migration. Returns null to leave a

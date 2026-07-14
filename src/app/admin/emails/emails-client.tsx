@@ -430,8 +430,11 @@ function LogRow({ log }: { log: EmailLogRow }) {
   );
 }
 
-function LogsView({ logs }: { logs: EmailLogRow[] }) {
+function LogsView({ logs, canEdit }: { logs: EmailLogRow[]; canEdit: boolean }) {
+  const router = useRouter();
   const [q, setQ] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term) return logs;
@@ -443,15 +446,46 @@ function LogsView({ logs }: { logs: EmailLogRow[] }) {
     );
   }, [q, logs]);
 
+  async function backfill() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/emails/backfill", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMsg(data.error || "Import failed.");
+      } else {
+        setMsg(
+          `Imported ${data.imported} email${data.imported === 1 ? "" : "s"} from Sent Items` +
+            (data.skipped ? ` (${data.skipped} already logged).` : "."),
+        );
+        router.refresh();
+      }
+    } catch {
+      setMsg("Network error.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600">
         Every email the portal has dispatched, newest first (last {logs.length}). Each entry records
         the sender, recipients, subject, the attachments that went with it, and the delivery outcome.
-        Expand a row to see the full recipients and the message body.
+        Expand a row to see the full recipients and the message body. The log starts from when this
+        feature went live; use <strong>Import from Sent Items</strong> to pull in the mailbox history.
       </div>
-      <div className="max-w-xs">
-        <SearchInput value={q} onChange={setQ} placeholder="Search logs…" />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="max-w-xs flex-1">
+          <SearchInput value={q} onChange={setQ} placeholder="Search logs…" />
+        </div>
+        {canEdit ? (
+          <Button tone="secondary" size="sm" disabled={busy} onClick={backfill}>
+            {busy ? "Importing…" : "Import from Sent Items"}
+          </Button>
+        ) : null}
+        {msg ? <span className="text-xs text-slate-500">{msg}</span> : null}
       </div>
       <div className="space-y-2">
         {filtered.map((l) => (
@@ -495,7 +529,7 @@ export function EmailsClient({
       {tab === "templates" ? (
         <TemplatesView templates={templates} canEdit={canEdit} defaults={defaults} />
       ) : (
-        <LogsView logs={logs} />
+        <LogsView logs={logs} canEdit={canEdit} />
       )}
     </div>
   );
