@@ -54,6 +54,7 @@ export function ClientsAdminClient({ clients }: Props) {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [baseline, setBaseline] = useState<FormState>(EMPTY);
   const [showDiscard, setShowDiscard] = useState(false);
+  const [showCodeChange, setShowCodeChange] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ClientRecord | null>(null);
@@ -105,14 +106,16 @@ export function ClientsAdminClient({ clients }: Props) {
     setCreating(false);
     setError(null);
     setShowDiscard(false);
+    setShowCodeChange(false);
   }
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  // The client code is auto-generated from the name while creating. It is never
-  // typed by hand, and an existing client's code is never changed.
+  // While creating, the client code is auto-generated from the name and re-derived
+  // on every name change so a corrected typo updates the code. When editing, the
+  // code is typed by hand and the name never touches it.
   async function onNameChange(v: string) {
     updateField("clientName", v);
     if (!creating || v.trim().length < 2) return;
@@ -133,6 +136,16 @@ export function ClientsAdminClient({ clients }: Props) {
       setError("Enter a client name so a code can be generated.");
       return;
     }
+    // Editing the stored code can break references, so confirm before saving.
+    if (!creating && editing && form.clientCode !== baseline.clientCode) {
+      setShowCodeChange(true);
+      return;
+    }
+    await doSubmit();
+  }
+
+  async function doSubmit() {
+    setShowCodeChange(false);
     setSaving(true);
     try {
       const body = { ...form };
@@ -273,12 +286,14 @@ export function ClientsAdminClient({ clients }: Props) {
           <FormField
             label="Client code"
             value={form.clientCode}
-            onChange={() => {}}
-            readOnly
+            onChange={creating ? () => {} : (v) => updateField("clientCode", v)}
+            readOnly={creating}
             inputClassName="font-mono uppercase tracking-widest"
             hint={
               <span className="text-slate-400">
-                {creating ? "Auto-generated from the client name." : "Auto-generated. Cannot be changed."}
+                {creating
+                  ? "Auto-generated from the client name."
+                  : "Editable. Changing it can break links to projects, contracts and payments."}
               </span>
             }
           />
@@ -347,6 +362,17 @@ export function ClientsAdminClient({ clients }: Props) {
         busy={deleting}
         onCancel={() => (deleting ? undefined : setDeleteTarget(null))}
         onConfirm={confirmDelete}
+      />
+
+      <ConfirmDialog
+        open={showCodeChange}
+        title="Change client code?"
+        message="Changing the client code can break links to projects, contracts and payments that reference it. Continue?"
+        confirmLabel="Change code"
+        confirmTone="danger"
+        busy={saving}
+        onCancel={() => (saving ? undefined : setShowCodeChange(false))}
+        onConfirm={doSubmit}
       />
 
       <ConfirmDialog

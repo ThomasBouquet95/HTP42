@@ -37,6 +37,7 @@ type MemberOpt = {
   currency: string;
 };
 
+type DayCell = { hours: number; task: string };
 export type StaffingTimesheet = {
   id: string;
   staffingRecordId: string;
@@ -46,6 +47,13 @@ export type StaffingTimesheet = {
   endDate: string | null;
   totalHours: number;
   status: string;
+  days: {
+    monday: DayCell;
+    tuesday: DayCell;
+    wednesday: DayCell;
+    thursday: DayCell;
+    friday: DayCell;
+  };
 };
 
 type Props = {
@@ -405,8 +413,36 @@ export function StaffingsAdminClient({
 
   const modalOpen = creating || !!editing;
 
+  // Tab counts (over the filtered set) — a light touch of context like the
+  // timesheet sub-tabs. By project counts distinct clients; by member counts
+  // distinct members.
+  const tabCounts = useMemo(() => {
+    const projectClient = new Map(projects.map((p) => [p.code, p.clientName || "— No client —"]));
+    const clients = new Set(filtered.map((s) => projectClient.get(s.projectCode) || "— No client —"));
+    const memberIds = new Set(
+      filtered.flatMap((s) => (s.memberRecordIds.length ? s.memberRecordIds : ["—"])),
+    );
+    return { overview: filtered.length, byproject: clients.size, bymember: memberIds.size };
+  }, [filtered, projects]);
+  const countBadge = (n: number) => (
+    <span className="inline-flex items-center rounded-full bg-slate-200 px-1.5 text-[10px] font-semibold text-slate-600">
+      {n}
+    </span>
+  );
+
   return (
     <div className="space-y-4">
+      <SegmentedTabs
+        ariaLabel="Staffing view"
+        value={view}
+        onChange={setView}
+        options={[
+          { value: "overview", label: "Overview", badge: countBadge(tabCounts.overview) },
+          { value: "byproject", label: "By project", badge: countBadge(tabCounts.byproject) },
+          { value: "bymember", label: "By member", badge: countBadge(tabCounts.bymember) },
+        ]}
+      />
+
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
         <SearchInput
           value={search}
@@ -422,17 +458,6 @@ export function StaffingsAdminClient({
         />
         <Button tone="primary" size="sm" onClick={openCreate}>+ New staffing</Button>
       </div>
-
-      <SegmentedTabs
-        ariaLabel="Staffing view"
-        value={view}
-        onChange={setView}
-        options={[
-          { value: "overview", label: "Overview" },
-          { value: "byproject", label: "By project" },
-          { value: "bymember", label: "By member" },
-        ]}
-      />
 
       {view === "byproject" ? (
         <StaffingsByProject

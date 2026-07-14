@@ -123,6 +123,10 @@ export function MembersAdminClient({
     return () => clearTimeout(t);
   }, [toast]);
   const nameTouchedRef = useRef(false);
+  // Sequence guard so out-of-order suggest-code responses can't clobber the
+  // code derived from a newer name (keeps the code tracking the latest name).
+  const codeReqSeq = useRef(0);
+  const [showCodeChangeConfirm, setShowCodeChangeConfirm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<MemberAdminRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [cvBusy, setCvBusy] = useState(false);
@@ -247,6 +251,7 @@ export function MembersAdminClient({
     setError(null);
     setCvMsg(null);
     setShowDiscard(false);
+    setShowCodeChangeConfirm(false);
   }
 
   // Guarded close (X button, backdrop, Cancel). If there are unsaved text
@@ -267,19 +272,27 @@ export function MembersAdminClient({
   async function onFullNameChange(v: string) {
     nameTouchedRef.current = true;
     updateField("fullName", v);
-    // On create, the member code is auto-generated from the full name.
-    if (creating && v.trim().length >= 2) {
-      try {
-        const res = await fetch(
-          `/api/admin/members/suggest-code?fullName=${encodeURIComponent(v.trim())}`,
-        );
-        const data = (await res.json()) as { code?: string };
-        if (data.code) {
-          setForm((f) => ({ ...f, memberCode: data.code! }));
-        }
-      } catch {
-        // ignore
+    // On create, the member code always tracks the full name, so fixing a typo
+    // in the name re-derives the code. In edit mode the code is left alone.
+    if (!creating) return;
+    const trimmed = v.trim();
+    const seq = ++codeReqSeq.current;
+    if (trimmed.length < 2) {
+      setForm((f) => ({ ...f, memberCode: "" }));
+      return;
+    }
+    try {
+      const res = await fetch(
+        `/api/admin/members/suggest-code?fullName=${encodeURIComponent(trimmed)}`,
+      );
+      const data = (await res.json()) as { code?: string };
+      // Ignore stale responses so the code matches the most recent name.
+      if (seq !== codeReqSeq.current) return;
+      if (data.code) {
+        setForm((f) => ({ ...f, memberCode: data.code! }));
       }
+    } catch {
+      // ignore
     }
   }
 
@@ -289,6 +302,17 @@ export function MembersAdminClient({
       setError("Member code is required.");
       return;
     }
+    // Editing an existing member's code can break references, so confirm first
+    // when it differs from the stored value. Unchanged codes save silently.
+    if (editing && form.memberCode.trim() !== baseline.memberCode) {
+      setShowCodeChangeConfirm(true);
+      return;
+    }
+    await doSave();
+  }
+
+  async function doSave() {
+    setError(null);
     setSaving(true);
     try {
       const body = {
@@ -676,10 +700,18 @@ export function MembersAdminClient({
           <FormField
             label="Member code"
             value={form.memberCode}
-            onChange={() => {}}
-            readOnly
+            onChange={creating ? () => {} : (v) => updateField("memberCode", v)}
+            readOnly={creating}
             inputClassName="font-mono uppercase tracking-wide"
-            hint={<span className="text-slate-400">Auto-generated.</span>}
+            hint={
+              creating ? (
+                <span className="text-slate-400">Auto-generated from the full name.</span>
+              ) : (
+                <span className="text-slate-400">
+                  Editable. Changing it can break links to staffings, timesheets and payments.
+                </span>
+              )
+            }
           />
           <FormSelect label="Status" value={form.status} onChange={(v) => updateField("status", v)}>
             {statuses.map((s) => (
@@ -761,6 +793,20 @@ export function MembersAdminClient({
         confirmTone="danger"
         onCancel={() => setShowDiscard(false)}
         onConfirm={forceClose}
+      />
+
+      <ConfirmDialog
+        open={showCodeChangeConfirm}
+        title="Change member code?"
+        message="Changing the member code can break links to staffings, timesheets and payments that reference it. Continue?"
+        confirmLabel="Change code"
+        confirmTone="danger"
+        busy={saving}
+        onCancel={() => (saving ? undefined : setShowCodeChangeConfirm(false))}
+        onConfirm={() => {
+          setShowCodeChangeConfirm(false);
+          void doSave();
+        }}
       />
 
       {toast ? (

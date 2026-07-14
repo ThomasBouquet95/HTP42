@@ -7,7 +7,8 @@ import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
 import { Badge } from "@/components/badge";
-import { FilterMultiSelect } from "@/components/filters";
+import { FilterMultiSelect, SegmentedTabs } from "@/components/filters";
+import { ProjectsByClient } from "./projects-breakdown";
 import { EditIcon, IconButton } from "@/components/admin-icons";
 import { DownloadChip } from "@/components/download-chip";
 import { StatusSelect } from "@/components/status-select";
@@ -132,6 +133,7 @@ export function ProjectsAdminClient({
   // empty array would mean "no filter". Multi-select so more can be added.
   const [statuses, setStatuses] = useState<string[]>(["In Progress"]);
   const [types, setTypes] = useState<string[]>([]);
+  const [view, setView] = useState<"overview" | "byclient">("overview");
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   function toggleRow(id: string) {
     setExpandedRows((prev) => {
@@ -150,6 +152,9 @@ export function ProjectsAdminClient({
   const [error, setError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProjectRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Edit-mode guard: confirm before persisting a changed project code, since the
+  // code is referenced by timesheets, invoices and payments.
+  const [codeChangeConfirm, setCodeChangeConfirm] = useState(false);
   // SOW attach/replace for the project being edited (links to Legal). On
   // create there's no record yet, so a picked file is held and uploaded after
   // the project is saved.
@@ -300,21 +305,26 @@ export function ProjectsAdminClient({
 
   async function onClientChange(id: string) {
     updateField("clientId", id);
-    if (creating && id && !form.projectCode) {
-      const client = clientById.get(id);
-      if (client && /^[A-Z]{3}$/.test(client.clientCode)) {
-        try {
-          const year = yearFromStart(form.startDate || `${currentYear}-01-01`);
-          const res = await fetch(
-            `/api/admin/projects/next-code?clientCode=${client.clientCode}&year=${year}`,
-          );
-          if (res.ok) {
-            const data = (await res.json()) as { code?: string };
-            if (data.code) updateField("projectCode", data.code);
-          }
-        } catch {
-          // ignore
+    // On create the code is derived from the client. Re-derive on every change
+    // (not only when empty) so mispicking a client then choosing another
+    // refreshes the code to match. Clear first so a failed lookup doesn't leave
+    // a stale code from the previous client.
+    if (!creating) return;
+    updateField("projectCode", "");
+    if (!id) return;
+    const client = clientById.get(id);
+    if (client && /^[A-Z]{3}$/.test(client.clientCode)) {
+      try {
+        const year = yearFromStart(form.startDate || `${currentYear}-01-01`);
+        const res = await fetch(
+          `/api/admin/projects/next-code?clientCode=${client.clientCode}&year=${year}`,
+        );
+        if (res.ok) {
+          const data = (await res.json()) as { code?: string };
+          if (data.code) updateField("projectCode", data.code);
         }
+      } catch {
+        // ignore
       }
     }
   }
@@ -326,6 +336,18 @@ export function ProjectsAdminClient({
       setError(v);
       return;
     }
+    // Editing an existing project's code is allowed, but confirm it first: the
+    // code is referenced elsewhere and changing it can break those links.
+    if (!creating && editing && form.projectCode !== editing.projectCode) {
+      setCodeChangeConfirm(true);
+      return;
+    }
+    await save();
+  }
+
+  async function save() {
+    setCodeChangeConfirm(false);
+    setError(null);
     setSaving(true);
     try {
       const body = {
@@ -460,6 +482,19 @@ export function ProjectsAdminClient({
         </div>
       </div>
 
+      <SegmentedTabs
+        ariaLabel="Projects view"
+        value={view}
+        onChange={setView}
+        options={[
+          { value: "overview", label: "Overview" },
+          { value: "byclient", label: "By client" },
+        ]}
+      />
+
+      {view === "byclient" ? (
+        <ProjectsByClient projects={filtered} clients={clients} onEdit={openEdit} />
+      ) : (
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
@@ -582,6 +617,7 @@ export function ProjectsAdminClient({
           </tbody>
         </table>
       </div>
+      )}
 
       <Modal
         open={modalOpen}
@@ -706,13 +742,22 @@ export function ProjectsAdminClient({
                 <input
                   type="text"
                   value={form.projectCode}
-                  readOnly
+                  readOnly={creating}
                   required
-                  className="block w-full rounded-md border border-slate-300 bg-slate-100 px-2.5 py-1.5 text-xs font-mono text-slate-500 cursor-not-allowed focus:outline-none"
+                  onChange={creating ? undefined : (e) => updateField("projectCode", e.target.value)}
+                  className={
+                    creating
+                      ? "block w-full rounded-md border border-slate-300 bg-slate-100 px-2.5 py-1.5 text-xs font-mono text-slate-500 cursor-not-allowed focus:outline-none"
+                      : "block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-mono text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                  }
                   placeholder={creating ? "Pick a client first" : ""}
                 />
               </div>
-              <div className="mt-1 text-xs text-slate-400">Auto-generated. Format: CLIENT-YEAR-NN</div>
+              <div className="mt-1 text-xs text-slate-400">
+                {creating
+                  ? "Auto-generated. Format: CLIENT-YEAR-NN"
+                  : "Editable. Changing it can break links to timesheets, invoices and payments."}
+              </div>
             </div>
             <FormField
               label="Project name"
@@ -820,6 +865,16 @@ export function ProjectsAdminClient({
         busy={deleting}
         onCancel={() => (deleting ? undefined : setDeleteTarget(null))}
         onConfirm={confirmDelete}
+      />
+
+      <ConfirmDialog
+        open={codeChangeConfirm}
+        title="Change project code?"
+        message="Changing the project code can break links to timesheets, invoices and payments that reference it. Continue?"
+        confirmLabel="Change code"
+        busy={saving}
+        onCancel={() => (saving ? undefined : setCodeChangeConfirm(false))}
+        onConfirm={save}
       />
 
       <ConfirmDialog

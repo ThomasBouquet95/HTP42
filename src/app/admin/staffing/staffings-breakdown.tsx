@@ -9,6 +9,7 @@ import type { StaffingAdminRecord } from "@/lib/airtable";
 
 type MemberLite = { id: string; code: string; name: string };
 type ProjectLite = { code: string; name: string; clientName?: string };
+type DayCell = { hours: number; task: string };
 type StaffingTimesheet = {
   id: string;
   staffingRecordId: string;
@@ -18,8 +19,23 @@ type StaffingTimesheet = {
   endDate: string | null;
   totalHours: number;
   status: string;
+  days: {
+    monday: DayCell;
+    tuesday: DayCell;
+    wednesday: DayCell;
+    thursday: DayCell;
+    friday: DayCell;
+  };
 };
 type TsMap = Map<string, StaffingTimesheet[]>;
+
+const DAY_LABELS: [keyof StaffingTimesheet["days"], string][] = [
+  ["monday", "Mon"],
+  ["tuesday", "Tue"],
+  ["wednesday", "Wed"],
+  ["thursday", "Thu"],
+  ["friday", "Fri"],
+];
 
 // Days meter: used vs allocated, amber/rose when over. Mirrors the timesheet
 // review meter so the breakdowns read consistently across the app.
@@ -31,7 +47,7 @@ function DaysMeter({ used, allocated }: { used: number; allocated: number | null
       className={`inline-flex items-center gap-2 rounded-md border px-2 py-1 ${
         over ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-white"
       }`}
-      title="Days logged (from timesheets) vs days allocated on the staffing"
+      title="Days logged from submitted timesheets (Submitted, Approved, Invoiced and Paid — not only approved) vs days allocated on the staffing"
     >
       <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-200">
         <div
@@ -83,6 +99,49 @@ function sumDays(rows: StaffingAdminRecord[]) {
       return acc;
     },
     { used: 0, allocated: 0 },
+  );
+}
+
+// One submitted timesheet week, expandable to its day-by-day breakdown.
+function TimesheetRow({ t }: { t: StaffingTimesheet }) {
+  const [open, setOpen] = useState(false);
+  const hasDetail = DAY_LABELS.some(([k]) => t.days[k].hours || t.days[k].task);
+  return (
+    <li className="border-t border-slate-100 first:border-t-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-2.5 py-1.5 text-left text-[11px] hover:bg-slate-50"
+      >
+        <Chevron open={open} />
+        <span className="min-w-[8rem] flex-1 text-slate-700">
+          {t.startDate ? formatWeekRange(t.startDate, t.endDate ?? t.startDate) : t.timesheetCode || "—"}
+        </span>
+        <span className="font-mono text-[10px] text-slate-400">{t.timesheetCode}</span>
+        <StatusPill status={t.status || "—"} />
+        <span className="tabular-nums text-slate-500">{(t.totalHours || 0).toFixed(1)} h</span>
+      </button>
+      {open ? (
+        <dl className="grid grid-cols-1 gap-x-4 gap-y-0.5 bg-slate-50/60 px-2.5 pb-2 pl-7 pt-1 text-[11px] sm:grid-cols-2">
+          {hasDetail ? (
+            DAY_LABELS.map(([k, label]) => {
+              const day = t.days[k];
+              if (!day.hours && !day.task) return null;
+              return (
+                <div key={k} className="flex gap-2">
+                  <span className="w-8 shrink-0 text-slate-400">{label}</span>
+                  <span className="tabular-nums text-slate-600">{day.hours || 0}h</span>
+                  {day.task ? <span className="truncate text-slate-500 demo-blur">{day.task}</span> : null}
+                </div>
+              );
+            })
+          ) : (
+            <span className="text-slate-400">No day detail recorded.</span>
+          )}
+        </dl>
+      ) : null}
+    </li>
   );
 }
 
@@ -174,17 +233,7 @@ function StaffingRow({
             ) : (
               <ul className="overflow-hidden rounded-md border border-slate-200 bg-white">
                 {timesheets.map((t) => (
-                  <li
-                    key={t.id}
-                    className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 px-2.5 py-1.5 text-[11px] first:border-t-0"
-                  >
-                    <span className="min-w-[9rem] flex-1 text-slate-700">
-                      {t.startDate ? formatWeekRange(t.startDate, t.endDate ?? t.startDate) : t.timesheetCode || "—"}
-                    </span>
-                    <span className="font-mono text-[10px] text-slate-400">{t.timesheetCode}</span>
-                    <StatusPill status={t.status || "—"} />
-                    <span className="tabular-nums text-slate-500">{(t.totalHours || 0).toFixed(1)} h</span>
-                  </li>
+                  <TimesheetRow key={t.id} t={t} />
                 ))}
               </ul>
             )}

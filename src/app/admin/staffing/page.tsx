@@ -42,6 +42,13 @@ export default async function AdminStaffingPage() {
     endDate: t.endDate,
     totalHours: t.totalHours,
     status: t.status,
+    days: {
+      monday: t.monday,
+      tuesday: t.tuesday,
+      wednesday: t.wednesday,
+      thursday: t.thursday,
+      friday: t.friday,
+    },
   }));
 
   return (
