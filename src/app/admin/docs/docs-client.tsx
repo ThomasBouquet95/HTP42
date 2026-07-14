@@ -88,6 +88,50 @@ function Term({ children }: { children: ReactNode }) {
   return <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[11px] text-slate-700">{children}</code>;
 }
 
+// A compact table with a header row. Scrolls horizontally on small screens.
+function Table({ head, rows }: { head: string[]; rows: ReactNode[][] }) {
+  return (
+    <div className="mt-3 overflow-x-auto">
+      <table className="w-full border-collapse text-xs">
+        <thead>
+          <tr className="border-b border-slate-200 text-left">
+            {head.map((h) => (
+              <th key={h} className="py-1.5 pr-4 font-semibold uppercase tracking-wide text-slate-500">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} className="border-b border-slate-100 align-top">
+              {r.map((c, j) => (
+                <td key={j} className="py-1.5 pr-4 text-slate-700">
+                  {c}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// A labelled block used to spell out roles / decisions / exceptions inline.
+function DefList({ items }: { items: { term: ReactNode; def: ReactNode }[] }) {
+  return (
+    <dl className="mt-2 space-y-1.5">
+      {items.map((it, i) => (
+        <div key={i} className="grid grid-cols-1 gap-0.5 sm:grid-cols-[10rem_1fr] sm:gap-3">
+          <dt className="text-xs font-semibold text-slate-800">{it.term}</dt>
+          <dd className="text-xs text-slate-600">{it.def}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Business processes
 // ---------------------------------------------------------------------------
@@ -95,180 +139,266 @@ function Term({ children }: { children: ReactNode }) {
 function BusinessProcesses() {
   return (
     <div className="space-y-6">
-      <Section
-        title="Roles & access"
-        intro="Who can see and do what in the admin panel."
-      >
+      <Section title="Roles & access" intro="Who can see and do what in the admin panel.">
         <p>
-          Every member has a <strong>role</strong>. Only these roles reach the admin panel: Managing
-          Partner, Operating Partner, Associate Partner, Project Manager and Network Operations.
-          Network Expert, Support and unassigned members are member-only.
+          Every member has a <strong>role</strong>. Only these roles reach the admin panel; everyone
+          else is member-only (they can log their own time and submit their own invoices).
         </p>
-        <Bullets
+        <DefList
           items={[
-            <>
-              <strong>Managing Partner</strong> and <strong>Operating Partner</strong> have full,
-              locked access to every page (they cannot be restricted, to avoid self-lockout).
-            </>,
-            <>
-              Other admin roles are <strong>configurable</strong> in{" "}
-              <Term>Settings → Roles &amp; access</Term>: a matrix of role × page with View / Edit
-              ticks. Edit implies View.
-            </>,
-            <>
-              A <strong>Project Manager</strong> defaults to Timesheets only, and only its Review
-              sub-tab, and only for the projects they are staffed on.
-            </>,
+            {
+              term: "Managing Partner",
+              def: "Full, locked access to every page. Primary super-admin. Cannot be restricted.",
+            },
+            {
+              term: "Operating Partner",
+              def: "Full, locked access to every page. Cannot be restricted (prevents self-lockout).",
+            },
+            {
+              term: "Associate Partner / Network Operations",
+              def: "Configurable admin roles — default to full access except the Admin group (Roles & access, Emails), which must be granted explicitly.",
+            },
+            {
+              term: "Project Manager",
+              def: "Defaults to Timesheets → Review only, and only for the projects they are staffed on. Everything else is hidden until granted.",
+            },
+            {
+              term: "Network Expert / Support / unassigned",
+              def: "Member-only. No admin panel.",
+            },
           ]}
         />
         <Rule>
           Access is enforced twice: the edge middleware checks the signed-in role, and every admin
-          page/API re-checks the live role + permission before returning data. A page you cannot
-          view is not shown in the navigation.
+          page/API re-checks the <em>live</em> role + permission before returning data — so revoking
+          a role takes effect immediately. A page you cannot view is not shown in the navigation.
         </Rule>
+        <p className="mt-3 text-xs text-slate-500">
+          Configure roles in <Term>Admin → Roles &amp; access</Term>: a matrix of role × page with
+          View / Edit ticks (Edit implies View).
+        </p>
       </Section>
 
-      <Section
-        title="Members & staffing"
-        intro="The network of people and their project assignments."
-      >
+      <Section title="Members & staffing" intro="The network of people and their project assignments.">
         <p className="mb-2">
           A <strong>member</strong> is a person in the network. A <strong>staffing</strong> assigns
-          one member to one project at an agreed day-rate and number of days.
+          one member to one project at an agreed day-rate and number of days. A staffing is the unit
+          everything else hangs off: timesheets are logged against it, and invoices/payments settle
+          it.
         </p>
         <Steps
           items={[
-            <>Create the member. The member code is auto-generated from the name.</>,
             <>
-              Create a staffing: pick the project and member. The staffing code is generated by
-              Airtable, and the day-rate + currency default from the selected member (still
-              editable).
+              <strong>Create the member.</strong> The member code is generated from the name (e.g.
+              &ldquo;Thomas Bouquet&rdquo; → <Term>BOUTH1</Term>), with a digit to break ties.
             </>,
             <>
-              As timesheets are logged, the staffing shows <strong>days used vs days allocated</strong>{" "}
-              so you can see over-runs at a glance.
+              <strong>Create a staffing:</strong> pick the project and the member. The day-rate and
+              currency <strong>default from the member</strong> and stay editable.
+            </>,
+            <>
+              <strong>Choose who reviews timesheets</strong> for this staffing — this is a required
+              decision (see the callout below).
+            </>,
+            <>
+              As timesheets are logged, the staffing shows{" "}
+              <strong>days used vs days allocated</strong> (counting submitted-and-onward weeks) so
+              over-runs are visible at a glance.
             </>,
           ]}
         />
         <Rule>
-          Identifier codes (member, client, project) are auto-generated and shown on an amber field.
-          On create they re-derive from their source; on edit, changing one asks for confirmation
-          because other records reference it.
+          The <strong>staffing code</strong> is generated by the application by joining the project
+          code and the member code, e.g. <Term>ECS-2026-05_BOUTH1</Term> (mirroring the existing
+          examples in the database). If the same member is re-staffed on the same project a numeric
+          suffix keeps it unique. Member, client and project codes are likewise auto-generated and
+          shown on an amber field; on edit, changing a code asks for confirmation because other
+          records reference it.
+        </Rule>
+        <Rule tone="warning">
+          <strong>Reviewer is mandatory.</strong> When setting up a staffing you must choose the
+          timesheet reviewer: <strong>Admin</strong> (approved in-app on the Timesheets tab) or{" "}
+          <strong>Client</strong> (the named client contact approves by secure email link). For
+          client review you must also give the reviewer&apos;s name and email. This choice drives the
+          whole review workflow below.
         </Rule>
       </Section>
 
-      <Section
-        title="Timesheet lifecycle"
-        intro="How a week of logged time moves from draft to approved."
-      >
+      <Section title="Timesheet lifecycle" intro="Every status a week of time can be in, and how it moves between them.">
         <Flow
           nodes={[
             { label: "Draft" },
-            { label: "Submitted (Under review)", tone: "warning" },
+            { label: "Submitted / Under review", tone: "warning" },
             { label: "Approved", tone: "success" },
+            { label: "Rejected", tone: "danger" },
           ]}
         />
         <p className="mt-3">
-          A member logs a week (Mon–Fri hours + tasks) as a <strong>Draft</strong>, then submits it.
-          Submitting puts it <strong>Under review</strong>. A reviewer then approves or rejects it.
+          A member fills a week (Monday–Friday hours + a task note per day) and saves it as a{" "}
+          <strong>Draft</strong>. Submitting moves it to review; a reviewer then approves or rejects
+          it. The statuses and who can cause each move:
         </p>
-        <Bullets
-          items={[
-            <>
-              <strong>Rejected</strong> sends it back to the member, who can revise and resubmit.
-            </>,
-            <>
-              <strong>Cancelled</strong> withdraws a week from the flow.
-            </>,
-            <>
-              Review can be done two ways per staffing: <strong>Admin review</strong> (in the
-              Timesheets → Review tab) or <strong>Client review</strong> (the client gets an emailed,
-              single-use, expiring link and needs no account).
-            </>,
+        <Table
+          head={["Status", "Meaning", "Who sets it", "What can happen next"]}
+          rows={[
+            ["Draft", "Being filled in; not yet sent.", "Member", "Submit → Under review; or Cancel."],
+            [
+              "Submitted (Under review)",
+              "Sent for approval; awaiting a decision.",
+              "Member (by submitting)",
+              "Approve → Approved; Reject → Rejected; member may Cancel or resubmit.",
+            ],
+            [
+              "Approved",
+              "Accepted. Now billable and counts toward days used.",
+              "Admin or Client reviewer",
+              "Included on an invoice; admin can still Edit.",
+            ],
+            [
+              "Rejected",
+              "Sent back with an optional reason.",
+              "Admin or Client reviewer",
+              "Member revises and resubmits → Under review.",
+            ],
+            [
+              "Cancelled",
+              "Withdrawn from the flow; ignored in totals.",
+              "Member",
+              "Terminal (a fresh week can be logged).",
+            ],
           ]}
         />
         <Rule tone="warning">
           A timesheet stops at <strong>Approved</strong>. &ldquo;Invoiced&rdquo; and
-          &ldquo;Paid&rdquo; are not timesheet statuses. Whether the work was billed or paid is
-          tracked on the payment, not on the timesheet.
+          &ldquo;Paid&rdquo; are <strong>not</strong> timesheet statuses — whether the work has been
+          billed or paid is tracked on the payment, never on the timesheet. Nothing in the app moves
+          a timesheet to Paid.
         </Rule>
+        <p className="mt-3 text-xs text-slate-500">
+          <strong>Exceptions:</strong> a Rejected week loops back through review as many times as
+          needed; a Cancelled week never counts toward days-used or projected billing; only
+          Submitted, Approved (and any legacy Invoiced/Paid) weeks count toward a staffing&apos;s days
+          used.
+        </p>
       </Section>
 
-      <Section title="Timesheet review" intro="Approving submitted time (admin or client).">
+      <Section title="Timesheet review — admin vs client" intro="The two review paths and how they differ.">
+        <p>
+          The staffing&apos;s <strong>review method</strong> (chosen at setup) decides which path a
+          submitted week takes.
+        </p>
+        <Table
+          head={["", "Admin review", "Client review"]}
+          rows={[
+            ["Who decides", "An HTP42 admin", "The client contact named on the staffing"],
+            ["Where", "In-app: Timesheets → Review", "A secure one-click email link (no account)"],
+            [
+              "On submit",
+              "Week appears in the Review queue",
+              "A review-request email is sent to the reviewer with Approve / Reject buttons",
+            ],
+            [
+              "Link security",
+              "n/a",
+              "Single-use token, expires after 14 days; cleared once a decision lands",
+            ],
+            [
+              "Override",
+              "n/a",
+              "An admin can still approve/reject in-app if the client doesn't act",
+            ],
+          ]}
+        />
         <Steps
           items={[
             <>
               Open <Term>Timesheets → Review</Term>. The left rail lists members with a count of
-              weeks awaiting a decision.
+              weeks awaiting a decision (a Project Manager sees only their projects).
             </>,
             <>
-              For each week you can <strong>Approve</strong> or <strong>Reject</strong> (with an
-              optional comment). Weeks set for client review show &ldquo;Awaiting client&rdquo; and
-              can still be overridden by an admin.
+              For each week, <strong>Approve</strong> or <strong>Reject</strong> with an optional
+              comment. Weeks set to client review show &ldquo;Awaiting client&rdquo; until the client
+              acts (or an admin overrides).
             </>,
             <>
-              Every decision is written to an audit trail (who, method, when, comment). The badge on
-              each timesheet shows the outcome on hover.
+              Every decision — submitted, approved, rejected, edited — is written to an immutable
+              audit trail (who, method: Admin/Client/System, when, comment). Hover a status badge to
+              see the outcome.
             </>,
             <>
-              Admins can <strong>Edit</strong> a timesheet from any timesheets view (Overview,
-              Review, By project, By member): correct the hours/tasks and, if needed, move it to a
-              different project (staffing) or week.
-            </>,
-          ]}
-        />
-      </Section>
-
-      <Section title="Invoicing (member submits an invoice)" intro="Turning approved work into a bill.">
-        <Flow
-          nodes={[
-            { label: "Approved timesheets", tone: "success" },
-            { label: "Member submits invoice" },
-            { label: "Payment (Under review)", tone: "warning" },
-          ]}
-        />
-        <Steps
-          items={[
-            <>The member picks the staffing the invoice is for.</>,
-            <>
-              They select the weeks it covers. The picker shows each week&apos;s status but{" "}
-              <strong>only Approved weeks can be selected</strong>; the rest are disabled.
-            </>,
-            <>
-              On submit, an <strong>Outflow payment</strong> is auto-created in{" "}
-              <strong>Under review</strong> so Finance picks it up, and a notification email is sent.
-            </>,
-          ]}
-        />
-        <Rule tone="warning">
-          An invoice cannot be submitted while any selected week is still under review. The message
-          is explicit: timesheets must be approved by an admin or the client first.
-        </Rule>
-      </Section>
-
-      <Section title="Payments" intro="Money in (clients) and money out (subcontractors, expenses, vendors).">
-        <Bullets
-          items={[
-            <>
-              Each payment is an <strong>Inflow</strong> (from a client) or an <strong>Outflow</strong>{" "}
-              (to a member/vendor). Its status runs Under review → To be paid → Paid.
-            </>,
-            <>
-              For a <strong>Subcontractor</strong> outflow, the payment is linked to the{" "}
-              <strong>staffing</strong> it settles, and the project is derived from that staffing
-              (not chosen separately).
-            </>,
-            <>
-              The <strong>Review</strong> sub-tab groups payments by member for triage; By project /
-              By member give totals with a projected net (all inflows minus all outflows, including
-              amounts still to receive / to be paid).
+              Admins can <strong>Edit</strong> a timesheet from any view (Overview, Review, By
+              project, By member): fix the hours/tasks and, if needed, move it to a different project
+              (staffing) or week. An edit is itself recorded in the audit trail.
             </>,
           ]}
         />
         <Rule>
-          Marking a payment <strong>To be paid</strong> or <strong>Paid</strong> while its linked
-          timesheets are still under review asks for confirmation, and on confirm those timesheets
-          are automatically approved (paying implies the work is accepted).
+          <strong>Automated action:</strong> submitting (or resubmitting) a week on a Client-review
+          staffing automatically mints the token and sends the review-request email. It is
+          best-effort — a mail failure never blocks the submit and is logged to the audit trail.
+        </Rule>
+      </Section>
+
+      <Section title="Invoicing — member submits an invoice" intro="Turning approved work into a bill and a payment to process.">
+        <Flow
+          nodes={[
+            { label: "Approved timesheets", tone: "success" },
+            { label: "Member submits invoice" },
+            { label: "Outflow payment · Under review", tone: "warning" },
+          ]}
+        />
+        <Steps
+          items={[
+            <>The member picks the <strong>staffing</strong> the invoice is for.</>,
+            <>
+              They select the weeks it covers. The picker shows each week&apos;s status, but{" "}
+              <strong>only Approved weeks can be selected</strong> — the rest are disabled.
+            </>,
+            <>They attach the invoice PDF, enter the amount + currency and a comment.</>,
+            <>
+              On submit the app <strong>creates an Outflow payment in Under review</strong> (linked
+              to the staffing, so the project is derived from it), attaches the PDF, optionally builds
+              a week-by-week timesheet summary PDF, and emails Finance (see Automated emails).
+            </>,
+          ]}
+        />
+        <Rule tone="warning">
+          <strong>Decision / gate:</strong> an invoice cannot be submitted while any selected week is
+          still under review. The blocking message is explicit: timesheets must first be approved by
+          an admin or the client.
+        </Rule>
+      </Section>
+
+      <Section title="Payments" intro="Money in (clients) and money out (subcontractors, expenses, vendors).">
+        <p>
+          A payment is either an <strong>Inflow</strong> (a client pays HTP42) or an{" "}
+          <strong>Outflow</strong> (HTP42 pays a member or vendor). Its status runs{" "}
+          <strong>Under review → To be paid → Paid</strong>.
+        </p>
+        <Bullets
+          items={[
+            <>
+              For a <strong>Subcontractor</strong> outflow, the payment is linked to the{" "}
+              <strong>staffing</strong> it settles, and the project is <em>derived from that
+              staffing</em> — never chosen separately — so it can never drift onto the wrong project.
+            </>,
+            <>
+              The <strong>Review</strong> sub-tab groups payments by member for triage. By project /
+              By member show totals with a <strong>projected net</strong> = all inflows (including
+              still-to-receive) minus all outflows (including still-to-be-paid).
+            </>,
+            <>
+              Uploading an invoice PDF against a payment, and marking any payment Paid, each send a
+              finance recap email (see Automated emails).
+            </>,
+          ]}
+        />
+        <Rule>
+          <strong>Decision + automated action:</strong> marking a payment <strong>To be paid</strong>{" "}
+          or <strong>Paid</strong> while its linked timesheets are still under review asks for
+          confirmation; on confirm, those timesheets are <strong>automatically approved</strong>{" "}
+          (paying implies the work is accepted). Marking a payment Paid also cascades to mark the
+          related member invoice Paid — but never changes any timesheet to Paid.
         </Rule>
       </Section>
 
@@ -277,17 +407,19 @@ function BusinessProcesses() {
           items={[
             <>
               <strong>Opportunities</strong> track potential work by stage. Winning one{" "}
-              <strong>converts it to a project</strong> (prefilling name, value, objective, and an
-              auto-generated project code, optionally attaching a SOW to Legal).
+              <strong>converts it to a project</strong>, prefilling the name, value and objective and
+              generating the project code (optionally attaching a SOW to Legal).
             </>,
             <>
               <strong>Projects</strong> belong to a client and carry the staffings, timesheets,
               invoices and contracts for the engagement. The By client view drills client → project →
-              staffing.
+              staffing. The project code is <Term>CLIENT-YEAR-NN</Term> where the year comes from the
+              start date, so it rolls over automatically each year.
             </>,
             <>
-              <strong>Client feedback</strong> surveys and <strong>client reviews</strong> capture
-              satisfaction and per-member ratings.
+              <strong>Clients &amp; Partners</strong> hold the counterparties; <strong>Client
+              feedback</strong> surveys and <strong>client reviews</strong> capture satisfaction and
+              per-member ratings.
             </>,
           ]}
         />
@@ -302,11 +434,74 @@ function BusinessProcesses() {
             </>,
             <>
               A new contract can be created by <strong>dropping its PDF</strong>: the document is read
-              and used to pre-fill the side, type, signatories, dates and key terms.
+              (via Claude) and used to pre-fill the side, type, signatories, dates and key terms.
+              Uploading a contract PDF emails a paper-trail note to Finance.
             </>,
             <>A project&apos;s SOW appears as a download chip across Projects, Staffing and Timesheets.</>,
           ]}
         />
+      </Section>
+
+      <Section title="Automated emails" intro="Every email the portal sends — who gets it, when, under what conditions, and what it says.">
+        <p>
+          All the emails below are sent from the configured mailbox via Microsoft Graph. Their{" "}
+          <strong>subject and body are editable</strong> by an admin in <Term>Admin → Emails</Term>,
+          where each also lists its placeholders and a live preview. Recipients, triggers and
+          attachments are fixed by the workflow.
+        </p>
+        <Table
+          head={["Email", "Recipient", "When / condition", "Contains"]}
+          rows={[
+            [
+              "Invoice submitted",
+              "Finance inbox; CC the submitting member",
+              "A member submits an invoice",
+              "Member, staffing, project, amount, comment, covered weeks; invoice PDF (+ timesheet summary PDF) attached",
+            ],
+            [
+              "Timesheet review request",
+              "The staffing's client reviewer",
+              "A week is submitted on a Client-review staffing (only if a reviewer email is set)",
+              "Member, project, week, per-day hours, one-click Approve / Reject links (single-use, 14-day expiry)",
+            ],
+            [
+              "Payment recap (paid)",
+              "Finance inbox; CC bookkeeping + receipts inboxes",
+              "Any payment transitions into Paid (fires once)",
+              "Direction, reference, beneficiary, amount, dates, project/client; invoice PDF attached when available",
+            ],
+            [
+              "Client survey invitation",
+              "Each client contact entered by the admin",
+              "An admin sends surveys for a project",
+              "Greeting, intro, the recipient's unique survey link",
+            ],
+            [
+              "Contract uploaded",
+              "Finance inbox",
+              "An admin uploads a contract PDF (best-effort)",
+              "Type, counterparty, project, signatories, dates, status, uploader; PDF attached",
+            ],
+            [
+              "Payment invoice uploaded",
+              "Finance inbox",
+              "An admin uploads an invoice PDF against a payment (best-effort)",
+              "Direction, type, counterparty, reference, amount, status, uploader; PDF attached",
+            ],
+            [
+              "Email pipeline test",
+              "Address the admin enters, else Finance inbox",
+              "An admin runs the test button in Finance → Invoices",
+              "A short diagnostic confirming Graph / Mail.Send works",
+            ],
+          ]}
+        />
+        <Rule>
+          Emails that support a create/upload action are <strong>best-effort</strong>: a send failure
+          is logged but never rolls back the underlying record or PDF. Where a send result matters
+          (member invoices, client review) the outcome is recorded on the record or in the audit
+          trail.
+        </Rule>
       </Section>
     </div>
   );
@@ -400,9 +595,12 @@ function TechnicalImplementation() {
               fetched when the currency changes (EUR pins to 1).
             </>,
             <>
-              <strong>Codes</strong>: project = <Term>CLIENT-YEAR-NN</Term> (year from the start
-              date, so it rolls over automatically); member/client codes derive from the name; all
-              are uniqueness-checked.
+              <strong>Codes</strong> are generated in the application (no longer by Airtable
+              formulas): project = <Term>CLIENT-YEAR-NN</Term> (year from the start date, so it rolls
+              over automatically); staffing = <Term>{"{ProjectCode}_{MemberCode}"}</Term>;
+              member/client codes derive from the name. All are uniqueness-checked. The staffing
+              write is tolerant of the Airtable field still being a formula during migration — it
+              retries without the code if the field rejects a written value.
             </>,
             <>
               <strong>Timesheet statuses</strong> stop at Approved. Nothing in code flips a timesheet
@@ -416,8 +614,11 @@ function TechnicalImplementation() {
         <Bullets
           items={[
             <>
-              <strong>Microsoft Graph</strong> sends email (invoice submissions, client-review links,
-              payment receipts) from the configured mailbox.
+              <strong>Microsoft Graph</strong> sends all email (invoice submissions, client-review
+              links, payment receipts, surveys, upload notices) from the configured mailbox through a
+              single dispatcher. Each email&apos;s subject + body come from a central catalog whose
+              defaults can be overridden per email in <Term>Admin → Emails</Term> (stored in Airtable,
+              interpolated with runtime placeholders at send time).
             </>,
             <>
               <strong>Anthropic (Claude)</strong> powers the contract-PDF extraction, document search,

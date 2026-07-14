@@ -1,5 +1,6 @@
 import { env } from "./env";
 import { sendMailViaGraph } from "./email";
+import { resolveEmail } from "./email-templates-server";
 import { listClients, listProjects, type PaymentRecord } from "./airtable";
 
 // Accounting inboxes that must be CC'd on every "payment paid" recap (Fulll
@@ -31,7 +32,6 @@ export async function notifyPaymentPaid(p: PaymentRecord): Promise<void> {
       : p.direction === "Outflow"
       ? "Outflow paid"
       : "Payment recorded";
-  const subject = `[HTP42] ${heading}: ${label}`;
   const introText =
     p.direction === "Inflow"
       ? "An inflow (client payment) has just been marked received in the HTP42 portal."
@@ -84,53 +84,35 @@ export async function notifyPaymentPaid(p: PaymentRecord): Promise<void> {
     console.error("Could not resolve project/client names for paid email:", e);
   }
 
-  const textLines: string[] = [
-    introText,
-    ``,
-    `Reference: ${p.invoiceReference || "—"}`,
-    `Beneficiary: ${p.beneficiary || "—"}`,
-    `Amount: ${amountLine}`,
-    `Payment date: ${p.paymentDate ?? "—"}`,
-    `Invoice date: ${p.invoiceDate ?? "—"}`,
-    projectLabel ? `Project: ${projectLabel}` : null,
-    clientLabel ? `Client: ${clientLabel}` : null,
-    p.comment ? `Comment: ${p.comment}` : null,
-    ``,
-    p.invoiceUrl ? `Invoice URL: ${p.invoiceUrl}` : `Invoice URL: not set`,
-    pdfFailure ? `PDF: not attached — ${pdfFailure}` : `PDF: attached`,
-    ``,
-    `Portal: ${env.appUrl}/admin/payments`,
-  ].filter((l): l is string => l !== null);
-
   const safe = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const htmlLines = [
-    `<p>${safe(introText)}</p>`,
-    `<ul>`,
-    `<li><strong>Reference:</strong> ${safe(p.invoiceReference || "—")}</li>`,
-    `<li><strong>Beneficiary:</strong> ${safe(p.beneficiary || "—")}</li>`,
-    `<li><strong>Amount:</strong> ${safe(amountLine)}</li>`,
-    `<li><strong>Payment date:</strong> ${safe(p.paymentDate ?? "—")}</li>`,
-    `<li><strong>Invoice date:</strong> ${safe(p.invoiceDate ?? "—")}</li>`,
-    projectLabel ? `<li><strong>Project:</strong> ${safe(projectLabel)}</li>` : "",
-    clientLabel ? `<li><strong>Client:</strong> ${safe(clientLabel)}</li>` : "",
-    p.comment ? `<li><strong>Comment:</strong> ${safe(p.comment).replace(/\n/g, "<br/>")}</li>` : "",
-    `</ul>`,
-    p.invoiceUrl
-      ? `<p><strong>Invoice URL:</strong> <a href="${safe(p.invoiceUrl)}">${safe(p.invoiceUrl)}</a></p>`
-      : `<p><strong>Invoice URL:</strong> not set</p>`,
-    pdfFailure
-      ? `<p><em>PDF not attached — ${safe(pdfFailure)}</em></p>`
-      : `<p>PDF attached.</p>`,
-    `<p><a href="${env.appUrl}/admin/payments">Open in portal</a></p>`,
-  ].filter(Boolean);
+  const pdfNote = {
+    text: pdfFailure ? `PDF: not attached — ${pdfFailure}` : `PDF: attached`,
+    html: pdfFailure ? `<p><em>PDF not attached — ${safe(pdfFailure)}</em></p>` : `<p>PDF attached.</p>`,
+  };
+
+  const { subject, textBody, htmlBody } = await resolveEmail("payment_paid", {
+    heading,
+    label,
+    intro: introText,
+    reference: p.invoiceReference || "—",
+    beneficiary: p.beneficiary || "—",
+    amount: amountLine,
+    paymentDate: p.paymentDate ?? "—",
+    invoiceDate: p.invoiceDate ?? "—",
+    project: projectLabel || "—",
+    client: clientLabel || "—",
+    comment: p.comment || "—",
+    pdfNote,
+    portalUrl: `${env.appUrl}/admin/payments`,
+  });
 
   const result = await sendMailViaGraph({
     to: env.invoiceRecipient,
     cc: PAID_RECAP_CC,
     subject,
-    textBody: textLines.join("\n"),
-    htmlBody: htmlLines.join(""),
+    textBody,
+    htmlBody,
     attachments: attachment ? [attachment] : [],
   });
   if (!result.ok) {

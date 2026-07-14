@@ -26,7 +26,8 @@ type PageKey =
   | "contracts"
   | "documents"
   | "settings"
-  | "documentation";
+  | "documentation"
+  | "emails";
 
 type Page = { key: PageKey; href: string; label: string; hidden?: boolean };
 type Category = { key: string; label: string; pages: Page[] };
@@ -88,14 +89,13 @@ const CATEGORIES: Category[] = [
     pages: [{ key: "documents", href: "/admin/documents", label: "Document search" }],
   },
   {
-    key: "settings",
-    label: "Settings",
-    pages: [{ key: "settings", href: "/admin/roles", label: "Roles & access" }],
-  },
-  {
-    key: "help",
-    label: "Documentation",
-    pages: [{ key: "documentation", href: "/admin/docs", label: "Documentation" }],
+    key: "admin",
+    label: "Admin",
+    pages: [
+      { key: "settings", href: "/admin/roles", label: "Roles & access" },
+      { key: "documentation", href: "/admin/docs", label: "Documentation" },
+      { key: "emails", href: "/admin/emails", label: "Emails" },
+    ],
   },
 ];
 

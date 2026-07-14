@@ -9,6 +9,7 @@ import {
 } from "@/lib/airtable";
 import { env } from "@/lib/env";
 import { sendMailViaGraph } from "@/lib/email";
+import { resolveEmail } from "@/lib/email-templates-server";
 import { apiError, zodMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -54,29 +55,14 @@ export async function POST(request: Request) {
           members,
         });
         const link = `${env.appUrl}/survey/${token}`;
-        const who = r.name || "there";
-        const subject = `Your feedback on ${projectCode}${projectName ? ` — ${projectName}` : ""}`;
-        const text = [
-          `Hi ${who},`,
-          ``,
-          `We'd love your feedback on our work${projectName ? ` on ${projectName}` : ""}.`,
-          `It takes a couple of minutes and covers the overall engagement and each team member.`,
-          ``,
-          `Open your survey: ${link}`,
-          ``,
-          `Thank you,`,
-          `HTP42`,
-        ].join("\n");
-        const html = `
-        <p>Hi ${escapeHtml(who)},</p>
-        <p>We'd love your feedback on our work${
-          projectName ? ` on <strong>${escapeHtml(projectName)}</strong>` : ""
-        }. It takes a couple of minutes and covers the overall engagement and each team member.</p>
-        <p><a href="${link}" style="display:inline-block;background:#1E91F9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600">Open your survey</a></p>
-        <p style="font-size:12px;color:#64748b">Or paste this link: ${link}</p>
-        <p>Thank you,<br/>HTP42</p>
-      `;
-        const res = await sendMailViaGraph({ to: r.email, subject, textBody: text, htmlBody: html });
+        const { subject, textBody, htmlBody } = await resolveEmail("survey_invite", {
+          who: r.name || "there",
+          projectCode,
+          projectNameSuffix: projectName ? ` — ${projectName}` : "",
+          projectNamePhrase: projectName ? ` on ${projectName}` : "",
+          link,
+        });
+        const res = await sendMailViaGraph({ to: r.email, subject, textBody, htmlBody });
         await markSurveyEmail(id, res.ok ? { ok: true } : { ok: false, error: res.error });
         if (!res.ok) failures.push(`${r.email}: ${res.error}`);
         sent += 1;
@@ -91,8 +77,4 @@ export async function POST(request: Request) {
   } catch (e) {
     return apiError(e, "send the surveys");
   }
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

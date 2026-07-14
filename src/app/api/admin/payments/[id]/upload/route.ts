@@ -7,6 +7,7 @@ import {
 } from "@/lib/airtable";
 import { env } from "@/lib/env";
 import { sendMailViaGraph } from "@/lib/email";
+import { resolveEmail } from "@/lib/email-templates-server";
 import { apiError } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -73,40 +74,23 @@ export async function POST(
     [existing.paymentCode, existing.invoiceReference, counterparty]
       .filter(Boolean)
       .join(" · ") || existing.id;
-  const subject = `Payment invoice uploaded: ${label}`;
-  const safe = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const lines = [
-    `An invoice PDF has just been uploaded against a payment in the HTP42 portal.`,
-    ``,
-    `Direction: ${existing.direction || "n/a"}`,
-    `Type: ${existing.type || "n/a"}`,
-    `Counterparty: ${counterparty || "n/a"}`,
-    `Invoice ref: ${existing.invoiceReference || "n/a"}`,
-    `Amount: ${amount}`,
-    `Status: ${existing.paymentStatus || "n/a"}`,
-    ``,
-    `Uploaded by: ${session.fullName || session.email || session.memberCode}`,
-    `Open in portal: ${env.appUrl}/admin/payments`,
-  ];
-  const htmlLines = [
-    `<p>An invoice PDF has just been uploaded against a payment in the HTP42 portal.</p>`,
-    `<ul>`,
-    `<li><strong>Direction:</strong> ${safe(existing.direction || "n/a")}</li>`,
-    `<li><strong>Type:</strong> ${safe(existing.type || "n/a")}</li>`,
-    `<li><strong>Counterparty:</strong> ${safe(counterparty || "n/a")}</li>`,
-    `<li><strong>Invoice ref:</strong> ${safe(existing.invoiceReference || "n/a")}</li>`,
-    `<li><strong>Amount:</strong> ${safe(amount)}</li>`,
-    `<li><strong>Status:</strong> ${safe(existing.paymentStatus || "n/a")}</li>`,
-    `</ul>`,
-    `<p>Uploaded by <strong>${safe(session.fullName || session.email || session.memberCode)}</strong>. The PDF is attached. <a href="${env.appUrl}/admin/payments">Open in portal</a>.</p>`,
-  ];
+  const { subject, textBody, htmlBody } = await resolveEmail("payment_invoice_uploaded", {
+    label,
+    direction: existing.direction || "n/a",
+    type: existing.type || "n/a",
+    counterparty: counterparty || "n/a",
+    invoiceReference: existing.invoiceReference || "n/a",
+    amount,
+    paymentStatus: existing.paymentStatus || "n/a",
+    uploadedBy: session.fullName || session.email || session.memberCode,
+    portalUrl: `${env.appUrl}/admin/payments`,
+  });
 
   void sendMailViaGraph({
     to: env.invoiceRecipient,
     subject,
-    textBody: lines.join("\n"),
-    htmlBody: htmlLines.join(""),
+    textBody,
+    htmlBody,
     attachments: [{ filename, contentType: "application/pdf", base64 }],
   }).then((result) => {
     if (!result.ok) {

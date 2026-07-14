@@ -6,6 +6,7 @@ import {
 } from "@/lib/airtable";
 import { env } from "@/lib/env";
 import { sendMailViaGraph } from "@/lib/email";
+import { resolveEmail } from "@/lib/email-templates-server";
 import { apiError } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -72,50 +73,29 @@ export async function POST(
     [existing.contractType, counterparty, existing.projectCode]
       .filter(Boolean)
       .join(" · ") || existing.id;
-  const subject = `Contract uploaded: ${label}`;
-  const safe = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const signatoryLine = [existing.signatory1, existing.signatory2]
     .filter((s) => s.name)
     .map((s) => `${s.name}${s.role ? ` (${s.role})` : ""}${s.date ? ` on ${s.date}` : ""}`)
     .join("; ");
-  const lines: string[] = [
-    `A signed contract PDF has just been uploaded in the HTP42 portal.`,
-    ``,
-    `Contract type: ${existing.contractType || "n/a"}`,
-    `Counterparty: ${counterparty || "n/a"}`,
-    `Project: ${existing.projectCode || "n/a"}`,
-    existing.memberCodes.length > 0 ? `Member: ${existing.memberCodes.join(", ")}` : null,
-    signatoryLine ? `Signatories: ${signatoryLine}` : null,
-    `Signature date: ${existing.signatureDate || "n/a"}`,
-    `Expiry: ${existing.expiryDate || "n/a"}`,
-    `Status: ${existing.stage || "n/a"}`,
-    ``,
-    `Uploaded by: ${session.fullName || session.email || session.memberCode}`,
-    `Open in portal: ${env.appUrl}/admin/contracts`,
-  ].filter((l): l is string => l !== null);
-  const htmlLines = [
-    `<p>A signed contract PDF has just been uploaded in the HTP42 portal.</p>`,
-    `<ul>`,
-    `<li><strong>Contract type:</strong> ${safe(existing.contractType || "n/a")}</li>`,
-    `<li><strong>Counterparty:</strong> ${safe(counterparty || "n/a")}</li>`,
-    `<li><strong>Project:</strong> ${safe(existing.projectCode || "n/a")}</li>`,
-    existing.memberCodes.length > 0
-      ? `<li><strong>Member:</strong> ${safe(existing.memberCodes.join(", "))}</li>`
-      : "",
-    signatoryLine ? `<li><strong>Signatories:</strong> ${safe(signatoryLine)}</li>` : "",
-    `<li><strong>Signature date:</strong> ${safe(existing.signatureDate || "n/a")}</li>`,
-    `<li><strong>Expiry:</strong> ${safe(existing.expiryDate || "n/a")}</li>`,
-    `<li><strong>Status:</strong> ${safe(existing.stage || "n/a")}</li>`,
-    `</ul>`,
-    `<p>Uploaded by <strong>${safe(session.fullName || session.email || session.memberCode)}</strong>. The PDF is attached. <a href="${env.appUrl}/admin/contracts">Open in portal</a>.</p>`,
-  ].filter(Boolean);
+  const { subject, textBody, htmlBody } = await resolveEmail("contract_uploaded", {
+    label,
+    contractType: existing.contractType || "n/a",
+    counterparty: counterparty || "n/a",
+    projectCode: existing.projectCode || "n/a",
+    memberCodes: existing.memberCodes.length > 0 ? existing.memberCodes.join(", ") : "n/a",
+    signatories: signatoryLine || "n/a",
+    signatureDate: existing.signatureDate || "n/a",
+    expiryDate: existing.expiryDate || "n/a",
+    stage: existing.stage || "n/a",
+    uploadedBy: session.fullName || session.email || session.memberCode,
+    portalUrl: `${env.appUrl}/admin/contracts`,
+  });
 
   void sendMailViaGraph({
     to: env.invoiceRecipient,
     subject,
-    textBody: lines.join("\n"),
-    htmlBody: htmlLines.join(""),
+    textBody,
+    htmlBody,
     attachments: [{ filename, contentType: "application/pdf", base64 }],
   }).then((result) => {
     if (!result.ok) {

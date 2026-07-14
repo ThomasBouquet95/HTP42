@@ -32,8 +32,9 @@ export const ADMIN_PAGES: { key: string; label: string; category: string; href: 
   { key: "documents", label: "Document search", category: "Documents", href: "/admin/documents" },
   // The role manager itself is a governed page. Access to it (view) = who can
   // open Settings; edit = who can change permissions.
-  { key: "settings", label: "Roles & access", category: "Settings", href: "/admin/roles" },
-  { key: "documentation", label: "Documentation", category: "Help", href: "/admin/docs" },
+  { key: "settings", label: "Roles & access", category: "Admin", href: "/admin/roles" },
+  { key: "documentation", label: "Documentation", category: "Admin", href: "/admin/docs" },
+  { key: "emails", label: "Emails", category: "Admin", href: "/admin/emails" },
 ];
 
 // Level-two sub-sections of a page, each independently grantable. Today only
@@ -76,9 +77,10 @@ export const CONFIGURABLE_ADMIN_ROLES = (ADMIN_ACCESS_ROLES as readonly string[]
   (r) => !LOCKED_FULL_ROLES.includes(r),
 );
 
-// Settings (role manager) is off by default for configurable roles — only the
-// locked-full roles see it unless explicitly granted.
-const CONFIG_ROLE_DEFAULT_OFF_PAGES = ["settings"];
+// Settings (role manager) and Emails (template editor) are off by default for
+// configurable roles — only the locked-full roles see them unless explicitly
+// granted. Both are powerful, cross-cutting admin capabilities.
+const CONFIG_ROLE_DEFAULT_OFF_PAGES = ["settings", "emails"];
 
 function isAdminAccessRole(role: string): boolean {
   return (ADMIN_ACCESS_ROLES as readonly string[]).includes(role);

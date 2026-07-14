@@ -1,5 +1,6 @@
 import { env } from "./env";
 import { sendMailViaGraph } from "./email";
+import { resolveEmail } from "./email-templates-server";
 
 // Client-review request email: sent to the staffing's reviewer when a member
 // submits a timesheet on a Client-review staffing. Contains the week's detail
@@ -33,34 +34,13 @@ export async function sendTimesheetReviewRequest(
 ): Promise<{ ok: boolean; error?: string }> {
   if (!args.reviewerEmail) return { ok: false, error: "No reviewer email on the staffing." };
 
-  const base = `${env.appUrl}/timesheet-review/${encodeURIComponent(args.token)}`;
-  const approveUrl = `${base}?action=approve`;
-  const rejectUrl = `${base}?action=reject`;
-  const subject = `[HTP42] Timesheet approval — ${args.memberName} · ${args.weekLabel}`;
+  const linkBase = `${env.appUrl}/timesheet-review/${encodeURIComponent(args.token)}`;
+  const approveUrl = `${linkBase}?action=approve`;
+  const rejectUrl = `${linkBase}?action=reject`;
 
-  const dayLines = args.days
-    .filter((d) => d.hours > 0 || d.task)
-    .map((d) => `  ${d.label}: ${d.hours}h${d.task ? ` — ${d.task}` : ""}`);
-
-  const textBody = [
-    `Hi ${args.reviewerName || "there"},`,
-    ``,
-    `${args.memberName} submitted a timesheet for your approval.`,
-    ``,
-    `Project: ${args.projectLabel}`,
-    `Staffing: ${args.staffingCode}`,
-    `Week: ${args.weekLabel}`,
-    `Total: ${args.totalHours} h`,
-    ...(dayLines.length ? ["", "Days:", ...dayLines] : []),
-    ``,
-    `Approve: ${approveUrl}`,
-    `Reject:  ${rejectUrl}`,
-    ``,
-    `These links expire on ${fmtDate(args.expiresAtIso)} and can be used once.`,
-  ].join("\n");
-
-  const dayRows = args.days
-    .filter((d) => d.hours > 0 || d.task)
+  const shownDays = args.days.filter((d) => d.hours > 0 || d.task);
+  const dayLines = shownDays.map((d) => `  ${d.label}: ${d.hours}h${d.task ? ` — ${d.task}` : ""}`);
+  const dayRows = shownDays
     .map(
       (d) =>
         `<tr><td style="padding:2px 8px;color:#64748b">${esc(d.label)}</td>` +
@@ -68,25 +48,35 @@ export async function sendTimesheetReviewRequest(
         `<td style="padding:2px 8px;color:#334155">${esc(d.task)}</td></tr>`,
     )
     .join("");
+  const daysBlock = shownDays.length
+    ? {
+        text: `Days:\n${dayLines.join("\n")}`,
+        html: `<table style="font-size:13px;border-collapse:collapse;margin:8px 0">${dayRows}</table>`,
+      }
+    : { text: "", html: "" };
 
   const btn = (href: string, bg: string, label: string) =>
     `<a href="${href}" style="display:inline-block;background:${bg};color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:600;margin-right:10px">${label}</a>`;
+  const actionsBlock = {
+    text: `Approve: ${approveUrl}\nReject:  ${rejectUrl}`,
+    html: `<p style="margin:18px 0">${btn(approveUrl, "#059669", "✓ Approve")}${btn(rejectUrl, "#e11d48", "✕ Reject")}</p>`,
+  };
 
-  const htmlBody = [
-    `<div style="font-family:system-ui,sans-serif;color:#0f172a;max-width:560px">`,
-    `<p>Hi ${esc(args.reviewerName || "there")},</p>`,
-    `<p><strong>${esc(args.memberName)}</strong> submitted a timesheet for your approval.</p>`,
-    `<table style="font-size:14px;border-collapse:collapse;margin:8px 0">`,
-    `<tr><td style="padding:2px 8px;color:#64748b">Project</td><td style="padding:2px 8px">${esc(args.projectLabel)}</td></tr>`,
-    `<tr><td style="padding:2px 8px;color:#64748b">Staffing</td><td style="padding:2px 8px">${esc(args.staffingCode)}</td></tr>`,
-    `<tr><td style="padding:2px 8px;color:#64748b">Week</td><td style="padding:2px 8px">${esc(args.weekLabel)}</td></tr>`,
-    `<tr><td style="padding:2px 8px;color:#64748b">Total</td><td style="padding:2px 8px"><strong>${args.totalHours} h</strong></td></tr>`,
-    `</table>`,
-    dayRows ? `<table style="font-size:13px;border-collapse:collapse;margin:8px 0">${dayRows}</table>` : ``,
-    `<p style="margin:18px 0">${btn(approveUrl, "#059669", "✓ Approve")}${btn(rejectUrl, "#e11d48", "✕ Reject")}</p>`,
-    `<p style="font-size:12px;color:#94a3b8">You can add a comment on the next screen. These links expire on ${fmtDate(args.expiresAtIso)} and can be used once. No account needed.</p>`,
-    `</div>`,
-  ].join("");
+  const expiryNote = `You can add a comment on the next screen. These links expire on ${fmtDate(
+    args.expiresAtIso,
+  )} and can be used once. No account needed.`;
+
+  const { subject, textBody, htmlBody } = await resolveEmail("timesheet_review_request", {
+    reviewerName: args.reviewerName || "there",
+    memberName: args.memberName,
+    projectLabel: args.projectLabel,
+    staffingCode: args.staffingCode,
+    weekLabel: args.weekLabel,
+    totalHours: String(args.totalHours),
+    days: daysBlock,
+    actions: actionsBlock,
+    expiryNote,
+  });
 
   return sendMailViaGraph({ to: args.reviewerEmail, subject, textBody, htmlBody });
 }

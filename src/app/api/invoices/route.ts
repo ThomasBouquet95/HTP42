@@ -15,6 +15,7 @@ import {
 } from "@/lib/airtable";
 import { env } from "@/lib/env";
 import { sendMailViaGraph } from "@/lib/email";
+import { resolveEmail } from "@/lib/email-templates-server";
 import { generateTimesheetSummaryPdf } from "@/lib/timesheet-pdf";
 
 export const runtime = "nodejs";
@@ -224,7 +225,6 @@ export async function POST(request: Request) {
     // build a clean PDF summary of them (week-by-week breakdown) and ship
     // it alongside so finance has the supporting detail next to the bill.
     const member = session.fullName || session.email || session.memberCode;
-    const subject = `Invoice from ${member} — ${staffing.staffingCode || project.projectCode}`;
 
     const totalCoveredHours = chosenTimesheets.reduce((s, t) => s + t.totalHours, 0);
     // Plain-text + HTML listings of the covered timesheets, used in both
@@ -246,34 +246,30 @@ export async function POST(request: Request) {
       })
       .join("");
 
-    const text = [
-      `New invoice submitted by ${member} (${session.email}).`,
-      `Staffing: ${staffing.staffingCode}`,
-      `Project: ${project.projectCode} — ${project.projectName}`,
-      amount != null ? `Amount: ${amount.toLocaleString("en-US")} ${currency || ""}`.trim() : null,
-      comment ? `Comment: ${comment}` : null,
+    const coveredTimesheets =
       chosenTimesheets.length > 0
-        ? `\nCovered timesheets (${chosenTimesheets.length}, total ${totalCoveredHours.toFixed(2)} h):\n${tsTextLines.join("\n")}`
-        : null,
-      `\nOpen in portal: ${env.appUrl}/admin/payments`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-    const html = `
-      <p>New invoice submitted by <strong>${member}</strong> (${session.email}).</p>
-      <ul>
-        <li><strong>Staffing:</strong> ${staffing.staffingCode}</li>
-        <li><strong>Project:</strong> ${project.projectCode} — ${project.projectName}</li>
-        ${amount != null ? `<li><strong>Amount:</strong> ${amount.toLocaleString("en-US")} ${currency || ""}</li>` : ""}
-        ${comment ? `<li><strong>Comment:</strong> ${comment.replace(/</g, "&lt;").replace(/\n/g, "<br/>")}</li>` : ""}
-      </ul>
-      ${
-        chosenTimesheets.length > 0
-          ? `<p><strong>Covered timesheets</strong> (${chosenTimesheets.length}, total <code>${totalCoveredHours.toFixed(2)} h</code>):</p><ul>${tsHtmlList}</ul><p>A detailed week-by-week breakdown is attached as a separate PDF.</p>`
-          : ""
-      }
-      <p>The invoice PDF is attached. <a href="${env.appUrl}/admin/payments">Open in portal</a>.</p>
-    `;
+        ? {
+            text: `Covered timesheets (${chosenTimesheets.length}, total ${totalCoveredHours.toFixed(
+              2,
+            )} h):\n${tsTextLines.join("\n")}`,
+            html: `<p><strong>Covered timesheets</strong> (${chosenTimesheets.length}, total <code>${totalCoveredHours.toFixed(
+              2,
+            )} h</code>):</p><ul>${tsHtmlList}</ul><p>A detailed week-by-week breakdown is attached as a separate PDF.</p>`,
+          }
+        : { text: "", html: "" };
+
+    const { subject, textBody: text, htmlBody: html } = await resolveEmail("invoice_submitted", {
+      member,
+      memberEmail: session.email || "",
+      staffingOrProject: staffing.staffingCode || project.projectCode,
+      staffingCode: staffing.staffingCode,
+      projectCode: project.projectCode,
+      projectName: project.projectName,
+      amount: amount != null ? `${amount.toLocaleString("en-US")} ${currency || ""}`.trim() : "—",
+      comment: comment || "—",
+      coveredTimesheets,
+      portalUrl: `${env.appUrl}/admin/payments`,
+    });
 
     // Build the attachments array. The user's own invoice PDF always
     // ships; the generated timesheet summary only when timesheets were

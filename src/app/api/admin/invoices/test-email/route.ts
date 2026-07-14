@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdminAction } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { sendMailViaGraph } from "@/lib/email";
+import { resolveEmail } from "@/lib/email-templates-server";
 
 export const runtime = "nodejs";
 
@@ -19,25 +20,12 @@ export async function POST(request: Request) {
   const sender = env.invoiceSender;
   const started = Date.now();
 
-  const result = await sendMailViaGraph({
-    to,
-    subject: "HTP42 portal — invoice email test",
-    textBody: [
-      "This is a test message from the HTP42 portal.",
-      `Triggered by: ${session.memberCode} (${session.sub})`,
-      `Sender mailbox (INVOICE_SENDER_UPN): ${sender}`,
-      `Recipient (INVOICE_RECIPIENT_EMAIL default): ${env.invoiceRecipient}`,
-      "",
-      "If you got this, Microsoft Graph + Mail.Send are wired up correctly.",
-    ].join("\n"),
-    htmlBody: `<p>This is a test message from the HTP42 portal.</p>
-<ul>
-  <li>Triggered by: <code>${session.memberCode}</code> (<code>${session.sub}</code>)</li>
-  <li>Sender mailbox (<code>INVOICE_SENDER_UPN</code>): <code>${sender}</code></li>
-  <li>Default recipient (<code>INVOICE_RECIPIENT_EMAIL</code>): <code>${env.invoiceRecipient}</code></li>
-</ul>
-<p>If you got this, Microsoft Graph + <code>Mail.Send</code> are wired up correctly.</p>`,
+  const { subject, textBody, htmlBody } = await resolveEmail("invoice_email_test", {
+    triggeredBy: `${session.memberCode} (${session.sub})`,
+    sender: sender || "not set",
+    recipient: env.invoiceRecipient,
   });
+  const result = await sendMailViaGraph({ to, subject, textBody, htmlBody });
   const tookMs = Date.now() - started;
 
   if (result.ok) {

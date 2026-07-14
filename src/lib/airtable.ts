@@ -32,6 +32,7 @@ export const TABLES = {
   vendorInvoices: "Vendor Invoices",
   timesheetReviews: "Timesheet Reviews",
   rolePermissions: "Role Permissions",
+  emailTemplates: "Email Templates",
 } as const;
 
 export const FIELDS = {
@@ -182,6 +183,12 @@ export const FIELDS = {
   rolePermissions: {
     role: "Role",
     permissions: "Permissions",
+  },
+  emailTemplates: {
+    key: "Key",
+    subject: "Subject",
+    body: "Body",
+    updatedAt: "Updated At",
   },
   timesheetReviews: {
     entry: "Entry",
@@ -1318,6 +1325,130 @@ export async function setRolePermissions(role: string, perms: PagePerms): Promis
     await base(TABLES.rolePermissions).update([{ id: existing[0].id, fields }]);
   } else {
     await base(TABLES.rolePermissions).create([{ fields }]);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Email template overrides (admin-editable subject/body per email)
+// ---------------------------------------------------------------------------
+
+let emailTemplatesTableReady = false;
+
+async function ensureEmailTemplatesSchema(): Promise<boolean> {
+  if (emailTemplatesTableReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { tables: Array<{ name: string }> };
+    if (data.tables.some((t) => t.name === TABLES.emailTemplates)) {
+      emailTemplatesTableReady = true;
+      return true;
+    }
+    const E = FIELDS.emailTemplates;
+    const create = await fetch(metaUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: TABLES.emailTemplates,
+        description: "Admin-editable subject/body overrides for the portal's automated emails.",
+        fields: [
+          { name: E.key, type: "singleLineText" },
+          { name: E.subject, type: "singleLineText" },
+          { name: E.body, type: "multilineText" },
+          { name: E.updatedAt, type: "singleLineText" },
+        ],
+      }),
+    });
+    if (create.ok) {
+      emailTemplatesTableReady = true;
+      return true;
+    }
+    console.error("ensureEmailTemplatesSchema: create failed:", await create.text().catch(() => ""));
+    return false;
+  } catch (e) {
+    console.error("ensureEmailTemplatesSchema failed:", e);
+    return false;
+  }
+}
+
+// All saved overrides keyed by template key. Templates without a row use the
+// coded defaults in lib/email-templates.
+export const getEmailTemplateOverrides = cache(async function getEmailTemplateOverrides(): Promise<
+  Record<string, StoredEmailTemplate>
+> {
+  try {
+    const ok = await ensureEmailTemplatesSchema();
+    if (!ok) return {};
+    const E = FIELDS.emailTemplates;
+    const records = await base(TABLES.emailTemplates).select().all();
+    const out: Record<string, StoredEmailTemplate> = {};
+    for (const r of records) {
+      const key = str(r, E.key);
+      if (!key) continue;
+      out[key] = {
+        key,
+        subject: str(r, E.subject),
+        body: str(r, E.body),
+        updatedAt: str(r, E.updatedAt) || null,
+      };
+    }
+    return out;
+  } catch (e) {
+    console.error("getEmailTemplateOverrides failed:", e);
+    return {};
+  }
+});
+
+export type StoredEmailTemplate = {
+  key: string;
+  subject: string;
+  body: string;
+  updatedAt: string | null;
+};
+
+export async function getEmailTemplateOverride(
+  key: string,
+): Promise<StoredEmailTemplate | null> {
+  const all = await getEmailTemplateOverrides();
+  return all[key] ?? null;
+}
+
+export async function setEmailTemplateOverride(
+  key: string,
+  subject: string,
+  body: string,
+): Promise<void> {
+  await ensureEmailTemplatesSchema();
+  const E = FIELDS.emailTemplates;
+  const existing = await base(TABLES.emailTemplates)
+    .select({ filterByFormula: `{${E.key}} = "${escape(key)}"`, maxRecords: 1 })
+    .firstPage();
+  const fields = {
+    [E.key]: key,
+    [E.subject]: subject,
+    [E.body]: body,
+    [E.updatedAt]: new Date().toISOString(),
+  } as FieldSet;
+  if (existing[0]) {
+    await base(TABLES.emailTemplates).update([{ id: existing[0].id, fields }]);
+  } else {
+    await base(TABLES.emailTemplates).create([{ fields }]);
+  }
+}
+
+// Remove any override for a key, reverting the email to its coded default.
+export async function resetEmailTemplateOverride(key: string): Promise<void> {
+  await ensureEmailTemplatesSchema();
+  const E = FIELDS.emailTemplates;
+  const existing = await base(TABLES.emailTemplates)
+    .select({ filterByFormula: `{${E.key}} = "${escape(key)}"` })
+    .all();
+  if (existing.length > 0) {
+    await base(TABLES.emailTemplates).destroy(existing.map((r) => r.id));
   }
 }
 
@@ -3586,24 +3717,96 @@ function assertHasMember(input: StaffingInput): void {
   }
 }
 
+// Combine the project code and the member's code into the staffing code, e.g.
+// "ECS-2026-05" + "BOUTH1" -> "ECS-2026-05_BOUTH1". This mirrors the examples
+// already in the database. The code used to be computed by an Airtable formula;
+// the application now owns it so it is stable, visible before the record
+// round-trips, and can be regenerated when the project or member changes. If a
+// member is re-staffed on the same project (a genuine collision) a numeric
+// suffix keeps the code unique.
+export function deriveStaffingCode(projectCode: string, memberCode: string): string {
+  const p = (projectCode || "").trim();
+  const m = (memberCode || "").trim();
+  if (!p || !m) return "";
+  return `${p}_${m}`;
+}
+
+async function resolveStaffingCode(
+  projectCode: string,
+  memberRecordId: string,
+  excludeRecordId?: string,
+): Promise<string> {
+  const memberCode = (await getMemberCodeMap()).get(memberRecordId) ?? "";
+  const baseCode = deriveStaffingCode(projectCode, memberCode);
+  if (!baseCode) return "";
+  const records = await base(TABLES.projectStaffing)
+    .select({ fields: [FIELDS.projectStaffing.staffingCode] })
+    .all();
+  const used = new Set(
+    records
+      .filter((r) => r.id !== excludeRecordId)
+      .map((r) => str(r, FIELDS.projectStaffing.staffingCode))
+      .filter(Boolean),
+  );
+  if (!used.has(baseCode)) return baseCode;
+  for (let n = 2; n < 100; n += 1) {
+    const candidate = `${baseCode}-${n}`;
+    if (!used.has(candidate)) return candidate;
+  }
+  return baseCode;
+}
+
+// Write staffing fields, tolerating the migration window where the Airtable
+// "Staffing Code" field may still be a computed formula (which rejects any
+// written value). If the write is refused for that reason we retry without the
+// code so staffing creation never hard-fails; once the field is switched to
+// plain text in Airtable the app-generated code takes over automatically.
+async function writeStaffing(
+  recordId: string | null,
+  fields: Record<string, unknown>,
+): Promise<string> {
+  const run = async (f: Record<string, unknown>): Promise<string> => {
+    if (recordId) {
+      await base(TABLES.projectStaffing).update([{ id: recordId, fields: f as FieldSet }]);
+      return recordId;
+    }
+    const [created] = await base(TABLES.projectStaffing).create([{ fields: f as FieldSet }]);
+    return created.id;
+  };
+  try {
+    return await run(fields);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!/cannot accept a value because the field is computed/i.test(msg)) throw e;
+    const { [FIELDS.projectStaffing.staffingCode]: _omit, ...rest } = fields;
+    void _omit;
+    return run(rest);
+  }
+}
+
 export async function createStaffing(input: StaffingInput): Promise<string> {
   assertHasMember(input);
   // The review-config fields are lazily created; make sure they exist before
   // we write to them (a plain create/update, unlike typecast, errors on an
   // unknown field name).
   await ensureTimesheetApprovalSchema();
-  const [created] = await base(TABLES.projectStaffing).create([
-    { fields: staffingFields(input) as FieldSet },
-  ]);
-  return created.id;
+  const staffingCode = await resolveStaffingCode(input.projectCode, input.memberRecordIds[0]);
+  const fields = staffingFields(input);
+  if (staffingCode) fields[FIELDS.projectStaffing.staffingCode] = staffingCode;
+  return writeStaffing(null, fields);
 }
 
 export async function updateStaffing(recordId: string, input: StaffingInput): Promise<void> {
   assertHasMember(input);
   await ensureTimesheetApprovalSchema();
-  await base(TABLES.projectStaffing).update([
-    { id: recordId, fields: staffingFields(input) as FieldSet },
-  ]);
+  const staffingCode = await resolveStaffingCode(
+    input.projectCode,
+    input.memberRecordIds[0],
+    recordId,
+  );
+  const fields = staffingFields(input);
+  if (staffingCode) fields[FIELDS.projectStaffing.staffingCode] = staffingCode;
+  await writeStaffing(recordId, fields);
 }
 
 export async function deleteStaffing(recordId: string): Promise<void> {

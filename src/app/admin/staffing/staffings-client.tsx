@@ -806,7 +806,9 @@ export function StaffingsAdminClient({
               Timesheet review
             </div>
             <p className="mt-0.5 text-[11px] text-slate-400">
-              Who approves timesheets submitted on this staffing.
+              Required: choose who approves timesheets submitted on this staffing. Admin review is
+              done in-app on the Timesheets tab; client review sends the named contact a secure,
+              single-use email link (no account needed).
             </p>
           </div>
           <FormSelect
@@ -814,8 +816,8 @@ export function StaffingsAdminClient({
             value={form.reviewMethod}
             onChange={(v) => updateField("reviewMethod", v)}
           >
-            <option value="Admin">Admin review</option>
-            <option value="Client">Client review (by email)</option>
+            <option value="Admin">Admin review (in-app)</option>
+            <option value="Client">Client review (by email link)</option>
           </FormSelect>
           {form.reviewMethod === "Client" ? (
             <>
