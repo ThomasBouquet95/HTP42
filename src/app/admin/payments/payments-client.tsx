@@ -12,6 +12,8 @@ import { EditIcon } from "@/components/admin-icons";
 import { DateField } from "@/components/date-picker";
 import { PaidDateModal } from "@/components/paid-date-modal";
 import { SearchSelect } from "@/components/search-select";
+import { TimesheetBreakdown } from "./payments-breakdown";
+import type { ReviewBundle } from "../payment-review/review-client";
 import type { Currency, PaymentRecord, PaymentStatus } from "@/lib/airtable";
 
 type LinkOpt = { id: string; code: string; name: string; subjectToDes?: "Yes" | "No" | "" };
@@ -59,6 +61,9 @@ type Props = {
   // link (/admin/payments?payment=recXXXX). Unambiguous — unlike a code
   // substring search, which can match several rows.
   initialPaymentId?: string;
+  // Review bundles keyed by payment id — carry the linked invoice + timesheets
+  // so an expanded row can list its weeks like the By project / By member views.
+  bundleById?: Record<string, ReviewBundle>;
 };
 
 type Filters = {
@@ -242,6 +247,7 @@ export function PaymentsClient({
   linkedPaymentIds,
   initialSearch,
   initialPaymentId,
+  bundleById,
 }: Props) {
   const router = useRouter();
   const linkedPaymentIdSet = new Set(linkedPaymentIds ?? []);
@@ -1077,6 +1083,7 @@ export function PaymentsClient({
                             p.memberInvoiceRecordIds.map((id) => invoicePdfById.get(id)).find(Boolean) ||
                             ""
                           }
+                          bundle={bundleById?.[p.id]}
                           onEdit={() => openEdit(p)}
                         />
                       </td>
@@ -1328,26 +1335,6 @@ export function PaymentsClient({
               label="Invoice reference"
               value={form.invoiceReference}
               onChange={(v) => updateField("invoiceReference", v)}
-            />
-            <FormField
-              label="Invoice URL"
-              value={form.invoiceUrl}
-              onChange={(v) => updateField("invoiceUrl", v)}
-              type="url"
-              placeholder="https://…"
-              className="sm:col-span-2"
-              hint={
-                form.invoiceUrl ? (
-                  <a
-                    href={form.invoiceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-brand-700 hover:underline"
-                  >
-                    Open invoice ↗
-                  </a>
-                ) : null
-              }
             />
           </div>
         </FormSection>
@@ -1659,6 +1646,7 @@ function PaymentDetails({
   memberLabel,
   des,
   invoicePdfUrl,
+  bundle,
   onEdit,
 }: {
   p: PaymentRecord;
@@ -1668,6 +1656,7 @@ function PaymentDetails({
   memberLabel: string;
   des: "Yes" | "No" | "";
   invoicePdfUrl: string;
+  bundle?: ReviewBundle;
   onEdit: () => void;
 }) {
   const money = (v: number | null, ccy: string) =>
@@ -1713,18 +1702,14 @@ function PaymentDetails({
         <p className="rounded-md bg-white p-2 text-[11px] text-slate-600 demo-blur">{p.comment}</p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-3 text-[11px]">
-        {p.invoiceUrl ? (
-          <a
-            href={p.invoiceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium text-brand-600 hover:text-brand-700"
-          >
-            Invoice URL ↗
-          </a>
-        ) : null}
-        <Button tone="secondary" size="sm" className="ml-auto" onClick={onEdit}>
+      {/* Linked timesheets — same week-by-week list as the By project / By
+          member views, when this payment settles invoiced work. */}
+      {bundle && bundle.timesheets.length > 0 ? (
+        <TimesheetBreakdown timesheets={bundle.timesheets} approval={bundle.timesheetApproval} />
+      ) : null}
+
+      <div className="flex flex-wrap items-center justify-end gap-3 text-[11px]">
+        <Button tone="secondary" size="sm" onClick={onEdit}>
           <EditIcon />
           Edit payment
         </Button>

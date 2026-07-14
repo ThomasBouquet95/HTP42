@@ -113,6 +113,7 @@ export function PaymentsTabsClient({
           linkedPaymentIds={linkedPaymentIds}
           initialSearch={initialSearch}
           initialPaymentId={initialPaymentId}
+          bundleById={bundleById}
         />
       ) : tab === "review" ? (
         <PaymentReviewClient groups={reviewGroups} initialMemberId={reviewMemberId} />

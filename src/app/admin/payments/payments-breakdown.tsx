@@ -513,8 +513,9 @@ const weekRange = (start: string | null, end: string | null) => {
 };
 
 // Collapsed-by-default timesheet list for an expanded payment row. Each week
-// can be opened to reveal the per-day hours + task breakdown.
-function TimesheetBreakdown({
+// can be opened to reveal the per-day hours + task breakdown. Exported so the
+// Overview payment expansion can show the same linked-timesheet list.
+export function TimesheetBreakdown({
   timesheets,
   approval,
 }: {
