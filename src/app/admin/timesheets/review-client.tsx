@@ -38,12 +38,14 @@ export function TimesheetReviewClient({
   timesheets,
   sowByStaffing,
   scopeProjects,
+  onEdit,
 }: {
   timesheets: AdminTimesheetRecord[];
   sowByStaffing?: Record<string, SowInfo>;
   // When set, this reviewer (a Project Manager) only sees these projects.
   // Rendered as a banner so the limited scope is explicit, not implied.
   scopeProjects?: string[] | null;
+  onEdit?: (t: AdminTimesheetRecord) => void;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(timesheets);
@@ -365,6 +367,7 @@ export function TimesheetReviewClient({
             }
             savingId={savingId}
             onDecide={decide}
+            onEdit={onEdit}
             sowByStaffing={sowByStaffing}
             usedByStaffing={usedByStaffing}
           />
@@ -489,6 +492,7 @@ function ProjectGroups({
   empty,
   savingId,
   onDecide,
+  onEdit,
   sowByStaffing,
   usedByStaffing,
 }: {
@@ -496,6 +500,7 @@ function ProjectGroups({
   empty: string;
   savingId: string | null;
   onDecide: (id: string, action: "approve" | "reject", comment: string) => void;
+  onEdit?: (t: AdminTimesheetRecord) => void;
   sowByStaffing?: Record<string, SowInfo>;
   usedByStaffing?: Map<string, number>;
 }) {
@@ -564,7 +569,7 @@ function ProjectGroups({
             </div>
             <div className="space-y-3">
               {g.sheets.map((t) => (
-                <ReviewCard key={t.id} t={t} saving={savingId === t.id} onDecide={onDecide} />
+                <ReviewCard key={t.id} t={t} saving={savingId === t.id} onDecide={onDecide} onEdit={onEdit} />
               ))}
             </div>
           </div>
@@ -593,10 +598,12 @@ function ReviewCard({
   t,
   saving,
   onDecide,
+  onEdit,
 }: {
   t: AdminTimesheetRecord;
   saving: boolean;
   onDecide: (id: string, action: "approve" | "reject", comment: string) => void;
+  onEdit?: (t: AdminTimesheetRecord) => void;
 }) {
   const decided = t.status === "Approved" || t.status === "Rejected";
   // Under review AND configured for client review → the client decides by email;
@@ -612,37 +619,52 @@ function ReviewCard({
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
-      {/* Header: click to expand the day breakdown. */}
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"
-      >
-        <CardChevron open={open} />
-        <span className="text-[11px] font-medium text-slate-700">
-          {t.startDate && t.endDate ? formatWeekRange(t.startDate, t.endDate) : "—"}
-        </span>
-        {clientPending ? (
-          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-            Awaiting client
+      {/* Header: click to expand the day breakdown; edit sits alongside. */}
+      <div className="flex w-full items-center gap-2 px-3 py-2 hover:bg-slate-50">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          <CardChevron open={open} />
+          <span className="text-[11px] font-medium text-slate-700">
+            {t.startDate && t.endDate ? formatWeekRange(t.startDate, t.endDate) : "—"}
           </span>
-        ) : t.reviewMethod === "Client" ? (
-          <span className="text-[10px] text-slate-400">client</span>
-        ) : null}
-        <StatusBadge
-          status={t.status}
-          review={{
-            reviewMethod: t.reviewMethod || undefined,
-            reviewedBy: t.reviewedBy || undefined,
-            reviewedAt: t.reviewedAt,
-            reviewComment: t.reviewComment || undefined,
-          }}
-        />
-        <span className="ml-auto text-sm font-semibold tabular-nums text-slate-900">
+          {clientPending ? (
+            <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+              Awaiting client
+            </span>
+          ) : t.reviewMethod === "Client" ? (
+            <span className="text-[10px] text-slate-400">client</span>
+          ) : null}
+          <StatusBadge
+            status={t.status}
+            review={{
+              reviewMethod: t.reviewMethod || undefined,
+              reviewedBy: t.reviewedBy || undefined,
+              reviewedAt: t.reviewedAt,
+              reviewComment: t.reviewComment || undefined,
+            }}
+          />
+        </button>
+        <span className="text-sm font-semibold tabular-nums text-slate-900">
           {t.totalHours.toFixed(1)} h
         </span>
-      </button>
+        {onEdit ? (
+          <button
+            type="button"
+            onClick={() => onEdit(t)}
+            title="Edit this week's hours and tasks"
+            aria-label="Edit timesheet"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-brand-50 hover:text-brand-700"
+          >
+            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+              <path d="M11 2.5l2.5 2.5L6 12.5 3 13l.5-3L11 2.5z" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        ) : null}
+      </div>
 
       {open ? (
         <dl className="border-t border-slate-100 px-3 py-1.5 text-[11px]">

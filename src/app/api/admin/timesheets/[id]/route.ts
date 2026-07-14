@@ -8,20 +8,38 @@ import {
   getAdminTimesheetById,
   getMemberStaffedProjectCodes,
   recordTimesheetReview,
+  updateTimesheet,
   type TimesheetStatus,
 } from "@/lib/airtable";
 import { apiError, zodMessage } from "@/lib/errors";
 
-// Admin can either drive the review (approve/reject with an optional comment)
-// or set a raw status for corrections (e.g. Invoiced/Paid fixes). Approve/Reject
-// route through decideTimesheet so the review fields + audit trail are written.
+const dayCell = z.object({
+  hours: z.number().min(0).max(24),
+  task: z.string().max(2000).default(""),
+});
+
+// Admin can drive the review (approve/reject with an optional comment), set a
+// raw status for corrections (e.g. Invoiced/Paid fixes), or EDIT the week's
+// day-by-day hours/tasks. Approve/Reject route through decideTimesheet so the
+// review fields + audit trail are written; edits go through updateTimesheet.
 const patchSchema = z
   .object({
     action: z.enum(["approve", "reject"]).optional(),
     status: z.enum(TIMESHEET_STATUSES as [string, ...string[]]).optional(),
     comment: z.string().max(2000).optional(),
+    days: z
+      .object({
+        monday: dayCell,
+        tuesday: dayCell,
+        wednesday: dayCell,
+        thursday: dayCell,
+        friday: dayCell,
+      })
+      .optional(),
   })
-  .refine((d) => d.action || d.status, { message: "Provide an action or a status." });
+  .refine((d) => d.action || d.status || d.days, {
+    message: "Provide an action, a status, or edited days.",
+  });
 
 export async function PATCH(
   request: Request,
@@ -50,6 +68,34 @@ export async function PATCH(
   }
 
   try {
+    // Content edit: rewrite the week's day hours/tasks, preserving everything
+    // else (member, staffing, dates, status). Audited as an "Edited" entry.
+    if (d.days) {
+      await updateTimesheet(id, {
+        memberRecordId: existing.memberRecordId,
+        staffingRecordId: existing.staffingRecordId,
+        startDate: existing.startDate ?? "",
+        endDate: existing.endDate ?? "",
+        monday: d.days.monday,
+        tuesday: d.days.tuesday,
+        wednesday: d.days.wednesday,
+        thursday: d.days.thursday,
+        friday: d.days.friday,
+        status: existing.status,
+        submissionDate: existing.submissionDate,
+      });
+      await recordTimesheetReview({
+        timesheetId: id,
+        timesheetCode: existing.timesheetCode,
+        staffingCode: existing.staffingCode,
+        action: "Edited",
+        actor: reviewer,
+        method: "Admin",
+        comment: d.comment || "Admin edited the week's hours/tasks",
+      });
+      return NextResponse.json({ ok: true });
+    }
+
     // Approve / Reject (from the action verb, or a direct status set to one of
     // the decision states) go through the audited decision path. Only a
     // timesheet currently Under Review can be decided — this prevents an

@@ -3137,7 +3137,8 @@ export type TimesheetReviewAction =
   | "Cancelled"
   | "Resubmitted"
   | "Reopened"
-  | "Status Changed";
+  | "Status Changed"
+  | "Edited";
 
 export type TimesheetReviewEntry = {
   id: string;

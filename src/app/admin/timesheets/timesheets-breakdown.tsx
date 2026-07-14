@@ -38,10 +38,12 @@ export function TimesheetsByProject({
   timesheets,
   sowByStaffing,
   onDrill,
+  onEdit,
 }: {
   timesheets: AdminTimesheetRecord[];
   sowByStaffing?: SowMap;
   onDrill?: Drill;
+  onEdit?: (t: AdminTimesheetRecord) => void;
 }) {
   const options = useMemo(() => {
     const m = new Map<string, string>();
@@ -64,6 +66,7 @@ export function TimesheetsByProject({
       groupName={(t) => t.memberName || t.memberCode}
       groupNoun="member"
       onDrill={onDrill ? (pickCode, groupCode) => onDrill(pickCode, groupCode) : undefined}
+      onEdit={onEdit}
     />
   );
 }
@@ -72,10 +75,12 @@ export function TimesheetsByMember({
   timesheets,
   sowByStaffing,
   onDrill,
+  onEdit,
 }: {
   timesheets: AdminTimesheetRecord[];
   sowByStaffing?: SowMap;
   onDrill?: Drill;
+  onEdit?: (t: AdminTimesheetRecord) => void;
 }) {
   const options = useMemo(() => {
     const m = new Map<string, string>();
@@ -100,6 +105,7 @@ export function TimesheetsByMember({
       // For By member, the picked dimension is the member and the group is a
       // project — swap the arguments so the Overview drill is (project, member).
       onDrill={onDrill ? (pickCode, groupCode) => onDrill(groupCode, pickCode) : undefined}
+      onEdit={onEdit}
     />
   );
 }
@@ -126,6 +132,7 @@ function GroupedTimesheets({
   groupName,
   groupNoun,
   onDrill,
+  onEdit,
 }: {
   timesheets: AdminTimesheetRecord[];
   pickLabel: string;
@@ -138,6 +145,7 @@ function GroupedTimesheets({
   groupName: (t: AdminTimesheetRecord) => string;
   groupNoun: string;
   onDrill?: (pickCode: string, groupCode: string) => void;
+  onEdit?: (t: AdminTimesheetRecord) => void;
 }) {
   const [picked, setPicked] = useState(options[0]?.value ?? "");
   // Status defaults to the billing lifecycle (Draft / Cancelled / Deleted off);
@@ -342,7 +350,7 @@ function GroupedTimesheets({
                 </div>
                 <ul className="overflow-hidden rounded-lg border border-slate-200 bg-white">
                   {selected.sheets.map((t) => (
-                    <WeekRow key={t.id} sheet={t} />
+                    <WeekRow key={t.id} sheet={t} onEdit={onEdit} />
                   ))}
                 </ul>
               </div>
@@ -394,21 +402,42 @@ export function SowChip({ sow }: { sow?: SowInfo }) {
   );
 }
 
-function WeekRow({ sheet }: { sheet: AdminTimesheetRecord }) {
+function WeekRow({
+  sheet,
+  onEdit,
+}: {
+  sheet: AdminTimesheetRecord;
+  onEdit?: (t: AdminTimesheetRecord) => void;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <li className="border-t border-slate-100 first:border-t-0">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11px] hover:bg-slate-50"
-      >
-        <Chevron open={open} />
-        <WeekChip startIso={sheet.startDate} endIso={sheet.endDate} />
-        <StatusPill status={sheet.status} />
-        <span className="ml-auto tabular-nums text-slate-600">{sheet.totalHours.toFixed(2)} h</span>
-      </button>
+      <div className="flex w-full items-center gap-2 px-2.5 py-1.5 text-[11px] hover:bg-slate-50">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          <Chevron open={open} />
+          <WeekChip startIso={sheet.startDate} endIso={sheet.endDate} />
+          <StatusPill status={sheet.status} />
+        </button>
+        <span className="tabular-nums text-slate-600">{sheet.totalHours.toFixed(2)} h</span>
+        {onEdit ? (
+          <button
+            type="button"
+            onClick={() => onEdit(sheet)}
+            title="Edit this week's hours and tasks"
+            aria-label="Edit timesheet"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-brand-50 hover:text-brand-700"
+          >
+            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+              <path d="M11 2.5l2.5 2.5L6 12.5 3 13l.5-3L11 2.5z" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        ) : null}
+      </div>
       {open ? (
         <dl className="grid grid-cols-1 gap-x-4 gap-y-0.5 bg-slate-50/60 px-2.5 pb-2 pl-7 pt-1 text-[11px] sm:grid-cols-2">
           {DAY_KEYS.map((d) => {

@@ -11,6 +11,7 @@ import { FilterBar, FilterMultiSelect, FilterDateRange, SegmentedTabs } from "@/
 import { StatusPill } from "@/components/badge";
 import { TimesheetsByProject, TimesheetsByMember } from "./timesheets-breakdown";
 import { TimesheetReviewClient } from "./review-client";
+import { TimesheetEditModal } from "./timesheet-edit-modal";
 import { dayIsos, downloadTimesheetsCsv } from "./timesheets-export";
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
@@ -93,6 +94,8 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
   const [view, setView] = useState<TimesheetView>(
     allowedViews.includes("overview") ? "overview" : allowedViews[0] ?? "overview",
   );
+  // Timesheet open in the admin edit modal (from any view).
+  const [editTs, setEditTs] = useState<AdminTimesheetRecord | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   // Jumping from a breakdown group into the Overview, pre-filtered to that
   // project + member.
@@ -277,11 +280,16 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
       ) : null}
 
       {view === "review" ? (
-        <TimesheetReviewClient timesheets={rows} sowByStaffing={sowByStaffing} scopeProjects={scopeProjects} />
+        <TimesheetReviewClient
+          timesheets={rows}
+          sowByStaffing={sowByStaffing}
+          scopeProjects={scopeProjects}
+          onEdit={setEditTs}
+        />
       ) : view === "byproject" ? (
-        <TimesheetsByProject timesheets={rows} sowByStaffing={sowByStaffing} onDrill={drillToOverview} />
+        <TimesheetsByProject timesheets={rows} sowByStaffing={sowByStaffing} onDrill={drillToOverview} onEdit={setEditTs} />
       ) : view === "bymember" ? (
-        <TimesheetsByMember timesheets={rows} sowByStaffing={sowByStaffing} onDrill={drillToOverview} />
+        <TimesheetsByMember timesheets={rows} sowByStaffing={sowByStaffing} onDrill={drillToOverview} onEdit={setEditTs} />
       ) : (
       <>
       {/* Filter bar */}
@@ -413,19 +421,32 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
                     {t.totalHours.toFixed(2)}
                   </td>
                   <td className="px-2 py-1.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      onClick={() => openStaffingPrint(t.staffingRecordId)}
-                      disabled={!t.staffingRecordId}
-                      title="Open a printable PDF of this staffing's timesheets"
-                      aria-label="Staffing timesheets PDF"
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40"
-                    >
-                      <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-                        <path d="M8 2v7m0 0L5.5 6.5M8 9l2.5-2.5" strokeLinecap="round" strokeLinejoin="round" />
-                        <path d="M3 11v1.5A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V11" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </button>
+                    <div className="inline-flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setEditTs(t)}
+                        title="Edit this week's hours and tasks"
+                        aria-label="Edit timesheet"
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-brand-50 hover:text-brand-700"
+                      >
+                        <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                          <path d="M11 2.5l2.5 2.5L6 12.5 3 13l.5-3L11 2.5z" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openStaffingPrint(t.staffingRecordId)}
+                        disabled={!t.staffingRecordId}
+                        title="Open a printable PDF of this staffing's timesheets"
+                        aria-label="Staffing timesheets PDF"
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40"
+                      >
+                        <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                          <path d="M8 2v7m0 0L5.5 6.5M8 9l2.5-2.5" strokeLinecap="round" strokeLinejoin="round" />
+                          <path d="M3 11v1.5A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V11" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                    </div>
                   </td>
                 </tr>
                 {open ? (
@@ -482,6 +503,8 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
           {toast.msg}
         </div>
       ) : null}
+
+      <TimesheetEditModal timesheet={editTs} onClose={() => setEditTs(null)} />
     </div>
   );
 }
