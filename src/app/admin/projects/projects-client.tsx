@@ -25,6 +25,21 @@ import type {
 
 type MemberOpt = { id: string; code: string; name: string };
 
+export type ProjectStaffingLite = {
+  id: string;
+  staffingCode: string;
+  projectCode: string;
+  memberName: string;
+  memberCode: string;
+  projectRole: string;
+  roleInProject: string;
+  ratePerDay: number | null;
+  currency: string;
+  daysAllocated: number | null;
+  daysUsed: number;
+  status: string;
+};
+
 type Props = {
   projects: ProjectRecord[];
   clients: ClientRecord[];
@@ -33,6 +48,7 @@ type Props = {
   projectStatuses: readonly ProjectStatus[];
   currencies: readonly Currency[];
   sowByProjectId: Record<string, { url: string; filename: string }>;
+  staffings: ProjectStaffingLite[];
 };
 
 type FormState = {
@@ -125,6 +141,7 @@ export function ProjectsAdminClient({
   projectStatuses,
   currencies,
   sowByProjectId,
+  staffings,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getUTCFullYear();
@@ -508,7 +525,7 @@ export function ProjectsAdminClient({
       />
 
       {view === "byclient" ? (
-        <ProjectsByClient projects={filtered} clients={clients} onEdit={openEdit} />
+        <ProjectsByClient projects={filtered} clients={clients} staffings={staffings} onEdit={openEdit} />
       ) : (
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full text-xs">

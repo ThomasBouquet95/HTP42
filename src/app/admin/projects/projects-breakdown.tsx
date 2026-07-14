@@ -5,6 +5,7 @@ import { StatusPill } from "@/components/badge";
 import { SearchInput } from "@/components/search-input";
 import { EditIcon, IconButton } from "@/components/admin-icons";
 import type { ClientRecord, ProjectRecord } from "@/lib/airtable";
+import type { ProjectStaffingLite } from "./projects-client";
 
 const NO_CLIENT = "— No client —";
 
@@ -92,21 +93,60 @@ function Field({ label, value, mono }: { label: string; value: string; mono?: bo
   );
 }
 
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 12 12"
+      className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      aria-hidden
+    >
+      <path d="M4.5 3 7.5 6 4.5 9" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 // A single project, rendered as a clean card. Leads with the project name +
 // code, then a compact grid of the key facts, with an Edit affordance that
-// opens the existing edit modal.
-function ProjectCard({ p, clientName, onEdit }: { p: ProjectRecord; clientName: string; onEdit: (p: ProjectRecord) => void }) {
+// opens the existing edit modal. Expands to show the project's staffings.
+function ProjectCard({
+  p,
+  clientName,
+  staffings,
+  onEdit,
+}: {
+  p: ProjectRecord;
+  clientName: string;
+  staffings: ProjectStaffingLite[];
+  onEdit: (p: ProjectRecord) => void;
+}) {
+  const [open, setOpen] = useState(false);
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
       <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-3 py-2.5">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-slate-900 demo-blur">{p.projectName || "—"}</div>
-          {p.objective ? (
-            <div className="mt-0.5 line-clamp-2 text-xs text-slate-500 demo-blur">{p.objective}</div>
-          ) : null}
-          <div className="mt-0.5 truncate font-mono text-[10px] text-slate-400">{p.projectCode || "—"}</div>
-        </div>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-start gap-2 text-left"
+        >
+          <span className="pt-0.5">
+            <Chevron open={open} />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-slate-900 demo-blur">{p.projectName || "—"}</span>
+            {p.objective ? (
+              <span className="mt-0.5 line-clamp-2 block text-xs text-slate-500 demo-blur">{p.objective}</span>
+            ) : null}
+            <span className="mt-0.5 block truncate font-mono text-[10px] text-slate-400">{p.projectCode || "—"}</span>
+          </span>
+        </button>
         <div className="flex shrink-0 items-center gap-2">
+          <span className="text-[11px] text-slate-400">
+            {staffings.length} staffing{staffings.length === 1 ? "" : "s"}
+          </span>
           <StatusPill status={p.status || "—"} />
           <IconButton title="Edit project" onClick={() => onEdit(p)}>
             <EditIcon />
@@ -120,6 +160,40 @@ function ProjectCard({ p, clientName, onEdit }: { p: ProjectRecord; clientName: 
         <Field label="Start" value={fmtDate(p.startDate)} />
         <Field label="End" value={fmtDate(p.endDate)} />
       </dl>
+
+      {open ? (
+        <div className="border-t border-slate-100 bg-slate-50/60 px-3 py-2.5">
+          <div className="mb-1 text-[10px] uppercase tracking-wide text-slate-400">
+            Staffing · {staffings.length}
+          </div>
+          {staffings.length === 0 ? (
+            <div className="rounded-md border border-dashed border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-400">
+              No one is staffed on this project yet.
+            </div>
+          ) : (
+            <ul className="overflow-hidden rounded-md border border-slate-200 bg-white">
+              {staffings.map((s) => (
+                <li
+                  key={s.id}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 px-2.5 py-1.5 text-[11px] first:border-t-0"
+                >
+                  <span className="min-w-[8rem] flex-1 truncate text-slate-800 demo-blur">{s.memberName}</span>
+                  <span className="truncate text-slate-500">{s.projectRole || s.roleInProject || ""}</span>
+                  <span className="tabular-nums text-slate-500 demo-blur">
+                    {money(s.ratePerDay, s.currency)}
+                    {s.ratePerDay != null ? " / d" : ""}
+                  </span>
+                  <span className="tabular-nums text-slate-500">
+                    {(s.daysUsed || 0).toFixed(1)}
+                    {s.daysAllocated != null ? ` / ${s.daysAllocated}` : ""} d
+                  </span>
+                  <StatusPill status={s.status || "—"} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -132,13 +206,26 @@ function ProjectCard({ p, clientName, onEdit }: { p: ProjectRecord; clientName: 
 export function ProjectsByClient({
   projects,
   clients,
+  staffings,
   onEdit,
 }: {
   projects: ProjectRecord[];
   clients: ClientRecord[];
+  staffings: ProjectStaffingLite[];
   onEdit: (p: ProjectRecord) => void;
 }) {
   const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
+  // Staffings grouped by project code, for the per-project expansion.
+  const staffingsByProject = useMemo(() => {
+    const m = new Map<string, ProjectStaffingLite[]>();
+    for (const s of staffings) {
+      const arr = m.get(s.projectCode) ?? [];
+      arr.push(s);
+      m.set(s.projectCode, arr);
+    }
+    for (const arr of m.values()) arr.sort((a, b) => a.memberName.localeCompare(b.memberName));
+    return m;
+  }, [staffings]);
 
   const groups = useMemo(() => {
     const m = new Map<string, { id: string; label: string; sublabel?: string; rows: ProjectRecord[] }>();
@@ -200,7 +287,13 @@ export function ProjectsByClient({
         ) : null}
         <div className="grid gap-3">
           {cards.map((p) => (
-            <ProjectCard key={p.id} p={p} clientName={current?.label ?? "—"} onEdit={onEdit} />
+            <ProjectCard
+              key={p.id}
+              p={p}
+              clientName={current?.label ?? "—"}
+              staffings={staffingsByProject.get(p.projectCode) ?? []}
+              onEdit={onEdit}
+            />
           ))}
         </div>
       </div>
