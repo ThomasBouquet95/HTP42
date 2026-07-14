@@ -655,6 +655,18 @@ export function PaymentsClient({
       setError("A payment date is required to mark a payment as paid.");
       return;
     }
+    // A subcontractor outflow settles a member's staffing — require it, unless
+    // the payment is instead linked to a member invoice (which carries its own
+    // staffing). The project is derived from the staffing.
+    if (
+      form.direction === "Outflow" &&
+      form.type === "Subcontractor" &&
+      !form.memberInvoiceId &&
+      !form.staffingId
+    ) {
+      setError("Select the staffing this subcontractor payment settles (pick the member first).");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -1260,64 +1272,72 @@ export function PaymentsClient({
                   </>
                 );
               }
-              // Otherwise the admin picks the staffing directly; the project is
-              // derived from it. Prefer the payment member's staffings, falling
-              // back to all when the member isn't set / has none.
-              const memberStaffings = form.memberId
-                ? staffings.filter((s) => s.memberRecordId === form.memberId)
-                : [];
-              const optSource = memberStaffings.length > 0 ? memberStaffings : staffings;
-              const staffingOptions = optSource.map((s) => ({
-                value: s.id,
-                label: `${s.staffingCode} · ${s.projectCode}`,
-                hint: `${s.memberCode} · ${s.projectName}`,
-              }));
-              const picked = form.staffingId
-                ? staffings.find((s) => s.id === form.staffingId)
-                : undefined;
-              return (
-                <>
-                  <label className="block">
-                    <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
-                      Staffing
-                    </span>
-                    <div className="mt-1">
-                      <SearchSelect
-                        value={form.staffingId}
-                        onChange={(v) => updateField("staffingId", v)}
-                        options={staffingOptions}
-                        placeholder="No staffing"
-                        searchPlaceholder="Search staffing…"
-                        allowClear
-                      />
-                    </div>
-                    <div className="mt-1 text-xs text-slate-400">
-                      Links the payment to a staffing; the project is set from it.
-                    </div>
-                  </label>
-                  {picked ? (
+              // Subcontractor outflow: the payment settles a member's staffing,
+              // so Staffing is the driver — mandatory, scoped to the selected
+              // member, and the project is derived from it. Other types keep the
+              // plain project picker.
+              const isSubcontractor = form.direction === "Outflow" && form.type === "Subcontractor";
+              if (isSubcontractor) {
+                const memberStaffings = form.memberId
+                  ? staffings.filter((s) => s.memberRecordId === form.memberId)
+                  : [];
+                const staffingOptions = memberStaffings.map((s) => ({
+                  value: s.id,
+                  label: `${s.staffingCode} · ${s.projectCode}`,
+                  hint: `${s.projectName}`,
+                }));
+                const picked = form.staffingId
+                  ? staffings.find((s) => s.id === form.staffingId)
+                  : undefined;
+                return (
+                  <>
+                    <label className="block">
+                      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+                        Staffing<span className="text-red-500 ml-0.5">*</span>
+                      </span>
+                      <div className="mt-1">
+                        <SearchSelect
+                          value={form.staffingId}
+                          onChange={(v) => updateField("staffingId", v)}
+                          options={staffingOptions}
+                          placeholder={form.memberId ? "Select staffing" : "Select a member first"}
+                          searchPlaceholder="Search staffing…"
+                          disabled={!form.memberId}
+                          allowClear
+                        />
+                      </div>
+                      <div className="mt-1 text-xs text-slate-400">
+                        {!form.memberId
+                          ? "Pick the member above to list their staffings."
+                          : memberStaffings.length === 0
+                            ? "This member has no staffings."
+                            : "The project is set automatically from the staffing."}
+                      </div>
+                    </label>
                     <FormField
                       label="Project"
-                      value={projLabel(picked.projectCode, picked.projectName)}
+                      value={picked ? projLabel(picked.projectCode, picked.projectName) : "—"}
                       onChange={() => {}}
                       readOnly
                       hint="Derived from the selected staffing."
                     />
-                  ) : (
-                    <FormSelect
-                      label="Project"
-                      value={form.projectId}
-                      onChange={(v) => updateField("projectId", v)}
-                    >
-                      <option value="">No project</option>
-                      {projects.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.code} — {p.name}
-                        </option>
-                      ))}
-                    </FormSelect>
-                  )}
-                </>
+                  </>
+                );
+              }
+              // Non-subcontractor (client inflow, expense, other): plain project.
+              return (
+                <FormSelect
+                  label="Project"
+                  value={form.projectId}
+                  onChange={(v) => updateField("projectId", v)}
+                >
+                  <option value="">No project</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.code} — {p.name}
+                    </option>
+                  ))}
+                </FormSelect>
               );
             })()}
           </div>
