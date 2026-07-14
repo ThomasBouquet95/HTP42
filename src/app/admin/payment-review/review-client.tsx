@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DownloadChip } from "@/components/download-chip";
+import { ConfirmDialog } from "@/components/modal";
 import { PaidDateModal } from "@/components/paid-date-modal";
 import { SearchInput } from "@/components/search-input";
 import { SegmentedTabs } from "@/components/filters";
@@ -268,6 +269,38 @@ export function PaymentReviewClient({
     }
   }
 
+  // A payment can only advance to paid once its linked timesheets are approved.
+  // If some are still under review, warn first; on confirm we auto-approve them
+  // (the point of paying is that the work is accepted) and then run the action.
+  const [approveConfirm, setApproveConfirm] = useState<
+    { ids: string[]; count: number; onProceed: () => void } | null
+  >(null);
+
+  function guardApproval(b: ReviewBundle, proceed: () => void) {
+    // Under-review / rejected weeks are the ones that block; Invoiced/Paid are
+    // already past approval.
+    const pending = b.timesheets
+      .filter((t) => t.status === "Submitted" || t.status === "Rejected")
+      .map((t) => t.id);
+    if (b.timesheetApproval.allApproved || pending.length === 0) {
+      proceed();
+      return;
+    }
+    setApproveConfirm({ ids: pending, count: pending.length, onProceed: proceed });
+  }
+
+  async function approveTimesheets(ids: string[]) {
+    await Promise.all(
+      ids.map((id) =>
+        fetch(`/api/admin/timesheets/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "approve", comment: "Auto-approved on payment" }),
+        }),
+      ),
+    );
+  }
+
   if (data.length === 0) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-10 text-center">
@@ -383,7 +416,7 @@ export function PaymentReviewClient({
                     onToggle={() => toggleItem(b.payment.id)}
                     expandedTs={expandedTs}
                     toggleTs={toggleTs}
-                    onApprove={() => setStatus(b.payment.id, "To be paid")}
+                    onApprove={() => guardApproval(b, () => setStatus(b.payment.id, "To be paid"))}
                     onCancel={() => setStatus(b.payment.id, "Canceled")}
                   />
                 ))}
@@ -404,7 +437,7 @@ export function PaymentReviewClient({
                     onToggle={() => toggleItem(b.payment.id)}
                     expandedTs={expandedTs}
                     toggleTs={toggleTs}
-                    onMarkPaid={() => setPaidTargetId(b.payment.id)}
+                    onMarkPaid={() => guardApproval(b, () => setPaidTargetId(b.payment.id))}
                     onCancel={() => setStatus(b.payment.id, "Canceled")}
                   />
                 ))}
@@ -435,6 +468,29 @@ export function PaymentReviewClient({
         busy={savingId === paidTargetId}
         onCancel={() => (savingId ? undefined : setPaidTargetId(null))}
         onConfirm={(date) => paidTargetId && setStatus(paidTargetId, "Paid", date)}
+      />
+
+      <ConfirmDialog
+        open={!!approveConfirm}
+        title="Approve linked timesheets?"
+        message={`${approveConfirm?.count ?? 0} linked timesheet${
+          approveConfirm?.count === 1 ? " is" : "s are"
+        } still under review. Marking this payment as paid will automatically approve ${
+          approveConfirm?.count === 1 ? "it" : "them"
+        }. Continue?`}
+        confirmLabel="Approve and continue"
+        onCancel={() => setApproveConfirm(null)}
+        onConfirm={async () => {
+          const c = approveConfirm;
+          setApproveConfirm(null);
+          if (!c) return;
+          try {
+            await approveTimesheets(c.ids);
+            c.onProceed();
+          } catch {
+            setToast({ kind: "error", msg: "Could not approve the linked timesheets." });
+          }
+        }}
       />
 
       {toast ? (
