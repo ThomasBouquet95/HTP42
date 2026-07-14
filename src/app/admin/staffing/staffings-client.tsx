@@ -204,7 +204,11 @@ export function StaffingsAdminClient({
       arr.push(t);
       m.set(key, arr);
     };
+    // Skip work-in-progress / cancelled weeks in the breakdown lists — only
+    // meaningful submitted-or-later timesheets are shown.
+    const HIDDEN = new Set(["Draft", "Cancelled", "Deleted"]);
     for (const t of timesheets) {
+      if (HIDDEN.has(t.status)) continue;
       push(t.staffingRecordId, t);
       if (t.staffingCode && t.staffingCode !== t.staffingRecordId) push(t.staffingCode, t);
     }
