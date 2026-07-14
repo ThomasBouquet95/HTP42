@@ -7,7 +7,8 @@ import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-c
 import { SearchInput } from "@/components/search-input";
 import { SearchSelect } from "@/components/search-select";
 import { Badge } from "@/components/badge";
-import { FilterMultiSelect } from "@/components/filters";
+import { FilterMultiSelect, SegmentedTabs } from "@/components/filters";
+import { StaffingsByProject, StaffingsByMember } from "./staffings-breakdown";
 import { DateField } from "@/components/date-picker";
 import { EditIcon, IconButton } from "@/components/admin-icons";
 import { StatusSelect } from "@/components/status-select";
@@ -169,6 +170,7 @@ export function StaffingsAdminClient({
     if (p) setSearch(p);
   }, [searchParams]);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [view, setView] = useState<"overview" | "byproject" | "bymember">("overview");
   const [memberOpen, setMemberOpen] = useState<MemberOpt | null>(null);
   const membersById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -199,10 +201,19 @@ export function StaffingsAdminClient({
     return staffings.filter((s) => {
       if (statusFilter.length > 0 && !statusFilter.includes(s.status)) return false;
       if (!q) return true;
-      return [s.staffingCode, s.projectCode, s.projectName, s.roleInProject, ...s.memberCodes]
-        .some((v) => v && v.toLowerCase().includes(q));
+      // Include the members' full names (resolved from the linked record ids),
+      // not just their codes, so searching a person's name finds their staffing.
+      const memberNames = s.memberRecordIds.map((mid) => membersById.get(mid)?.name ?? "");
+      return [
+        s.staffingCode,
+        s.projectCode,
+        s.projectName,
+        s.roleInProject,
+        ...s.memberCodes,
+        ...memberNames,
+      ].some((v) => v && v.toLowerCase().includes(q));
     });
-  }, [staffings, search, statusFilter]);
+  }, [staffings, search, statusFilter, membersById]);
 
   function openCreate() {
     setEditing(null);
@@ -368,6 +379,22 @@ export function StaffingsAdminClient({
         <Button tone="primary" size="sm" onClick={openCreate}>+ New staffing</Button>
       </div>
 
+      <SegmentedTabs
+        ariaLabel="Staffing view"
+        value={view}
+        onChange={setView}
+        options={[
+          { value: "overview", label: "Overview" },
+          { value: "byproject", label: "By project" },
+          { value: "bymember", label: "By member" },
+        ]}
+      />
+
+      {view === "byproject" ? (
+        <StaffingsByProject staffings={filtered} members={members} onEdit={openEdit} />
+      ) : view === "bymember" ? (
+        <StaffingsByMember staffings={filtered} members={members} onEdit={openEdit} />
+      ) : (
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
@@ -520,6 +547,7 @@ export function StaffingsAdminClient({
           </tbody>
         </table>
       </div>
+      )}
 
       <Modal
         open={modalOpen}
