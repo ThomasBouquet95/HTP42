@@ -2603,14 +2603,13 @@ export async function markInvoiceEmail(
   ]);
 }
 
-// When an Outflow payment linked to member invoice(s) is marked Paid, carry
-// the billing lifecycle forward: mark each linked invoice Paid and flip that
-// invoice's staffing's Invoiced timesheets to Paid. Best-effort — callers
-// wrap this so a cascade hiccup never blocks the payment update itself.
+// When an Outflow payment linked to member invoice(s) is marked Paid, mark
+// each linked member invoice Paid. Best-effort — callers wrap this so a cascade
+// hiccup never blocks the payment update itself.
 //
-// Association is at the staffing level (we don't store a per-timesheet invoice
-// link), so if one staffing carries several open invoices at the same time,
-// paying one flips all of that staffing's currently-Invoiced timesheets.
+// Note: "Paid" is a PAYMENT (and member-invoice) status only. Timesheets are
+// NOT flipped to Paid — a timesheet's lifecycle ends at Approved; whether the
+// work was billed/paid is tracked on the payment, not the timesheet.
 export async function cascadeInvoicePaidForPayment(payment: PaymentRecord): Promise<void> {
   for (const invoiceId of payment.memberInvoiceRecordIds) {
     try {
@@ -2621,24 +2620,6 @@ export async function cascadeInvoicePaidForPayment(payment: PaymentRecord): Prom
         await base(TABLES.memberInvoices).update([
           { id: invoiceId, fields: { [FIELDS.memberInvoices.status]: "Paid" } as FieldSet },
         ]);
-      }
-      // Flip that staffing's Invoiced timesheets to Paid. filterByFormula sees
-      // the Project Staffing link's primary value (the staffing code).
-      if (inv.staffingCode) {
-        const rows = await base(TABLES.timesheets)
-          .select({
-            filterByFormula: `AND(FIND("${escape(inv.staffingCode)}", ARRAYJOIN({${FIELDS.timesheets.projectStaffing}})), {${FIELDS.timesheets.status}} = "Invoiced")`,
-          })
-          .all();
-        for (let i = 0; i < rows.length; i += 10) {
-          const chunk = rows.slice(i, i + 10);
-          await base(TABLES.timesheets).update(
-            chunk.map((r) => ({
-              id: r.id,
-              fields: { [FIELDS.timesheets.status]: "Paid" } as FieldSet,
-            })),
-          );
-        }
       }
     } catch (e) {
       console.error("cascadeInvoicePaidForPayment failed for invoice", invoiceId, e);
@@ -3296,6 +3277,41 @@ export async function migrateLegacyInvoicedTimesheets(): Promise<{ updated: numb
       [FIELDS.timesheets.reviewComment]: "",
       [FIELDS.timesheets.reviewToken]: "",
       [FIELDS.timesheets.reviewTokenExpiresAt]: "",
+    } as FieldSet,
+  }));
+  for (let i = 0; i < updates.length; i += 10) {
+    await base(TABLES.timesheets).update(updates.slice(i, i + 10), { typecast: true });
+  }
+  return { updated: updates.length };
+}
+
+// Timesheets sitting in "Paid" — a status that shouldn't apply to timesheets
+// (Paid belongs to payments). Counted so the admin UI can offer a one-click fix.
+export async function countPaidTimesheets(): Promise<number> {
+  const records = await base(TABLES.timesheets)
+    .select({
+      filterByFormula: `{${FIELDS.timesheets.status}} = "Paid"`,
+      fields: [FIELDS.timesheets.status],
+    })
+    .all();
+  return records.length;
+}
+
+// Migrate timesheets stuck at "Paid" back to "Approved" — a timesheet's
+// lifecycle ends at Approved; billed/paid is tracked on the payment. The
+// approval fields are left intact (the work was accepted). Re-runnable and
+// safe (only touches Paid rows). The billing-status cascade no longer sets
+// this, so after one run new Paid timesheets shouldn't reappear.
+export async function migratePaidTimesheetsToApproved(): Promise<{ updated: number }> {
+  await ensureTimesheetApprovalSchema();
+  const records = await base(TABLES.timesheets)
+    .select({ filterByFormula: `{${FIELDS.timesheets.status}} = "Paid"` })
+    .all();
+  const updates = records.map((r) => ({
+    id: r.id,
+    fields: {
+      [FIELDS.timesheets.status]: "Approved",
+      [FIELDS.timesheets.billingStatus]: "",
     } as FieldSet,
   }));
   for (let i = 0; i < updates.length; i += 10) {

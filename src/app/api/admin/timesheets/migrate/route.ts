@@ -1,15 +1,21 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
-import { migrateLegacyInvoicedTimesheets } from "@/lib/airtable";
+import {
+  migrateLegacyInvoicedTimesheets,
+  migratePaidTimesheetsToApproved,
+} from "@/lib/airtable";
 import { apiError, zodMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
-// One-shot cutover migration: resets legacy "Invoiced" timesheets (from before
-// the approval workflow) back to "Submitted" (Under review). Guarded by a
-// confirmation token. Run once at cutover — see migrateLegacyInvoicedTimesheets.
-const schema = z.object({ confirm: z.literal("RESET-INVOICED-TO-UNDER-REVIEW") });
+// Guarded one-shot migrations, selected by the confirm token:
+//   RESET-INVOICED-TO-UNDER-REVIEW → legacy "Invoiced" timesheets back to Submitted.
+//   RESET-PAID-TO-APPROVED         → "Paid" timesheets back to Approved (Paid is a
+//                                    payment status, not a timesheet one).
+const schema = z.object({
+  confirm: z.enum(["RESET-INVOICED-TO-UNDER-REVIEW", "RESET-PAID-TO-APPROVED"]),
+});
 
 export async function POST(request: Request) {
   const session = await requireAdminSession();
@@ -22,9 +28,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await migrateLegacyInvoicedTimesheets();
+    const result =
+      parsed.data.confirm === "RESET-PAID-TO-APPROVED"
+        ? await migratePaidTimesheetsToApproved()
+        : await migrateLegacyInvoicedTimesheets();
     return NextResponse.json(result);
   } catch (e) {
-    return apiError(e, "reset legacy invoiced timesheets");
+    return apiError(e, "migrate timesheet statuses");
   }
 }

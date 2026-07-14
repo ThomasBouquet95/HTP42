@@ -145,6 +145,54 @@ export function TimesheetReviewClient({
       </div>
     ) : null;
 
+  // "Paid" is a payment status, not a timesheet one. Offer a one-click reset of
+  // any timesheets stuck at Paid back to Approved.
+  const paidCount = useMemo(
+    () => timesheets.filter((t) => t.status === "Paid").length,
+    [timesheets],
+  );
+  async function resetPaid() {
+    if (
+      !window.confirm(
+        `Reset ${paidCount} timesheet(s) marked "Paid" back to Approved? Paid is a payment status, not a timesheet one.`,
+      )
+    )
+      return;
+    setMigrating(true);
+    try {
+      const res = await fetch("/api/admin/timesheets/migrate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ confirm: "RESET-PAID-TO-APPROVED" }),
+      });
+      const d = (await res.json().catch(() => ({}))) as { updated?: number; error?: string };
+      if (!res.ok) throw new Error(d.error ?? "Reset failed.");
+      setToast({ kind: "ok", msg: `Reset ${d.updated ?? 0} timesheet(s) to Approved` });
+      router.refresh();
+    } catch (e) {
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Reset failed." });
+    } finally {
+      setMigrating(false);
+    }
+  }
+  const paidBanner =
+    paidCount > 0 ? (
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
+        <span>
+          <strong>{paidCount}</strong> timesheet{paidCount === 1 ? "" : "s"} marked
+          &ldquo;Paid&rdquo;. A timesheet stops at Approved (paid is tracked on the payment).
+        </span>
+        <button
+          type="button"
+          onClick={resetPaid}
+          disabled={migrating}
+          className="ml-auto rounded-md bg-amber-600 px-2.5 py-1 font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+        >
+          {migrating ? "Resetting…" : "Reset to Approved"}
+        </button>
+      </div>
+    ) : null;
+
   // Scope banner: spell out that this reviewer only sees the projects they
   // manage, and name them. Shown for Project Managers (scopeProjects set).
   const scopeBanner =
@@ -250,6 +298,7 @@ export function TimesheetReviewClient({
       <div className="space-y-4">
         {scopeBanner}
         {legacyBanner}
+        {paidBanner}
         <div className="rounded-lg border border-slate-200 bg-white p-10 text-center">
           <div className="text-sm font-medium text-slate-800">Nothing to review</div>
           <p className="mt-1 text-xs text-slate-500">
@@ -266,6 +315,7 @@ export function TimesheetReviewClient({
     <div className="space-y-4">
       {scopeBanner}
       {legacyBanner}
+      {paidBanner}
       <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       {/* Member list */}
       <div className="self-start overflow-hidden rounded-lg border border-slate-200 bg-white">
