@@ -310,16 +310,20 @@ function NetCard({
   committedIn: number;
   committedOut: number;
 }) {
-  const net = received - sent;
+  const settled = received - sent;
+  // Projected net = all inflows (received + still to receive) minus all
+  // outflows (paid + still to be paid). This is the headline figure.
   const projected = received + committedIn - (sent + committedOut);
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div className="text-[10px] uppercase tracking-wide text-slate-400">Net (received − paid)</div>
-      <div className={`mt-1 text-lg font-semibold tabular-nums demo-blur ${net >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
-        {eur(net)}
+      <div className="text-[10px] uppercase tracking-wide text-slate-400">
+        Net projected (inflows − outflows, incl. to receive / to be paid)
+      </div>
+      <div className={`mt-1 text-lg font-semibold tabular-nums demo-blur ${projected >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+        {eur(projected)}
       </div>
       <div className="mt-0.5 text-[11px] text-slate-500 demo-blur">
-        {eur(projected)} projected (incl. committed)
+        {eur(settled)} settled (received − paid)
       </div>
     </div>
   );
