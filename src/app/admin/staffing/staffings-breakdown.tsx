@@ -75,9 +75,12 @@ function GroupList({
   rowSecondary: (s: StaffingAdminRecord) => string;
   onEdit: (s: StaffingAdminRecord) => void;
 }) {
-  const [open, setOpen] = useState<Set<string>>(() => new Set(groups.map((g) => g.key)));
+  // Track only which groups the user has explicitly COLLAPSED — everything
+  // else is open. This way groups that newly appear after a filter change
+  // default to open rather than staying hidden.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const toggle = (k: string) =>
-    setOpen((prev) => {
+    setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(k)) next.delete(k);
       else next.add(k);
@@ -95,7 +98,7 @@ function GroupList({
   return (
     <div className="space-y-3">
       {groups.map((g) => {
-        const isOpen = open.has(g.key);
+        const isOpen = !collapsed.has(g.key);
         return (
           <div key={g.key} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
             <button
