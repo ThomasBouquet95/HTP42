@@ -281,10 +281,13 @@ export function PaymentsClient({
   );
   const projectLabel = (p: PaymentRecord) =>
     p.projectRecordIds.map((id) => projectsById.get(id)?.code).filter(Boolean).join(", ");
-  // The staffing a payment settles — resolved from its linked member invoice
-  // (the source of truth the project is derived from). Shown on outflow detail.
+  // The staffing a payment is linked to — its own Staffing link first, else the
+  // staffing of the member invoice it settles. Shown in the expanded detail.
+  const staffingOptById = new Map(staffings.map((s) => [s.id, s]));
   const invoiceOptById = new Map(memberInvoices.map((i) => [i.id, i]));
   const staffingLabel = (p: PaymentRecord) => {
+    const direct = p.staffingRecordIds.map((id) => staffingOptById.get(id)).find(Boolean);
+    if (direct) return direct.staffingCode;
     const inv = p.memberInvoiceRecordIds.map((id) => invoiceOptById.get(id)).find(Boolean);
     return inv?.staffingCode ?? "";
   };
