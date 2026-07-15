@@ -1387,7 +1387,7 @@ function TaskModal({
               <div className="mt-1 max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2 text-xs">
                 {members.length === 0 ? (
                   <div className="text-slate-400">
-                    No teammates yet — you're not on any shared projects.
+                    No teammates yet. You're not on any shared projects.
                   </div>
                 ) : (
                   members.map((m) => {

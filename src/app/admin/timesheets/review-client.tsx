@@ -106,7 +106,7 @@ export function TimesheetReviewClient({
   async function resetLegacyInvoiced() {
     if (
       !window.confirm(
-        `Reset ${invoicedCount} timesheet(s) still marked "Invoiced" back to Under review? Do this once, at cutover — it does not affect Paid weeks.`,
+        `Reset ${invoicedCount} timesheet(s) still marked "Invoiced" back to Under review? Do this once, at cutover. It does not affect Paid weeks.`,
       )
     )
       return;
@@ -767,7 +767,7 @@ function ReviewCard({
         ) : clientPending ? (
           <>
             <span className="min-w-0 flex-1 truncate text-[11px] text-amber-700">
-              Awaiting the client&apos;s decision — sent by email. No admin action needed.
+              Awaiting the client&apos;s decision, sent by email. No admin action needed.
             </span>
             <button
               type="button"
@@ -781,7 +781,7 @@ function ReviewCard({
           <>
             <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500">
               {t.reviewedBy ? `${t.status} by ${t.reviewedBy}` : t.status}
-              {t.reviewComment ? ` — “${t.reviewComment}”` : ""}
+              {t.reviewComment ? `: “${t.reviewComment}”` : ""}
             </span>
             <button
               type="button"

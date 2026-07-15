@@ -398,7 +398,7 @@ export function RetributionClient({
                     <>Project total {money(project.totalAmount, project.currency)}</>
                   ) : (
                     <span className="text-amber-700">
-                      No project total set — percentage amounts can&apos;t be computed until you set
+                      No project total set. Percentage amounts can&apos;t be computed until you set
                       it on the project.
                     </span>
                   )}

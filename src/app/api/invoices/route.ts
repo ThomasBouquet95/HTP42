@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   const staffing = myStaffings.find((s) => s.id === staffingId);
   if (!staffing) {
     return NextResponse.json(
-      { error: "Unknown staffing — pick one from your list." },
+      { error: "Unknown staffing. Pick one from your list." },
       { status: 400 },
     );
   }

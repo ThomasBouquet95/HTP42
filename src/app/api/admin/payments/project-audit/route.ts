@@ -230,7 +230,7 @@ export async function GET(request: Request) {
               result.style.display = "block";
               result.textContent = JSON.stringify(d, null, 2);
               status.textContent = d.apply
-                ? ("Applied — " + (d.updated || 0) + " payment(s) updated. Reload to re-audit.")
+                ? ("Applied. " + (d.updated || 0) + " payment(s) updated. Reload to re-audit.")
                 : ((d.toFix || 0) + " payment(s) would change" + (d.unresolved ? (", " + d.unresolved + " unresolved") : "") + ". Review below, then Apply.");
             })
             .catch(function (e) { status.textContent = "Failed: " + e; })
@@ -247,11 +247,11 @@ export async function GET(request: Request) {
         : `
       <h2>By reason</h2><ul>${list(byReason)}</ul>
       <p class="muted" style="font-size:12px">
-        <strong>no staffing link</strong>: payment has no staffing at all (the old behaviour — only a project was set).<br/>
+        <strong>no staffing link</strong>: payment has no staffing at all (the old behaviour, only a project was set).<br/>
         <strong>wrong staffing</strong>: payment links a different staffing than its invoice.<br/>
         <strong>wrong project</strong>: staffing is right but the project link doesn't match the staffing's project.
       </p>
-      ${summary.invoicesWithoutStaffing > 0 ? `<p class="muted" style="font-size:12px">${summary.invoicesWithoutStaffing} payment(s) skipped — their invoice has no staffing link to inherit.</p>` : ""}
+      ${summary.invoicesWithoutStaffing > 0 ? `<p class="muted" style="font-size:12px">${summary.invoicesWithoutStaffing} payment(s) skipped: their invoice has no staffing link to inherit.</p>` : ""}
       <h2>All payments to fix</h2>
       <table><thead><tr>
         <th>Payment</th><th>Dir</th><th>Beneficiary</th><th>Invoice</th><th>Member</th>

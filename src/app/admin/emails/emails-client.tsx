@@ -250,7 +250,7 @@ function TemplateCard({
               {def.placeholders.map((p) => (
                 <span
                   key={p.token}
-                  title={p.description + (p.block ? " (structured — inserted as-is)" : "")}
+                  title={p.description + (p.block ? " (structured, inserted as-is)" : "")}
                   className="cursor-help rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-brand-700"
                 >
                   {`{{${p.token}}}`}
@@ -322,7 +322,7 @@ function TemplatesView({
     <div className="space-y-4">
       <div className="rounded-md border border-brand-100 bg-brand-50 px-3 py-2.5 text-xs leading-relaxed text-brand-900">
         Every automated email the portal sends is listed here. Edit the sender, recipients (To / CC),
-        subject and body — changes are saved to the database and{" "}
+        subject and body. Changes are saved to the database and{" "}
         <strong>take effect on the next send</strong>, not just in this preview. Triggers and
         attachments are fixed by the workflow. Revert any email to its built-in default at any time.
       </div>

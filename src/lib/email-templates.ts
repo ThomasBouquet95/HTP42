@@ -82,7 +82,7 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
     placeholders: [
       { token: "member", description: "Submitting member's name (falls back to email, then member code)." },
       { token: "memberEmail", description: "Member's @htp42.com login email." },
-      { token: "staffingOrProject", description: "Staffing code, or project code if none — used in the subject." },
+      { token: "staffingOrProject", description: "Staffing code, or project code if none; used in the subject." },
       { token: "staffingCode", description: "Staffing code the invoice is for." },
       { token: "projectCode", description: "Project code derived from the staffing." },
       { token: "projectName", description: "Project name." },
@@ -91,12 +91,12 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
       { token: "coveredTimesheets", description: "List of covered weeks with hours.", block: true },
       { token: "portalUrl", description: "Deep link to /admin/payments." },
     ],
-    defaultSubject: "Invoice from {{member}} — {{staffingOrProject}}",
+    defaultSubject: "Invoice from {{member}} for {{staffingOrProject}}",
     defaultBody: [
       "New invoice submitted by {{member}} ({{memberEmail}}).",
       "",
       "Staffing: {{staffingCode}}",
-      "Project: {{projectCode}} — {{projectName}}",
+      "Project: {{projectCode}} ({{projectName}})",
       "Amount: {{amount}}",
       "Comment: {{comment}}",
       "",
@@ -109,7 +109,7 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
     key: "timesheet_review_request",
     name: "Timesheet review request (client)",
     purpose:
-      "Asks an external client reviewer to approve or reject a submitted timesheet via one-click links — no account needed.",
+      "Asks an external client reviewer to approve or reject a submitted timesheet via one-click links; no account needed.",
     recipient: "To: the reviewer email configured on the staffing (Client review method).",
     trigger: "A member submits (or resubmits) a timesheet on a staffing whose review method is Client.",
     conditions:
@@ -125,10 +125,10 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
       { token: "weekLabel", description: "The week the timesheet covers." },
       { token: "totalHours", description: "Total hours logged that week." },
       { token: "days", description: "Per-day hours + task breakdown.", block: true },
-      { token: "actions", description: "Approve / Reject buttons (required — do not remove).", block: true },
+      { token: "actions", description: "Approve / Reject buttons (required, do not remove).", block: true },
       { token: "expiryNote", description: "Sentence stating the links expire and are single-use." },
     ],
-    defaultSubject: "[HTP42] Timesheet approval — {{memberName}} · {{weekLabel}}",
+    defaultSubject: "[HTP42] Timesheet approval: {{memberName}} · {{weekLabel}}",
     defaultBody: [
       "Hi {{reviewerName}},",
       "",
@@ -153,7 +153,7 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
     recipient:
       "To: the finance inbox (INVOICE_RECIPIENT_EMAIL). CC: the Fulll bookkeeping and Qonto receipts inboxes.",
     trigger:
-      "A payment transitions into Paid — from the payments list/modal, the payment review page, or when an automated vendor-invoice import creates a Paid payment.",
+      "A payment transitions into Paid, from the payments list/modal, the payment review page, or when an automated vendor-invoice import creates a Paid payment.",
     conditions:
       "Fires exactly once on the transition into Paid. The invoice PDF is attached when available and under the 3 MB inline cap; otherwise a note explains why it is missing. A send failure is only logged.",
     toMode: "fixed",
@@ -167,8 +167,8 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
       { token: "amount", description: "Amount + currency." },
       { token: "paymentDate", description: "Payment date." },
       { token: "invoiceDate", description: "Invoice date." },
-      { token: "project", description: "Resolved project (code — name)." },
-      { token: "client", description: "Resolved client (code — name)." },
+      { token: "project", description: "Resolved project (code and name)." },
+      { token: "client", description: "Resolved client (code and name)." },
       { token: "comment", description: "Payment comment." },
       { token: "pdfNote", description: "Whether the PDF was attached, or why not.", block: true },
       { token: "portalUrl", description: "Deep link to /admin/payments." },
@@ -204,7 +204,7 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
     placeholders: [
       { token: "who", description: "Recipient's name (falls back to 'there')." },
       { token: "projectCode", description: "Project code (used in the subject)." },
-      { token: "projectNameSuffix", description: "' — Project name' appended to the subject when known." },
+      { token: "projectNameSuffix", description: "': Project name' appended to the subject when known." },
       { token: "projectNamePhrase", description: "' on Project name' woven into the intro when known." },
       { token: "link", description: "The recipient's unique survey link." },
     ],
@@ -300,7 +300,7 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
     purpose: "Admin-only dry run to confirm the Microsoft Graph / Mail.Send pipeline is wired up.",
     recipient: "To: an address entered by the admin, else the finance inbox.",
     trigger: "An admin clicks the test-email button in Finance → Invoices.",
-    conditions: "Admin-only. Not a business event — used only to verify sending works.",
+    conditions: "Admin-only. Not a business event; used only to verify sending works.",
     toMode: "fixed",
     dynamicRecipient: "Defaults to the finance inbox unless the admin types a test address.",
     defaultCc: [],
@@ -309,7 +309,7 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
       { token: "sender", description: "Configured sender mailbox (INVOICE_SENDER_UPN)." },
       { token: "recipient", description: "Resolved recipient." },
     ],
-    defaultSubject: "HTP42 portal — invoice email test",
+    defaultSubject: "HTP42 portal: invoice email test",
     defaultBody: [
       "This is a test message from the HTP42 portal.",
       "Triggered by: {{triggeredBy}}",

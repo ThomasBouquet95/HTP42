@@ -113,7 +113,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     });
     if (!updated) {
       return NextResponse.json(
-        { error: "That member no longer exists — it may have been deleted. Refresh and try again." },
+        { error: "That member no longer exists. It may have been deleted; refresh and try again." },
         { status: 404 },
       );
     }

@@ -201,7 +201,7 @@ export async function POST(request: Request) {
   } catch (e) {
     if (e instanceof Anthropic.RateLimitError) {
       return NextResponse.json(
-        { error: "Rate limited — try again in a moment." },
+        { error: "Rate limited. Try again in a moment." },
         { status: 429 },
       );
     }

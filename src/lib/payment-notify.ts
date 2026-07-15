@@ -65,12 +65,12 @@ export async function notifyPaymentPaid(p: PaymentRecord): Promise<void> {
     const fmtProject = (id: string) => {
       const pr = projById.get(id);
       if (!pr) return "";
-      return pr.projectName ? `${pr.projectCode} — ${pr.projectName}` : pr.projectCode;
+      return pr.projectName ? `${pr.projectCode} · ${pr.projectName}` : pr.projectCode;
     };
     const fmtClient = (id: string) => {
       const c = cliById.get(id);
       if (!c) return "";
-      return c.clientName ? `${c.clientCode} — ${c.clientName}` : c.clientCode;
+      return c.clientName ? `${c.clientCode} · ${c.clientName}` : c.clientCode;
     };
     const resolvedProjects = p.projectRecordIds.map(fmtProject).filter(Boolean);
     const resolvedClients = p.clientRecordIds.map(fmtClient).filter(Boolean);
@@ -83,8 +83,8 @@ export async function notifyPaymentPaid(p: PaymentRecord): Promise<void> {
   const safe = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const pdfNote = {
-    text: pdfFailure ? `PDF: not attached — ${pdfFailure}` : `PDF: attached`,
-    html: pdfFailure ? `<p><em>PDF not attached — ${safe(pdfFailure)}</em></p>` : `<p>PDF attached.</p>`,
+    text: pdfFailure ? `PDF not attached: ${pdfFailure}` : `PDF: attached`,
+    html: pdfFailure ? `<p><em>PDF not attached: ${safe(pdfFailure)}</em></p>` : `<p>PDF attached.</p>`,
   };
 
   const { name, subject, textBody, htmlBody, to, cc, from } = await resolveEmail("payment_paid", {

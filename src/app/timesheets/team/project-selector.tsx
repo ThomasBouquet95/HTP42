@@ -25,7 +25,7 @@ export function ProjectSelector({ projects, activeCode }: Props) {
         {projects.map((p) => (
           <option key={p.projectCode} value={p.projectCode}>
             {p.projectCode}
-            {p.projectName ? ` — ${p.projectName}` : ""}
+            {p.projectName ? `: ${p.projectName}` : ""}
           </option>
         ))}
       </select>

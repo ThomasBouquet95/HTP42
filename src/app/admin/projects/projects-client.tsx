@@ -324,7 +324,7 @@ export function ProjectsAdminClient({
       if (!res.ok) throw new Error();
       router.refresh();
     } catch {
-      setToast({ kind: "error", msg: "Could not update status — try again." });
+      setToast({ kind: "error", msg: "Could not update status. Try again." });
     }
   }
 
@@ -774,7 +774,7 @@ export function ProjectsAdminClient({
               <option value="">— None —</option>
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.clientCode} — {c.clientName}
+                  {c.clientCode}: {c.clientName}
                 </option>
               ))}
             </FormSelect>

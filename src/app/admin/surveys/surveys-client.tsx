@@ -281,8 +281,8 @@ export function SurveysClient({
 
                         {r.completedAt ? (
                           <div className="mt-2 space-y-2 text-xs">
-                            <Comment label="Overall — went well" text={r.overallWentWell} />
-                            <Comment label="Overall — improve" text={r.overallImprove} />
+                            <Comment label="Overall: went well" text={r.overallWentWell} />
+                            <Comment label="Overall: improve" text={r.overallImprove} />
                             {r.memberRatings.length > 0 ? (
                               <div className="mt-1 space-y-1.5 border-t border-slate-100 pt-2">
                                 {r.memberRatings.map((mr) => (
@@ -350,7 +350,7 @@ export function SurveysClient({
           <option value="">Select a project…</option>
           {projects.map((p) => (
             <option key={p.code} value={p.code}>
-              {p.code} — {p.name}
+              {p.code}: {p.name}
             </option>
           ))}
         </FormSelect>

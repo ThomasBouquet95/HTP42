@@ -41,7 +41,7 @@ export function ReviewForm({ token, preset }: { token: string; preset?: "approve
         <div className="text-base font-semibold">
           {done === "approve" ? "✅ Timesheet approved" : "❌ Timesheet rejected"}
         </div>
-        <p className="mt-1 text-sm">Thank you — your decision has been recorded. You can close this page.</p>
+        <p className="mt-1 text-sm">Thank you. Your decision has been recorded. You can close this page.</p>
       </div>
     );
   }

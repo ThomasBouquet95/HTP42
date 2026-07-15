@@ -58,7 +58,7 @@ export async function POST(request: Request) {
         const { name, subject, textBody, htmlBody, cc, from } = await resolveEmail("survey_invite", {
           who: r.name || "there",
           projectCode,
-          projectNameSuffix: projectName ? ` — ${projectName}` : "",
+          projectNameSuffix: projectName ? `: ${projectName}` : "",
           projectNamePhrase: projectName ? ` on ${projectName}` : "",
           link,
         });

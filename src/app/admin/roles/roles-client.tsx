@@ -103,9 +103,9 @@ export function RolesClient({
 
   const banner =
     kind === "full"
-      ? { cls: "border-emerald-200 bg-emerald-50 text-emerald-800", text: "Full access to every page — not configurable." }
+      ? { cls: "border-emerald-200 bg-emerald-50 text-emerald-800", text: "Full access to every page. Not configurable." }
       : kind === "none"
-        ? { cls: "border-slate-200 bg-slate-50 text-slate-600", text: "No admin access — member-only. Not configurable." }
+        ? { cls: "border-slate-200 bg-slate-50 text-slate-600", text: "No admin access, member-only. Not configurable." }
         : !canEdit
           ? { cls: "border-amber-200 bg-amber-50 text-amber-800", text: "View-only: you can see these settings but not change them." }
           : null;

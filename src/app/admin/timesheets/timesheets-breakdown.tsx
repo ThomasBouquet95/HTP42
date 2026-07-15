@@ -387,7 +387,7 @@ export function SowChip({ sow }: { sow?: SowInfo }) {
         target="_blank"
         rel="noopener noreferrer"
         onClick={(e) => e.stopPropagation()}
-        title={`Open SOW — ${detail}`}
+        title={`Open SOW: ${detail}`}
         className={`${cls} border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100`}
       >
         <SowDocIcon />
@@ -396,7 +396,7 @@ export function SowChip({ sow }: { sow?: SowInfo }) {
     );
   }
   return (
-    <span title={`SOW — ${detail}`} className={`${cls} border-slate-200 bg-white text-slate-500`}>
+    <span title={`SOW: ${detail}`} className={`${cls} border-slate-200 bg-white text-slate-500`}>
       <SowDocIcon />
       SOW
     </span>

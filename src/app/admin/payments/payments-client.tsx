@@ -1276,7 +1276,7 @@ export function PaymentsClient({
           <div className="grid gap-3 sm:grid-cols-2 mt-3">
             {(() => {
               const projLabel = (code: string, name: string) =>
-                code ? `${code}${name ? ` — ${name}` : ""}` : "—";
+                code ? `${code}${name ? ` (${name})` : ""}` : "—";
               // When the payment settles a member invoice, both the staffing and
               // the project are inherited from that invoice (source of truth) —
               // read-only, since editing them here wouldn't stick.
@@ -1366,7 +1366,7 @@ export function PaymentsClient({
                   <option value="">No project</option>
                   {projects.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.code} — {p.name}
+                      {p.code} ({p.name})
                     </option>
                   ))}
                 </FormSelect>
@@ -1419,7 +1419,7 @@ export function PaymentsClient({
                   <span className="text-slate-500">Fetching latest rate…</span>
                 ) : form.invoiceCurrency && form.invoiceCurrency !== "EUR" && form.fxRateToEur ? (
                   <span className="text-slate-400">
-                    Auto-sourced from open.er-api.com — editable.
+                    Auto-sourced from open.er-api.com, editable.
                   </span>
                 ) : null
               }
@@ -2113,7 +2113,7 @@ function CounterpartyPicker({
         hint={
           !form.direction || !form.type
             ? "Pick a direction and a type first."
-            : "No Client / Member link for this type — use Beneficiary in Notes below."
+            : "No Client / Member link for this type. Use Beneficiary in Notes below."
         }
       >
         <option value="">—</option>
@@ -2131,7 +2131,7 @@ function CounterpartyPicker({
         <option value="">Pick a client</option>
         {clients.map((c) => (
           <option key={c.id} value={c.id}>
-            {c.code} — {c.name}
+            {c.code} ({c.name})
           </option>
         ))}
       </FormSelect>
@@ -2158,7 +2158,7 @@ function CounterpartyPicker({
         <option value="">Pick a network member</option>
         {members.map((m) => (
           <option key={m.id} value={m.id}>
-            {m.code} — {m.name}
+            {m.code} ({m.name})
           </option>
         ))}
       </FormSelect>
@@ -2191,7 +2191,7 @@ function CounterpartyPicker({
               ? "This member hasn't submitted any invoices yet."
               : selectedInvoice
                 ? `Links this payment to invoice ${selectedInvoice.invoiceCode}.`
-                : "Optional — links this payment to a submitted invoice and pre-fills the amount."
+                : "Optional: links this payment to a submitted invoice and pre-fills the amount."
         }
         className="sm:col-span-2"
       >

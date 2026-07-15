@@ -60,7 +60,7 @@ export function DemoModeToggle() {
       aria-pressed={on}
       title={
         on
-          ? "Demo mode is ON — sensitive cells are blurred. Click to turn off."
+          ? "Demo mode is ON. Sensitive cells are blurred. Click to turn off."
           : "Demo mode hides sensitive values (amounts, clients, IBANs) so this view is safe to screen-share."
       }
       className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${

@@ -47,7 +47,7 @@ function DaysMeter({ used, allocated }: { used: number; allocated: number | null
       className={`inline-flex items-center gap-2 rounded-md border px-2 py-1 ${
         over ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-white"
       }`}
-      title="Days logged from submitted timesheets (Submitted, Approved, Invoiced and Paid — not only approved) vs days allocated on the staffing"
+      title="Days logged from submitted timesheets (Submitted, Approved, Invoiced and Paid, not only approved) vs days allocated on the staffing"
     >
       <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-200">
         <div
@@ -211,7 +211,7 @@ function StaffingRow({
         <div className="border-t border-slate-100 bg-slate-50/60 px-3 py-3">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
             <Field label="Staffing" value={s.staffingCode} mono />
-            <Field label="Project" value={`${s.projectCode}${s.projectName ? ` — ${s.projectName}` : ""}`} />
+            <Field label="Project" value={`${s.projectCode}${s.projectName ? `: ${s.projectName}` : ""}`} />
             <Field label="Role" value={s.projectRole || s.roleInProject} />
             <Field label="Rate" value={money(s.ratePerDay, s.currency) + (s.ratePerDay != null ? " / d" : "")} />
             <Field label="Days allocated" value={s.daysAllocated != null ? String(s.daysAllocated) : "—"} />

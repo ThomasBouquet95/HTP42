@@ -32,7 +32,7 @@ export default async function SurveyPage({ params }: { params: Promise<{ token: 
           </Notice>
         ) : survey.completedAt ? (
           <Notice title="Already submitted" tone="ok">
-            Thanks — this survey has already been completed. If you need to change something, contact
+            Thanks. This survey has already been completed. If you need to change something, contact
             your HTP42 representative.
           </Notice>
         ) : (

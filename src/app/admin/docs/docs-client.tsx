@@ -47,8 +47,8 @@ const BUSINESS_SECTIONS = [
   "Roles & access",
   "Members & staffing",
   "Timesheet lifecycle",
-  "Timesheet review — admin vs client",
-  "Invoicing — member submits an invoice",
+  "Timesheet review: admin vs client",
+  "Invoicing: member submits an invoice",
   "Payments",
   "Automated invoicing (vendor / IT invoices)",
   "Projects, clients & opportunities",
@@ -203,7 +203,7 @@ function BusinessProcesses() {
             },
             {
               term: "Associate Partner / Network Operations",
-              def: "Configurable admin roles — default to full access except the Admin group (Roles & access, Emails), which must be granted explicitly.",
+              def: "Configurable admin roles: default to full access except the Admin group (Roles & access, Emails), which must be granted explicitly.",
             },
             {
               term: "Project Manager",
@@ -217,7 +217,7 @@ function BusinessProcesses() {
         />
         <Rule>
           Access is enforced twice: the edge middleware checks the signed-in role, and every admin
-          page/API re-checks the <em>live</em> role + permission before returning data — so revoking
+          page/API re-checks the <em>live</em> role + permission before returning data, so revoking
           a role takes effect immediately. A page you cannot view is not shown in the navigation.
         </Rule>
         <p className="mt-3 text-xs text-slate-500">
@@ -244,7 +244,7 @@ function BusinessProcesses() {
               currency <strong>default from the member</strong> and stay editable.
             </>,
             <>
-              <strong>Choose who reviews timesheets</strong> for this staffing — this is a required
+              <strong>Choose who reviews timesheets</strong> for this staffing. This is a required
               decision (see the callout below).
             </>,
             <>
@@ -317,7 +317,7 @@ function BusinessProcesses() {
         />
         <Rule tone="warning">
           A timesheet stops at <strong>Approved</strong>. &ldquo;Invoiced&rdquo; and
-          &ldquo;Paid&rdquo; are <strong>not</strong> timesheet statuses — whether the work has been
+          &ldquo;Paid&rdquo; are <strong>not</strong> timesheet statuses. Whether the work has been
           billed or paid is tracked on the payment, never on the timesheet. Nothing in the app moves
           a timesheet to Paid.
         </Rule>
@@ -329,7 +329,7 @@ function BusinessProcesses() {
         </p>
       </Section>
 
-      <Section title="Timesheet review — admin vs client" intro="The two review paths and how they differ.">
+      <Section title="Timesheet review: admin vs client" intro="The two review paths and how they differ.">
         <p>
           The staffing&apos;s <strong>review method</strong> (chosen at setup) decides which path a
           submitted week takes.
@@ -368,7 +368,7 @@ function BusinessProcesses() {
               acts (or an admin overrides).
             </>,
             <>
-              Every decision — submitted, approved, rejected, edited — is written to an immutable
+              Every decision (submitted, approved, rejected, edited) is written to an immutable
               audit trail (who, method: Admin/Client/System, when, comment). Hover a status badge to
               see the outcome.
             </>,
@@ -382,11 +382,11 @@ function BusinessProcesses() {
         <Rule>
           <strong>Automated action:</strong> submitting (or resubmitting) a week on a Client-review
           staffing automatically mints the token and sends the review-request email. It is
-          best-effort — a mail failure never blocks the submit and is logged to the audit trail.
+          best-effort: a mail failure never blocks the submit and is logged to the audit trail.
         </Rule>
       </Section>
 
-      <Section title="Invoicing — member submits an invoice" intro="Turning approved work into a bill and a payment to process.">
+      <Section title="Invoicing: member submits an invoice" intro="Turning approved work into a bill and a payment to process.">
         <Flow
           nodes={[
             { label: "Approved timesheets", tone: "success" },
@@ -399,7 +399,7 @@ function BusinessProcesses() {
             <>The member picks the <strong>staffing</strong> the invoice is for.</>,
             <>
               They select the weeks it covers. The picker shows each week&apos;s status, but{" "}
-              <strong>only Approved weeks can be selected</strong> — the rest are disabled.
+              <strong>only Approved weeks can be selected</strong>. The rest are disabled.
             </>,
             <>They attach the invoice PDF, enter the amount + currency and a comment.</>,
             <>
@@ -427,7 +427,7 @@ function BusinessProcesses() {
             <>
               For a <strong>Subcontractor</strong> outflow, the payment is linked to the{" "}
               <strong>staffing</strong> it settles, and the project is <em>derived from that
-              staffing</em> — never chosen separately — so it can never drift onto the wrong project.
+              staffing</em> (never chosen separately), so it can never drift onto the wrong project.
             </>,
             <>
               The <strong>Review</strong> sub-tab groups payments by member for triage. By project /
@@ -445,14 +445,14 @@ function BusinessProcesses() {
           or <strong>Paid</strong> while its linked timesheets are still under review asks for
           confirmation; on confirm, those timesheets are <strong>automatically approved</strong>{" "}
           (paying implies the work is accepted). Marking a payment Paid also cascades to mark the
-          related member invoice Paid — but never changes any timesheet to Paid.
+          related member invoice Paid, but never changes any timesheet to Paid.
         </Rule>
       </Section>
 
       <Section title="Automated invoicing (vendor / IT invoices)" intro="How paid supplier invoices flow into the portal from a mailbox, hands-off.">
         <p>
           Besides member-submitted invoices, the portal can ingest already-paid{" "}
-          <strong>vendor / IT invoices</strong> automatically from a dedicated billing mailbox — no
+          <strong>vendor / IT invoices</strong> automatically from a dedicated billing mailbox, no
           manual entry.
         </p>
         <Flow
@@ -482,14 +482,14 @@ function BusinessProcesses() {
             </>,
             <>
               If the amount could not be read, the invoice is flagged for a quick human review
-              instead — the Paid payment is created later, when an admin fills the amount in and
+              instead. The Paid payment is created later, when an admin fills the amount in and
               saves.
             </>,
           ]}
         />
         <Rule tone="warning">
           <strong>Exceptions &amp; safeguards:</strong> the import needs the Azure app&apos;s
-          Mail.Read permission and an Anthropic API key — without either it imports nothing and
+          Mail.Read permission and an Anthropic API key. Without either it imports nothing and
           records why, leaving the rest of the portal unaffected. Extraction is best-effort and
           always meant to be sanity-checked by a human before the numbers are trusted.
         </Rule>
@@ -535,11 +535,11 @@ function BusinessProcesses() {
         />
       </Section>
 
-      <Section title="Automated emails" intro="Every email the portal sends — who gets it, when, under what conditions, and what it says.">
+      <Section title="Automated emails" intro="Every email the portal sends: who gets it, when, under what conditions, and what it says.">
         <p>
           All the emails below are sent via Microsoft Graph. In <Term>Admin → Emails</Term> an admin
           can edit each email&apos;s <strong>sender (From), recipients (To / CC), subject and
-          body</strong> — every change is saved to the database and applies to the next send, not
+          body</strong>. Every change is saved to the database and applies to the next send, not
           just the preview. Each email lists its placeholders and shows a live preview. Some
           recipients are inherently per-record (a timesheet&apos;s client reviewer, a survey
           contact, the submitting member) and are set automatically; triggers and attachments are
@@ -695,7 +695,7 @@ function TechnicalImplementation() {
               formulas): project = <Term>CLIENT-YEAR-NN</Term> (year from the start date, so it rolls
               over automatically); staffing = <Term>{"{ProjectCode}_{MemberCode}"}</Term>;
               member/client codes derive from the name. All are uniqueness-checked. The staffing
-              write is tolerant of the Airtable field still being a formula during migration — it
+              write is tolerant of the Airtable field still being a formula during migration. It
               retries without the code if the field rejects a written value.
             </>,
             <>

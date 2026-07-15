@@ -221,7 +221,7 @@ export function ContractsAdminClient({
           rs.map((r) => (r.id === id ? (data.contract as ContractRecord) : r)),
         );
       }
-      setToast({ kind: "ok", msg: "PDF uploaded — notification sent" });
+      setToast({ kind: "ok", msg: "PDF uploaded, notification sent" });
       router.refresh();
       return true;
     } catch (e) {
@@ -449,7 +449,7 @@ export function ContractsAdminClient({
       setContracts((rs) => [data.contract as ContractRecord, ...rs]);
       setNewOpen(false);
       setOpenId(data.contract.id);
-      setToast({ kind: "ok", msg: "New contract created — review and save." });
+      setToast({ kind: "ok", msg: "New contract created. Review and save." });
       router.refresh();
       return data.contract.id;
     } catch (e) {
@@ -607,7 +607,7 @@ export function ContractsAdminClient({
                         ? "border-red-200 bg-red-50 ring-1 ring-inset ring-red-200"
                         : "border-slate-100 hover:bg-slate-50"
                     }`}
-                    title={flagged ? "Expired MSA / SoW — review the row." : "Click to expand"}
+                    title={flagged ? "Expired MSA / SoW. Review the row." : "Click to expand"}
                   >
                     <td
                       className="px-1 py-1.5 text-center cursor-pointer"
@@ -1288,7 +1288,7 @@ function OverviewView({
                       </td>
                       <td className="px-2 py-1.5 text-center">
                         {isInternal ? (
-                          <span className="text-slate-300" title="Internal project — no client SOW">
+                          <span className="text-slate-300" title="Internal project: no client SOW">
                             —
                           </span>
                         ) : (
@@ -2204,7 +2204,7 @@ function ContractDetailModal({
                   No PDF on file
                 </div>
                 <div className="text-xs text-amber-700">
-                  Upload the signed contract — finance gets an email copy.
+                  Upload the signed contract. Finance gets an email copy.
                 </div>
               </div>
               <Button

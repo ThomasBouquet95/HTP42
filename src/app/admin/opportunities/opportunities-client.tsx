@@ -444,7 +444,7 @@ export function OpportunitiesClient({
             <option value="">— No client —</option>
             {clients.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.code} — {c.name}
+                {c.code}: {c.name}
               </option>
             ))}
           </FormSelect>

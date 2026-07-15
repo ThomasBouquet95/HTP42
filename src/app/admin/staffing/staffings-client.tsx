@@ -297,7 +297,7 @@ export function StaffingsAdminClient({
       if (!res.ok) throw new Error();
       router.refresh();
     } catch {
-      setToast({ kind: "error", msg: "Could not update status — try again." });
+      setToast({ kind: "error", msg: "Could not update status. Try again." });
     }
   }
 

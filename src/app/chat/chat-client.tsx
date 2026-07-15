@@ -172,7 +172,7 @@ export function ChatClient({
   // another tab so they notice new messages without polling the chat.
   useEffect(() => {
     if (typeof document === "undefined") return;
-    const base = "Chat — HTP42";
+    const base = "Chat (HTP42)";
     document.title = totalUnread > 0 ? `(${totalUnread}) ${base}` : base;
     return () => {
       document.title = base;

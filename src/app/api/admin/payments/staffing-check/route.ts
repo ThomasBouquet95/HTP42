@@ -171,7 +171,7 @@ export async function GET(request: Request) {
           : r.memberStaffings
               .map(
                 (s) =>
-                  `<div>${esc(s.staffingCode || "—")} <span class="muted">(${esc(s.projectCode || "—")})</span> — ${
+                  `<div>${esc(s.staffingCode || "—")} <span class="muted">(${esc(s.projectCode || "—")})</span>: ${
                     s.timesheets > 0
                       ? `<strong style="color:#047857">${s.timesheets} timesheet${s.timesheets === 1 ? "" : "s"}</strong> <span class="muted">${esc(s.breakdown)}</span>`
                       : `<span style="color:#b91c1c">no timesheets</span>`

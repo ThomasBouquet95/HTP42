@@ -233,7 +233,7 @@ export function TimesheetsByWeekView({
                 <th
                   key={c.id}
                   className="px-2 py-2 font-medium align-bottom"
-                  title={`${c.projectCode || c.code} — ${c.project}`}
+                  title={`${c.projectCode || c.code}: ${c.project}`}
                   style={{ width: 130, minWidth: 130, maxWidth: 130 }}
                 >
                   <div className="flex flex-col items-end gap-0.5 normal-case tracking-normal">

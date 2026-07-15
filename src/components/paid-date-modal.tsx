@@ -54,7 +54,7 @@ export function PaidDateModal({
       }
     >
       <p className="mb-2 text-xs text-slate-600">
-        Enter the date the payment was made — it&apos;s required to mark it paid.
+        Enter the date the payment was made. It&apos;s required to mark it paid.
       </p>
       <DateField
         label="Payment date"

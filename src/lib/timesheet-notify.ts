@@ -39,7 +39,7 @@ export async function sendTimesheetReviewRequest(
   const rejectUrl = `${linkBase}?action=reject`;
 
   const shownDays = args.days.filter((d) => d.hours > 0 || d.task);
-  const dayLines = shownDays.map((d) => `  ${d.label}: ${d.hours}h${d.task ? ` — ${d.task}` : ""}`);
+  const dayLines = shownDays.map((d) => `  ${d.label}: ${d.hours}h${d.task ? ` (${d.task})` : ""}`);
   const dayRows = shownDays
     .map(
       (d) =>

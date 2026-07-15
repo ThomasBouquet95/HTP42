@@ -40,7 +40,7 @@ export default async function SummaryPrintPage({
   const byStaffing = groupBy(
     filtered,
     (t) => t.staffingRecordId,
-    (t) => `${t.staffingCode} — ${t.projectName || t.projectCode || "—"}`,
+    (t) => `${t.staffingCode}: ${t.projectName || t.projectCode || "—"}`,
   );
 
   const filterSummary = describeFilters(sp);
@@ -155,7 +155,7 @@ export default async function SummaryPrintPage({
                 <div className="ts-header">
                   <div>
                     <div className="ts-title">
-                      {t.timesheetCode} — {t.projectName || t.projectCode || "—"}
+                      {t.timesheetCode}: {t.projectName || t.projectCode || "—"}
                     </div>
                     <div className="ts-sub">
                       Staffing <span className="mono">{t.staffingCode}</span> · {formatWeekRange(t.startDate, t.endDate)}

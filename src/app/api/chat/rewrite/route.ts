@@ -80,7 +80,7 @@ export async function POST(request: Request) {
   } catch (e) {
     if (e instanceof Anthropic.RateLimitError) {
       return NextResponse.json(
-        { error: "Rate limited by the rewriter — try again in a moment." },
+        { error: "Rate limited by the rewriter. Try again in a moment." },
         { status: 429 },
       );
     }

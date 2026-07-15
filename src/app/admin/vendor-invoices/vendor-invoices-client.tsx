@@ -143,7 +143,7 @@ export function VendorInvoicesClient({
       setImportMsg(parts.join(" · "));
       if (imported > 0) router.refresh();
     } catch {
-      setImportMsg("Import failed — please retry.");
+      setImportMsg("Import failed. Please retry.");
     } finally {
       setImporting(false);
     }
@@ -175,7 +175,7 @@ export function VendorInvoicesClient({
       setEditing(null);
       router.refresh();
     } catch {
-      setError("Could not save — please retry.");
+      setError("Could not save. Please retry.");
     } finally {
       setSaving(false);
     }
@@ -208,7 +208,7 @@ export function VendorInvoicesClient({
       setEditing(null);
       router.refresh();
     } catch {
-      setError("Could not save — please retry.");
+      setError("Could not save. Please retry.");
     } finally {
       setSaving(false);
     }
@@ -230,7 +230,7 @@ export function VendorInvoicesClient({
       if (wasEditing) setEditing(null);
       router.refresh();
     } catch {
-      setError("Could not delete — please retry.");
+      setError("Could not delete. Please retry.");
     } finally {
       setDeleting(false);
     }
@@ -471,7 +471,7 @@ export function VendorInvoicesClient({
         {editing && !editing.paymentId && Number(form.amount) > 0 ? (
           <div className="mt-3 flex items-center gap-3 rounded-md bg-slate-50 px-3 py-2.5 text-xs ring-1 ring-slate-100">
             <span className="text-slate-600">
-              No payment yet — mark this invoice paid to create the matching payment.
+              No payment yet. Mark this invoice paid to create the matching payment.
             </span>
             <Button tone="primary" size="sm" className="ml-auto" onClick={markPaid} disabled={saving}>
               {saving ? "Working…" : "Mark as paid"}
@@ -493,7 +493,7 @@ export function VendorInvoicesClient({
         title="Delete invoice?"
         message={
           deleteTarget?.paymentId
-            ? "This will permanently remove this invoice — if a linked payment exists it's removed too. This cannot be undone."
+            ? "This will permanently remove this invoice. If a linked payment exists it's removed too. This cannot be undone."
             : "This will permanently remove this invoice record. This cannot be undone."
         }
         confirmLabel="Delete"

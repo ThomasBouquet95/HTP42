@@ -56,7 +56,7 @@ export default async function TimesheetDetailPage({
         <div>
           <h1 className="text-base sm:text-lg font-semibold">Timesheet {ts.timesheetCode}</h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            {ts.staffingCode} — {ts.projectName || ts.projectCode} ·{" "}
+            {ts.staffingCode}: {ts.projectName || ts.projectCode} ·{" "}
             {formatWeekRange(ts.startDate, ts.endDate)}
           </p>
         </div>
