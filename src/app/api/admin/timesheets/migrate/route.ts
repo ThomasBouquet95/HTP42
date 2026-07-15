@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth";
 import {
+  BULK_APPROVE_CUTOFF,
+  bulkApproveUnderReviewBefore,
   migrateLegacyInvoicedTimesheets,
   migratePaidTimesheetsToApproved,
 } from "@/lib/airtable";
@@ -13,8 +15,14 @@ export const runtime = "nodejs";
 //   RESET-INVOICED-TO-UNDER-REVIEW → legacy "Invoiced" timesheets back to Submitted.
 //   RESET-PAID-TO-APPROVED         → "Paid" timesheets back to Approved (Paid is a
 //                                    payment status, not a timesheet one).
+//   APPROVE-BACKLOG-BEFORE-CUTOFF  → approve every Submitted week starting before
+//                                    the backlog cutoff (one-off clean-up).
 const schema = z.object({
-  confirm: z.enum(["RESET-INVOICED-TO-UNDER-REVIEW", "RESET-PAID-TO-APPROVED"]),
+  confirm: z.enum([
+    "RESET-INVOICED-TO-UNDER-REVIEW",
+    "RESET-PAID-TO-APPROVED",
+    "APPROVE-BACKLOG-BEFORE-CUTOFF",
+  ]),
 });
 
 export async function POST(request: Request) {
@@ -29,9 +37,11 @@ export async function POST(request: Request) {
 
   try {
     const result =
-      parsed.data.confirm === "RESET-PAID-TO-APPROVED"
-        ? await migratePaidTimesheetsToApproved()
-        : await migrateLegacyInvoicedTimesheets();
+      parsed.data.confirm === "APPROVE-BACKLOG-BEFORE-CUTOFF"
+        ? await bulkApproveUnderReviewBefore(BULK_APPROVE_CUTOFF)
+        : parsed.data.confirm === "RESET-PAID-TO-APPROVED"
+          ? await migratePaidTimesheetsToApproved()
+          : await migrateLegacyInvoicedTimesheets();
     return NextResponse.json(result);
   } catch (e) {
     return apiError(e, "migrate timesheet statuses");

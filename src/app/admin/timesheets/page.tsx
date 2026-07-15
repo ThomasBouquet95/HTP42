@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import {
+  BULK_APPROVE_CUTOFF,
   getMemberStaffedProjectCodes,
   getRolePermissions,
   listAllContracts,
@@ -13,6 +14,7 @@ import {
 import { can } from "@/lib/permissions";
 import { AdminTimesheetsClient, type TimesheetView } from "./timesheets-client";
 import { MigrateStatusesBanner } from "./migrate-banner";
+import { ApproveBacklogBanner } from "./approve-backlog-banner";
 
 export type SowInfo = {
   reference: string;
@@ -114,10 +116,24 @@ export default async function AdminTimesheetsPage() {
     ? 0
     : allTimesheets.filter((t) => t.status === "Paid").length;
 
+  // One-off backlog clean-up: weeks under review that started before the cutoff.
+  // Only offered to full admins (not scoped Project Managers).
+  const backlogCount = isProjectManager
+    ? 0
+    : allTimesheets.filter(
+        (t) => t.status === "Submitted" && (t.startDate ?? "").slice(0, 10) < BULK_APPROVE_CUTOFF,
+      ).length;
+  const backlogCutoffLabel = new Date(BULK_APPROVE_CUTOFF).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <AdminTabs active="timesheets" />
         <MigrateStatusesBanner invoicedCount={invoicedLegacy} paidCount={paidLegacy} />
+        <ApproveBacklogBanner count={backlogCount} cutoffLabel={backlogCutoffLabel} />
         <div className="mb-4 flex items-baseline gap-3">
           <h1 className="text-base sm:text-lg font-semibold">
             {isProjectManager ? "Project timesheets" : "All timesheets"}

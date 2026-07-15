@@ -4082,6 +4082,61 @@ export async function migratePaidTimesheetsToApproved(): Promise<{ updated: numb
   return { updated: updates.length };
 }
 
+// One-off backlog clean-up: bulk-approve every timesheet still Under review
+// (Submitted) for a week that STARTS before this cutoff. Weeks on or after it
+// are left for normal review. Bump/remove once the backlog is cleared.
+export const BULK_APPROVE_CUTOFF = "2026-06-26";
+
+function isUnderReviewBefore(r: AirtableRecord<FieldSet>, cutoffIso: string): boolean {
+  if (str(r, FIELDS.timesheets.status) !== "Submitted") return false;
+  const d = str(r, FIELDS.timesheets.startDate).slice(0, 10);
+  return !!d && d < cutoffIso;
+}
+
+// Count Submitted timesheets whose week starts before the cutoff, so the admin
+// UI can show (and then hide) the one-click bulk-approve control.
+export async function countUnderReviewBefore(cutoffIso: string): Promise<number> {
+  const records = await base(TABLES.timesheets)
+    .select({
+      filterByFormula: `{${FIELDS.timesheets.status}} = "Submitted"`,
+      fields: [FIELDS.timesheets.status, FIELDS.timesheets.startDate],
+    })
+    .all();
+  return records.filter((r) => isUnderReviewBefore(r, cutoffIso)).length;
+}
+
+// Approve them all in one shot: set Approved + admin review metadata and clear
+// any live client-review token. Re-runnable and only touches matching Submitted
+// rows. This is an admin override, so it approves client-review weeks too.
+export async function bulkApproveUnderReviewBefore(
+  cutoffIso: string,
+): Promise<{ updated: number }> {
+  await ensureTimesheetApprovalSchema();
+  const at = new Date().toISOString();
+  const records = await base(TABLES.timesheets)
+    .select({
+      filterByFormula: `{${FIELDS.timesheets.status}} = "Submitted"`,
+      fields: [FIELDS.timesheets.status, FIELDS.timesheets.startDate],
+    })
+    .all();
+  const targets = records.filter((r) => isUnderReviewBefore(r, cutoffIso));
+  const updates = targets.map((r) => ({
+    id: r.id,
+    fields: {
+      [FIELDS.timesheets.status]: "Approved",
+      [FIELDS.timesheets.reviewMethod]: "Admin",
+      [FIELDS.timesheets.reviewedBy]: "Bulk approval",
+      [FIELDS.timesheets.reviewedAt]: at,
+      [FIELDS.timesheets.reviewToken]: "",
+      [FIELDS.timesheets.reviewTokenExpiresAt]: "",
+    } as FieldSet,
+  }));
+  for (let i = 0; i < updates.length; i += 10) {
+    await base(TABLES.timesheets).update(updates.slice(i, i + 10), { typecast: true });
+  }
+  return { updated: updates.length };
+}
+
 // Admin-side single-timesheet fetch (no member-ownership scoping) so admin
 // routes can read the current status before enforcing a transition.
 export async function getAdminTimesheetById(recordId: string): Promise<TimesheetRecord | null> {
