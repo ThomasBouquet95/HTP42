@@ -25,7 +25,9 @@ type TimesheetOpt = {
   totalHours: number;
   timesheetCode: string;
   status: string;
-  alreadyInvoiced?: boolean;
+  // When this week is already covered by a live invoice, that invoice's status
+  // ("To be paid" / "Paid"). Empty = not billed (selectable).
+  billedStatus?: string;
 };
 
 export function InvoicesClient({
@@ -275,9 +277,10 @@ function NewInvoiceModal({
     )
     .sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
   // Invoiceable = a week that's Under review or Approved and not already billed
-  // on another invoice.
+  // on a live invoice. A week whose invoice was cancelled has no billedStatus,
+  // so it becomes selectable again.
   const canInvoice = (t: TimesheetOpt) =>
-    (t.status === "Approved" || t.status === "Submitted") && !t.alreadyInvoiced;
+    (t.status === "Approved" || t.status === "Submitted") && !t.billedStatus;
   const selectableIds = eligible.filter(canInvoice).map((t) => t.id);
 
   useEffect(() => {
@@ -387,7 +390,7 @@ function NewInvoiceModal({
                 <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
                   Timesheets covered{" "}
                   <span className="ml-1 normal-case text-slate-400">
-                    (optional, flips to Invoiced when you submit)
+                    (optional; weeks already on an invoice are locked)
                   </span>
                 </span>
                 {selectableIds.length > 1 ? (
@@ -428,8 +431,8 @@ function NewInvoiceModal({
                         title={
                           canPick
                             ? undefined
-                            : t.alreadyInvoiced
-                            ? "Already invoiced on another invoice."
+                            : t.billedStatus
+                            ? `Already on an invoice (${t.billedStatus}).`
                             : t.status === "Rejected"
                             ? "Rejected weeks must be revised and resubmitted first."
                             : "This week can't be invoiced."
@@ -457,9 +460,12 @@ function NewInvoiceModal({
                           status={t.status}
                           label={t.status === "Submitted" ? "Under review" : undefined}
                         />
-                        {t.alreadyInvoiced ? (
-                          <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-600">
-                            Invoiced
+                        {t.billedStatus ? (
+                          <span
+                            title={`This week is already on an invoice (${t.billedStatus}).`}
+                            className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-600"
+                          >
+                            {t.billedStatus}
                           </span>
                         ) : null}
                         <span className="ml-auto tabular-nums text-slate-500">

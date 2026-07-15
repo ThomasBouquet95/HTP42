@@ -3042,20 +3042,29 @@ async function ensureInvoiceCoveredTimesheetsField(): Promise<boolean> {
   }
 }
 
-// The set of timesheet record ids already covered by some member invoice, so
-// the submission UI can lock weeks that have already been billed.
-export async function getInvoicedTimesheetIds(): Promise<Set<string>> {
-  const out = new Set<string>();
+// Map each timesheet record id that is already covered by a LIVE member invoice
+// to that invoice's status ("To be paid" / "Paid"), so the submission UI can
+// lock the week and show where the money is. Cancelled invoices are excluded —
+// their weeks free up so the member can re-invoice them.
+export async function getInvoicedTimesheetStatuses(): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
   try {
     const records = await base(TABLES.memberInvoices)
-      .select({ fields: [FIELDS.memberInvoices.coveredTimesheets] })
+      .select({
+        fields: [FIELDS.memberInvoices.coveredTimesheets, FIELDS.memberInvoices.status],
+      })
       .all();
     for (const r of records) {
+      const status = str(r, FIELDS.memberInvoices.status);
+      if (status === "Cancelled") continue; // cancelled → week is free again
       const raw = str(r, FIELDS.memberInvoices.coveredTimesheets);
-      for (const id of raw.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)) out.add(id);
+      for (const id of raw.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)) {
+        // "Paid" wins over "To be paid" if a week somehow appears on two.
+        if (out.get(id) !== "Paid") out.set(id, status || "To be paid");
+      }
     }
   } catch (e) {
-    console.error("getInvoicedTimesheetIds failed:", e);
+    console.error("getInvoicedTimesheetStatuses failed:", e);
   }
   return out;
 }

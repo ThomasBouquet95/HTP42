@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import {
-  getInvoicedTimesheetIds,
+  getInvoicedTimesheetStatuses,
   getStaffingsForMember,
   getTimesheetsForMember,
   listInvoicesForMember,
@@ -16,12 +16,12 @@ export default async function InvoicesPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const [invoices, staffings, timesheets, payments, invoicedTsIds] = await Promise.all([
+  const [invoices, staffings, timesheets, payments, invoicedTsStatus] = await Promise.all([
     listInvoicesForMember(session.sub),
     getStaffingsForMember(session.memberCode),
     getTimesheetsForMember(session.memberCode),
     listPayments(),
-    getInvoicedTimesheetIds(),
+    getInvoicedTimesheetStatuses(),
   ]);
 
   // The payment date lives on the Payment that settles a member invoice, not on
@@ -50,8 +50,9 @@ export default async function InvoicesPage() {
   }));
 
   // Timesheets shown in the invoice picker: submitted-or-later weeks (Draft /
-  // Cancelled / Deleted excluded). Each carries its status plus whether it has
-  // already been billed on an invoice, so the picker can lock those.
+  // Cancelled / Deleted excluded). Each carries its status plus, when already
+  // billed on a live (non-cancelled) invoice, that invoice's status so the
+  // picker can lock it and show To be paid / Paid.
   const invoiceableTimesheets = timesheets
     .filter((t) => !["Draft", "Cancelled", "Deleted"].includes(t.status))
     .map((t) => ({
@@ -63,7 +64,7 @@ export default async function InvoicesPage() {
       totalHours: t.totalHours,
       timesheetCode: t.timesheetCode,
       status: t.status,
-      alreadyInvoiced: invoicedTsIds.has(t.id),
+      billedStatus: invoicedTsStatus.get(t.id) ?? "",
     }));
 
   return (
