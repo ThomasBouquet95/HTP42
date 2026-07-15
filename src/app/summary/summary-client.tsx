@@ -6,7 +6,7 @@ import type { TimesheetRecord, TimesheetStatus } from "@/lib/airtable";
 import { StatusBadge, timesheetStatusLabel } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/modal";
 import { Button } from "@/components/form-controls";
-import { EditIcon, EyeIcon, IconButton, RefreshIcon, TrashIcon } from "@/components/admin-icons";
+import { EditIcon, EyeIcon, IconButton, TrashIcon } from "@/components/admin-icons";
 import { WeekChip } from "@/components/week-chip";
 import { CalendarRange } from "@/components/calendar-range";
 import { TimesheetDetailModal } from "@/components/timesheet-detail-modal";
@@ -117,9 +117,6 @@ export function SummaryClient({
   const [cancelTarget, setCancelTarget] = useState<TimesheetRecord | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
-  // Revise (reopen a Rejected timesheet back to Draft) fires inline per row.
-  const [reviseBusyId, setReviseBusyId] = useState<string | null>(null);
-  const [rowError, setRowError] = useState<string | null>(null);
   async function confirmDelete() {
     if (!deleteTarget) return;
     setDeleting(true);
@@ -163,30 +160,6 @@ export function SummaryClient({
       setCancelError(e instanceof Error ? e.message : "Cancel failed.");
     } finally {
       setCancelling(false);
-    }
-  }
-
-  // Revise: pull a Rejected timesheet back to Draft so the member can edit and
-  // resubmit it. No confirm needed — it's a non-destructive, reversible move.
-  async function revise(t: TimesheetRecord) {
-    if (reviseBusyId) return;
-    setReviseBusyId(t.id);
-    setRowError(null);
-    try {
-      const res = await fetch(`/api/timesheets/${t.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "reopen" }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? "Could not reopen for revision.");
-      }
-      router.refresh();
-    } catch (e) {
-      setRowError(e instanceof Error ? e.message : "Could not reopen for revision.");
-    } finally {
-      setReviseBusyId(null);
     }
   }
 
@@ -475,10 +448,6 @@ export function SummaryClient({
         </>
       ) : null}
 
-      {rowError ? (
-        <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{rowError}</div>
-      ) : null}
-
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
         <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
           <h2 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Timesheets</h2>
@@ -510,15 +479,10 @@ export function SummaryClient({
               </tr>
             ) : (
               filtered.map((t) => {
-                const isCurrentWeek = t.startDate === thisMondayIso();
                 return (
                 <tr
                   key={t.id}
-                  className={`border-t align-top ${
-                    isCurrentWeek
-                      ? "bg-amber-50/60 border-amber-200 hover:bg-amber-50"
-                      : "border-slate-100 hover:bg-slate-50"
-                  }`}
+                  className="border-t border-slate-100 align-top hover:bg-slate-50"
                 >
                   <td className="px-2 py-1.5 whitespace-nowrap">
                     <WeekChip startIso={t.startDate} endIso={t.endDate} />
@@ -557,15 +521,6 @@ export function SummaryClient({
                         >
                           {t.status === "Draft" || t.status === "Rejected" ? <EditIcon /> : <EyeIcon />}
                         </IconButton>
-                        {t.status === "Rejected" ? (
-                          <IconButton
-                            onClick={() => revise(t)}
-                            title="Revise (return to Draft)"
-                            tone="brand"
-                          >
-                            <RefreshIcon />
-                          </IconButton>
-                        ) : null}
                         {t.status === "Draft" ||
                         t.status === "Submitted" ||
                         t.status === "Rejected" ? (

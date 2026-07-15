@@ -828,14 +828,22 @@ function ReviewCard({
           </>
         ) : (
           <>
-            <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500">
-              {t.reviewedBy ? `${t.status} by ${t.reviewedBy}` : t.status}
-              {t.reviewComment ? `: “${t.reviewComment}”` : ""}
-            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] text-slate-500">
+                {t.reviewedBy ? `${t.status} by ${t.reviewedBy}` : t.status}
+                {t.reviewMethod ? ` · ${t.reviewMethod} review` : ""}
+                {t.reviewedAt ? ` · ${fmtDate(t.reviewedAt)}` : ""}
+              </div>
+              {t.reviewComment ? (
+                <div className="mt-1 rounded-md bg-slate-50 px-2 py-1 text-[11px] text-slate-700 whitespace-pre-line">
+                  <span className="font-medium text-slate-500">Comment:</span> {t.reviewComment}
+                </div>
+              ) : null}
+            </div>
             <button
               type="button"
               onClick={() => setOverriding(true)}
-              className="shrink-0 text-[11px] font-medium text-slate-500 hover:text-slate-800"
+              className="shrink-0 self-start text-[11px] font-medium text-slate-500 hover:text-slate-800"
             >
               Override
             </button>
