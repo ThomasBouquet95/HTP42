@@ -2467,7 +2467,66 @@ function paymentFields(input: PaymentInput): Record<string, unknown> {
   };
 }
 
+// Ensure every canonical payment status exists as a choice on the "Payment
+// Status" single-select. Airtable's typecast can't create new select options
+// with our token, so we add them explicitly via the meta API (the same schema
+// write the app already uses to create tables/fields). Cached after success.
+let paymentStatusChoicesReady = false;
+export async function ensurePaymentStatusChoices(): Promise<void> {
+  if (paymentStatusChoicesReady) return;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      tables: Array<{
+        id: string;
+        name: string;
+        fields: Array<{
+          id: string;
+          name: string;
+          type: string;
+          options?: { choices?: Array<{ id?: string; name: string; color?: string }> };
+        }>;
+      }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.payments);
+    const field = table?.fields.find((f) => f.name === FIELDS.payments.paymentStatus);
+    if (!field || (field.type !== "singleSelect" && field.type !== "multipleSelects")) {
+      paymentStatusChoicesReady = true; // not a select — nothing to do
+      return;
+    }
+    const existing = field.options?.choices ?? [];
+    const have = new Set(existing.map((c) => c.name));
+    const missing = PAYMENT_STATUSES.filter((s) => !have.has(s));
+    if (missing.length === 0) {
+      paymentStatusChoicesReady = true;
+      return;
+    }
+    const choices = [
+      ...existing.map((c) => ({ id: c.id, name: c.name, color: c.color })),
+      ...missing.map((name) => ({ name })),
+    ];
+    const patch = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table!.id}/fields/${field.id}`,
+      {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ options: { choices } }),
+      },
+    );
+    if (patch.ok) paymentStatusChoicesReady = true;
+    else console.error("ensurePaymentStatusChoices: patch failed:", await patch.text().catch(() => ""));
+  } catch (e) {
+    console.error("ensurePaymentStatusChoices failed:", e);
+  }
+}
+
 export async function createPayment(input: PaymentInput): Promise<string> {
+  await ensurePaymentStatusChoices();
   const resolved = await prepPaymentWrite(input);
   const [created] = await base(TABLES.payments).create([
     { fields: paymentFields(resolved) as FieldSet },
@@ -2480,6 +2539,7 @@ export async function updatePaymentStatus(
   status: PaymentStatus | "",
   paymentDate?: string | null,
 ): Promise<void> {
+  await ensurePaymentStatusChoices();
   const fields: Record<string, unknown> = {
     [FIELDS.payments.paymentStatus]: status === "" ? null : status,
   };
@@ -2514,6 +2574,7 @@ export async function cancelPaymentsForInvoice(invoiceRecordId: string): Promise
 }
 
 export async function updatePayment(recordId: string, input: PaymentInput): Promise<void> {
+  await ensurePaymentStatusChoices();
   const resolved = await prepPaymentWrite(input);
   await base(TABLES.payments).update([
     { id: recordId, fields: paymentFields(resolved) as FieldSet },
