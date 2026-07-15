@@ -2472,15 +2472,15 @@ function paymentFields(input: PaymentInput): Record<string, unknown> {
 // with our token, so we add them explicitly via the meta API (the same schema
 // write the app already uses to create tables/fields). Cached after success.
 let paymentStatusChoicesReady = false;
-export async function ensurePaymentStatusChoices(): Promise<void> {
-  if (paymentStatusChoicesReady) return;
+export async function ensurePaymentStatusChoices(): Promise<{ ok: boolean; error?: string }> {
+  if (paymentStatusChoicesReady) return { ok: true };
   try {
     const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
     const res = await fetch(metaUrl, {
       headers: { Authorization: `Bearer ${env.airtablePat}` },
       cache: "no-store",
     });
-    if (!res.ok) return;
+    if (!res.ok) return { ok: false, error: `meta read failed (${res.status})` };
     const data = (await res.json()) as {
       tables: Array<{
         id: string;
@@ -2497,17 +2497,20 @@ export async function ensurePaymentStatusChoices(): Promise<void> {
     const field = table?.fields.find((f) => f.name === FIELDS.payments.paymentStatus);
     if (!field || (field.type !== "singleSelect" && field.type !== "multipleSelects")) {
       paymentStatusChoicesReady = true; // not a select — nothing to do
-      return;
+      return { ok: true };
     }
     const existing = field.options?.choices ?? [];
     const have = new Set(existing.map((c) => c.name));
     const missing = PAYMENT_STATUSES.filter((s) => !have.has(s));
     if (missing.length === 0) {
       paymentStatusChoicesReady = true;
-      return;
+      return { ok: true };
     }
+    // Reference existing choices by id only (Airtable keeps their name/color);
+    // new ones by name (Airtable assigns a colour). Sending an existing colour
+    // back can be rejected, so we omit it.
     const choices = [
-      ...existing.map((c) => ({ id: c.id, name: c.name, color: c.color })),
+      ...existing.map((c) => ({ id: c.id })),
       ...missing.map((name) => ({ name })),
     ];
     const patch = await fetch(
@@ -2518,10 +2521,16 @@ export async function ensurePaymentStatusChoices(): Promise<void> {
         body: JSON.stringify({ options: { choices } }),
       },
     );
-    if (patch.ok) paymentStatusChoicesReady = true;
-    else console.error("ensurePaymentStatusChoices: patch failed:", await patch.text().catch(() => ""));
+    if (patch.ok) {
+      paymentStatusChoicesReady = true;
+      return { ok: true };
+    }
+    const text = await patch.text().catch(() => "");
+    console.error("ensurePaymentStatusChoices: patch failed:", text);
+    return { ok: false, error: text.slice(0, 200) };
   } catch (e) {
     console.error("ensurePaymentStatusChoices failed:", e);
+    return { ok: false, error: e instanceof Error ? e.message : "unknown" };
   }
 }
 
@@ -2539,7 +2548,7 @@ export async function updatePaymentStatus(
   status: PaymentStatus | "",
   paymentDate?: string | null,
 ): Promise<void> {
-  await ensurePaymentStatusChoices();
+  const ensured = await ensurePaymentStatusChoices();
   const fields: Record<string, unknown> = {
     [FIELDS.payments.paymentStatus]: status === "" ? null : status,
   };
@@ -2551,7 +2560,19 @@ export async function updatePaymentStatus(
   } else {
     fields[FIELDS.payments.paymentDate] = null;
   }
-  await base(TABLES.payments).update([{ id: recordId, fields: fields as FieldSet }]);
+  try {
+    await base(TABLES.payments).update([{ id: recordId, fields: fields as FieldSet }]);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // The status is a single-select; if the option doesn't exist yet and we
+    // couldn't add it automatically, give a clear, actionable message.
+    if (/select option/i.test(msg) && !ensured.ok) {
+      throw new Error(
+        `Couldn't set the status to "${status}" — that option isn't on the Payments "Payment Status" field and couldn't be added automatically (${ensured.error ?? "permission"}). Add the "${status}" option once to that field in Airtable, then retry.`,
+      );
+    }
+    throw e;
+  }
 }
 
 // Cancel every payment linked to a member invoice (used when the member
@@ -3137,11 +3158,12 @@ export async function getPaymentStatusByInvoiceId(): Promise<Map<string, string>
   const out = new Map<string, string>();
   try {
     const payments = await listPayments();
+    const dead = (s: string) => s === "Canceled" || s === "Rejected";
     for (const p of payments) {
       for (const invId of p.memberInvoiceRecordIds) {
         const cur = out.get(invId);
-        // A live payment wins over a cancelled one; otherwise first seen.
-        if (!cur || cur === "Canceled") out.set(invId, p.paymentStatus || "");
+        // A live payment wins over a rejected/cancelled one; otherwise first seen.
+        if (!cur || dead(cur)) out.set(invId, p.paymentStatus || "");
       }
     }
   } catch (e) {
@@ -3165,7 +3187,8 @@ export async function getInvoicedTimesheetStatuses(): Promise<Map<string, string
     ]);
     for (const r of records) {
       const payStatus = payStatusByInvoice.get(r.id) ?? "";
-      if (!payStatus || payStatus === "Canceled") continue; // no live payment → free
+      // Rejected or Canceled payment → the week is free to re-invoice.
+      if (!payStatus || payStatus === "Canceled" || payStatus === "Rejected") continue;
       const shown = displayPaymentStatus(payStatus);
       const raw = str(r, FIELDS.memberInvoices.coveredTimesheets);
       for (const id of raw.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)) {
