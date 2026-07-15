@@ -4,6 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Badge, StatusPill } from "@/components/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { DownloadChip } from "@/components/download-chip";
+import { SearchSelect } from "@/components/search-select";
 import { effectiveEur } from "@/lib/fx";
 import type { PaymentRecord } from "@/lib/airtable";
 import type { ReviewBundle } from "../payment-review/review-client";
@@ -240,22 +241,29 @@ function Picker({
     () => [...options].sort((a, b) => (a.code || a.name).localeCompare(b.code || b.name)),
     [options],
   );
+  // Searchable combobox so you can type the project / client / member name or
+  // code instead of scrolling a long native dropdown.
+  const searchOptions = useMemo(
+    () =>
+      sorted.map((o) => ({
+        value: o.id,
+        label: o.name && o.name !== o.code ? `${o.code} · ${o.name}` : o.code,
+        hint: o.name && o.name !== o.code ? o.name : undefined,
+      })),
+    [sorted],
+  );
   return (
-    <label className="inline-flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
+    <div className="inline-flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
       {label}
-      <select
+      <SearchSelect
+        className="min-w-[18rem]"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-8 max-w-[22rem] rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-800 focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-      >
-        {sorted.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.code}
-            {o.name && o.name !== o.code ? ` · ${o.name}` : ""}
-          </option>
-        ))}
-      </select>
-    </label>
+        onChange={onChange}
+        options={searchOptions}
+        placeholder={`Select ${label.toLowerCase()}…`}
+        searchPlaceholder={`Search ${label.toLowerCase()} by name or code…`}
+      />
+    </div>
   );
 }
 

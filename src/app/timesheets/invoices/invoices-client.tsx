@@ -448,7 +448,10 @@ function NewInvoiceModal({
                           {t.timesheetCode}
                         </span>
                         <span>Week of {t.startDate ?? "—"}</span>
-                        <StatusPill status={t.status} />
+                        <StatusPill
+                          status={t.status}
+                          label={t.status === "Submitted" ? "Under review" : undefined}
+                        />
                         <span className="ml-auto tabular-nums text-slate-500">
                           {t.totalHours.toFixed(1)} h
                         </span>

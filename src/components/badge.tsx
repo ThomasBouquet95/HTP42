@@ -116,13 +116,17 @@ export function statusTone(status: string | null | undefined): BadgeTone {
 export function StatusPill({
   status,
   className,
+  label,
 }: {
   status: string;
   className?: string;
+  // Optional display text; the tone still derives from `status`. Use it to show
+  // friendlier wording (e.g. a "Submitted" timesheet shown as "Under review").
+  label?: string;
 }) {
   return (
     <Badge tone={statusTone(status)} className={className}>
-      {status}
+      {label ?? status}
     </Badge>
   );
 }
