@@ -122,30 +122,16 @@ export function PaymentsByProject({
             <NetCard received={inT.sent} sent={outT.sent} committedIn={inT.committed} committedOut={outT.committed} />
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Column
-              title="Inflows"
-              accent="success"
-              rows={inflows}
-              subtotalEur={inT.sent + inT.committed + inT.review}
-              counterparty={clientLabel}
-              bundleById={bundleById}
-            />
-            <Column
-              title="Outflows"
-              accent="danger"
-              rows={outflows}
-              subtotalEur={outT.sent + outT.committed + outT.review}
-              counterparty={memberLabel}
-              bundleById={bundleById}
-              onReview={onOpenReview}
-              reviewMemberIdFor={(p) =>
-                bucketOf(p.paymentStatus) !== "sent" && bucketOf(p.paymentStatus) !== "canceled"
-                  ? p.memberRecordIds[0] ?? undefined
-                  : undefined
-              }
-            />
-          </div>
+          <AlignedFlows
+            inflows={inflows}
+            outflows={outflows}
+            inSubtotalEur={inT.sent + inT.committed + inT.review}
+            outSubtotalEur={outT.sent + outT.committed + outT.review}
+            clientLabel={clientLabel}
+            memberLabel={memberLabel}
+            bundleById={bundleById}
+            onOpenReview={onOpenReview}
+          />
         </>
       )}
     </div>
@@ -355,6 +341,84 @@ function Stat({ label, value, tone }: { label: string; value: string; tone: "suc
   );
 }
 
+// By project: inflows and outflows in one date-aligned grid. Rows are the
+// merged payments, newest first; each sits in its own column with the opposite
+// column left blank, so the two sides read chronologically side by side.
+function AlignedFlows({
+  inflows,
+  outflows,
+  inSubtotalEur,
+  outSubtotalEur,
+  clientLabel,
+  memberLabel,
+  bundleById,
+  onOpenReview,
+}: {
+  inflows: PaymentRecord[];
+  outflows: PaymentRecord[];
+  inSubtotalEur: number;
+  outSubtotalEur: number;
+  clientLabel: (p: PaymentRecord) => string;
+  memberLabel: (p: PaymentRecord) => string;
+  bundleById: Record<string, ReviewBundle>;
+  onOpenReview?: (memberId?: string) => void;
+}) {
+  const merged = [
+    ...inflows.map((p) => ({ p, side: "in" as const })),
+    ...outflows.map((p) => ({ p, side: "out" as const })),
+  ].sort((a, b) => byPaymentDateDesc(a.p, b.p));
+  const reviewMemberIdFor = (p: PaymentRecord) =>
+    bucketOf(p.paymentStatus) !== "sent" && bucketOf(p.paymentStatus) !== "canceled"
+      ? p.memberRecordIds[0] ?? undefined
+      : undefined;
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="grid grid-cols-2 border-b border-slate-100 text-xs font-medium text-slate-700">
+        <div className="flex items-center justify-between gap-2 border-r border-slate-100 px-3 py-2">
+          <span className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            Inflows <span className="text-slate-400">· {inflows.length}</span>
+          </span>
+          <span className="tabular-nums text-slate-500 demo-blur">{eur(inSubtotalEur)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-2 px-3 py-2">
+          <span className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-rose-500" />
+            Outflows <span className="text-slate-400">· {outflows.length}</span>
+          </span>
+          <span className="tabular-nums text-slate-500 demo-blur">{eur(outSubtotalEur)}</span>
+        </div>
+      </div>
+      {merged.length === 0 ? (
+        <p className="px-3 py-6 text-center text-xs text-slate-400">
+          No payments on this project yet.
+        </p>
+      ) : (
+        merged.map(({ p, side }) => (
+          <div key={p.id} className="grid grid-cols-2 items-start border-t border-slate-100 text-xs">
+            <div className="border-r border-slate-100">
+              {side === "in" ? (
+                <PaymentRow p={p} counterparty={clientLabel} bundle={bundleById[p.id]} />
+              ) : null}
+            </div>
+            <div>
+              {side === "out" ? (
+                <PaymentRow
+                  p={p}
+                  counterparty={memberLabel}
+                  bundle={bundleById[p.id]}
+                  onReview={onOpenReview}
+                  reviewMemberId={reviewMemberIdFor(p)}
+                />
+              ) : null}
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 function Column({
   title,
   accent,
@@ -375,19 +439,7 @@ function Column({
   reviewMemberIdFor?: (p: PaymentRecord) => string | undefined;
 }) {
   const dot = accent === "success" ? "bg-emerald-500" : accent === "danger" ? "bg-rose-500" : "bg-amber-500";
-  const [open, setOpen] = useState<Set<string>>(new Set());
-  const toggle = (id: string) =>
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  const sorted = [...rows].sort((a, b) =>
-    (b.paymentDate ?? b.dueDate ?? b.invoiceDate ?? "").localeCompare(
-      a.paymentDate ?? a.dueDate ?? a.invoiceDate ?? "",
-    ),
-  );
+  const sorted = [...rows].sort(byPaymentDateDesc);
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
       <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-2">
@@ -401,126 +453,153 @@ function Column({
         <p className="px-3 py-6 text-center text-xs text-slate-400">Nothing here.</p>
       ) : (
         <ul>
-          {sorted.map((p) => {
-            const isOpen = open.has(p.id);
-            const reviewMemberId = reviewMemberIdFor?.(p);
-            const bundle = bundleById[p.id];
-            const invoicePdf = bundle?.invoice?.pdfUrl || p.invoicePdf?.url || p.invoiceUrl || "";
-            return (
-              <li key={p.id} className="border-t border-slate-100 text-xs first:border-t-0">
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => toggle(p.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(p.id); }
-                  }}
-                  aria-expanded={isOpen}
-                  className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-slate-50"
-                >
-                  <svg
-                    viewBox="0 0 12 12"
-                    className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${isOpen ? "rotate-90" : ""}`}
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    aria-hidden
-                  >
-                    <path d="M4.5 3 7.5 6 4.5 9" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-slate-800 demo-blur">{counterparty(p)}</div>
-                    <div className="text-[10px] text-slate-400">
-                      <span className="font-mono">{p.paymentCode || "—"}</span>
-                      {p.invoiceReference ? ` · ${p.invoiceReference}` : ""}
-                      {p.paymentDate ? ` · paid ${p.paymentDate}` : p.dueDate ? ` · due ${p.dueDate}` : ""}
-                    </div>
-                  </div>
-                  <div className="whitespace-nowrap text-right tabular-nums text-slate-700 demo-blur">
-                    {money(p.invoiceValue, p.invoiceCurrency)}
-                  </div>
-                  <StatusPill status={effStatus(p.paymentStatus)} />
-                </div>
-                {isOpen ? (
-                  <div className="bg-slate-50/60 px-3 pb-2.5 pl-8" onClick={(e) => e.stopPropagation()}>
-                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] sm:grid-cols-3">
-                      <Detail label="Type" value={p.type || "—"} />
-                      <Detail label="Amount (EUR)" value={eur(effectiveEur(p))} blur />
-                      <Detail label="Invoice ref" value={p.invoiceReference || "—"} />
-                      <Detail label="Invoice date" value={p.invoiceDate ?? "—"} />
-                      <Detail label="Due date" value={p.dueDate ?? "—"} />
-                      <Detail label="Payment date" value={p.paymentDate ?? "—"} />
-                      {bundle?.invoice ? (
-                        <Detail label="Invoice" value={bundle.invoice.code || "—"} />
-                      ) : null}
-                      {bundle?.staffing ? (
-                        <>
-                          <Detail label="Role" value={bundle.staffing.projectRole || bundle.staffing.role || "—"} />
-                          <Detail
-                            label="Rate / day"
-                            value={money(bundle.staffing.ratePerDay, bundle.staffing.currency)}
-                            blur
-                          />
-                          <Detail
-                            label="Days used"
-                            value={
-                              bundle.staffing.daysAllocated != null
-                                ? `${bundle.staffing.daysUsed} / ${bundle.staffing.daysAllocated}`
-                                : String(bundle.staffing.daysUsed)
-                            }
-                          />
-                        </>
-                      ) : null}
-                    </dl>
-                    {p.comment ? (
-                      <p className="mt-1 text-[11px] text-slate-500 demo-blur">{p.comment}</p>
-                    ) : null}
-
-                    {bundle && bundle.timesheets.length > 0 ? (
-                      <TimesheetBreakdown
-                        timesheets={bundle.timesheets}
-                        approval={bundle.timesheetApproval}
-                      />
-                    ) : null}
-
-                    {(bundle?.invoice?.code || invoicePdf) && p.memberInvoiceRecordIds.length > 0 ? (
-                      <div className="mt-2">
-                        <RelatedInvoiceLink
-                          code={bundle?.invoice?.code || p.invoiceReference}
-                          pdfUrl={invoicePdf}
-                        />
-                      </div>
-                    ) : null}
-
-                    <div className="mt-2 flex flex-wrap items-center gap-3">
-                      <a
-                        href={`/admin/payments?payment=${encodeURIComponent(p.id)}`}
-                        className="text-[11px] font-medium text-brand-600 hover:text-brand-700"
-                      >
-                        Open in Payments →
-                      </a>
-                      {onReview && reviewMemberId ? (
-                        <button
-                          type="button"
-                          onClick={() => onReview(reviewMemberId)}
-                          className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 hover:text-amber-800"
-                        >
-                          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-                            <path d="M2 4.5h12M2 8h12M2 11.5h7" strokeLinecap="round" />
-                            <path d="M11 11.5l1.5 1.5L15 10" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                          Review
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-              </li>
-            );
-          })}
+          {sorted.map((p) => (
+            <li key={p.id} className="border-t border-slate-100 text-xs first:border-t-0">
+              <PaymentRow
+                p={p}
+                counterparty={counterparty}
+                bundle={bundleById[p.id]}
+                onReview={onReview}
+                reviewMemberId={reviewMemberIdFor?.(p)}
+              />
+            </li>
+          ))}
         </ul>
       )}
     </div>
+  );
+}
+
+// Newest first, by payment date, then due date, then invoice date.
+function byPaymentDateDesc(a: PaymentRecord, b: PaymentRecord): number {
+  return (b.paymentDate ?? b.dueDate ?? b.invoiceDate ?? "").localeCompare(
+    a.paymentDate ?? a.dueDate ?? a.invoiceDate ?? "",
+  );
+}
+
+// One expandable payment row (header + detail). Extracted so both the single
+// Column lists (By member) and the aligned two-column By-project layout share
+// identical rows.
+function PaymentRow({
+  p,
+  counterparty,
+  bundle,
+  onReview,
+  reviewMemberId,
+}: {
+  p: PaymentRecord;
+  counterparty: (p: PaymentRecord) => string;
+  bundle?: ReviewBundle;
+  onReview?: (memberId?: string) => void;
+  reviewMemberId?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const invoicePdf = bundle?.invoice?.pdfUrl || p.invoicePdf?.url || p.invoiceUrl || "";
+  return (
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((o) => !o);
+          }
+        }}
+        aria-expanded={open}
+        className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-slate-50"
+      >
+        <svg
+          viewBox="0 0 12 12"
+          className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          aria-hidden
+        >
+          <path d="M4.5 3 7.5 6 4.5 9" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-slate-800 demo-blur">{counterparty(p)}</div>
+          <div className="text-[10px] text-slate-400">
+            <span className="font-mono">{p.paymentCode || "—"}</span>
+            {p.invoiceReference ? ` · ${p.invoiceReference}` : ""}
+            {p.paymentDate ? ` · paid ${p.paymentDate}` : p.dueDate ? ` · due ${p.dueDate}` : ""}
+          </div>
+        </div>
+        <div className="whitespace-nowrap text-right tabular-nums text-slate-700 demo-blur">
+          {money(p.invoiceValue, p.invoiceCurrency)}
+        </div>
+        <StatusPill status={effStatus(p.paymentStatus)} />
+      </div>
+      {open ? (
+        <div className="bg-slate-50/60 px-3 pb-2.5 pl-8" onClick={(e) => e.stopPropagation()}>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] sm:grid-cols-3">
+            <Detail label="Type" value={p.type || "—"} />
+            <Detail label="Amount (EUR)" value={eur(effectiveEur(p))} blur />
+            <Detail label="Invoice ref" value={p.invoiceReference || "—"} />
+            <Detail label="Invoice date" value={p.invoiceDate ?? "—"} />
+            <Detail label="Due date" value={p.dueDate ?? "—"} />
+            <Detail label="Payment date" value={p.paymentDate ?? "—"} />
+            {bundle?.invoice ? <Detail label="Invoice" value={bundle.invoice.code || "—"} /> : null}
+            {bundle?.staffing ? (
+              <>
+                <Detail label="Role" value={bundle.staffing.projectRole || bundle.staffing.role || "—"} />
+                <Detail
+                  label="Rate / day"
+                  value={money(bundle.staffing.ratePerDay, bundle.staffing.currency)}
+                  blur
+                />
+                <Detail
+                  label="Days used"
+                  value={
+                    bundle.staffing.daysAllocated != null
+                      ? `${bundle.staffing.daysUsed} / ${bundle.staffing.daysAllocated}`
+                      : String(bundle.staffing.daysUsed)
+                  }
+                />
+              </>
+            ) : null}
+          </dl>
+          {p.comment ? (
+            <p className="mt-1 text-[11px] text-slate-500 demo-blur">{p.comment}</p>
+          ) : null}
+
+          {bundle && bundle.timesheets.length > 0 ? (
+            <TimesheetBreakdown timesheets={bundle.timesheets} approval={bundle.timesheetApproval} />
+          ) : null}
+
+          {(bundle?.invoice?.code || invoicePdf) && p.memberInvoiceRecordIds.length > 0 ? (
+            <div className="mt-2">
+              <RelatedInvoiceLink code={bundle?.invoice?.code || p.invoiceReference} pdfUrl={invoicePdf} />
+            </div>
+          ) : null}
+
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <a
+              href={`/admin/payments?payment=${encodeURIComponent(p.id)}`}
+              className="text-[11px] font-medium text-brand-600 hover:text-brand-700"
+            >
+              Open in Payments →
+            </a>
+            {onReview && reviewMemberId ? (
+              <button
+                type="button"
+                onClick={() => onReview(reviewMemberId)}
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 hover:text-amber-800"
+              >
+                <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+                  <path d="M2 4.5h12M2 8h12M2 11.5h7" strokeLinecap="round" />
+                  <path d="M11 11.5l1.5 1.5L15 10" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Review
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
