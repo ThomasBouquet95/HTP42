@@ -344,6 +344,22 @@ export function PaymentReviewClient({
     setApproveConfirm({ ids: pending, count: pending.length, onProceed: proceed });
   }
 
+  // (Re)send the client-review email for a payment's under-review timesheets.
+  async function requestClientReview(paymentId: string) {
+    setSavingId(paymentId);
+    try {
+      const res = await fetch(`/api/admin/payments/${paymentId}/request-review`, { method: "POST" });
+      const d = (await res.json().catch(() => ({}))) as { sent?: number; error?: string };
+      if (!res.ok) throw new Error(d.error ?? "Could not send the review request.");
+      setToast({ kind: "ok", msg: `Review request emailed to the client (${d.sent ?? 0}).` });
+      router.refresh();
+    } catch (e) {
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Could not send." });
+    } finally {
+      setSavingId(null);
+    }
+  }
+
   async function approveTimesheets(ids: string[]) {
     await Promise.all(
       ids.map((id) =>
@@ -493,6 +509,11 @@ export function PaymentReviewClient({
                         ? () => actOn(() => setStatus(b.payment.id, "Rejected"))
                         : undefined
                     }
+                    onRequestReview={
+                      sectionTab === "reviewClient"
+                        ? () => requestClientReview(b.payment.id)
+                        : undefined
+                    }
                   />
                 );
               })}
@@ -597,6 +618,7 @@ function BundleDetail({
   onApprove,
   onMarkPaid,
   onReject,
+  onRequestReview,
 }: {
   bundle: ReviewBundle;
   saving?: boolean;
@@ -609,6 +631,7 @@ function BundleDetail({
   onApprove?: () => void;
   onMarkPaid?: () => void;
   onReject?: () => void;
+  onRequestReview?: () => void;
 }) {
   const tone = readOnly ? statusTone(selected.payment.status) : "review";
   const isToPay = accent === "topay";
@@ -697,6 +720,11 @@ function BundleDetail({
             {onReject ? (
               <Button tone="danger" size="sm" disabled={saving} onClick={onReject}>
                 Reject
+              </Button>
+            ) : null}
+            {onRequestReview ? (
+              <Button tone="secondary" size="sm" disabled={saving} onClick={onRequestReview}>
+                Email client to review
               </Button>
             ) : null}
             <Link
