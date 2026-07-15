@@ -1715,29 +1715,29 @@ export async function listEmailLogs(limit = 200): Promise<EmailLogEntry[]> {
   }
 }
 
-// Resolve a single attachment on a log row to a *fresh* URL + metadata. Airtable
-// attachment URLs are short-lived, so we read the record at click time rather
-// than trusting a URL captured at page render.
-export async function getEmailLogAttachment(
+// Everything the download route needs to serve one attachment: the stored
+// Airtable files (fresh URLs — Airtable's own expire) plus the source message
+// id, so a historical row with no stored file can still be fetched live from
+// the mailbox.
+export async function getEmailLogRowForDownload(
   logId: string,
-  index: number,
-): Promise<{ url: string; filename: string; type: string } | null> {
+): Promise<{ files: { url: string; filename: string; type: string }[]; sourceId: string } | null> {
   try {
     const r = await base(TABLES.emailLog).find(logId);
     const files = (
       (r.get(FIELDS.emailLog.files) as
         | Array<{ url?: string; filename?: string; type?: string }>
         | undefined) ?? []
-    ).filter((a) => a.url);
-    const f = files[index];
-    if (!f?.url) return null;
-    return {
-      url: f.url,
-      filename: f.filename ?? "attachment",
-      type: f.type ?? "application/octet-stream",
-    };
+    )
+      .filter((a) => a.url)
+      .map((a) => ({
+        url: a.url as string,
+        filename: a.filename ?? "attachment",
+        type: a.type ?? "application/octet-stream",
+      }));
+    return { files, sourceId: str(r, FIELDS.emailLog.sourceId) };
   } catch (e) {
-    console.error("getEmailLogAttachment failed:", e);
+    console.error("getEmailLogRowForDownload failed:", e);
     return null;
   }
 }

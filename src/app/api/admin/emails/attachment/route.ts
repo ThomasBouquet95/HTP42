@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { requireAdminAction } from "@/lib/auth";
-import { getEmailLogAttachment } from "@/lib/airtable";
+import { getEmailLogRowForDownload } from "@/lib/airtable";
+import { fetchSentAttachmentByIndex } from "@/lib/email-backfill";
 
 export const runtime = "nodejs";
 
-// Stream a logged email's attachment. Proxying through the app (rather than
-// linking Airtable's short-lived URL directly) means the link keeps working and
-// forces a download.
+const disposition = (name: string) =>
+  `attachment; filename="${name.replace(/[^a-zA-Z0-9._ -]+/g, "_")}"`;
+
+// Stream a logged email's attachment. Prefers the file stored on the log row
+// (fresh Airtable URL); if the row has none (a historical import), fetches it
+// live from the mailbox by the source message id.
 export async function GET(request: Request) {
   const session = await requireAdminAction("emails", "view");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -18,20 +22,37 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
   }
 
-  const att = await getEmailLogAttachment(id, index);
-  if (!att) return NextResponse.json({ error: "Attachment not found" }, { status: 404 });
+  const row = await getEmailLogRowForDownload(id);
+  if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const upstream = await fetch(att.url);
-  if (!upstream.ok || !upstream.body) {
-    return NextResponse.json({ error: "Could not fetch the file" }, { status: 502 });
+  // 1) Stored file → stream Airtable's copy.
+  const stored = row.files[index];
+  if (stored) {
+    const upstream = await fetch(stored.url);
+    if (upstream.ok && upstream.body) {
+      return new Response(upstream.body, {
+        headers: {
+          "Content-Type": stored.type || "application/octet-stream",
+          "Content-Disposition": disposition(stored.filename),
+          "Cache-Control": "private, no-store",
+        },
+      });
+    }
   }
 
-  const safeName = att.filename.replace(/[^a-zA-Z0-9._ -]+/g, "_");
-  return new Response(upstream.body, {
-    headers: {
-      "Content-Type": att.type || "application/octet-stream",
-      "Content-Disposition": `attachment; filename="${safeName}"`,
-      "Cache-Control": "private, no-store",
-    },
-  });
+  // 2) No stored file → fetch live from the mailbox by source id.
+  if (row.sourceId) {
+    const live = await fetchSentAttachmentByIndex(row.sourceId, index);
+    if (live) {
+      return new Response(Buffer.from(live.base64, "base64"), {
+        headers: {
+          "Content-Type": live.contentType || "application/octet-stream",
+          "Content-Disposition": disposition(live.filename),
+          "Cache-Control": "private, no-store",
+        },
+      });
+    }
+  }
+
+  return NextResponse.json({ error: "Attachment not available" }, { status: 404 });
 }

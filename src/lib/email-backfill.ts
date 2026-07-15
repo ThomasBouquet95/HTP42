@@ -68,6 +68,41 @@ async function fetchAttachments(
   }
 }
 
+// Fetch one attachment (by index among the non-inline files) of a message in
+// the sender mailbox, identified by its internetMessageId. Used to serve a
+// download for a historical log row whose file was never stored locally.
+export async function fetchSentAttachmentByIndex(
+  sourceId: string,
+  index: number,
+): Promise<{ filename: string; contentType: string; base64: string } | null> {
+  const mailbox = env.invoiceSender || env.invoiceRecipient;
+  if (!mailbox || !sourceId) return null;
+  let token: string;
+  try {
+    token = await getGraphAppToken();
+  } catch {
+    return null;
+  }
+  try {
+    // internetMessageId is not the Graph id; look the message up by it.
+    const q =
+      `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages` +
+      `?$filter=internetMessageId eq '${sourceId.replace(/'/g, "''")}'&$select=id&$top=1`;
+    const found = await fetch(q, { headers: { Authorization: `Bearer ${token}` } });
+    let graphId = sourceId;
+    if (found.ok) {
+      const data = (await found.json()) as { value?: Array<{ id?: string }> };
+      graphId = data.value?.[0]?.id ?? sourceId;
+    }
+    const files = await fetchAttachments(token, mailbox, graphId);
+    const f = files[index];
+    if (!f) return null;
+    return { filename: f.filename, contentType: f.contentType, base64: f.base64 };
+  } catch {
+    return null;
+  }
+}
+
 export type BackfillResult =
   | { ok: true; imported: number; scanned: number; skipped: number; filled: number }
   | { ok: false; error: string };

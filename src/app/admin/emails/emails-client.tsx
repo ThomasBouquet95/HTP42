@@ -369,8 +369,14 @@ function StatusPill({ status }: { status: string }) {
 
 function LogRow({ log }: { log: EmailLogRow }) {
   const [open, setOpen] = useState(false);
-  const attachmentCount =
-    log.files.length || (log.attachments ? log.attachments.split(",").filter(Boolean).length : 0);
+  // Unified attachment list: stored files (openable) if present, else the names
+  // recorded in the summary text (still downloadable — fetched live on click).
+  const attList: string[] = log.files.length
+    ? log.files.map((f) => f.filename)
+    : (log.attachments ? log.attachments.split(",") : [])
+        .map((s) => s.trim().replace(/\s*\([^)]*\)\s*$/, ""))
+        .filter(Boolean);
+  const attachmentCount = attList.length;
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
       <button
@@ -412,20 +418,21 @@ function LogRow({ log }: { log: EmailLogRow }) {
             <span className="text-slate-700">{log.subject || "—"}</span>
             <span className="font-semibold text-slate-400">Attachments</span>
             <span className="text-slate-700">
-              {log.files.length > 0 ? (
+              {attList.length > 0 ? (
                 <span className="flex flex-wrap gap-1.5">
-                  {log.files.map((f, i) => (
+                  {attList.map((filename, i) => (
                     <a
                       key={i}
                       href={`/api/admin/emails/attachment?id=${encodeURIComponent(log.id)}&i=${i}`}
+                      download
                       className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:border-brand-300 hover:bg-brand-50"
                     >
-                      📎 {f.filename}
+                      📎 {filename}
                     </a>
                   ))}
                 </span>
               ) : (
-                log.attachments || "none"
+                "none"
               )}
             </span>
             {log.error ? (
