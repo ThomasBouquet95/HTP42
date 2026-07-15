@@ -9,6 +9,14 @@ import { Button } from "@/components/form-controls";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 
+// The invoice/week status the member sees is the status of the PAYMENT that
+// settles it, so we prefix "Payment" to make that explicit (e.g. "Payment
+// under review", "Payment to be paid", "Payment rejected").
+function paymentStatusLabel(status: string): string {
+  if (!status) return "";
+  return `Payment ${status.toLowerCase()}`;
+}
+
 type StaffingOpt = {
   id: string;
   staffingCode: string;
@@ -151,7 +159,7 @@ export function InvoicesClient({
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {effStatus ? (
-                      <StatusPill status={effStatus} />
+                      <StatusPill status={effStatus} label={paymentStatusLabel(effStatus)} />
                     ) : (
                       <span className="text-slate-300 text-[11px]">—</span>
                     )}
@@ -442,7 +450,7 @@ function NewInvoiceModal({
                           canPick
                             ? undefined
                             : t.billedStatus
-                            ? `Already on an invoice (${t.billedStatus}).`
+                            ? `Already on an invoice (${paymentStatusLabel(t.billedStatus)}).`
                             : t.status === "Rejected"
                             ? "Rejected weeks must be revised and resubmitted first."
                             : "This week can't be invoiced."
@@ -472,10 +480,10 @@ function NewInvoiceModal({
                         />
                         {t.billedStatus ? (
                           <span
-                            title={`This week is already on an invoice (${t.billedStatus}).`}
+                            title={`This week is already on an invoice (${paymentStatusLabel(t.billedStatus)}).`}
                             className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-600"
                           >
-                            {t.billedStatus}
+                            {paymentStatusLabel(t.billedStatus)}
                           </span>
                         ) : null}
                         <span className="ml-auto tabular-nums text-slate-500">
