@@ -124,6 +124,7 @@ export function buildReviewGroups(input: Inputs): {
         invoiceReference: p.invoiceReference,
         beneficiary: p.beneficiary,
         comment: p.comment,
+        memberNote: p.memberNote,
         invoicePdfUrl: p.invoicePdf?.url ?? "",
         invoiceUrl: p.invoiceUrl,
       },

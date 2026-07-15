@@ -129,10 +129,14 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
       { token: "expiryNote", description: "Sentence stating the links expire and are single-use." },
     ],
     defaultSubject: "[HTP42] Timesheet approval: {{memberName}} · {{weekLabel}}",
+    // Buttons sit right under the one-line intro so they're visible without
+    // scrolling or expanding a clipped mail; the week detail follows below.
     defaultBody: [
       "Hi {{reviewerName}},",
       "",
-      "{{memberName}} submitted a timesheet for your approval.",
+      "{{memberName}} submitted a timesheet for your approval. Approve or reject it here:",
+      "",
+      "{{actions}}",
       "",
       "Project: {{projectLabel}}",
       "Staffing: {{staffingCode}}",
@@ -140,8 +144,6 @@ export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
       "Total: {{totalHours}} h",
       "",
       "{{days}}",
-      "",
-      "{{actions}}",
       "",
       "{{expiryNote}}",
     ].join("\n"),

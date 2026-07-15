@@ -28,6 +28,7 @@ export type ReviewBundle = {
     invoiceReference: string;
     beneficiary: string;
     comment: string;
+    memberNote: string;
     invoicePdfUrl: string;
     invoiceUrl: string;
   };
@@ -188,6 +189,8 @@ export function PaymentReviewClient({
   const [savingId, setSavingId] = useState<string | null>(null);
   const [sectionTab, setSectionTab] = useState<ReviewBucket>("review");
   const [paidTargetId, setPaidTargetId] = useState<string | null>(null);
+  // Note the admin is leaving for the member, carried into the paid-date step.
+  const [pendingNote, setPendingNote] = useState("");
   const [expandedTs, setExpandedTs] = useState<Set<string>>(new Set());
   // Which payment cards are expanded. Defaults (set per selected member below):
   // under-review items open, past items collapsed.
@@ -278,13 +281,13 @@ export function PaymentReviewClient({
     }
   }, [data, selectedId]);
 
-  async function setStatus(id: string, status: string, paymentDate?: string) {
+  async function setStatus(id: string, status: string, paymentDate?: string, memberNote?: string) {
     setSavingId(id);
     try {
       const res = await fetch(`/api/admin/payments/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ paymentStatus: status, paymentDate }),
+        body: JSON.stringify({ paymentStatus: status, paymentDate, memberNote }),
       });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
@@ -443,38 +446,30 @@ export function PaymentReviewClient({
             <EmptyNote>{EMPTY_NOTES[sectionTab]}</EmptyNote>
           ) : (
             <div className="space-y-3">
-              {buckets[sectionTab].map((b) => {
-                const isReview = sectionTab === "review";
-                const isToPay = sectionTab === "toBePaid";
-                const isRejected = sectionTab === "rejected";
-                return (
-                  <BundleDetail
-                    key={b.payment.id}
-                    bundle={b}
-                    accent={isToPay ? "topay" : isRejected ? "rejected" : "review"}
-                    readOnly={!isReview && !isToPay && !isRejected}
-                    saving={savingId === b.payment.id}
-                    open={openItems.has(b.payment.id)}
-                    onToggle={() => toggleItem(b.payment.id)}
-                    expandedTs={expandedTs}
-                    toggleTs={toggleTs}
-                    onApprove={
-                      // Review → To be paid; a Rejected payment can also be
-                      // revived straight to To be paid. Either way the guard
-                      // auto-approves any under-review / rejected linked weeks.
-                      isReview || isRejected
-                        ? () => guardApproval(b, () => setStatus(b.payment.id, "To be paid"))
-                        : undefined
-                    }
-                    onMarkPaid={
-                      isToPay ? () => guardApproval(b, () => setPaidTargetId(b.payment.id)) : undefined
-                    }
-                    onReject={
-                      isReview || isToPay ? () => setStatus(b.payment.id, "Rejected") : undefined
-                    }
-                  />
-                );
-              })}
+              {buckets[sectionTab].map((b) => (
+                <BundleDetail
+                  key={b.payment.id}
+                  bundle={b}
+                  saving={savingId === b.payment.id}
+                  open={openItems.has(b.payment.id)}
+                  onToggle={() => toggleItem(b.payment.id)}
+                  expandedTs={expandedTs}
+                  toggleTs={toggleTs}
+                  // Approve = advance to "To be paid". This is the ONLY step
+                  // that validates timesheets: the guard auto-approves any
+                  // linked week still under review / rejected (with a popup).
+                  onApprove={(note) =>
+                    guardApproval(b, () => setStatus(b.payment.id, "To be paid", undefined, note))
+                  }
+                  // Mark paid never re-checks timesheets (they were validated at
+                  // the approve step); it just needs the payment date.
+                  onMarkPaid={(note) => {
+                    setPendingNote(note);
+                    setPaidTargetId(b.payment.id);
+                  }}
+                  onSetStatus={(status, note) => setStatus(b.payment.id, status, undefined, note)}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -483,8 +478,8 @@ export function PaymentReviewClient({
       <PaidDateModal
         open={!!paidTargetId}
         busy={savingId === paidTargetId}
-        onCancel={() => (savingId ? undefined : setPaidTargetId(null))}
-        onConfirm={(date) => paidTargetId && setStatus(paidTargetId, "Paid", date)}
+        onCancel={() => (savingId ? undefined : (setPaidTargetId(null), setPendingNote("")))}
+        onConfirm={(date) => paidTargetId && setStatus(paidTargetId, "Paid", date, pendingNote)}
       />
 
       <ConfirmDialog
@@ -492,7 +487,7 @@ export function PaymentReviewClient({
         title="Approve linked timesheets?"
         message={`${approveConfirm?.count ?? 0} linked timesheet${
           approveConfirm?.count === 1 ? " is" : "s are"
-        } still under review. Marking this payment as paid will automatically approve ${
+        } still under review. Approving this payment will automatically approve ${
           approveConfirm?.count === 1 ? "it" : "them"
         }. Continue?`}
         confirmLabel="Approve and continue"
@@ -554,44 +549,41 @@ function EmptyNote({ children }: { children: React.ReactNode }) {
 function BundleDetail({
   bundle: selected,
   saving = false,
-  readOnly = false,
-  accent = "review",
   open,
   onToggle,
   expandedTs,
   toggleTs,
   onApprove,
   onMarkPaid,
-  onReject,
+  onSetStatus,
 }: {
   bundle: ReviewBundle;
   saving?: boolean;
-  readOnly?: boolean;
-  accent?: "review" | "topay" | "rejected" | "past";
   open: boolean;
   onToggle: () => void;
   expandedTs: Set<string>;
   toggleTs: (id: string) => void;
-  onApprove?: () => void;
-  onMarkPaid?: () => void;
-  onReject?: () => void;
+  onApprove: (note: string) => void;
+  onMarkPaid: (note: string) => void;
+  onSetStatus: (status: string, note: string) => void;
 }) {
-  const isToPay = accent === "topay";
-  const isRejected = accent === "rejected";
-  const tone = readOnly || isRejected ? statusTone(selected.payment.status) : "review";
-  const statusLabel = readOnly || isRejected
-    ? selected.payment.status || "—"
-    : isToPay
-    ? "To be paid"
-    : "Under review";
+  const status = selected.payment.status || "Under Review";
+  const isToPay = status === "To be paid" || status === "Scheduled";
+  const isPaid = status === "Paid";
+  const isRejected = status === "Rejected";
+  const isCanceled = status === "Canceled";
+  const isUnderReview = !isToPay && !isPaid && !isRejected && !isCanceled;
+  const hasActions = !isPaid;
+  const statusLabel = status === "Under Review" ? "Under review" : status;
+  const [note, setNote] = useState(selected.payment.memberNote ?? "");
   return (
     <div
       className={`overflow-hidden rounded-lg border bg-white ${
-        readOnly || isRejected
-          ? "border-slate-200"
+        isUnderReview
+          ? "border-amber-300 ring-1 ring-amber-100"
           : isToPay
           ? "border-brand-200 ring-1 ring-brand-100"
-          : "border-amber-300 ring-1 ring-amber-100"
+          : "border-slate-200"
       }`}
     >
       {/* Header + actions */}
@@ -617,7 +609,7 @@ function BundleDetail({
               <span className="rounded-md bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] text-white">
                 #{selected.payment.code || "—"}
               </span>
-              <StatusPill status={statusLabel} />
+              <StatusPill status={status} label={statusLabel} />
               {selected.payment.type ? <span>{selected.payment.type}</span> : null}
             </button>
           </div>
@@ -630,7 +622,7 @@ function BundleDetail({
                 ≈ {selected.payment.amountEur.toLocaleString("en-US", { maximumFractionDigits: 0 })} EUR
               </div>
             ) : null}
-            {tone === "paid" && selected.payment.paymentDate ? (
+            {isPaid && selected.payment.paymentDate ? (
               <div className="mt-0.5 text-[11px] text-emerald-700">
                 Paid {selected.payment.paymentDate}
               </div>
@@ -644,45 +636,86 @@ function BundleDetail({
             {selected.payment.comment}
           </p>
         ) : null}
-        {!readOnly ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {onApprove ? (
-              <Button tone="primary" size="sm" disabled={saving} onClick={onApprove}>
-                {isRejected ? "Move to To be paid" : "Approve → To be paid"}
-              </Button>
-            ) : null}
-            {onMarkPaid ? (
-              <button
-                type="button"
-                disabled={saving}
-                onClick={onMarkPaid}
-                className="inline-flex items-center justify-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+        {hasActions ? (
+          <div className="mt-3 space-y-2">
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={2}
+              placeholder="Note to the member (optional) — shown on their invoice, e.g. why it was rejected"
+              className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              {isUnderReview ? (
+                <Button tone="primary" size="sm" disabled={saving} onClick={() => onApprove(note)}>
+                  Approve → To be paid
+                </Button>
+              ) : null}
+              {isRejected ? (
+                <Button tone="primary" size="sm" disabled={saving} onClick={() => onApprove(note)}>
+                  Move to To be paid
+                </Button>
+              ) : null}
+              {isToPay ? (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => onMarkPaid(note)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Mark as paid
+                </button>
+              ) : null}
+              {isToPay || isRejected || isCanceled ? (
+                <Button
+                  tone="secondary"
+                  size="sm"
+                  disabled={saving}
+                  onClick={() => onSetStatus("Under Review", note)}
+                >
+                  Back to Under review
+                </Button>
+              ) : null}
+              {isUnderReview || isToPay ? (
+                <Button tone="danger" size="sm" disabled={saving} onClick={() => onSetStatus("Rejected", note)}>
+                  Reject
+                </Button>
+              ) : null}
+              {isUnderReview || isToPay || isRejected ? (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => onSetStatus("Canceled", note)}
+                  className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancel payment
+                </button>
+              ) : null}
+              <Link
+                href={`/admin/payments?payment=${encodeURIComponent(selected.payment.id)}`}
+                className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700"
               >
-                Mark as paid
-              </button>
-            ) : null}
-            {onReject ? (
-              <Button tone="danger" size="sm" disabled={saving} onClick={onReject}>
-                Reject
-              </Button>
-            ) : null}
+                Open in Payments →
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            {selected.payment.memberNote ? (
+              <div className="min-w-0 text-[11px] text-slate-500">
+                <span className="font-medium">Note to member:</span> {selected.payment.memberNote}
+              </div>
+            ) : (
+              <span />
+            )}
             <Link
               href={`/admin/payments?payment=${encodeURIComponent(selected.payment.id)}`}
-              className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700"
+              className="shrink-0 text-xs font-medium text-brand-600 hover:text-brand-700"
             >
               Open in Payments →
             </Link>
           </div>
-        ) : open ? (
-          <div className="mt-3 flex justify-end">
-            <Link
-              href={`/admin/payments?payment=${encodeURIComponent(selected.payment.id)}`}
-              className="text-xs font-medium text-brand-600 hover:text-brand-700"
-            >
-              Open in Payments →
-            </Link>
-          </div>
-        ) : null}
+        )}
       </div>
 
       {open ? (

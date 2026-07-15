@@ -71,12 +71,14 @@ export function InvoicesClient({
   timesheets,
   paymentDateByInvoiceId,
   paymentStatusByInvoiceId,
+  memberNoteByInvoiceId = {},
 }: {
   invoices: MemberInvoiceRecord[];
   staffings: StaffingOpt[];
   timesheets: TimesheetOpt[];
   paymentDateByInvoiceId: Record<string, string>;
   paymentStatusByInvoiceId: Record<string, string>;
+  memberNoteByInvoiceId?: Record<string, string>;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(invoices);
@@ -141,6 +143,7 @@ export function InvoicesClient({
               <th className="text-left px-3 py-2 font-medium">Staffing</th>
               <th className="text-right px-3 py-2 font-medium">Amount</th>
               <th className="text-left px-3 py-2 font-medium">Status</th>
+              <th className="text-left px-3 py-2 font-medium">Note from HTP42</th>
               <th className="text-left px-3 py-2 font-medium">PDF</th>
               <th />
             </tr>
@@ -148,7 +151,7 @@ export function InvoicesClient({
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center text-slate-500 py-10">
+                <td colSpan={7} className="text-center text-slate-500 py-10">
                   No invoices yet. Click "New invoice" to submit your first one.
                 </td>
               </tr>
@@ -207,6 +210,15 @@ export function InvoicesClient({
                         Email pending
                       </div>
                     ) : null}
+                  </td>
+                  <td className="px-3 py-2 max-w-[16rem]">
+                    {memberNoteByInvoiceId[inv.id] ? (
+                      <span className="whitespace-pre-line text-slate-600">
+                        {memberNoteByInvoiceId[inv.id]}
+                      </span>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     {inv.pdf ? (

@@ -35,6 +35,8 @@ export default async function InvoicesPage() {
   // payment is cancelled). Map each of this member's invoices to its payment
   // status, preferring a live (non-cancelled) payment.
   const paymentStatusByInvoiceId: Record<string, string> = {};
+  // The admin's note to the member on the settling payment, shown in a column.
+  const memberNoteByInvoiceId: Record<string, string> = {};
   const norm = (s: string) =>
     s === "Under Review" ? "Under review" : s === "Canceled" ? "Cancelled" : s;
   for (const p of payments) {
@@ -44,7 +46,10 @@ export default async function InvoicesPage() {
         paymentDateByInvoiceId[invId] = p.paymentDate;
       }
       const cur = paymentStatusByInvoiceId[invId];
-      if (!cur || cur === "Canceled") paymentStatusByInvoiceId[invId] = p.paymentStatus || "";
+      if (!cur || cur === "Canceled") {
+        paymentStatusByInvoiceId[invId] = p.paymentStatus || "";
+        memberNoteByInvoiceId[invId] = p.memberNote || "";
+      }
     }
   }
   for (const k of Object.keys(paymentStatusByInvoiceId)) {
@@ -93,6 +98,7 @@ export default async function InvoicesPage() {
         timesheets={invoiceableTimesheets}
         paymentDateByInvoiceId={paymentDateByInvoiceId}
         paymentStatusByInvoiceId={paymentStatusByInvoiceId}
+        memberNoteByInvoiceId={memberNoteByInvoiceId}
       />
     </main>
   );

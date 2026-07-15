@@ -247,6 +247,10 @@ export const FIELDS = {
     dueDate: "Due Date",
     beneficiary: "Beneficiary",
     comment: "Comment",
+    // A note the admin leaves for the MEMBER when changing the payment status
+    // (e.g. why it was rejected). Shown to the member on their invoices.
+    // Lazily created via meta API — see ensurePaymentMemberNoteField.
+    memberNote: "Member Note",
     invoiceUrl: "Invoice URL",
     invoicePdf: "Invoice PDF",
   },
@@ -680,6 +684,7 @@ export type PaymentRecord = {
   dueDate: string | null;
   beneficiary: string;
   comment: string;
+  memberNote: string;
   invoiceUrl: string;
   invoicePdf: AttachmentRef | null;
 };
@@ -2372,6 +2377,7 @@ function paymentFromRecord(r: AirtableRecord<FieldSet>): PaymentRecord {
     dueDate: dateOrNull(r, FIELDS.payments.dueDate),
     beneficiary: str(r, FIELDS.payments.beneficiary),
     comment: str(r, FIELDS.payments.comment),
+    memberNote: str(r, FIELDS.payments.memberNote),
     invoiceUrl: str(r, FIELDS.payments.invoiceUrl),
     invoicePdf: firstAttachment(r, FIELDS.payments.invoicePdf),
   };
@@ -2548,6 +2554,7 @@ export async function updatePaymentStatus(
   recordId: string,
   status: PaymentStatus | "",
   paymentDate?: string | null,
+  memberNote?: string,
 ): Promise<void> {
   const ensured = await ensurePaymentStatusChoices();
   const fields: Record<string, unknown> = {
@@ -2560,6 +2567,14 @@ export async function updatePaymentStatus(
     if (paymentDate) fields[FIELDS.payments.paymentDate] = paymentDate;
   } else {
     fields[FIELDS.payments.paymentDate] = null;
+  }
+  // Optional note to the member, saved alongside the status change. Only touch
+  // the field when the caller passes a value (so it isn't wiped on plain
+  // status changes), creating it lazily on first use.
+  if (memberNote !== undefined) {
+    if (await ensurePaymentMemberNoteField()) {
+      fields[FIELDS.payments.memberNote] = memberNote;
+    }
   }
   try {
     // typecast lets Airtable create the option on the fly as a fallback if the
@@ -3024,6 +3039,47 @@ async function ensurePaymentStaffingField(): Promise<boolean> {
     return paymentStaffingFieldReady;
   } catch (e) {
     console.error("ensurePaymentStaffingField failed:", e);
+    return false;
+  }
+}
+
+// Long-text field on Payments for the admin's note to the member (shown on the
+// member's invoices). Created lazily via the meta API the first time we write.
+let paymentMemberNoteFieldReady = false;
+async function ensurePaymentMemberNoteField(): Promise<boolean> {
+  if (paymentMemberNoteFieldReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.payments);
+    if (!table) return false;
+    if (table.fields.some((f) => f.name === FIELDS.payments.memberNote)) {
+      paymentMemberNoteFieldReady = true;
+      return true;
+    }
+    const create = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: FIELDS.payments.memberNote,
+          type: "multilineText",
+          description: "Note from the admin to the member about this payment, shown on their invoices.",
+        }),
+      },
+    );
+    if (create.ok) paymentMemberNoteFieldReady = true;
+    return paymentMemberNoteFieldReady;
+  } catch (e) {
+    console.error("ensurePaymentMemberNoteField failed:", e);
     return false;
   }
 }

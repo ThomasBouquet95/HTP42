@@ -23,6 +23,8 @@ const patchSchema = z.object({
   // Required when marking a payment Paid — it's the day money moved and it
   // populates the paid-receipt email.
   paymentDate: z.union([z.string().trim().min(1), z.null()]).optional(),
+  // Optional note the admin leaves for the member with this status change.
+  memberNote: z.string().max(2000).optional(),
 });
 
 export async function PATCH(
@@ -49,7 +51,7 @@ export async function PATCH(
     // Capture the previous state BEFORE the update so we can detect the
     // Outflow → Paid transition and fire the receipt email exactly once.
     const before = await getPaymentById(id);
-    await updatePaymentStatus(id, nextStatus, paymentDate);
+    await updatePaymentStatus(id, nextStatus, paymentDate, parsed.data.memberNote);
     if (before && becamePaid(before, nextStatus)) {
       // Re-read the record so the email body uses the saved values (the PATCH
       // only carries the status field, the rest stays as it was). Awaited so it
