@@ -2601,6 +2601,43 @@ export async function cancelPaymentsForInvoice(invoiceRecordId: string): Promise
   return targets.length;
 }
 
+// When a timesheet is rejected (by the client via their review link, or by an
+// admin) after it has already been invoiced, the payment created for that
+// invoice is no longer valid. Cascade the rejection to every linked payment
+// that isn't already Paid or Rejected, so it leaves the review queue and the
+// covered week frees up for the member to re-invoice. Best-effort: never
+// throws so a cascade failure can't fail the timesheet decision itself.
+export async function rejectPaymentsForTimesheet(timesheetRecordId: string): Promise<number> {
+  try {
+    const [invoiceRecords, payments] = await Promise.all([
+      base(TABLES.memberInvoices)
+        .select({ fields: [FIELDS.memberInvoices.coveredTimesheets] })
+        .all(),
+      listPaymentsRaw(),
+    ]);
+    const invoiceIds = new Set<string>();
+    for (const r of invoiceRecords) {
+      const raw = str(r, FIELDS.memberInvoices.coveredTimesheets);
+      const ids = raw.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+      if (ids.includes(timesheetRecordId)) invoiceIds.add(r.id);
+    }
+    if (invoiceIds.size === 0) return 0;
+    const targets = payments.filter(
+      (p) =>
+        p.paymentStatus !== "Paid" &&
+        p.paymentStatus !== "Rejected" &&
+        p.memberInvoiceRecordIds.some((id) => invoiceIds.has(id)),
+    );
+    for (const p of targets) {
+      await updatePaymentStatus(p.id, "Rejected");
+    }
+    return targets.length;
+  } catch (e) {
+    console.error("rejectPaymentsForTimesheet failed:", e);
+    return 0;
+  }
+}
+
 export async function updatePayment(recordId: string, input: PaymentInput): Promise<void> {
   await ensurePaymentStatusChoices();
   const resolved = await prepPaymentWrite(input);
@@ -4120,6 +4157,11 @@ export async function decideTimesheet(input: {
     method: input.reviewMethod,
     comment: input.comment,
   });
+  // A rejected week invalidates any payment already raised for it: cascade so
+  // the payment drops out of review and the member can re-invoice the week.
+  if (input.decision === "Rejected") {
+    await rejectPaymentsForTimesheet(input.recordId);
+  }
 }
 
 // ---------------------------------------------------------------------------
