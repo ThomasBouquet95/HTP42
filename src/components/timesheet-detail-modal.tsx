@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StaffingRecord, TimesheetRecord } from "@/lib/airtable";
 import { TimesheetForm } from "@/components/timesheet-form";
-import { ReadOnlyTimesheet } from "@/app/timesheets/[id]/read-only";
+import { ReadOnlyTimesheet, reviewerLine } from "@/app/timesheets/[id]/read-only";
 import { StatusBadge } from "@/components/status-badge";
 import { formatWeekRange } from "@/lib/dates";
 
@@ -197,12 +197,14 @@ export function TimesheetDetailModal({ timesheetId, onClose, onSaved }: Props) {
                 <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
                   <div className="font-semibold">This timesheet was rejected.</div>
                   {ts.reviewComment ? (
-                    <p className="mt-0.5 whitespace-pre-line">{ts.reviewComment}</p>
+                    <p className="mt-1 whitespace-pre-line">
+                      <span className="font-medium">Reason:</span> {ts.reviewComment}
+                    </p>
                   ) : (
-                    <p className="mt-0.5">Revise the entries below and resubmit.</p>
+                    <p className="mt-0.5">No reason was given. Revise the entries below and resubmit.</p>
                   )}
-                  {ts.reviewedBy ? (
-                    <p className="mt-1 text-[11px] text-rose-600">Rejected by {ts.reviewedBy}.</p>
+                  {reviewerLine(ts) ? (
+                    <p className="mt-1 text-[11px] text-rose-600">Rejected by {reviewerLine(ts)}.</p>
                   ) : null}
                 </div>
               ) : null}

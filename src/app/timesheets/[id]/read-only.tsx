@@ -4,6 +4,21 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TimesheetRecord } from "@/lib/airtable";
 
+// "Ada Lovelace · Client · 3 Jun 2026" — who decided, how (Admin vs Client
+// review), and when. Any part that's missing is simply dropped.
+export function reviewerLine(t: TimesheetRecord): string {
+  const parts: string[] = [];
+  if (t.reviewedBy) parts.push(t.reviewedBy);
+  if (t.reviewMethod) parts.push(t.reviewMethod);
+  if (t.reviewedAt) {
+    const d = new Date(t.reviewedAt);
+    if (!Number.isNaN(d.getTime())) {
+      parts.push(d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }));
+    }
+  }
+  return parts.join(" · ");
+}
+
 export function ReadOnlyTimesheet({ timesheet }: { timesheet: TimesheetRecord }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
@@ -82,20 +97,26 @@ export function ReadOnlyTimesheet({ timesheet }: { timesheet: TimesheetRecord })
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
           <div className="font-semibold">This timesheet was approved.</div>
           {timesheet.reviewComment ? (
-            <p className="mt-0.5 whitespace-pre-line">{timesheet.reviewComment}</p>
+            <p className="mt-1 whitespace-pre-line">
+              <span className="font-medium">Reviewer note:</span> {timesheet.reviewComment}
+            </p>
           ) : null}
-          {timesheet.reviewedBy ? (
-            <p className="mt-1 text-[11px] text-emerald-600">Approved by {timesheet.reviewedBy}.</p>
+          {reviewerLine(timesheet) ? (
+            <p className="mt-1 text-[11px] text-emerald-600">Approved by {reviewerLine(timesheet)}.</p>
           ) : null}
         </div>
       ) : timesheet.status === "Rejected" ? (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
           <div className="font-semibold">This timesheet was rejected.</div>
           {timesheet.reviewComment ? (
-            <p className="mt-0.5 whitespace-pre-line">{timesheet.reviewComment}</p>
-          ) : null}
-          {timesheet.reviewedBy ? (
-            <p className="mt-1 text-[11px] text-rose-600">Rejected by {timesheet.reviewedBy}.</p>
+            <p className="mt-1 whitespace-pre-line">
+              <span className="font-medium">Reason:</span> {timesheet.reviewComment}
+            </p>
+          ) : (
+            <p className="mt-0.5">No reason was given. Revise the entries and resubmit.</p>
+          )}
+          {reviewerLine(timesheet) ? (
+            <p className="mt-1 text-[11px] text-rose-600">Rejected by {reviewerLine(timesheet)}.</p>
           ) : null}
         </div>
       ) : null}
