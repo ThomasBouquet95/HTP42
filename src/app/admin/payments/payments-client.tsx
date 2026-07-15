@@ -602,9 +602,56 @@ export function PaymentsClient({
     return v * fx;
   }, [form.invoiceValue, form.fxRateToEur]);
 
-  async function updateStatus(id: string, status: string) {
+  // A payment can only advance to To be paid / Paid once its linked timesheets
+  // are approved. If some are still under review, warn first; on confirm we
+  // auto-approve them (paying implies the work is accepted) and then proceed.
+  const [approveConfirm, setApproveConfirm] = useState<
+    { ids: string[]; count: number; onProceed: () => void } | null
+  >(null);
+
+  function pendingTimesheetIds(id: string): string[] {
+    const b = bundleById?.[id];
+    if (!b) return [];
+    return b.timesheets
+      .filter((t) => t.status === "Submitted" || t.status === "Rejected")
+      .map((t) => t.id);
+  }
+
+  function guardApproval(id: string, proceed: () => void) {
+    const ids = pendingTimesheetIds(id);
+    if (ids.length === 0) {
+      proceed();
+      return;
+    }
+    setApproveConfirm({ ids, count: ids.length, onProceed: proceed });
+  }
+
+  async function approveTimesheets(ids: string[]) {
+    await Promise.all(
+      ids.map((id) =>
+        fetch(`/api/admin/timesheets/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "approve", comment: "Auto-approved on payment" }),
+        }),
+      ),
+    );
+  }
+
+  // Guarded entry point for the row status control: block the advance to
+  // To be paid / Paid on unapproved linked timesheets until confirmed.
+  function updateStatus(id: string, status: string) {
     const previous = rows.find((r) => r.id === id)?.paymentStatus ?? "";
     if (previous === status) return;
+    if (status === "To be paid" || status === "Paid") {
+      guardApproval(id, () => proceedStatus(id, status));
+      return;
+    }
+    proceedStatus(id, status);
+  }
+
+  async function proceedStatus(id: string, status: string) {
+    const previous = rows.find((r) => r.id === id)?.paymentStatus ?? "";
     // Marking Paid requires a payment date — prompt for it instead of an
     // immediate PATCH.
     if (status === "Paid") {
@@ -688,6 +735,27 @@ export function PaymentsClient({
       setError("Select the staffing this subcontractor payment settles (pick the member first).");
       return;
     }
+    // Advancing an existing payment to To be paid / Paid with unapproved linked
+    // timesheets: confirm + auto-approve first, same as the row status control.
+    if (
+      !creating &&
+      editing &&
+      (form.paymentStatus === "To be paid" || form.paymentStatus === "Paid")
+    ) {
+      const pending = pendingTimesheetIds(editing.id);
+      if (pending.length > 0) {
+        setApproveConfirm({
+          ids: pending,
+          count: pending.length,
+          onProceed: () => void doSubmit(),
+        });
+        return;
+      }
+    }
+    void doSubmit();
+  }
+
+  async function doSubmit() {
     setSaving(true);
     setError(null);
     try {
@@ -1126,6 +1194,9 @@ export function PaymentsClient({
                             p.memberInvoiceRecordIds.map((id) => invoicePdfById.get(id)).find(Boolean) ||
                             ""
                           }
+                          invoice={
+                            p.memberInvoiceRecordIds.map((id) => invoiceOptById.get(id)).find(Boolean) ?? null
+                          }
                           bundle={bundleById?.[p.id]}
                           onEdit={() => openEdit(p)}
                         />
@@ -1537,6 +1608,30 @@ export function PaymentsClient({
         onConfirm={(date) => paidTarget && markPaid(paidTarget.id, date)}
       />
 
+      <ConfirmDialog
+        open={!!approveConfirm}
+        title="Approve linked timesheets?"
+        message={`${approveConfirm?.count ?? 0} linked timesheet${
+          approveConfirm?.count === 1 ? " is" : "s are"
+        } still under review. Moving this payment forward will automatically approve ${
+          approveConfirm?.count === 1 ? "it" : "them"
+        }. Continue?`}
+        confirmLabel="Approve and continue"
+        onCancel={() => setApproveConfirm(null)}
+        onConfirm={async () => {
+          const c = approveConfirm;
+          setApproveConfirm(null);
+          if (!c) return;
+          try {
+            await approveTimesheets(c.ids);
+            c.onProceed();
+            router.refresh();
+          } catch {
+            setToast({ kind: "error", msg: "Could not approve the linked timesheets." });
+          }
+        }}
+      />
+
       {toast ? (
         <div
           role="status"
@@ -1698,6 +1793,7 @@ function PaymentDetails({
   memberLabel,
   des,
   invoicePdfUrl,
+  invoice,
   bundle,
   onEdit,
 }: {
@@ -1708,6 +1804,7 @@ function PaymentDetails({
   memberLabel: string;
   des: "Yes" | "No" | "";
   invoicePdfUrl: string;
+  invoice?: MemberInvoiceOpt | null;
   bundle?: ReviewBundle;
   onEdit: () => void;
 }) {
@@ -1756,6 +1853,37 @@ function PaymentDetails({
 
       {p.comment ? (
         <p className="rounded-md bg-white p-2 text-[11px] text-slate-600 demo-blur">{p.comment}</p>
+      ) : null}
+
+      {/* Related invoice — the member invoice this payment settles. A clear
+          link to the invoice record and its PDF. */}
+      {p.memberInvoiceRecordIds.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-slate-200 bg-white p-2 text-xs">
+          <span className="font-semibold text-slate-500">Related invoice</span>
+          <span className="font-mono text-[11px] text-slate-800">
+            {invoice?.invoiceCode || p.invoiceReference || "—"}
+          </span>
+          <a
+            href={`/admin/invoices?search=${encodeURIComponent(
+              invoice?.invoiceCode || p.invoiceReference || "",
+            )}`}
+            onClick={(e) => e.stopPropagation()}
+            className="font-medium text-brand-700 hover:underline"
+          >
+            View in Invoices
+          </a>
+          {invoicePdfUrl ? (
+            <a
+              href={invoicePdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="font-medium text-brand-700 hover:underline"
+            >
+              Open PDF
+            </a>
+          ) : null}
+        </div>
       ) : null}
 
       {/* Linked timesheets — same week-by-week list as the By project / By

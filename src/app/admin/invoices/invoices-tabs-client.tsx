@@ -19,6 +19,7 @@ export function InvoicesTabsClient({
   paymentStatusById,
   mailbox,
   projectCode,
+  initialSearch,
 }: {
   memberInvoices: MemberInvoiceRecord[];
   paymentByInvoiceId: Record<string, { id: string; code: string; status: string }>;
@@ -27,6 +28,7 @@ export function InvoicesTabsClient({
   paymentStatusById: Record<string, string>;
   mailbox: string;
   projectCode: string;
+  initialSearch?: string;
 }) {
   const [tab, setTab] = useState<Tab>("member");
   // "Needs review" = an automated invoice not yet turned into a payment
@@ -60,6 +62,7 @@ export function InvoicesTabsClient({
         <AdminInvoicesClient
           invoices={memberInvoices}
           paymentByInvoiceId={paymentByInvoiceId}
+          initialSearch={initialSearch}
         />
       ) : (
         <VendorInvoicesClient

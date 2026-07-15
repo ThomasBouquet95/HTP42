@@ -51,9 +51,11 @@ function fromInvoice(r: MemberInvoiceRecord): EditForm {
 export function AdminInvoicesClient({
   invoices,
   paymentByInvoiceId,
+  initialSearch,
 }: {
   invoices: MemberInvoiceRecord[];
   paymentByInvoiceId: Record<string, { id: string; code: string; status: string }>;
+  initialSearch?: string;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(invoices);
@@ -67,7 +69,9 @@ export function AdminInvoicesClient({
       return next;
     });
   }
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<Filters>(
+    initialSearch ? { ...DEFAULT_FILTERS, search: initialSearch } : DEFAULT_FILTERS,
+  );
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;

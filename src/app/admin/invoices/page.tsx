@@ -8,9 +8,14 @@ import { InvoicesTabsClient } from "./invoices-tabs-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminInvoicesPage() {
+export default async function AdminInvoicesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ search?: string }>;
+}) {
   const access = await requireAdminPage("invoices");
   if (!access) redirect("/admin");
+  const { search } = await searchParams;
 
   const [invoices, payments, vendorInvoices] = await Promise.all([
     listAllInvoices(),
@@ -54,6 +59,7 @@ export default async function AdminInvoicesPage() {
         paymentStatusById={paymentStatusById}
         mailbox={env.automatedInvoiceMailbox}
         projectCode={env.automatedInvoiceProjectCode}
+        initialSearch={search}
       />
     </main>
   );
