@@ -12,6 +12,7 @@ import {
 } from "@/lib/airtable";
 import { can } from "@/lib/permissions";
 import { AdminTimesheetsClient, type TimesheetView } from "./timesheets-client";
+import { MigrateStatusesBanner } from "./migrate-banner";
 
 export type SowInfo = {
   reference: string;
@@ -103,9 +104,20 @@ export default async function AdminTimesheetsPage() {
     };
   }
 
+  // One-off data migration: legacy timesheets left in "Invoiced" / "Paid".
+  // Counted from the full, unfiltered list so nothing is missed. Only offered
+  // to full admins (not scoped Project Managers).
+  const invoicedLegacy = isProjectManager
+    ? 0
+    : allTimesheets.filter((t) => t.status === "Invoiced").length;
+  const paidLegacy = isProjectManager
+    ? 0
+    : allTimesheets.filter((t) => t.status === "Paid").length;
+
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <AdminTabs active="timesheets" />
+        <MigrateStatusesBanner invoicedCount={invoicedLegacy} paidCount={paidLegacy} />
         <div className="mb-4 flex items-baseline gap-3">
           <h1 className="text-base sm:text-lg font-semibold">
             {isProjectManager ? "Project timesheets" : "All timesheets"}
