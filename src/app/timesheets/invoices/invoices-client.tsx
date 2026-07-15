@@ -9,12 +9,33 @@ import { Button } from "@/components/form-controls";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 
-// The invoice/week status the member sees is the status of the PAYMENT that
-// settles it, so we prefix "Payment" to make that explicit (e.g. "Payment
-// under review", "Payment to be paid", "Payment rejected").
-function paymentStatusLabel(status: string): string {
-  if (!status) return "";
-  return `Payment ${status.toLowerCase()}`;
+// The invoice/week status a member sees is the status of the PAYMENT that
+// settles it, phrased for the member (e.g. "To be paid" reads as "Payment in
+// progress") and colour-coded without yellow. Used for both the invoice list
+// and the picker's already-billed chip so the two always match.
+function memberPaymentMeta(status: string): { label: string; cls: string } {
+  const s = status.trim().toLowerCase();
+  if (s === "to be paid" || s === "scheduled")
+    return { label: "Payment in progress", cls: "border-indigo-200 bg-indigo-50 text-indigo-700" };
+  if (s === "paid")
+    return { label: "Payment paid", cls: "border-emerald-200 bg-emerald-50 text-emerald-700" };
+  if (s === "rejected")
+    return { label: "Payment rejected", cls: "border-rose-200 bg-rose-50 text-rose-700" };
+  if (s === "cancelled" || s === "canceled")
+    return { label: "Payment cancelled", cls: "border-slate-200 bg-slate-100 text-slate-500 line-through" };
+  if (s === "under review")
+    return { label: "Payment under review", cls: "border-sky-200 bg-sky-50 text-sky-700" };
+  return { label: `Payment ${s}`, cls: "border-slate-200 bg-slate-100 text-slate-600" };
+}
+
+function MemberPaymentPill({ status }: { status: string }) {
+  if (!status) return null;
+  const { label, cls } = memberPaymentMeta(status);
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}>
+      {label}
+    </span>
+  );
 }
 
 type StaffingOpt = {
@@ -159,7 +180,7 @@ export function InvoicesClient({
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {effStatus ? (
-                      <StatusPill status={effStatus} label={paymentStatusLabel(effStatus)} />
+                      <MemberPaymentPill status={effStatus} />
                     ) : (
                       <span className="text-slate-300 text-[11px]">—</span>
                     )}
@@ -450,7 +471,7 @@ function NewInvoiceModal({
                           canPick
                             ? undefined
                             : t.billedStatus
-                            ? `Already on an invoice (${paymentStatusLabel(t.billedStatus)}).`
+                            ? `Already on an invoice (${memberPaymentMeta(t.billedStatus).label}).`
                             : t.status === "Rejected"
                             ? "Rejected weeks must be revised and resubmitted first."
                             : "This week can't be invoiced."
@@ -479,11 +500,8 @@ function NewInvoiceModal({
                           label={t.status === "Submitted" ? "Under review" : undefined}
                         />
                         {t.billedStatus ? (
-                          <span
-                            title={`This week is already on an invoice (${paymentStatusLabel(t.billedStatus)}).`}
-                            className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-600"
-                          >
-                            {paymentStatusLabel(t.billedStatus)}
+                          <span title={`This week is already on an invoice (${memberPaymentMeta(t.billedStatus).label}).`}>
+                            <MemberPaymentPill status={t.billedStatus} />
                           </span>
                         ) : null}
                         <span className="ml-auto tabular-nums text-slate-500">
