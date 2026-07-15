@@ -4,7 +4,6 @@ import {
   decideTimesheet,
   getStaffingById,
   getTimesheetByReviewToken,
-  rejectPaymentViaClientReview,
 } from "@/lib/airtable";
 
 export const runtime = "nodejs";
@@ -55,28 +54,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   }
 
   try {
-    if (parsed.data.action === "approve") {
-      // Approval confirms the work: the timesheet becomes Approved.
-      await decideTimesheet({
-        recordId: ts.id,
-        timesheetCode: ts.timesheetCode,
-        staffingCode: ts.staffingCode,
-        decision: "Approved",
-        reviewMethod: "Client",
-        reviewedBy: reviewer,
-        comment: parsed.data.comment,
-      });
-    } else {
-      // Rejection declines the payment only. The timesheet stays under review
-      // (it is not necessarily wrong) so the member can re-invoice the week.
-      await rejectPaymentViaClientReview({
-        recordId: ts.id,
-        timesheetCode: ts.timesheetCode,
-        staffingCode: ts.staffingCode,
-        reviewedBy: reviewer,
-        comment: parsed.data.comment,
-      });
-    }
+    // The client's decision is a timesheet decision: Approve → Approved,
+    // Reject → Rejected. A rejection cascades to reject any unpaid payment
+    // already raised for the week (handled inside decideTimesheet).
+    await decideTimesheet({
+      recordId: ts.id,
+      timesheetCode: ts.timesheetCode,
+      staffingCode: ts.staffingCode,
+      decision: parsed.data.action === "approve" ? "Approved" : "Rejected",
+      reviewMethod: "Client",
+      reviewedBy: reviewer,
+      comment: parsed.data.comment,
+    });
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("timesheet-review decision failed:", e);

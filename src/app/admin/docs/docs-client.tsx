@@ -359,12 +359,16 @@ function BusinessProcesses() {
           items={[
             <>
               Open <Term>Timesheets → Review</Term>. The left rail lists members with a count of
-              weeks awaiting a decision (a Project Manager sees only their projects).
+              weeks awaiting a decision (a Project Manager sees only their projects). The queue
+              splits into <strong>Review · Admin</strong> and <strong>Review · Client</strong>{" "}
+              sub-tabs by the staffing&apos;s review method, then <strong>Approved</strong> and{" "}
+              <strong>Rejected</strong>.
             </>,
             <>
               For each week, <strong>Approve</strong> or <strong>Reject</strong> with an optional
               comment. Weeks set to client review show &ldquo;Awaiting client&rdquo; until the client
-              acts (or an admin overrides).
+              acts; any admin decision on a client-reviewed week first asks you to confirm the
+              override (in Review and in the Overview table).
             </>,
             <>
               Every decision (submitted, approved, rejected, edited) is written to an immutable
@@ -445,10 +449,12 @@ function BusinessProcesses() {
         <Bullets
           items={[
             <>
-              The <strong>Review</strong> dashboard splits payments into sub-tabs:{" "}
-              <strong>Review · Admin</strong>, <strong>Review · Client</strong> (by how the linked
-              work is reviewed), then <strong>To be paid</strong>, <strong>Paid</strong>,{" "}
-              <strong>Rejected</strong> and <strong>Cancelled</strong>.
+              Payments are reviewed by an <strong>admin only</strong> (client review is a timesheet
+              concern, never a payment one, and no client is ever emailed about a payment). The{" "}
+              <strong>Review</strong> dashboard has sub-tabs <strong>Review</strong>,{" "}
+              <strong>To be paid</strong>, <strong>Paid</strong>, <strong>Rejected</strong> and{" "}
+              <strong>Cancelled</strong>. A Rejected payment can be revived: open it and use{" "}
+              <strong>Move to To be paid</strong>.
             </>,
             <>
               For a <strong>Subcontractor</strong> outflow, the payment is linked to the{" "}
@@ -466,11 +472,11 @@ function BusinessProcesses() {
           from the Overview edit modal.
         </Rule>
         <Rule tone="warning">
-          <strong>Automated action + client override.</strong> Marking a payment To be paid / Paid
-          while its linked timesheets are still under review auto-approves them on confirm (paying
-          implies acceptance). Acting on a <strong>Review · Client</strong> payment first warns that
-          the client is still reviewing and asks you to confirm the override. Marking Paid also marks
-          the related member invoice Paid, but never changes a timesheet&apos;s status.
+          <strong>Automated status updates.</strong> Marking a payment To be paid / Paid while its
+          linked timesheets are still under review (or rejected) auto-approves them on confirm
+          (paying implies acceptance) — this is also how you revive a Rejected payment. Rejecting a
+          timesheet cascades to reject any unpaid payment already raised for that week (the week then
+          frees up to re-invoice). Marking Paid also marks the related member invoice Paid.
         </Rule>
       </Section>
 

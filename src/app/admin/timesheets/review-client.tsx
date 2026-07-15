@@ -6,6 +6,7 @@ import type { AdminTimesheetRecord } from "@/lib/airtable";
 import { Badge } from "@/components/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/form-controls";
+import { ConfirmDialog } from "@/components/modal";
 import { SearchInput } from "@/components/search-input";
 import { SegmentedTabs } from "@/components/filters";
 import { formatWeekRange } from "@/lib/dates";
@@ -87,8 +88,17 @@ export function TimesheetReviewClient({
 
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(groups[0]?.memberId ?? null);
-  const [statusTab, setStatusTab] = useState<"underReview" | "approved" | "rejected">("underReview");
+  // Under-review work splits by who reviews it (from the staffing): Admin vs
+  // Client. Approved / Rejected are shared regardless of method.
+  const [statusTab, setStatusTab] = useState<
+    "reviewAdmin" | "reviewClient" | "approved" | "rejected"
+  >("reviewAdmin");
   const [savingId, setSavingId] = useState<string | null>(null);
+  // An admin deciding a client-reviewed timesheet overrides the client, so we
+  // confirm first (any Approve/Reject on a Client-method timesheet).
+  const [overwriteConfirm, setOverwriteConfirm] = useState<
+    { id: string; action: "approve" | "reject"; comment: string } | null
+  >(null);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -267,6 +277,12 @@ export function TimesheetReviewClient({
       (t) => (t.projectCode || "—") === code,
     )?.staffingCode ?? "";
 
+  // The under-review queue splits by the staffing's review method: Client
+  // (reviewMethod set to "Client" at submit, awaiting the client's email
+  // decision) vs Admin (everything else, which the admin reviews here).
+  const underReviewClient = (selected?.underReview ?? []).filter((t) => t.reviewMethod === "Client");
+  const underReviewAdmin = (selected?.underReview ?? []).filter((t) => t.reviewMethod !== "Client");
+
   async function decide(id: string, action: "approve" | "reject", comment: string) {
     const previous = rows.find((r) => r.id === id)?.status;
     if (!previous) return;
@@ -291,6 +307,17 @@ export function TimesheetReviewClient({
     } finally {
       setSavingId(null);
     }
+  }
+
+  // Any admin decision on a Client-reviewed timesheet overrides the client, so
+  // it goes through a confirmation first; admin-reviewed ones decide directly.
+  function requestDecide(id: string, action: "approve" | "reject", comment: string) {
+    const t = rows.find((r) => r.id === id);
+    if (t && t.reviewMethod === "Client") {
+      setOverwriteConfirm({ id, action, comment });
+      return;
+    }
+    decide(id, action, comment);
   }
 
   if (groups.length === 0) {
@@ -383,9 +410,14 @@ export function TimesheetReviewClient({
             onChange={setStatusTab}
             options={[
               {
-                value: "underReview",
-                label: "Under review",
-                badge: <CountBadge n={byProject(selected.underReview).length} tone="warning" />,
+                value: "reviewAdmin",
+                label: "Review · Admin",
+                badge: <CountBadge n={byProject(underReviewAdmin).length} tone="warning" />,
+              },
+              {
+                value: "reviewClient",
+                label: "Review · Client",
+                badge: <CountBadge n={byProject(underReviewClient).length} tone="warning" />,
               },
               {
                 value: "approved",
@@ -402,21 +434,25 @@ export function TimesheetReviewClient({
 
           <ProjectGroups
             items={byProject(
-              statusTab === "underReview"
-                ? selected.underReview
-                : statusTab === "approved"
-                  ? selected.approved
-                  : selected.rejected,
+              statusTab === "reviewAdmin"
+                ? underReviewAdmin
+                : statusTab === "reviewClient"
+                  ? underReviewClient
+                  : statusTab === "approved"
+                    ? selected.approved
+                    : selected.rejected,
             )}
             empty={
-              statusTab === "underReview"
-                ? "Nothing under review for this member."
-                : statusTab === "approved"
-                  ? "No approved timesheets yet."
-                  : "No rejected timesheets."
+              statusTab === "reviewAdmin"
+                ? "Nothing awaiting admin review for this member."
+                : statusTab === "reviewClient"
+                  ? "Nothing awaiting client review for this member."
+                  : statusTab === "approved"
+                    ? "No approved timesheets yet."
+                    : "No rejected timesheets."
             }
             savingId={savingId}
-            onDecide={decide}
+            onDecide={requestDecide}
             onEdit={onEdit}
             sowByStaffing={sowByStaffing}
             usedByStaffing={usedByStaffing}
@@ -437,6 +473,19 @@ export function TimesheetReviewClient({
         </div>
       ) : null}
       </div>
+
+      <ConfirmDialog
+        open={!!overwriteConfirm}
+        title="Overwrite the client's review?"
+        message="This timesheet is being reviewed by the client. Continuing decides it yourself and overrides their review. Are you sure?"
+        confirmLabel="Yes, override"
+        onCancel={() => setOverwriteConfirm(null)}
+        onConfirm={() => {
+          const c = overwriteConfirm;
+          setOverwriteConfirm(null);
+          if (c) decide(c.id, c.action, c.comment);
+        }}
+      />
     </div>
   );
 }

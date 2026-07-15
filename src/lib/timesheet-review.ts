@@ -1,10 +1,7 @@
 import {
   generateReviewToken,
-  getInvoiceById,
-  getPaymentById,
   getStaffingById,
   getTimesheetById,
-  listAllTimesheets,
   recordTimesheetReview,
   setTimesheetReviewToken,
   type StaffingAdminRecord,
@@ -102,48 +99,3 @@ async function dispatchClientReview(
   return res;
 }
 
-// Admin-triggered: (re)send the client-review request for the under-review
-// timesheets behind a payment. Used from the Review · Client tab when the
-// client hasn't received (or needs another) approval email — e.g. after a
-// member invoices work that is still under review.
-export async function requestClientReviewForPayment(
-  paymentId: string,
-): Promise<{ ok: boolean; sent: number; error?: string }> {
-  try {
-    const payment = await getPaymentById(paymentId);
-    if (!payment) return { ok: false, sent: 0, error: "Payment not found." };
-    const invoiceId = payment.memberInvoiceRecordIds[0];
-    const invoice = invoiceId ? await getInvoiceById(invoiceId) : null;
-    const staffingId = invoice?.staffingRecordId || payment.staffingRecordIds[0] || "";
-    const staffing = staffingId ? await getStaffingById(staffingId) : null;
-    if (!staffing) return { ok: false, sent: 0, error: "No staffing is linked to this payment." };
-    if (staffing.reviewMethod !== "Client") {
-      return { ok: false, sent: 0, error: "This payment's work is set to admin review, not client review." };
-    }
-    if (!staffing.reviewerEmail) {
-      return {
-        ok: false,
-        sent: 0,
-        error: "No reviewer email is set on the staffing. Add one in Staffing before sending.",
-      };
-    }
-    const all = await listAllTimesheets();
-    const targets = all.filter((t) => t.staffingRecordId === staffing.id && t.status === "Submitted");
-    if (targets.length === 0) {
-      return { ok: false, sent: 0, error: "No under-review timesheets to send for this payment." };
-    }
-    let sent = 0;
-    const errors: string[] = [];
-    for (const ts of targets) {
-      const res = await dispatchClientReview(ts, staffing, ts.memberCode || "");
-      if (res.ok) sent += 1;
-      else if (res.error) errors.push(res.error);
-    }
-    if (sent === 0) {
-      return { ok: false, sent: 0, error: errors[0] || "Could not send the review request." };
-    }
-    return { ok: true, sent };
-  } catch (e) {
-    return { ok: false, sent: 0, error: e instanceof Error ? e.message : "Unknown error" };
-  }
-}

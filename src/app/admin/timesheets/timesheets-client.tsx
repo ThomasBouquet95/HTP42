@@ -8,6 +8,7 @@ import { StatusBadge, timesheetStatusLabel } from "@/components/status-badge";
 import { WeekChip } from "@/components/week-chip";
 import { Button } from "@/components/form-controls";
 import { FilterBar, FilterMultiSelect, FilterDateRange, SegmentedTabs } from "@/components/filters";
+import { ConfirmDialog } from "@/components/modal";
 import { StatusPill } from "@/components/badge";
 import { TimesheetsByProject, TimesheetsByMember } from "./timesheets-breakdown";
 import { TimesheetReviewClient } from "./review-client";
@@ -143,6 +144,22 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
     const t = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(t);
   }, [toast]);
+  // Changing the status of a client-reviewed timesheet from the table overrides
+  // the client's review, so confirm first (mirrors the Review tab guard).
+  const [statusOverwrite, setStatusOverwrite] = useState<
+    { id: string; next: TimesheetStatus } | null
+  >(null);
+
+  // Route an inline status change through the client-review guard: a
+  // Client-method timesheet asks for confirmation, everything else applies now.
+  function requestStatusChange(t: AdminTimesheetRecord, next: TimesheetStatus) {
+    if (t.status === next) return;
+    if (t.reviewMethod === "Client") {
+      setStatusOverwrite({ id: t.id, next });
+      return;
+    }
+    updateStatus(t.id, next);
+  }
 
   async function updateStatus(id: string, next: TimesheetStatus) {
     const previous = rows.find((r) => r.id === id)?.status;
@@ -419,7 +436,7 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
                     <AdminStatusSelect
                       value={t.status}
                       disabled={savingIds.has(t.id) || LOCKED_TIMESHEET_STATUSES.includes(t.status)}
-                      onChange={(v) => updateStatus(t.id, v)}
+                      onChange={(v) => requestStatusChange(t, v)}
                     />
                   </td>
                   {DAY_KEYS.map((k) => (
@@ -515,6 +532,19 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
       ) : null}
 
       <TimesheetEditModal timesheet={editTs} staffings={staffings} onClose={() => setEditTs(null)} />
+
+      <ConfirmDialog
+        open={!!statusOverwrite}
+        title="Overwrite the client's review?"
+        message="This timesheet is being reviewed by the client. Changing its status here overrides their review. Are you sure?"
+        confirmLabel="Yes, override"
+        onCancel={() => setStatusOverwrite(null)}
+        onConfirm={() => {
+          const c = statusOverwrite;
+          setStatusOverwrite(null);
+          if (c) updateStatus(c.id, c.next);
+        }}
+      />
     </div>
   );
 }

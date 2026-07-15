@@ -129,7 +129,6 @@ export function buildReviewGroups(input: Inputs): {
       },
       memberName: member?.fullName || invoice?.memberName || "",
       memberCode: member?.memberCode || invoice?.memberCode || p.memberCodes[0] || "",
-      reviewMethod: (staffing?.reviewMethod as "Admin" | "Client" | "") || "",
       invoice: invoice
         ? {
             code: invoice.invoiceCode,
