@@ -3042,25 +3042,52 @@ async function ensureInvoiceCoveredTimesheetsField(): Promise<boolean> {
   }
 }
 
-// Map each timesheet record id that is already covered by a LIVE member invoice
-// to that invoice's status ("To be paid" / "Paid"), so the submission UI can
-// lock the week and show where the money is. Cancelled invoices are excluded —
-// their weeks free up so the member can re-invoice them.
+// Payment status shown to members, keyed off the payment (the invoice's own
+// status field is not authoritative). "Under Review" reads as "Under review".
+function displayPaymentStatus(s: string): string {
+  return s === "Under Review" ? "Under review" : s;
+}
+
+// invoiceRecordId → the status of the payment that settles it (preferring a
+// live, non-cancelled payment). Used so invoice lists + the picker reflect the
+// PAYMENT, not the stale invoice status field.
+export async function getPaymentStatusByInvoiceId(): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  try {
+    const payments = await listPayments();
+    for (const p of payments) {
+      for (const invId of p.memberInvoiceRecordIds) {
+        const cur = out.get(invId);
+        // A live payment wins over a cancelled one; otherwise first seen.
+        if (!cur || cur === "Canceled") out.set(invId, p.paymentStatus || "");
+      }
+    }
+  } catch (e) {
+    console.error("getPaymentStatusByInvoiceId failed:", e);
+  }
+  return out;
+}
+
+// Map each timesheet record id already covered by an invoice whose PAYMENT is
+// live (not cancelled) to that payment's status, so the submission UI can lock
+// the week and show where the money is. If the payment was cancelled (or gone)
+// the week frees up so the member can re-invoice it.
 export async function getInvoicedTimesheetStatuses(): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   try {
-    const records = await base(TABLES.memberInvoices)
-      .select({
-        fields: [FIELDS.memberInvoices.coveredTimesheets, FIELDS.memberInvoices.status],
-      })
-      .all();
+    const [payStatusByInvoice, records] = await Promise.all([
+      getPaymentStatusByInvoiceId(),
+      base(TABLES.memberInvoices)
+        .select({ fields: [FIELDS.memberInvoices.coveredTimesheets] })
+        .all(),
+    ]);
     for (const r of records) {
-      const status = str(r, FIELDS.memberInvoices.status);
-      if (status === "Cancelled") continue; // cancelled → week is free again
+      const payStatus = payStatusByInvoice.get(r.id) ?? "";
+      if (!payStatus || payStatus === "Canceled") continue; // no live payment → free
+      const shown = displayPaymentStatus(payStatus);
       const raw = str(r, FIELDS.memberInvoices.coveredTimesheets);
       for (const id of raw.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)) {
-        // "Paid" wins over "To be paid" if a week somehow appears on two.
-        if (out.get(id) !== "Paid") out.set(id, status || "To be paid");
+        if (out.get(id) !== "Paid") out.set(id, shown);
       }
     }
   } catch (e) {

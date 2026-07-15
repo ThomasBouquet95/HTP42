@@ -30,13 +30,25 @@ export default async function InvoicesPage() {
   // so no other member's payment data is exposed.
   const myInvoiceIds = new Set(invoices.map((i) => i.id));
   const paymentDateByInvoiceId: Record<string, string> = {};
+  // The authoritative status of an invoice is the status of the payment that
+  // settles it (the invoice's own status field can go stale, e.g. after the
+  // payment is cancelled). Map each of this member's invoices to its payment
+  // status, preferring a live (non-cancelled) payment.
+  const paymentStatusByInvoiceId: Record<string, string> = {};
+  const norm = (s: string) =>
+    s === "Under Review" ? "Under review" : s === "Canceled" ? "Cancelled" : s;
   for (const p of payments) {
-    if (!p.paymentDate) continue;
     for (const invId of p.memberInvoiceRecordIds) {
-      if (myInvoiceIds.has(invId) && !paymentDateByInvoiceId[invId]) {
+      if (!myInvoiceIds.has(invId)) continue;
+      if (p.paymentDate && !paymentDateByInvoiceId[invId]) {
         paymentDateByInvoiceId[invId] = p.paymentDate;
       }
+      const cur = paymentStatusByInvoiceId[invId];
+      if (!cur || cur === "Canceled") paymentStatusByInvoiceId[invId] = p.paymentStatus || "";
     }
+  }
+  for (const k of Object.keys(paymentStatusByInvoiceId)) {
+    paymentStatusByInvoiceId[k] = norm(paymentStatusByInvoiceId[k]);
   }
 
   // Members invoice against a specific staffing line, which keeps the picker
@@ -80,6 +92,7 @@ export default async function InvoicesPage() {
         staffings={pickerStaffings}
         timesheets={invoiceableTimesheets}
         paymentDateByInvoiceId={paymentDateByInvoiceId}
+        paymentStatusByInvoiceId={paymentStatusByInvoiceId}
       />
     </main>
   );

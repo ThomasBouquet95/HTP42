@@ -35,11 +35,13 @@ export function InvoicesClient({
   staffings,
   timesheets,
   paymentDateByInvoiceId,
+  paymentStatusByInvoiceId,
 }: {
   invoices: MemberInvoiceRecord[];
   staffings: StaffingOpt[];
   timesheets: TimesheetOpt[];
   paymentDateByInvoiceId: Record<string, string>;
+  paymentStatusByInvoiceId: Record<string, string>;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(invoices);
@@ -116,7 +118,12 @@ export function InvoicesClient({
                 </td>
               </tr>
             ) : (
-              rows.map((inv) => (
+              rows.map((inv) => {
+                // The payment that settles the invoice is authoritative — the
+                // invoice's own status field can be stale (e.g. after the
+                // payment is cancelled). Fall back to it only if no payment.
+                const effStatus = paymentStatusByInvoiceId[inv.id] || inv.status;
+                return (
                 <tr key={inv.id} className="border-t border-slate-100">
                   <td className="px-3 py-2 whitespace-nowrap text-slate-600">
                     {inv.submissionDate
@@ -143,12 +150,12 @@ export function InvoicesClient({
                       : "—"}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
-                    {inv.status ? (
-                      <StatusPill status={inv.status} />
+                    {effStatus ? (
+                      <StatusPill status={effStatus} />
                     ) : (
                       <span className="text-slate-300 text-[11px]">—</span>
                     )}
-                    {inv.status === "Paid" && paymentDateByInvoiceId[inv.id] ? (
+                    {effStatus === "Paid" && paymentDateByInvoiceId[inv.id] ? (
                       <div className="mt-0.5 text-[10px] text-emerald-700">
                         Paid {formatFriendlyDate(paymentDateByInvoiceId[inv.id])}
                       </div>
@@ -160,7 +167,7 @@ export function InvoicesClient({
                       >
                         Email failed, admin notified
                       </div>
-                    ) : !inv.emailSent && inv.status !== "Cancelled" ? (
+                    ) : !inv.emailSent && effStatus !== "Cancelled" ? (
                       <div className="mt-0.5 text-[9px] uppercase tracking-wide text-slate-400">
                         Email pending
                       </div>
@@ -181,14 +188,15 @@ export function InvoicesClient({
                     )}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    {inv.status !== "Paid" && inv.status !== "Cancelled" ? (
+                    {effStatus !== "Paid" && effStatus !== "Cancelled" ? (
                       <Button tone="danger" size="sm" onClick={() => cancelInvoice(inv.id)}>
                         Cancel
                       </Button>
                     ) : null}
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>
