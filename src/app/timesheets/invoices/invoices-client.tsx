@@ -28,12 +28,18 @@ function memberPaymentMeta(status: string): { label: string; cls: string } {
   return { label: `Payment ${s}`, cls: "border-slate-200 bg-slate-100 text-slate-600" };
 }
 
-function MemberPaymentPill({ status }: { status: string }) {
+function MemberPaymentPill({ status, paidOn }: { status: string; paidOn?: string }) {
   if (!status) return null;
   const { label, cls } = memberPaymentMeta(status);
+  // When paid, surface the payment date right in the pill so the member sees
+  // exactly when the money went out.
+  const text =
+    memberPaymentMeta(status).label === "Payment paid" && paidOn
+      ? `${label} · ${formatFriendlyDate(paidOn)}`
+      : label;
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}>
-      {label}
+      {text}
     </span>
   );
 }
@@ -180,13 +186,13 @@ export function InvoicesClient({
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {effStatus ? (
-                      <MemberPaymentPill status={effStatus} />
+                      <MemberPaymentPill status={effStatus} paidOn={paymentDateByInvoiceId[inv.id]} />
                     ) : (
                       <span className="text-slate-300 text-[11px]">—</span>
                     )}
                     {effStatus === "Paid" && paymentDateByInvoiceId[inv.id] ? (
                       <div className="mt-0.5 text-[10px] text-emerald-700">
-                        Paid {formatFriendlyDate(paymentDateByInvoiceId[inv.id])}
+                        Paid on {formatFriendlyDate(paymentDateByInvoiceId[inv.id])}
                       </div>
                     ) : null}
                     {inv.emailError ? (
