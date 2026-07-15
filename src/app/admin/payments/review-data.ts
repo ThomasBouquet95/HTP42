@@ -222,10 +222,12 @@ export function buildReviewGroups(input: Inputs): {
     g.bundles.push(buildBundle(p));
   }
 
-  const needsAction = (b: ReviewBundle) =>
-    isUnderReview(b.payment.status) ||
-    b.payment.status === "To be paid" ||
-    b.payment.status === "Scheduled";
+  const reviewCount = (g: MemberGroup) =>
+    g.bundles.filter((b) => isUnderReview(b.payment.status)).length;
+  const toPayCount = (g: MemberGroup) =>
+    g.bundles.filter(
+      (b) => b.payment.status === "To be paid" || b.payment.status === "Scheduled",
+    ).length;
   const groups = [...groupMap.values()]
     // Newest first within a member; the client re-buckets for the sub-tabs.
     .map((g) => ({
@@ -236,11 +238,16 @@ export function buildReviewGroups(input: Inputs): {
         ),
       ),
     }))
-    // Members needing action (under review or to be paid) rise to the top.
+    // Members with payments awaiting review come first (most first), then those
+    // with payments to pay (most first), then everyone else alphabetically.
     .sort((a, b) => {
-      const an = a.bundles.filter(needsAction).length;
-      const bn = b.bundles.filter(needsAction).length;
-      return bn - an || (a.memberName || a.memberCode).localeCompare(b.memberName || b.memberCode);
+      const ar = reviewCount(a);
+      const br = reviewCount(b);
+      if (ar !== br) return br - ar;
+      const ap = toPayCount(a);
+      const bp = toPayCount(b);
+      if (ap !== bp) return bp - ap;
+      return (a.memberName || a.memberCode).localeCompare(b.memberName || b.memberCode);
     });
 
   const totalUnderReview = groups.reduce(
