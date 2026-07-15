@@ -2602,11 +2602,11 @@ export async function cancelPaymentsForInvoice(invoiceRecordId: string): Promise
 }
 
 // When a timesheet is rejected (by the client via their review link, or by an
-// admin) after it has already been invoiced, the payment created for that
-// invoice is no longer valid. Cascade the rejection to every linked payment
-// that isn't already Paid or Rejected, so it leaves the review queue and the
-// covered week frees up for the member to re-invoice. Best-effort: never
-// throws so a cascade failure can't fail the timesheet decision itself.
+// admin) after it has already been invoiced, cascade the rejection to a linked
+// payment ONLY while that payment is still Under Review. Once a payment has
+// moved on (To be paid / Paid / Rejected / Canceled) it is left untouched — an
+// admin has already acted on it and must decide any change explicitly.
+// Best-effort: never throws so a cascade failure can't fail the decision.
 export async function rejectPaymentsForTimesheet(timesheetRecordId: string): Promise<number> {
   try {
     const [invoiceRecords, payments] = await Promise.all([
@@ -2622,10 +2622,12 @@ export async function rejectPaymentsForTimesheet(timesheetRecordId: string): Pro
       if (ids.includes(timesheetRecordId)) invoiceIds.add(r.id);
     }
     if (invoiceIds.size === 0) return 0;
+    // Only payments still awaiting review are affected. A blank/legacy status is
+    // shown as "Under Review" app-wide, so it counts as under review here too.
+    const underReview = (s: string) => s === "Under Review" || s === "";
     const targets = payments.filter(
       (p) =>
-        p.paymentStatus !== "Paid" &&
-        p.paymentStatus !== "Rejected" &&
+        underReview(p.paymentStatus) &&
         p.memberInvoiceRecordIds.some((id) => invoiceIds.has(id)),
     );
     for (const p of targets) {

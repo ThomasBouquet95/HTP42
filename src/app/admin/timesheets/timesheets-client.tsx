@@ -9,7 +9,6 @@ import { WeekChip } from "@/components/week-chip";
 import { Button } from "@/components/form-controls";
 import { FilterBar, FilterMultiSelect, FilterDateRange, SegmentedTabs } from "@/components/filters";
 import { ConfirmDialog } from "@/components/modal";
-import { StatusPill } from "@/components/badge";
 import { TimesheetsByProject, TimesheetsByMember } from "./timesheets-breakdown";
 import { TimesheetReviewClient } from "./review-client";
 import { TimesheetEditModal } from "./timesheet-edit-modal";
@@ -597,9 +596,9 @@ function RelatedInvoices({
                 {inv.submissionDate ? (
                   <span className="text-slate-400">{inv.submissionDate.slice(0, 10)}</span>
                 ) : null}
-                {/* Status + the settling payment, kept inline on the left. */}
+                {/* The invoice has no status of its own: it inherits the
+                    settling payment's status, shown on the payment chip. */}
                 <div className="flex shrink-0 items-center gap-2">
-                  {inv.status ? <StatusPill status={inv.status} /> : null}
                   {payment ? (
                     <a
                       href={`/admin/payments?payment=${encodeURIComponent(payment.id)}`}
