@@ -23,7 +23,14 @@ const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
 // Canonical status → bucket. Blank/legacy reads as "under review" (same rule
 // the payments list uses), Canceled is excluded from totals.
 type Bucket = "sent" | "committed" | "review" | "canceled";
-const KNOWN = new Set(["Under Review", "Scheduled", "To be paid", "Paid", "Canceled"]);
+const KNOWN = new Set([
+  "Under Review",
+  "Scheduled",
+  "To be paid",
+  "Paid",
+  "Rejected",
+  "Canceled",
+]);
 function effStatus(s: string): string {
   return KNOWN.has(s) ? s : "Under Review";
 }
@@ -31,7 +38,8 @@ function bucketOf(s: string): Bucket {
   const e = effStatus(s);
   if (e === "Paid") return "sent";
   if (e === "To be paid" || e === "Scheduled") return "committed";
-  if (e === "Canceled") return "canceled";
+  // Rejected + Canceled are both out of the active flow and excluded from totals.
+  if (e === "Canceled" || e === "Rejected") return "canceled";
   return "review";
 }
 

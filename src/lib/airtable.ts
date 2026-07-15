@@ -547,12 +547,14 @@ export type PaymentStatus =
   | "Scheduled"
   | "To be paid"
   | "Paid"
+  | "Rejected"
   | "Canceled";
 export const PAYMENT_STATUSES: PaymentStatus[] = [
   "Under Review",
   "Scheduled",
   "To be paid",
   "Paid",
+  "Rejected",
   "Canceled",
 ];
 
@@ -2490,6 +2492,25 @@ export async function updatePaymentStatus(
     fields[FIELDS.payments.paymentDate] = null;
   }
   await base(TABLES.payments).update([{ id: recordId, fields: fields as FieldSet }]);
+}
+
+// Cancel every payment linked to a member invoice (used when the member
+// cancels their own invoice while it is still under review). Only touches
+// payments that aren't already Paid — a paid payment stays as history.
+export async function cancelPaymentsForInvoice(invoiceRecordId: string): Promise<number> {
+  const payments = await listPaymentsRaw();
+  const targets = payments.filter(
+    (p) => p.memberInvoiceRecordIds.includes(invoiceRecordId) && p.paymentStatus !== "Paid",
+  );
+  for (const p of targets) {
+    await base(TABLES.payments).update([
+      {
+        id: p.id,
+        fields: { [FIELDS.payments.paymentStatus]: "Canceled" } as FieldSet,
+      },
+    ]);
+  }
+  return targets.length;
 }
 
 export async function updatePayment(recordId: string, input: PaymentInput): Promise<void> {

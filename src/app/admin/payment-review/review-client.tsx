@@ -33,6 +33,9 @@ export type ReviewBundle = {
   };
   memberName: string;
   memberCode: string;
+  // How the linked work is reviewed (from the staffing) — splits the
+  // under-review payments into admin vs client sub-tabs.
+  reviewMethod: "Admin" | "Client" | "";
   invoice: {
     code: string;
     pdfUrl: string;
@@ -90,9 +93,38 @@ export type MemberGroup = {
   memberId: string;
   memberName: string;
   memberCode: string;
-  underReview: ReviewBundle[];
-  toBePaid: ReviewBundle[];
-  past: ReviewBundle[];
+  // All outflow payment bundles for the member; the client buckets them by
+  // status + review method for the sub-tabs.
+  bundles: ReviewBundle[];
+};
+
+// The review sub-tabs, in workflow order.
+export type ReviewBucket =
+  | "reviewAdmin"
+  | "reviewClient"
+  | "toBePaid"
+  | "paid"
+  | "rejected"
+  | "cancelled";
+
+// Which bucket a bundle falls in, from its payment status + review method.
+export function bucketOfBundle(b: ReviewBundle): ReviewBucket {
+  const s = b.payment.status;
+  if (s === "Paid") return "paid";
+  if (s === "Rejected") return "rejected";
+  if (s === "Canceled") return "cancelled";
+  if (s === "To be paid" || s === "Scheduled") return "toBePaid";
+  // Under Review (or any legacy/blank status) → split by review method.
+  return b.reviewMethod === "Client" ? "reviewClient" : "reviewAdmin";
+}
+
+const EMPTY_NOTES: Record<ReviewBucket, string> = {
+  reviewAdmin: "Nothing awaiting admin review for this member.",
+  reviewClient: "Nothing awaiting client review for this member.",
+  toBePaid: "Nothing awaiting payment for this member.",
+  paid: "No paid payments yet.",
+  rejected: "No rejected payments.",
+  cancelled: "No cancelled payments.",
 };
 
 function money(v: number | null, currency: string): string {
@@ -162,7 +194,7 @@ export function PaymentReviewClient({
     if (initialMemberId) setSelectedId(initialMemberId);
   }, [initialMemberId]);
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [sectionTab, setSectionTab] = useState<"underReview" | "toBePaid" | "past">("underReview");
+  const [sectionTab, setSectionTab] = useState<ReviewBucket>("reviewAdmin");
   const [paidTargetId, setPaidTargetId] = useState<string | null>(null);
   const [expandedTs, setExpandedTs] = useState<Set<string>>(new Set());
   // Which payment cards are expanded. Defaults (set per selected member below):
@@ -206,16 +238,44 @@ export function PaymentReviewClient({
     [data, selectedId],
   );
 
-  // On (re)selecting a member, default the actionable cards open (to-be-paid
-  // and under-review) and past ones collapsed. User toggles persist until the
-  // selection or data changes.
+  // Bucket the selected member's bundles for the sub-tabs.
+  const buckets = useMemo(() => {
+    const b: Record<ReviewBucket, ReviewBundle[]> = {
+      reviewAdmin: [],
+      reviewClient: [],
+      toBePaid: [],
+      paid: [],
+      rejected: [],
+      cancelled: [],
+    };
+    for (const bundle of selected?.bundles ?? []) b[bucketOfBundle(bundle)].push(bundle);
+    return b;
+  }, [selected]);
+
+  // Per-member counts for the rail (actionable = under review + to be paid).
+  const countsByMember = useMemo(() => {
+    const m = new Map<string, { review: number; toPay: number; total: number }>();
+    for (const g of data) {
+      let review = 0;
+      let toPay = 0;
+      for (const bd of g.bundles) {
+        const bk = bucketOfBundle(bd);
+        if (bk === "reviewAdmin" || bk === "reviewClient") review += 1;
+        else if (bk === "toBePaid") toPay += 1;
+      }
+      m.set(g.memberId, { review, toPay, total: g.bundles.length });
+    }
+    return m;
+  }, [data]);
+
+  // On (re)selecting a member, default the actionable cards open (under review +
+  // to be paid) and terminal ones collapsed.
   useEffect(() => {
-    setOpenItems(
-      new Set([
-        ...(selected?.toBePaid.map((b) => b.payment.id) ?? []),
-        ...(selected?.underReview.map((b) => b.payment.id) ?? []),
-      ]),
-    );
+    const actionable = (selected?.bundles ?? []).filter((b) => {
+      const bk = bucketOfBundle(b);
+      return bk === "reviewAdmin" || bk === "reviewClient" || bk === "toBePaid";
+    });
+    setOpenItems(new Set(actionable.map((b) => b.payment.id)));
   }, [selected]);
 
   // Keep a valid selection as the (filtered) list changes.
@@ -239,25 +299,17 @@ export function PaymentReviewClient({
         const d = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(d.error ?? `Update failed (HTTP ${res.status})`);
       }
-      // Optimistically move the payment between buckets (under review → to be
-      // paid → past) for its member; router.refresh() then reconciles.
-      const toPay = status === "To be paid" || status === "Scheduled";
+      // Optimistically update the bundle's status; the buckets memo re-sorts it
+      // into the right sub-tab. router.refresh() then reconciles from the server.
       setData((ds) =>
-        ds.map((g) => {
-          const b =
-            g.underReview.find((x) => x.payment.id === id) ??
-            g.toBePaid.find((x) => x.payment.id === id);
-          if (!b) return g;
-          const moved: ReviewBundle = {
-            ...b,
-            payment: { ...b.payment, status, paymentDate: paymentDate ?? b.payment.paymentDate },
-          };
-          const underReview = g.underReview.filter((x) => x.payment.id !== id);
-          const toBePaid = g.toBePaid.filter((x) => x.payment.id !== id);
-          return toPay
-            ? { ...g, underReview, toBePaid: [moved, ...toBePaid] }
-            : { ...g, underReview, toBePaid, past: [moved, ...g.past] };
-        }),
+        ds.map((g) => ({
+          ...g,
+          bundles: g.bundles.map((b) =>
+            b.payment.id === id
+              ? { ...b, payment: { ...b.payment, status, paymentDate: paymentDate ?? b.payment.paymentDate } }
+              : b,
+          ),
+        })),
       );
       setToast({ kind: "ok", msg: `Marked ${status}` });
       setPaidTargetId(null);
@@ -275,6 +327,9 @@ export function PaymentReviewClient({
   const [approveConfirm, setApproveConfirm] = useState<
     { ids: string[]; count: number; onProceed: () => void } | null
   >(null);
+  // Overriding a client-reviewed payment (admin acting on work the client is
+  // still reviewing) asks for confirmation first.
+  const [overwriteConfirm, setOverwriteConfirm] = useState<{ onProceed: () => void } | null>(null);
 
   function guardApproval(b: ReviewBundle, proceed: () => void) {
     // Under-review / rejected weeks are the ones that block; Invoiced/Paid are
@@ -347,15 +402,18 @@ export function PaymentReviewClient({
                         {g.memberName || g.memberCode || "—"}
                       </div>
                       <div className="text-[11px] text-slate-400">
-                        {g.toBePaid.length} to pay · {g.past.length} past
+                        {countsByMember.get(g.memberId)?.total ?? 0} payment
+                        {(countsByMember.get(g.memberId)?.total ?? 0) === 1 ? "" : "s"}
                       </div>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1">
-                      {g.underReview.length > 0 ? (
-                        <Badge tone="warning">{g.underReview.length} to review</Badge>
+                      {(countsByMember.get(g.memberId)?.review ?? 0) > 0 ? (
+                        <Badge tone="warning">
+                          {countsByMember.get(g.memberId)?.review} to review
+                        </Badge>
                       ) : null}
-                      {g.toBePaid.length > 0 ? (
-                        <Badge tone="info">{g.toBePaid.length} to pay</Badge>
+                      {(countsByMember.get(g.memberId)?.toPay ?? 0) > 0 ? (
+                        <Badge tone="info">{countsByMember.get(g.memberId)?.toPay} to pay</Badge>
                       ) : null}
                     </div>
                   </button>
@@ -378,86 +436,66 @@ export function PaymentReviewClient({
             ) : null}
           </div>
 
-          <SegmentedTabs
-            ariaLabel="Payment status"
-            value={sectionTab}
-            onChange={setSectionTab}
-            options={[
-              {
-                value: "underReview",
-                label: "Under review",
-                badge: <TabCount n={selected.underReview.length} tone="warning" />,
-              },
-              {
-                value: "toBePaid",
-                label: "To be paid",
-                badge: <TabCount n={selected.toBePaid.length} tone="info" />,
-              },
-              {
-                value: "past",
-                label: "Past",
-                badge: <TabCount n={selected.past.length} tone="muted" />,
-              },
-            ]}
-          />
+          <div className="overflow-x-auto">
+            <SegmentedTabs
+              ariaLabel="Payment status"
+              value={sectionTab}
+              onChange={setSectionTab}
+              options={[
+                { value: "reviewAdmin", label: "Review · Admin", badge: <TabCount n={buckets.reviewAdmin.length} tone="warning" /> },
+                { value: "reviewClient", label: "Review · Client", badge: <TabCount n={buckets.reviewClient.length} tone="warning" /> },
+                { value: "toBePaid", label: "To be paid", badge: <TabCount n={buckets.toBePaid.length} tone="info" /> },
+                { value: "paid", label: "Paid", badge: <TabCount n={buckets.paid.length} tone="muted" /> },
+                { value: "rejected", label: "Rejected", badge: <TabCount n={buckets.rejected.length} tone="muted" /> },
+                { value: "cancelled", label: "Cancelled", badge: <TabCount n={buckets.cancelled.length} tone="muted" /> },
+              ]}
+            />
+          </div>
 
-          {sectionTab === "underReview" ? (
-            selected.underReview.length === 0 ? (
-              <EmptyNote>Nothing under review for this member.</EmptyNote>
-            ) : (
-              <div className="space-y-3">
-                {selected.underReview.map((b) => (
-                  <BundleDetail
-                    key={b.payment.id}
-                    bundle={b}
-                    accent="review"
-                    saving={savingId === b.payment.id}
-                    open={openItems.has(b.payment.id)}
-                    onToggle={() => toggleItem(b.payment.id)}
-                    expandedTs={expandedTs}
-                    toggleTs={toggleTs}
-                    onApprove={() => guardApproval(b, () => setStatus(b.payment.id, "To be paid"))}
-                    onCancel={() => setStatus(b.payment.id, "Canceled")}
-                  />
-                ))}
-              </div>
-            )
-          ) : sectionTab === "toBePaid" ? (
-            selected.toBePaid.length === 0 ? (
-              <EmptyNote>Nothing awaiting payment for this member.</EmptyNote>
-            ) : (
-              <div className="space-y-3">
-                {selected.toBePaid.map((b) => (
-                  <BundleDetail
-                    key={b.payment.id}
-                    bundle={b}
-                    accent="topay"
-                    saving={savingId === b.payment.id}
-                    open={openItems.has(b.payment.id)}
-                    onToggle={() => toggleItem(b.payment.id)}
-                    expandedTs={expandedTs}
-                    toggleTs={toggleTs}
-                    onMarkPaid={() => guardApproval(b, () => setPaidTargetId(b.payment.id))}
-                    onCancel={() => setStatus(b.payment.id, "Canceled")}
-                  />
-                ))}
-              </div>
-            )
-          ) : selected.past.length === 0 ? (
-            <EmptyNote>No past payments yet.</EmptyNote>
+          {buckets[sectionTab].length === 0 ? (
+            <EmptyNote>{EMPTY_NOTES[sectionTab]}</EmptyNote>
           ) : (
             <div className="space-y-3">
-              {selected.past.map((b) => (
-                <BundleDetail
-                  key={b.payment.id}
-                  bundle={b}
-                  readOnly
-                  open={openItems.has(b.payment.id)}
-                  onToggle={() => toggleItem(b.payment.id)}
-                  expandedTs={expandedTs}
-                  toggleTs={toggleTs}
-                />
-              ))}
+              {sectionTab === "reviewClient" ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  These payments cover work under <strong>client</strong> review. Approving or
+                  rejecting here overrides the client&apos;s pending review.
+                </div>
+              ) : null}
+              {buckets[sectionTab].map((b) => {
+                const isReview = sectionTab === "reviewAdmin" || sectionTab === "reviewClient";
+                const isToPay = sectionTab === "toBePaid";
+                const actOn = (proceed: () => void) => {
+                  if (sectionTab === "reviewClient") setOverwriteConfirm({ onProceed: proceed });
+                  else proceed();
+                };
+                return (
+                  <BundleDetail
+                    key={b.payment.id}
+                    bundle={b}
+                    accent={isToPay ? "topay" : "review"}
+                    readOnly={!isReview && !isToPay}
+                    saving={savingId === b.payment.id}
+                    open={openItems.has(b.payment.id)}
+                    onToggle={() => toggleItem(b.payment.id)}
+                    expandedTs={expandedTs}
+                    toggleTs={toggleTs}
+                    onApprove={
+                      isReview
+                        ? () => actOn(() => guardApproval(b, () => setStatus(b.payment.id, "To be paid")))
+                        : undefined
+                    }
+                    onMarkPaid={
+                      isToPay ? () => guardApproval(b, () => setPaidTargetId(b.payment.id)) : undefined
+                    }
+                    onReject={
+                      isReview || isToPay
+                        ? () => actOn(() => setStatus(b.payment.id, "Rejected"))
+                        : undefined
+                    }
+                  />
+                );
+              })}
             </div>
           )}
         </div>
@@ -490,6 +528,19 @@ export function PaymentReviewClient({
           } catch {
             setToast({ kind: "error", msg: "Could not approve the linked timesheets." });
           }
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!overwriteConfirm}
+        title="Overwrite the client's review?"
+        message="This payment's work is being reviewed by the client. Continuing overrides that pending review and decides it yourself. Are you sure?"
+        confirmLabel="Yes, override"
+        onCancel={() => setOverwriteConfirm(null)}
+        onConfirm={() => {
+          const c = overwriteConfirm;
+          setOverwriteConfirm(null);
+          c?.onProceed();
         }}
       />
 
@@ -545,7 +596,7 @@ function BundleDetail({
   toggleTs,
   onApprove,
   onMarkPaid,
-  onCancel,
+  onReject,
 }: {
   bundle: ReviewBundle;
   saving?: boolean;
@@ -557,7 +608,7 @@ function BundleDetail({
   toggleTs: (id: string) => void;
   onApprove?: () => void;
   onMarkPaid?: () => void;
-  onCancel?: () => void;
+  onReject?: () => void;
 }) {
   const tone = readOnly ? statusTone(selected.payment.status) : "review";
   const isToPay = accent === "topay";
@@ -643,9 +694,9 @@ function BundleDetail({
                 Mark as paid
               </button>
             ) : null}
-            {onCancel ? (
-              <Button tone="danger" size="sm" disabled={saving} onClick={onCancel}>
-                Cancel
+            {onReject ? (
+              <Button tone="danger" size="sm" disabled={saving} onClick={onReject}>
+                Reject
               </Button>
             ) : null}
             <Link

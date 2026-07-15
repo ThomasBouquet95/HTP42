@@ -70,9 +70,9 @@ export default async function AdminPaymentsPage({
   // Flatten the review bundles by payment id so the By project / By member
   // breakdown can show the linked invoice + timesheet breakdown inline when a
   // row is expanded (only outflows carry a bundle).
-  const bundleById: Record<string, (typeof groups)[number]["underReview"][number]> = {};
+  const bundleById: Record<string, (typeof groups)[number]["bundles"][number]> = {};
   for (const g of groups) {
-    for (const b of [...g.underReview, ...g.toBePaid, ...g.past]) {
+    for (const b of g.bundles) {
       bundleById[b.payment.id] = b;
     }
   }

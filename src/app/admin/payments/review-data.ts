@@ -12,7 +12,7 @@ import type { MemberGroup, ReviewBundle } from "../payment-review/review-client"
 // Statuses that count as "needs review" for an outflow: the canonical
 // "Under Review", plus any blank/legacy value outside the canonical set — the
 // payments list renders those as "Under Review", so they still need triage.
-const KNOWN = new Set(["Under Review", "Scheduled", "To be paid", "Paid", "Canceled"]);
+const KNOWN = new Set(["Under Review", "Scheduled", "To be paid", "Paid", "Rejected", "Canceled"]);
 const isUnderReview = (s: string) => (KNOWN.has(s) ? s === "Under Review" : true);
 
 type Inputs = {
@@ -129,6 +129,7 @@ export function buildReviewGroups(input: Inputs): {
       },
       memberName: member?.fullName || invoice?.memberName || "",
       memberCode: member?.memberCode || invoice?.memberCode || p.memberCodes[0] || "",
+      reviewMethod: (staffing?.reviewMethod as "Admin" | "Client" | "") || "",
       invoice: invoice
         ? {
             code: invoice.invoiceCode,
@@ -193,7 +194,7 @@ export function buildReviewGroups(input: Inputs): {
   function ensureGroup(memberId: string, name: string, code: string): MemberGroup {
     let g = groupMap.get(memberId);
     if (!g) {
-      g = { memberId, memberName: name, memberCode: code, underReview: [], toBePaid: [], past: [] };
+      g = { memberId, memberName: name, memberCode: code, bundles: [] };
       groupMap.set(memberId, g);
     } else {
       if (!g.memberName && name) g.memberName = name;
@@ -218,34 +219,33 @@ export function buildReviewGroups(input: Inputs): {
     if (!memberId) continue;
     const m = memberById.get(memberId);
     const g = ensureGroup(memberId, m?.fullName || "", m?.memberCode || p.memberCodes[0] || "");
-    const s = p.paymentStatus;
-    if (isUnderReview(s)) g.underReview.push(buildBundle(p));
-    else if (s === "To be paid" || s === "Scheduled") g.toBePaid.push(buildBundle(p));
-    else g.past.push(buildBundle(p));
+    g.bundles.push(buildBundle(p));
   }
 
-  const byRecency = (a: ReviewBundle, b: ReviewBundle) =>
-    (b.payment.paymentDate ?? b.payment.invoiceDate ?? "").localeCompare(
-      a.payment.paymentDate ?? a.payment.invoiceDate ?? "",
-    );
+  const needsAction = (b: ReviewBundle) =>
+    isUnderReview(b.payment.status) ||
+    b.payment.status === "To be paid" ||
+    b.payment.status === "Scheduled";
   const groups = [...groupMap.values()]
+    // Newest first within a member; the client re-buckets for the sub-tabs.
     .map((g) => ({
       ...g,
-      // Oldest-due first for items awaiting payment; newest first for history.
-      toBePaid: g.toBePaid.sort((a, b) =>
-        (a.payment.dueDate ?? a.payment.invoiceDate ?? "").localeCompare(
-          b.payment.dueDate ?? b.payment.invoiceDate ?? "",
+      bundles: g.bundles.sort((a, b) =>
+        (b.payment.invoiceDate ?? b.payment.paymentDate ?? "").localeCompare(
+          a.payment.invoiceDate ?? a.payment.paymentDate ?? "",
         ),
       ),
-      past: g.past.sort(byRecency),
     }))
     // Members needing action (under review or to be paid) rise to the top.
-    .sort(
-      (a, b) =>
-        b.underReview.length + b.toBePaid.length - (a.underReview.length + a.toBePaid.length) ||
-        (a.memberName || a.memberCode).localeCompare(b.memberName || b.memberCode),
-    );
+    .sort((a, b) => {
+      const an = a.bundles.filter(needsAction).length;
+      const bn = b.bundles.filter(needsAction).length;
+      return bn - an || (a.memberName || a.memberCode).localeCompare(b.memberName || b.memberCode);
+    });
 
-  const totalUnderReview = groups.reduce((n, g) => n + g.underReview.length, 0);
+  const totalUnderReview = groups.reduce(
+    (n, g) => n + g.bundles.filter((b) => isUnderReview(b.payment.status)).length,
+    0,
+  );
   return { groups, totalUnderReview };
 }

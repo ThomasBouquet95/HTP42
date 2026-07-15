@@ -420,33 +420,57 @@ function BusinessProcesses() {
       <Section title="Payments" intro="Money in (clients) and money out (subcontractors, expenses, vendors).">
         <p>
           A payment is either an <strong>Inflow</strong> (a client pays HTP42) or an{" "}
-          <strong>Outflow</strong> (HTP42 pays a member or vendor). Its status runs{" "}
-          <strong>Under review → To be paid → Paid</strong>.
+          <strong>Outflow</strong> (HTP42 pays a member or vendor). The lifecycle runs{" "}
+          <strong>Under review → To be paid → Paid</strong>, with two negative ends:{" "}
+          <strong>Rejected</strong> and <strong>Cancelled</strong>.
         </p>
+        <Table
+          head={["Status", "Meaning", "Who sets it"]}
+          rows={[
+            ["Under review", "Awaiting finance triage / approval.", "Set automatically when a member invoice is submitted."],
+            ["To be paid", "Approved for payment.", "Admin, in the Review dashboard."],
+            ["Paid", "Money has moved.", "Admin (with a payment date)."],
+            [
+              "Rejected",
+              "Refused by finance for approval reasons.",
+              "Admin only, via Reject in the Review dashboard.",
+            ],
+            [
+              "Cancelled",
+              "Withdrawn; kept as history, out of the active flow.",
+              "The member (while still under review, by cancelling their invoice), or an admin via Cancel payment on the Overview edit modal.",
+            ],
+          ]}
+        />
         <Bullets
           items={[
             <>
+              The <strong>Review</strong> dashboard splits payments into sub-tabs:{" "}
+              <strong>Review · Admin</strong>, <strong>Review · Client</strong> (by how the linked
+              work is reviewed), then <strong>To be paid</strong>, <strong>Paid</strong>,{" "}
+              <strong>Rejected</strong> and <strong>Cancelled</strong>.
+            </>,
+            <>
               For a <strong>Subcontractor</strong> outflow, the payment is linked to the{" "}
-              <strong>staffing</strong> it settles, and the project is <em>derived from that
-              staffing</em> (never chosen separately), so it can never drift onto the wrong project.
-            </>,
-            <>
-              The <strong>Review</strong> sub-tab groups payments by member for triage. By project /
-              By member show totals with a <strong>projected net</strong> = all inflows (including
-              still-to-receive) minus all outflows (including still-to-be-paid).
-            </>,
-            <>
-              Uploading an invoice PDF against a payment, and marking any payment Paid, each send a
-              finance recap email (see Automated emails).
+              <strong>staffing</strong> it settles; the project is derived from it and can never
+              drift. By project / By member show a <strong>projected net</strong> (all inflows,
+              including still-to-receive, minus all outflows still-to-be-paid). Rejected and
+              Cancelled payments are excluded from totals.
             </>,
           ]}
         />
         <Rule>
-          <strong>Decision + automated action:</strong> marking a payment <strong>To be paid</strong>{" "}
-          or <strong>Paid</strong> while its linked timesheets are still under review asks for
-          confirmation; on confirm, those timesheets are <strong>automatically approved</strong>{" "}
-          (paying implies the work is accepted). Marking a payment Paid also cascades to mark the
-          related member invoice Paid, but never changes any timesheet to Paid.
+          <strong>Cancel vs reject.</strong> A member can <strong>Cancel</strong> their invoice only
+          while it is still Under review; doing so automatically cancels the linked payment. An admin{" "}
+          <strong>Rejects</strong> a payment in the Review dashboard (approval refusal), or Cancels it
+          from the Overview edit modal.
+        </Rule>
+        <Rule tone="warning">
+          <strong>Automated action + client override.</strong> Marking a payment To be paid / Paid
+          while its linked timesheets are still under review auto-approves them on confirm (paying
+          implies acceptance). Acting on a <strong>Review · Client</strong> payment first warns that
+          the client is still reviewing and asks you to confirm the override. Marking Paid also marks
+          the related member invoice Paid, but never changes a timesheet&apos;s status.
         </Rule>
       </Section>
 

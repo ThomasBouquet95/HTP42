@@ -188,7 +188,9 @@ export function InvoicesClient({
                     )}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    {effStatus !== "Paid" && effStatus !== "Cancelled" ? (
+                    {/* A member can cancel only while the payment is still
+                        under review; once it's To be paid / Paid it's locked. */}
+                    {effStatus === "Under review" ? (
                       <Button tone="danger" size="sm" onClick={() => cancelInvoice(inv.id)}>
                         Cancel
                       </Button>

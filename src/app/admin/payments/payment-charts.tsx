@@ -24,11 +24,11 @@ export type MonthRow = [string, MonthCell];
 // the rest = planned. Order: most-informative (money moved) first.
 const STATUS_ORDER = ["Paid", "To be paid", "Scheduled", "Under Review"] as const;
 
-// Charts always exclude Canceled. "executed" scope further narrows to
-// Paid only.
+// Charts always exclude Canceled + Rejected. "executed" scope further narrows
+// to Paid only.
 function chartRows(payments: PaymentRecord[], scope: ChartScope): PaymentRecord[] {
   return payments.filter((p) => {
-    if (p.paymentStatus === "Canceled") return false;
+    if (p.paymentStatus === "Canceled" || p.paymentStatus === "Rejected") return false;
     if (scope === "executed" && p.paymentStatus !== "Paid") return false;
     return true;
   });
@@ -38,7 +38,7 @@ export function buildTotals(payments: PaymentRecord[]) {
   let inflowEur = 0;
   let outflowEur = 0;
   for (const p of payments) {
-    if (p.paymentStatus === "Canceled") continue;
+    if (p.paymentStatus === "Canceled" || p.paymentStatus === "Rejected") continue;
     const eur = effectiveEur(p);
     if (p.direction === "Inflow") inflowEur += eur;
     else if (p.direction === "Outflow") outflowEur += eur;

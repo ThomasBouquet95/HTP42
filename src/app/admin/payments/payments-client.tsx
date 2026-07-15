@@ -113,7 +113,14 @@ type SortDir = "asc" | "desc";
 // part of our current lifecycle. "Under Review" is the default for
 // payments auto-created from member-invoice submissions and signals the
 // admin still needs to look at the invoice before promoting it.
-const PAYMENT_STATUSES = ["Under Review", "Scheduled", "To be paid", "Paid", "Canceled"] as const;
+const PAYMENT_STATUSES = [
+  "Under Review",
+  "Scheduled",
+  "To be paid",
+  "Paid",
+  "Rejected",
+  "Canceled",
+] as const;
 const KNOWN_PAYMENT_STATUSES = new Set<string>(PAYMENT_STATUSES);
 
 // Stored values are canonical (Under Review / Scheduled / To be paid /
@@ -820,21 +827,28 @@ export function PaymentsClient({
     }
   }
 
+  // Soft-cancel a payment (admin, from the edit modal). Sets status to Canceled
+  // rather than hard-deleting the record, so it stays as history.
   async function confirmDelete() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/admin/payments/${deleteTarget.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/payments/${deleteTarget.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ paymentStatus: "Canceled" }),
+      });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? "Delete failed.");
+        throw new Error(d.error ?? "Could not cancel the payment.");
       }
       const wasEditing = editing?.id === deleteTarget.id;
       setDeleteTarget(null);
       if (wasEditing) closeModalNow();
+      setToast({ kind: "ok", msg: "Payment cancelled" });
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Delete failed.");
+      setError(e instanceof Error ? e.message : "Could not cancel the payment.");
     } finally {
       setDeleting(false);
     }
@@ -1221,7 +1235,7 @@ export function PaymentsClient({
         size="xl"
         footer={
           <>
-            {!creating && editing ? (
+            {!creating && editing && !["Paid", "Canceled"].includes(editing.paymentStatus) ? (
               <Button
                 tone="danger"
                 size="sm"
@@ -1229,11 +1243,11 @@ export function PaymentsClient({
                 onClick={() => setDeleteTarget(editing)}
                 className="mr-auto"
               >
-                Delete
+                Cancel payment
               </Button>
             ) : null}
             <Button tone="secondary" size="sm" onClick={closeModal} disabled={saving}>
-              Cancel
+              Close
             </Button>
             <Button tone="primary" size="sm" onClick={submit} disabled={saving}>
               {saving ? "Saving…" : creating ? "Create payment" : "Save changes"}
@@ -1512,7 +1526,11 @@ export function PaymentsClient({
               value={form.paymentStatus}
               onChange={(v) => updateField("paymentStatus", v)}
             >
-              {PAYMENT_STATUSES.map((s) => (
+              {/* Rejected is only set from the Review dashboard; keep it out of
+                  the edit dropdown unless the payment is already Rejected. */}
+              {PAYMENT_STATUSES.filter(
+                (s) => s !== "Rejected" || form.paymentStatus === "Rejected",
+              ).map((s) => (
                 <option key={s} value={s}>{statusLabel(s, form.direction)}</option>
               ))}
             </FormSelect>
@@ -1569,22 +1587,16 @@ export function PaymentsClient({
 
       <ConfirmDialog
         open={!!deleteTarget}
-        title="Delete payment?"
+        title="Cancel payment?"
         message={
           <>
-            This will permanently remove payment{" "}
-            <span className="font-mono">{deleteTarget?.paymentCode}</span>.
-            {deleteTarget && linkedPaymentIdSet.has(deleteTarget.id) ? (
-              <>
-                {" "}
-                It was auto-created from an automated invoice, so{" "}
-                <strong>the linked invoice will be deleted too.</strong>
-              </>
-            ) : null}{" "}
-            This cannot be undone.
+            Mark payment <span className="font-mono">{deleteTarget?.paymentCode}</span> as Cancelled?
+            It stays on record as history but leaves the active workflow (it won&apos;t show as
+            awaiting review or payment). To reject work for approval reasons, use Reject in the
+            Review tab instead.
           </>
         }
-        confirmLabel="Delete"
+        confirmLabel="Cancel payment"
         confirmTone="danger"
         busy={deleting}
         onCancel={() => (deleting ? undefined : setDeleteTarget(null))}
@@ -1724,7 +1736,7 @@ function paymentRowTint(
   if (status === "Paid") {
     return { row: "bg-slate-50 hover:bg-slate-100", cell0: "", select: "paid" };
   }
-  if (status === "Canceled") {
+  if (status === "Canceled" || status === "Rejected") {
     return { row: "bg-red-50/40 hover:bg-red-50", cell0: "", select: "canceled" };
   }
   return { row: "hover:bg-slate-50", cell0: "", select: "neutral" };
@@ -1765,7 +1777,9 @@ function StatusSelect({
           saving ? "opacity-60" : ""
         } focus:outline-none focus:ring-2 focus:ring-brand-500/30`}
       >
-        {PAYMENT_STATUSES.map((s) => (
+        {/* Rejected is set only from the Review dashboard; keep it out of the
+            quick dropdown unless the payment is already Rejected. */}
+        {PAYMENT_STATUSES.filter((s) => s !== "Rejected" || value === "Rejected").map((s) => (
           <option key={s} value={s}>{statusLabel(s, direction)}</option>
         ))}
       </select>

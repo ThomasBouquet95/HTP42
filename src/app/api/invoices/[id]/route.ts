@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { isAdmin } from "@/lib/session";
 import { apiError, zodMessage } from "@/lib/errors";
 import {
+  cancelPaymentsForInvoice,
   deleteInvoice,
   getInvoiceById,
   INVOICE_STATUSES,
@@ -58,6 +59,13 @@ export async function PATCH(
 
   try {
     await updateInvoiceStatus(id, next);
+    // Cancelling the invoice cancels the payment(s) it created, so finance no
+    // longer sees it awaiting action (a paid payment is left as history).
+    if (next === "Cancelled") {
+      await cancelPaymentsForInvoice(id).catch((e) =>
+        console.error("cancelPaymentsForInvoice failed:", e),
+      );
+    }
     const updated = await getInvoiceById(id);
     return NextResponse.json({ ok: true, invoice: updated });
   } catch (e) {
