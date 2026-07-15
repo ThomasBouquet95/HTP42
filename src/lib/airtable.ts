@@ -976,15 +976,38 @@ function memberAdminFromRecord(r: AirtableRecord<FieldSet>): MemberAdminRecord {
 // Wrapped in React cache() so repeated calls within one server request (many
 // admin pages assemble several lists that each rebuild this member index)
 // hit Airtable once, not N times. cache() is request-scoped — no staleness.
+// Cross-request TTL cache for very static REFERENCE reads (members, project
+// names). React's cache() only dedupes within one request; this lets repeated
+// page navigations reuse the same rarely-changing rows for a short window
+// instead of re-pulling the whole table every time, which is the main drag on
+// admin page loads. Volatile data (timesheets / invoices / payments) never
+// uses this, so nothing an admin acts on goes stale. A rejected load is
+// dropped so the next call retries.
+const _refTtl = new Map<string, { at: number; value: Promise<unknown> }>();
+function refCache<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
+  const hit = _refTtl.get(key);
+  const now = Date.now();
+  if (hit && now - hit.at < ttlMs) return hit.value as Promise<T>;
+  const value = load();
+  _refTtl.set(key, { at: now, value });
+  value.catch(() => {
+    if (_refTtl.get(key)?.value === value) _refTtl.delete(key);
+  });
+  return value;
+}
+const REF_TTL_MS = 60_000;
+
 export const listAllMembers = cache(async function listAllMembers(): Promise<
   MemberAdminRecord[]
 > {
-  const records = await base(TABLES.networkMembers)
-    .select({
-      sort: [{ field: FIELDS.networkMembers.memberCode, direction: "asc" }],
-    })
-    .all();
-  return records.map(memberAdminFromRecord);
+  return refCache("allMembers", REF_TTL_MS, async () => {
+    const records = await base(TABLES.networkMembers)
+      .select({
+        sort: [{ field: FIELDS.networkMembers.memberCode, direction: "asc" }],
+      })
+      .all();
+    return records.map(memberAdminFromRecord);
+  });
 });
 
 export type SignInActivity = {
@@ -3451,18 +3474,20 @@ export async function cascadeInvoicePaidForPayment(payment: PaymentRecord): Prom
 const getProjectNameMap = cache(async function getProjectNameMap(): Promise<
   Map<string, string>
 > {
-  const records = await base(TABLES.projects)
-    .select({
-      fields: [FIELDS.projects.projectCode, FIELDS.projects.projectName],
-    })
-    .all();
-  const map = new Map<string, string>();
-  for (const r of records) {
-    const code = str(r, FIELDS.projects.projectCode);
-    const name = str(r, FIELDS.projects.projectName);
-    if (code) map.set(code, name);
-  }
-  return map;
+  return refCache("projectNameMap", REF_TTL_MS, async () => {
+    const records = await base(TABLES.projects)
+      .select({
+        fields: [FIELDS.projects.projectCode, FIELDS.projects.projectName],
+      })
+      .all();
+    const map = new Map<string, string>();
+    for (const r of records) {
+      const code = str(r, FIELDS.projects.projectCode);
+      const name = str(r, FIELDS.projects.projectName);
+      if (code) map.set(code, name);
+    }
+    return map;
+  });
 });
 
 export async function getStaffingsForMember(
@@ -4373,10 +4398,12 @@ const getDaysUsedByStaffingId = cache(async function getDaysUsedByStaffingId(): 
 });
 
 const getMemberCodeMap = cache(async function getMemberCodeMap(): Promise<Map<string, string>> {
-  const records = await base(TABLES.networkMembers)
-    .select({ fields: [FIELDS.networkMembers.memberCode] })
-    .all();
-  return new Map(records.map((r) => [r.id, str(r, FIELDS.networkMembers.memberCode)]));
+  return refCache("memberCodeMap", REF_TTL_MS, async () => {
+    const records = await base(TABLES.networkMembers)
+      .select({ fields: [FIELDS.networkMembers.memberCode] })
+      .all();
+    return new Map(records.map((r) => [r.id, str(r, FIELDS.networkMembers.memberCode)]));
+  });
 });
 
 export async function listAllStaffings(): Promise<StaffingAdminRecord[]> {
