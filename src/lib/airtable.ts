@@ -2506,11 +2506,12 @@ export async function ensurePaymentStatusChoices(): Promise<{ ok: boolean; error
       paymentStatusChoicesReady = true;
       return { ok: true };
     }
-    // Reference existing choices by id only (Airtable keeps their name/color);
-    // new ones by name (Airtable assigns a colour). Sending an existing colour
-    // back can be rejected, so we omit it.
+    // Airtable requires each choice object to carry a name; existing ones keep
+    // their id (so they're preserved, not recreated), new ones are name-only
+    // and Airtable assigns a colour. Colour is omitted (optional) to avoid
+    // format rejections.
     const choices = [
-      ...existing.map((c) => ({ id: c.id })),
+      ...existing.map((c) => ({ id: c.id, name: c.name })),
       ...missing.map((name) => ({ name })),
     ];
     const patch = await fetch(
@@ -2561,14 +2562,20 @@ export async function updatePaymentStatus(
     fields[FIELDS.payments.paymentDate] = null;
   }
   try {
-    await base(TABLES.payments).update([{ id: recordId, fields: fields as FieldSet }]);
+    // typecast lets Airtable create the option on the fly as a fallback if the
+    // meta-API add didn't run (it's a no-op once the choice exists).
+    await base(TABLES.payments).update([{ id: recordId, fields: fields as FieldSet }], {
+      typecast: true,
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    // The status is a single-select; if the option doesn't exist yet and we
-    // couldn't add it automatically, give a clear, actionable message.
-    if (/select option/i.test(msg) && !ensured.ok) {
+    // The status is a single-select; if the option doesn't exist yet and it
+    // couldn't be added automatically, give a clear, actionable message.
+    if (/select option|INVALID_MULTIPLE_CHOICE/i.test(msg)) {
       throw new Error(
-        `Couldn't set the status to "${status}" — that option isn't on the Payments "Payment Status" field and couldn't be added automatically (${ensured.error ?? "permission"}). Add the "${status}" option once to that field in Airtable, then retry.`,
+        `Couldn't set the status to "${status}". That option isn't on the Payments "Payment Status" field and couldn't be added automatically${
+          ensured.ok ? "" : ` (${ensured.error ?? "permission"})`
+        }. Add the "${status}" option once to that field in Airtable, then retry.`,
       );
     }
     throw e;
