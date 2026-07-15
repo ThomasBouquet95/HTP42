@@ -476,9 +476,15 @@ export function TimesheetReviewClient({
 
       <ConfirmDialog
         open={!!overwriteConfirm}
-        title="Overwrite the client's review?"
-        message="This timesheet is being reviewed by the client. Continuing decides it yourself and overrides their review. Are you sure?"
-        confirmLabel="Yes, override"
+        title={overwriteConfirm?.action === "reject" ? "Reject instead of the client?" : "Approve instead of the client?"}
+        message={(() => {
+          const t = overwriteConfirm ? rows.find((r) => r.id === overwriteConfirm.id) : null;
+          const week = t ? formatWeekRange(t.startDate, t.endDate) : "this week";
+          const verb = overwriteConfirm?.action === "reject" ? "Rejecting" : "Approving";
+          return `The client was asked to review ${week} by email and hasn't decided yet. ${verb} it now records your decision and overrides the client's pending review. Continue?`;
+        })()}
+        confirmLabel={overwriteConfirm?.action === "reject" ? "Reject anyway" : "Approve anyway"}
+        confirmTone={overwriteConfirm?.action === "reject" ? "danger" : "primary"}
         onCancel={() => setOverwriteConfirm(null)}
         onConfirm={() => {
           const c = overwriteConfirm;
@@ -784,50 +790,72 @@ function ReviewCard({
         </dl>
       ) : null}
 
-      {/* Actions: Approve/Reject for under-review; for decided rows a subtle
-          Override link keeps the card clean until the admin opts in. */}
-      <div className="flex items-center gap-2 border-t border-slate-100 px-3 py-2">
+      {/* Actions. Admin-review weeks show Approve/Reject directly. Client-review
+          weeks wait on the client by default; the admin can opt in to decide it
+          themselves ("Review it myself"), which is clearly flagged as an
+          override and confirmed before it lands. */}
+      <div className="border-t border-slate-100 px-3 py-2">
         {showActions ? (
-          <>
-            <input
-              type="text"
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              placeholder={overriding ? "Reason for override (optional)" : "Comment (optional)"}
-              className="h-8 min-w-0 flex-1 rounded-md border border-slate-300 px-2.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-            />
-            <Button
-              tone={overriding ? "secondary" : "primary"}
-              size="sm"
-              disabled={saving || t.status === "Approved"}
-              onClick={() => onDecide(t.id, "approve", comment)}
-            >
-              Approve
-            </Button>
-            <Button
-              tone={overriding ? "secondary" : "danger"}
-              size="sm"
-              disabled={saving || t.status === "Rejected"}
-              onClick={() => onDecide(t.id, "reject", comment)}
-            >
-              Reject
-            </Button>
-          </>
+          <div className="flex flex-col gap-2">
+            {overriding ? (
+              <div className="flex items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1">
+                <span className="text-[11px] font-medium text-amber-800">
+                  Deciding this yourself will override the client&apos;s pending review.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOverriding(false);
+                    setComment("");
+                  }}
+                  className="shrink-0 text-[11px] font-medium text-amber-800 hover:underline"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : null}
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder={overriding ? "Reason (optional)" : "Comment (optional)"}
+                className="h-8 min-w-0 flex-1 rounded-md border border-slate-300 px-2.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+              />
+              <Button
+                tone="primary"
+                size="sm"
+                disabled={saving || t.status === "Approved"}
+                onClick={() => onDecide(t.id, "approve", comment)}
+              >
+                Approve
+              </Button>
+              <Button
+                tone="danger"
+                size="sm"
+                disabled={saving || t.status === "Rejected"}
+                onClick={() => onDecide(t.id, "reject", comment)}
+              >
+                Reject
+              </Button>
+            </div>
+          </div>
         ) : clientPending ? (
-          <>
-            <span className="min-w-0 flex-1 truncate text-[11px] text-amber-700">
-              Awaiting the client&apos;s decision, sent by email. No admin action needed.
+          <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5">
+            <span aria-hidden className="text-sm">✉</span>
+            <span className="min-w-0 flex-1 text-[11px] text-amber-800">
+              Sent to the client to review by email — waiting for their decision. No action needed.
             </span>
             <button
               type="button"
               onClick={() => setOverriding(true)}
-              className="shrink-0 text-[11px] font-medium text-slate-500 hover:text-slate-800"
+              className="shrink-0 rounded-md border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"
             >
-              Override
+              Review it myself
             </button>
-          </>
+          </div>
         ) : (
-          <>
+          <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
               <div className="text-[11px] text-slate-500">
                 {t.reviewedBy ? `${t.status} by ${t.reviewedBy}` : t.status}
@@ -845,9 +873,9 @@ function ReviewCard({
               onClick={() => setOverriding(true)}
               className="shrink-0 self-start text-[11px] font-medium text-slate-500 hover:text-slate-800"
             >
-              Override
+              Change decision
             </button>
-          </>
+          </div>
         )}
       </div>
     </div>
