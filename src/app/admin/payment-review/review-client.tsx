@@ -690,6 +690,16 @@ function BundleDetail({
                   ? ` · submitted ${selected.invoice.submissionDate.slice(0, 10)}`
                   : ""}
               </div>
+              {selected.invoice?.code || selected.payment.invoiceReference ? (
+                <a
+                  href={`/admin/invoices?search=${encodeURIComponent(
+                    selected.invoice?.code || selected.payment.invoiceReference || "",
+                  )}`}
+                  className="mt-0.5 inline-block font-medium text-brand-700 hover:underline"
+                >
+                  View in Invoices
+                </a>
+              ) : null}
             </div>
             {selected.payment.invoiceUrl ? (
               <a

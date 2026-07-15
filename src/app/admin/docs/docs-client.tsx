@@ -386,10 +386,10 @@ function BusinessProcesses() {
         </Rule>
       </Section>
 
-      <Section title="Invoicing: member submits an invoice" intro="Turning approved work into a bill and a payment to process.">
+      <Section title="Invoicing: member submits an invoice" intro="Turning logged work into a bill and a payment to process.">
         <Flow
           nodes={[
-            { label: "Approved timesheets", tone: "success" },
+            { label: "Logged timesheets", tone: "success" },
             { label: "Member submits invoice" },
             { label: "Outflow payment · Under review", tone: "warning" },
           ]}
@@ -398,21 +398,22 @@ function BusinessProcesses() {
           items={[
             <>The member picks the <strong>staffing</strong> the invoice is for.</>,
             <>
-              They select the weeks it covers. The picker shows each week&apos;s status, but{" "}
-              <strong>only Approved weeks can be selected</strong>. The rest are disabled.
+              They select the weeks it covers. Both <strong>Under review</strong> and{" "}
+              <strong>Approved</strong> weeks can be selected; Rejected weeks (need resubmission) and
+              already-invoiced or paid weeks are shown but locked.
             </>,
             <>They attach the invoice PDF, enter the amount + currency and a comment.</>,
             <>
               On submit the app <strong>creates an Outflow payment in Under review</strong> (linked
-              to the staffing, so the project is derived from it), attaches the PDF, optionally builds
-              a week-by-week timesheet summary PDF, and emails Finance (see Automated emails).
+              to the staffing, so the project is derived from it), marks the covered weeks Invoiced,
+              attaches the PDF, optionally builds a week-by-week summary PDF, and emails Finance.
             </>,
           ]}
         />
-        <Rule tone="warning">
-          <strong>Decision / gate:</strong> an invoice cannot be submitted while any selected week is
-          still under review. The blocking message is explicit: timesheets must first be approved by
-          an admin or the client.
+        <Rule>
+          A member can invoice work that is still under review; final approval is handled on the
+          payment side. Marking that payment To be paid or Paid auto-approves any linked weeks that
+          are still under review (see Payments).
         </Rule>
       </Section>
 

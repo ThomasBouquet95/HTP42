@@ -3,8 +3,8 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Badge, StatusPill } from "@/components/badge";
 import { StatusBadge } from "@/components/status-badge";
-import { DownloadChip } from "@/components/download-chip";
 import { SearchSelect } from "@/components/search-select";
+import { RelatedInvoiceLink } from "./related-invoice";
 import { effectiveEur } from "@/lib/fx";
 import type { PaymentRecord } from "@/lib/airtable";
 import type { ReviewBundle } from "../payment-review/review-client";
@@ -475,6 +475,15 @@ function Column({
                       />
                     ) : null}
 
+                    {(bundle?.invoice?.code || invoicePdf) && p.memberInvoiceRecordIds.length > 0 ? (
+                      <div className="mt-2">
+                        <RelatedInvoiceLink
+                          code={bundle?.invoice?.code || p.invoiceReference}
+                          pdfUrl={invoicePdf}
+                        />
+                      </div>
+                    ) : null}
+
                     <div className="mt-2 flex flex-wrap items-center gap-3">
                       <a
                         href={`/admin/payments?payment=${encodeURIComponent(p.id)}`}
@@ -482,9 +491,6 @@ function Column({
                       >
                         Open in Payments →
                       </a>
-                      {invoicePdf ? (
-                        <DownloadChip url={invoicePdf} title="Open invoice PDF" emptyTitle="No PDF" />
-                      ) : null}
                       {onReview && reviewMemberId ? (
                         <button
                           type="button"

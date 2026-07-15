@@ -13,6 +13,7 @@ import { DateField } from "@/components/date-picker";
 import { PaidDateModal } from "@/components/paid-date-modal";
 import { SearchSelect } from "@/components/search-select";
 import { TimesheetBreakdown } from "./payments-breakdown";
+import { RelatedInvoiceLink } from "./related-invoice";
 import type { ReviewBundle } from "../payment-review/review-client";
 import type { Currency, PaymentRecord, PaymentStatus } from "@/lib/airtable";
 
@@ -1855,35 +1856,12 @@ function PaymentDetails({
         <p className="rounded-md bg-white p-2 text-[11px] text-slate-600 demo-blur">{p.comment}</p>
       ) : null}
 
-      {/* Related invoice — the member invoice this payment settles. A clear
-          link to the invoice record and its PDF. */}
+      {/* Related invoice — the member invoice this payment settles. */}
       {p.memberInvoiceRecordIds.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-slate-200 bg-white p-2 text-xs">
-          <span className="font-semibold text-slate-500">Related invoice</span>
-          <span className="font-mono text-[11px] text-slate-800">
-            {invoice?.invoiceCode || p.invoiceReference || "—"}
-          </span>
-          <a
-            href={`/admin/invoices?search=${encodeURIComponent(
-              invoice?.invoiceCode || p.invoiceReference || "",
-            )}`}
-            onClick={(e) => e.stopPropagation()}
-            className="font-medium text-brand-700 hover:underline"
-          >
-            View in Invoices
-          </a>
-          {invoicePdfUrl ? (
-            <a
-              href={invoicePdfUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="font-medium text-brand-700 hover:underline"
-            >
-              Open PDF
-            </a>
-          ) : null}
-        </div>
+        <RelatedInvoiceLink
+          code={invoice?.invoiceCode || p.invoiceReference}
+          pdfUrl={invoicePdfUrl}
+        />
       ) : null}
 
       {/* Linked timesheets — same week-by-week list as the By project / By
