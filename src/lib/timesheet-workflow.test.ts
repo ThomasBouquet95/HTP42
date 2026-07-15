@@ -8,11 +8,13 @@ import {
 } from "@/lib/airtable";
 
 describe("timesheet transition state machine", () => {
-  it("allows the happy path Draft → Submitted → Approved → Invoiced → Paid", () => {
+  it("allows the happy path Draft → Submitted → Approved and stops there", () => {
     expect(canTransitionTimesheet("Draft", "Submitted")).toBe(true);
     expect(canTransitionTimesheet("Submitted", "Approved")).toBe(true);
-    expect(canTransitionTimesheet("Approved", "Invoiced")).toBe(true);
-    expect(canTransitionTimesheet("Invoiced", "Paid")).toBe(true);
+    // Approved is the end of the lifecycle — billing/payment is not a timesheet
+    // status, so there is no forward transition.
+    expect(canTransitionTimesheet("Approved", "Invoiced")).toBe(false);
+    expect(canTransitionTimesheet("Approved", "Paid")).toBe(false);
   });
 
   it("allows the rejection + resubmission loop", () => {
@@ -30,10 +32,12 @@ describe("timesheet transition state machine", () => {
     expect(canTransitionTimesheet("Invoiced", "Cancelled")).toBe(false);
   });
 
-  it("rejects invoicing a timesheet that has not been approved", () => {
+  it("never lets a timesheet enter a billing status (Invoiced/Paid)", () => {
     expect(canTransitionTimesheet("Submitted", "Invoiced")).toBe(false);
     expect(canTransitionTimesheet("Draft", "Invoiced")).toBe(false);
     expect(canTransitionTimesheet("Rejected", "Invoiced")).toBe(false);
+    expect(canTransitionTimesheet("Approved", "Invoiced")).toBe(false);
+    expect(canTransitionTimesheet("Approved", "Paid")).toBe(false);
   });
 
   it("treats Paid and Deleted as terminal", () => {

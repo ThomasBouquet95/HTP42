@@ -275,7 +275,7 @@ function BusinessProcesses() {
         <Flow
           nodes={[
             { label: "Draft" },
-            { label: "Submitted / Under review", tone: "warning" },
+            { label: "Under review", tone: "warning" },
             { label: "Approved", tone: "success" },
             { label: "Rejected", tone: "danger" },
           ]}
@@ -290,8 +290,8 @@ function BusinessProcesses() {
           rows={[
             ["Draft", "Being filled in; not yet sent.", "Member", "Submit → Under review; or Cancel."],
             [
-              "Submitted (Under review)",
-              "Sent for approval; awaiting a decision.",
+              "Under review",
+              "Submitted for approval; awaiting a decision.",
               "Member (by submitting)",
               "Approve → Approved; Reject → Rejected; member may Cancel or resubmit.",
             ],
@@ -323,9 +323,8 @@ function BusinessProcesses() {
         </Rule>
         <p className="mt-3 text-xs text-slate-500">
           <strong>Exceptions:</strong> a Rejected week loops back through review as many times as
-          needed; a Cancelled week never counts toward days-used or projected billing; only
-          Submitted, Approved (and any legacy Invoiced/Paid) weeks count toward a staffing&apos;s days
-          used.
+          needed; a Cancelled week never counts toward days-used or projected billing; only Under
+          review and Approved weeks count toward a staffing&apos;s days used.
         </p>
       </Section>
 
@@ -405,8 +404,9 @@ function BusinessProcesses() {
             <>They attach the invoice PDF, enter the amount + currency and a comment.</>,
             <>
               On submit the app <strong>creates an Outflow payment in Under review</strong> (linked
-              to the staffing, so the project is derived from it), marks the covered weeks Invoiced,
-              attaches the PDF, optionally builds a week-by-week summary PDF, and emails Finance.
+              to the staffing, so the project is derived from it), records the covered weeks on the
+              invoice (so they can&apos;t be billed twice), attaches the PDF, optionally builds a
+              week-by-week summary PDF, and emails Finance. The timesheets keep their own status.
             </>,
           ]}
         />
@@ -684,7 +684,7 @@ function TechnicalImplementation() {
               both read and write, so it can never drift from the staffing.
             </>,
             <>
-              <strong>Days used</strong> per staffing = sum of hours on Submitted/Approved/Invoiced/Paid
+              <strong>Days used</strong> per staffing = sum of hours on Under review and Approved
               timesheets ÷ 8. Draft/Rejected/Cancelled never count.
             </>,
             <>

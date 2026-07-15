@@ -264,6 +264,10 @@ export const FIELDS = {
     emailSent: "Email Sent",
     emailSentAt: "Email Sent At",
     emailError: "Email Error",
+    // Record ids of the timesheet weeks this invoice covers (newline-separated),
+    // so the same week can't be invoiced twice without flipping the timesheet's
+    // status. The timesheet stays Under review / Approved.
+    coveredTimesheets: "Covered Timesheets",
   },
   tasks: {
     title: "Title",
@@ -441,30 +445,34 @@ export type SowStatus = "Signed" | "In Progress" | "Draft" | "Not Started";
 export const SOW_STATUSES: SowStatus[] = ["Not Started", "Draft", "In Progress", "Signed"];
 
 // One status spans the whole lifecycle of a timesheet:
-//   Draft → Submitted (Under Review) → Approved → Invoiced → Paid.
+// The timesheet lifecycle stops at Approved:
+//   Draft → Submitted (Under Review) → Approved.
 // Branches: Submitted → Rejected / Cancelled; Rejected → Draft → Submitted.
 // Members own Draft → Submitted and can Cancel until approved; the reviewer
-// (admin or client, per the staffing's review method) owns Approved/Rejected;
-// admins own Invoiced/Paid (the latter via the payment cascade). "Submitted"
-// is stored but shown as "Under Review". Draft/Rejected/Cancelled/Deleted
-// never count toward logged/billed days. The legacy "Billing Status" field is
-// no longer written; it stays on Airtable for historical records but ignored.
+// (admin or client, per the staffing's review method) owns Approved/Rejected.
+// "Submitted" is stored but shown as "Under Review". Billing and payment are
+// tracked on the payment / invoice, NOT on the timesheet — a timesheet is never
+// "Invoiced" or "Paid". Those two remain in the union ONLY so legacy rows still
+// read/compile until migrated (see migrateLegacyInvoicedTimesheets /
+// migratePaidTimesheetsToApproved); they are not offered as settable statuses.
+// Draft/Rejected/Cancelled/Deleted never count toward logged days. The legacy
+// "Billing Status" field is no longer written.
 export type TimesheetStatus =
   | "Draft"
   | "Submitted"
   | "Approved"
   | "Rejected"
-  | "Invoiced"
-  | "Paid"
+  | "Invoiced" // legacy only — migrated back into the lifecycle
+  | "Paid" // legacy only — migrated back into the lifecycle
   | "Cancelled"
   | "Deleted";
+// The statuses a timesheet can actually be in / be set to. Invoiced and Paid
+// are intentionally excluded: they belong to payments, not timesheets.
 export const TIMESHEET_STATUSES: TimesheetStatus[] = [
   "Draft",
   "Submitted",
   "Approved",
   "Rejected",
-  "Invoiced",
-  "Paid",
   "Cancelled",
   "Deleted",
 ];
@@ -472,7 +480,8 @@ export const TIMESHEET_STATUSES: TimesheetStatus[] = [
 // Statuses that count as "logged effort" toward a staffing's days used and
 // toward what an invoice/payment settles. Draft/Rejected/Cancelled/Deleted are
 // excluded. (Submitted is included so days-in-flight still show while a week
-// awaits review.)
+// awaits review. Invoiced/Paid retained only so un-migrated legacy rows keep
+// counting until the one-shot migration runs.)
 export const LOGGED_TIMESHEET_STATUSES: TimesheetStatus[] = [
   "Submitted",
   "Approved",
@@ -489,9 +498,12 @@ export const REVIEW_METHODS: ReviewMethod[] = ["Admin", "Client"];
 const TIMESHEET_TRANSITIONS: Record<TimesheetStatus, TimesheetStatus[]> = {
   Draft: ["Submitted", "Cancelled", "Deleted"],
   Submitted: ["Approved", "Rejected", "Cancelled"],
-  Approved: ["Invoiced"],
+  // Approved is the end of the lifecycle. Billing/payment lives on the payment.
+  Approved: [],
   Rejected: ["Draft", "Submitted", "Cancelled", "Deleted"],
-  Invoiced: ["Paid"],
+  // Legacy states — no forward transitions; a migration moves them back into
+  // the lifecycle (Invoiced → Submitted, Paid → Approved).
+  Invoiced: [],
   Paid: [],
   Cancelled: ["Draft"],
   Deleted: [],
@@ -2992,6 +3004,62 @@ export async function getInvoiceById(recordId: string): Promise<MemberInvoiceRec
   }
 }
 
+// Lazily add the "Covered Timesheets" text field to the Member Invoices table
+// the first time we need it, so a plain create/update doesn't error on an
+// unknown field. Best-effort + cached.
+let invoiceCoveredTsFieldReady = false;
+async function ensureInvoiceCoveredTimesheetsField(): Promise<boolean> {
+  if (invoiceCoveredTsFieldReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.memberInvoices);
+    if (!table) return false;
+    if (table.fields?.some((f) => f.name === FIELDS.memberInvoices.coveredTimesheets)) {
+      invoiceCoveredTsFieldReady = true;
+      return true;
+    }
+    const add = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: FIELDS.memberInvoices.coveredTimesheets, type: "multilineText" }),
+      },
+    );
+    if (add.ok) invoiceCoveredTsFieldReady = true;
+    return add.ok;
+  } catch (e) {
+    console.error("ensureInvoiceCoveredTimesheetsField failed:", e);
+    return false;
+  }
+}
+
+// The set of timesheet record ids already covered by some member invoice, so
+// the submission UI can lock weeks that have already been billed.
+export async function getInvoicedTimesheetIds(): Promise<Set<string>> {
+  const out = new Set<string>();
+  try {
+    const records = await base(TABLES.memberInvoices)
+      .select({ fields: [FIELDS.memberInvoices.coveredTimesheets] })
+      .all();
+    for (const r of records) {
+      const raw = str(r, FIELDS.memberInvoices.coveredTimesheets);
+      for (const id of raw.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)) out.add(id);
+    }
+  } catch (e) {
+    console.error("getInvoicedTimesheetIds failed:", e);
+  }
+  return out;
+}
+
 export type InvoiceCreateInput = {
   memberRecordId: string;
   staffingRecordId: string;
@@ -3001,6 +3069,9 @@ export type InvoiceCreateInput = {
   amount: number | null;
   currency: Currency | "";
   comment: string;
+  // The timesheet weeks this invoice covers (record ids). Recorded on the
+  // invoice so a week can't be re-invoiced, WITHOUT changing its status.
+  timesheetRecordIds: string[];
   // PDF is uploaded directly via Airtable's content endpoint and the
   // returned URL is passed back in here so the record references it as
   // an attachment.
@@ -3008,6 +3079,8 @@ export type InvoiceCreateInput = {
 };
 
 export async function createMemberInvoice(input: InvoiceCreateInput): Promise<string> {
+  const hasCovered = input.timesheetRecordIds.length > 0;
+  if (hasCovered) await ensureInvoiceCoveredTimesheetsField();
   const fields: Record<string, unknown> = {
     [FIELDS.memberInvoices.member]: [input.memberRecordId],
     [FIELDS.memberInvoices.staffing]: [input.staffingRecordId],
@@ -3019,6 +3092,9 @@ export async function createMemberInvoice(input: InvoiceCreateInput): Promise<st
     [FIELDS.memberInvoices.comment]: input.comment,
     [FIELDS.memberInvoices.emailSent]: false,
   };
+  if (hasCovered) {
+    fields[FIELDS.memberInvoices.coveredTimesheets] = input.timesheetRecordIds.join("\n");
+  }
   const [created] = await base(TABLES.memberInvoices).create([
     { fields: fields as FieldSet },
   ]);
@@ -3757,12 +3833,11 @@ export async function countLegacyInvoicedTimesheets(): Promise<number> {
   return records.length;
 }
 
-// One-shot cutover migration: legacy "Invoiced" timesheets (marked invoiced
-// under the old flow, before the approval step existed) are reset to
-// "Submitted" so they re-enter the review workflow as Under review. Clears the
-// review fields, any client-review token, and the stale legacy Billing Status.
-// Genuinely-Paid weeks are left untouched. Run ONCE at cutover — a later re-run
-// would also revert weeks invoiced through the new flow.
+// Migration: legacy "Invoiced" timesheets (marked invoiced under the old flow)
+// are reset to "Submitted" so they re-enter the review workflow as Under
+// review. Clears the review fields, any client-review token, and the stale
+// legacy Billing Status. Now safe to re-run: invoicing no longer touches
+// timesheet status, so the only "Invoiced" rows are legacy ones.
 export async function migrateLegacyInvoicedTimesheets(): Promise<{ updated: number }> {
   await ensureTimesheetApprovalSchema();
   const records = await base(TABLES.timesheets)

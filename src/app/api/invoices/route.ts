@@ -10,7 +10,6 @@ import {
   listInvoicesForMember,
   listProjects,
   markInvoiceEmail,
-  updateTimesheetStatus,
   type Currency,
 } from "@/lib/airtable";
 import { env } from "@/lib/env";
@@ -144,7 +143,9 @@ export async function POST(request: Request) {
     );
   }
 
-  // 1) Create the invoice record (no PDF yet).
+  // 1) Create the invoice record (no PDF yet). The covered timesheet weeks are
+  // recorded on the invoice itself — the timesheets keep their own status
+  // (Under review / Approved); billing lives on the invoice + payment.
   const invoiceId = await createMemberInvoice({
     memberRecordId: session.sub,
     staffingRecordId: staffing.id,
@@ -152,6 +153,7 @@ export async function POST(request: Request) {
     amount,
     currency: (["EUR", "USD", "CHF"].includes(currency) ? (currency as Currency) : "") as Currency | "",
     comment,
+    timesheetRecordIds: timesheetsToInvoice,
     pdfAttachment: null,
   });
 
@@ -193,27 +195,10 @@ export async function POST(request: Request) {
     console.error("Auto-create payment for invoice failed:", e);
   }
 
-  // 1b) Mark each covered timesheet as Invoiced. Best-effort: if one of the
-  // updates fails (network blip, etc.) we don't unwind the invoice itself,
-  // since the record + PDF are already preserved on Airtable and the admin
-  // can recover the status manually. Failures are surfaced to the user.
-  if (timesheetsToInvoice.length > 0) {
-    const failures: string[] = [];
-    await Promise.all(
-      timesheetsToInvoice.map(async (id) => {
-        try {
-          await updateTimesheetStatus(id, "Invoiced");
-        } catch (e) {
-          failures.push(`${id}: ${e instanceof Error ? e.message : "update failed"}`);
-        }
-      }),
-    );
-    if (failures.length > 0) {
-      // Continue the rest of the flow so the email still goes out, but tag
-      // the response so the UI can surface it.
-      console.error("Failed to flip some timesheets to Invoiced:", failures.join("; "));
-    }
-  }
+  // Note: the covered timesheets are NOT changed here. Their lifecycle stops at
+  // Approved; the fact that they were billed is recorded on the invoice
+  // (Covered Timesheets) and on the linked payment. They stay Under review /
+  // Approved and are approved at the payment stage if still under review.
 
   // 2) Upload the PDF directly to the new record's PDF field.
   try {

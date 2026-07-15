@@ -25,6 +25,7 @@ type TimesheetOpt = {
   totalHours: number;
   timesheetCode: string;
   status: string;
+  alreadyInvoiced?: boolean;
 };
 
 export function InvoicesClient({
@@ -273,8 +274,11 @@ function NewInvoiceModal({
         !["Draft", "Cancelled", "Deleted"].includes(t.status),
     )
     .sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
-  const canInvoice = (status: string) => status === "Approved" || status === "Submitted";
-  const selectableIds = eligible.filter((t) => canInvoice(t.status)).map((t) => t.id);
+  // Invoiceable = a week that's Under review or Approved and not already billed
+  // on another invoice.
+  const canInvoice = (t: TimesheetOpt) =>
+    (t.status === "Approved" || t.status === "Submitted") && !t.alreadyInvoiced;
+  const selectableIds = eligible.filter(canInvoice).map((t) => t.id);
 
   useEffect(() => {
     if (!open) return;
@@ -413,8 +417,8 @@ function NewInvoiceModal({
                   eligible.map((t) => {
                     const checked = selectedTimesheetIds.has(t.id);
                     // Under-review (Submitted) and Approved weeks can be
-                    // invoiced; Rejected / already-invoiced / paid weeks can't.
-                    const canPick = canInvoice(t.status);
+                    // invoiced; Rejected / already-invoiced weeks can't.
+                    const canPick = canInvoice(t);
                     return (
                       <label
                         key={t.id}
@@ -424,9 +428,11 @@ function NewInvoiceModal({
                         title={
                           canPick
                             ? undefined
+                            : t.alreadyInvoiced
+                            ? "Already invoiced on another invoice."
                             : t.status === "Rejected"
                             ? "Rejected weeks must be revised and resubmitted first."
-                            : "Already invoiced."
+                            : "This week can't be invoiced."
                         }
                       >
                         <input
@@ -451,6 +457,11 @@ function NewInvoiceModal({
                           status={t.status}
                           label={t.status === "Submitted" ? "Under review" : undefined}
                         />
+                        {t.alreadyInvoiced ? (
+                          <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-600">
+                            Invoiced
+                          </span>
+                        ) : null}
                         <span className="ml-auto tabular-nums text-slate-500">
                           {t.totalHours.toFixed(1)} h
                         </span>
