@@ -4164,6 +4164,48 @@ export async function decideTimesheet(input: {
   }
 }
 
+// Client used their emailed review link to DECLINE the invoiced week. Policy:
+// this rejects the PAYMENT only. The timesheet work is not necessarily wrong,
+// so its status stays "Submitted" (under review) and the member can re-invoice
+// the week. We clear the single-use token, log the client's decision (with any
+// note), and cascade the rejection to the payment raised for the week.
+export async function rejectPaymentViaClientReview(input: {
+  recordId: string;
+  timesheetCode?: string;
+  staffingCode?: string;
+  reviewedBy: string;
+  comment?: string;
+}): Promise<void> {
+  await ensureTimesheetApprovalSchema();
+  await base(TABLES.timesheets).update(
+    [
+      {
+        id: input.recordId,
+        fields: {
+          // Status intentionally left unchanged: it stays Submitted (under
+          // review) so the declined week can be re-invoiced.
+          [FIELDS.timesheets.reviewComment]: input.comment ?? "",
+          [FIELDS.timesheets.reviewToken]: "",
+          [FIELDS.timesheets.reviewTokenExpiresAt]: "",
+        } as FieldSet,
+      },
+    ],
+    { typecast: true },
+  );
+  await recordTimesheetReview({
+    timesheetId: input.recordId,
+    timesheetCode: input.timesheetCode,
+    staffingCode: input.staffingCode,
+    action: "Rejected",
+    actor: input.reviewedBy,
+    method: "Client",
+    comment: input.comment
+      ? `Payment declined by client; week kept under review. ${input.comment}`
+      : "Payment declined by client; week kept under review.",
+  });
+  await rejectPaymentsForTimesheet(input.recordId);
+}
+
 // ---------------------------------------------------------------------------
 // Admin: Project Staffings (full CRUD)
 // ---------------------------------------------------------------------------
