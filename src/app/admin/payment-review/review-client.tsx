@@ -573,7 +573,6 @@ function BundleDetail({
   const isRejected = status === "Rejected";
   const isCanceled = status === "Canceled";
   const isUnderReview = !isToPay && !isPaid && !isRejected && !isCanceled;
-  const hasActions = !isPaid;
   const statusLabel = status === "Under Review" ? "Under review" : status;
   const [note, setNote] = useState(selected.payment.memberNote ?? "");
   return (
@@ -636,86 +635,77 @@ function BundleDetail({
             {selected.payment.comment}
           </p>
         ) : null}
-        {hasActions ? (
-          <div className="mt-3 space-y-2">
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={2}
-              placeholder="Note to the member (optional) — shown on their invoice, e.g. why it was rejected"
-              className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-            />
-            <div className="flex flex-wrap items-center gap-2">
-              {isUnderReview ? (
-                <Button tone="primary" size="sm" disabled={saving} onClick={() => onApprove(note)}>
-                  Approve → To be paid
-                </Button>
-              ) : null}
-              {isRejected ? (
-                <Button tone="primary" size="sm" disabled={saving} onClick={() => onApprove(note)}>
-                  Move to To be paid
-                </Button>
-              ) : null}
-              {isToPay ? (
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => onMarkPaid(note)}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Mark as paid
-                </button>
-              ) : null}
-              {isToPay || isRejected || isCanceled ? (
-                <Button
-                  tone="secondary"
-                  size="sm"
-                  disabled={saving}
-                  onClick={() => onSetStatus("Under Review", note)}
-                >
-                  Back to Under review
-                </Button>
-              ) : null}
-              {isUnderReview || isToPay ? (
-                <Button tone="danger" size="sm" disabled={saving} onClick={() => onSetStatus("Rejected", note)}>
-                  Reject
-                </Button>
-              ) : null}
-              {isUnderReview || isToPay || isRejected ? (
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => onSetStatus("Canceled", note)}
-                  className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
-                >
-                  Cancel payment
-                </button>
-              ) : null}
-              <Link
-                href={`/admin/payments?payment=${encodeURIComponent(selected.payment.id)}`}
-                className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700"
+        <div className="mt-3 space-y-2">
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            placeholder="Note to the member (optional) — shown on their invoice, e.g. why it was rejected"
+            className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Advance to "To be paid": from Under review (validates timesheets)
+                or reviving a Rejected payment. */}
+            {isUnderReview ? (
+              <Button tone="primary" size="sm" disabled={saving} onClick={() => onApprove(note)}>
+                Approve → To be paid
+              </Button>
+            ) : null}
+            {isRejected ? (
+              <Button tone="primary" size="sm" disabled={saving} onClick={() => onApprove(note)}>
+                Move to To be paid
+              </Button>
+            ) : null}
+            {isToPay ? (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => onMarkPaid(note)}
+                className="inline-flex items-center justify-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Open in Payments →
-              </Link>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            {selected.payment.memberNote ? (
-              <div className="min-w-0 text-[11px] text-slate-500">
-                <span className="font-medium">Note to member:</span> {selected.payment.memberNote}
-              </div>
-            ) : (
-              <span />
-            )}
+                Mark as paid
+              </button>
+            ) : null}
+            {/* Reverse a Paid payment (correction): straight back to To be paid. */}
+            {isPaid ? (
+              <Button tone="secondary" size="sm" disabled={saving} onClick={() => onSetStatus("To be paid", note)}>
+                Back to To be paid
+              </Button>
+            ) : null}
+            {/* Back to Under review is available from every non-review state. */}
+            {isToPay || isRejected || isCanceled || isPaid ? (
+              <Button
+                tone="secondary"
+                size="sm"
+                disabled={saving}
+                onClick={() => onSetStatus("Under Review", note)}
+              >
+                Back to Under review
+              </Button>
+            ) : null}
+            {isUnderReview || isToPay ? (
+              <Button tone="danger" size="sm" disabled={saving} onClick={() => onSetStatus("Rejected", note)}>
+                Reject
+              </Button>
+            ) : null}
+            {isUnderReview || isToPay || isRejected || isPaid ? (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => onSetStatus("Canceled", note)}
+                className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cancel payment
+              </button>
+            ) : null}
             <Link
               href={`/admin/payments?payment=${encodeURIComponent(selected.payment.id)}`}
-              className="shrink-0 text-xs font-medium text-brand-600 hover:text-brand-700"
+              className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700"
             >
               Open in Payments →
             </Link>
           </div>
-        )}
+        </div>
       </div>
 
       {open ? (
