@@ -25,18 +25,27 @@ const WEEKS_PER_LOAD = 8;
 const INITIAL_COLUMNS = 5;
 const COLUMNS_PER_LOAD = 5;
 
-// Status → dot colour + human label. Drives the per-cell status marker and the
-// legend, so the colours stay in sync with the rest of the app's badges.
-const STATUS_META: Record<string, { color: string; label: string }> = {
-  Draft: { color: "#94a3b8", label: "Draft" },
-  Submitted: { color: "#d97706", label: "Under review" },
-  Approved: { color: "#16a34a", label: "Approved" },
-  Rejected: { color: "#dc2626", label: "Rejected" },
-  Cancelled: { color: "#cbd5e1", label: "Cancelled" },
-  Invoiced: { color: "#2563eb", label: "Invoiced" },
-  Paid: { color: "#16a34a", label: "Paid" },
-  Deleted: { color: "#dc2626", label: "Deleted" },
+// Status → human label + the cell tint (background/text) and a legend swatch.
+// A week/day cell is shaded by its timesheet's status instead of carrying a
+// dot, so the status reads at a glance. Colours track the app's badges
+// ("Under review" is blue, not yellow).
+const STATUS_META: Record<
+  string,
+  { label: string; bg: string; text: string; swatch: string }
+> = {
+  Draft: { label: "Draft", bg: "bg-slate-100", text: "text-slate-700", swatch: "bg-slate-300" },
+  Submitted: { label: "Under review", bg: "bg-sky-50", text: "text-sky-800", swatch: "bg-sky-400" },
+  Approved: { label: "Approved", bg: "bg-emerald-50", text: "text-emerald-800", swatch: "bg-emerald-500" },
+  Rejected: { label: "Rejected", bg: "bg-rose-50", text: "text-rose-800", swatch: "bg-rose-500" },
+  Cancelled: { label: "Cancelled", bg: "bg-slate-100", text: "text-slate-400", swatch: "bg-slate-300" },
+  Invoiced: { label: "Invoiced", bg: "bg-indigo-50", text: "text-indigo-800", swatch: "bg-indigo-400" },
+  Paid: { label: "Paid", bg: "bg-emerald-100", text: "text-emerald-800", swatch: "bg-emerald-600" },
+  Deleted: { label: "Deleted", bg: "bg-rose-50", text: "text-rose-800", swatch: "bg-rose-500" },
 };
+const FALLBACK_META = { label: "", bg: "", text: "text-slate-900", swatch: "bg-slate-300" };
+function statusMeta(status: string | undefined) {
+  return (status && STATUS_META[status]) || FALLBACK_META;
+}
 const LEGEND_ORDER = ["Submitted", "Approved", "Rejected", "Draft", "Cancelled"] as const;
 
 type Cell = { hours: number; task: string; status: string };
@@ -59,16 +68,9 @@ type WeekData = {
   hasAnyEntry: boolean;
 };
 
-function StatusDot({ status }: { status: string }) {
-  const meta = STATUS_META[status] ?? { color: "#cbd5e1", label: status };
-  return (
-    <span
-      title={meta.label}
-      aria-label={meta.label}
-      className="inline-block h-2 w-2 shrink-0 rounded-full"
-      style={{ backgroundColor: meta.color }}
-    />
-  );
+function StatusSwatch({ status }: { status: string }) {
+  const meta = statusMeta(status);
+  return <span aria-hidden className={`inline-block h-3 w-3 shrink-0 rounded ${meta.swatch}`} />;
 }
 
 export function TimesheetsByWeekView({
@@ -220,7 +222,7 @@ export function TimesheetsByWeekView({
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {LEGEND_ORDER.map((s) => (
               <span key={s} className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
-                <StatusDot status={s} />
+                <StatusSwatch status={s} />
                 {STATUS_META[s].label}
               </span>
             ))}
@@ -336,16 +338,16 @@ function WeekBlock({
         {columns.map((c) => {
           const t = week.perStaffingTotal.get(c.id) ?? 0;
           const status = week.perStaffingStatus.get(c.id);
+          const meta = status ? statusMeta(status) : null;
           return (
-            <td key={c.id} className={`px-2 py-1.5 text-right tabular-nums font-semibold ${labelCls}`}>
-              {t > 0 ? (
-                <span className="inline-flex items-center justify-end gap-1.5">
-                  {status ? <StatusDot status={status} /> : null}
-                  <span>{t.toFixed(2)}</span>
-                </span>
-              ) : (
-                <span className="text-slate-300">—</span>
-              )}
+            <td
+              key={c.id}
+              title={meta?.label}
+              className={`px-2 py-1.5 text-right tabular-nums font-semibold ${
+                t > 0 && meta ? `${meta.bg} ${meta.text}` : labelCls
+              }`}
+            >
+              {t > 0 ? t.toFixed(2) : <span className="text-slate-300">—</span>}
             </td>
           );
         })}
@@ -364,20 +366,16 @@ function WeekBlock({
                 </td>
                 {columns.map((c) => {
                   const cell = week.cells[k].get(c.id);
+                  const meta = cell ? statusMeta(cell.status) : null;
                   return (
                     <td
                       key={c.id}
-                      className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap"
-                      title={cell?.task || ""}
+                      className={`px-2 py-1.5 text-right tabular-nums whitespace-nowrap ${
+                        cell && meta ? `${meta.bg} ${meta.text}` : ""
+                      }`}
+                      title={cell ? [meta?.label, cell.task].filter(Boolean).join(" · ") : ""}
                     >
-                      {cell ? (
-                        <span className="inline-flex items-center justify-end gap-1.5">
-                          {cell.status ? <StatusDot status={cell.status} /> : null}
-                          <span className="text-slate-900">{cell.hours.toFixed(2)}</span>
-                        </span>
-                      ) : (
-                        <span className="text-slate-300">—</span>
-                      )}
+                      {cell ? cell.hours.toFixed(2) : <span className="text-slate-300">—</span>}
                     </td>
                   );
                 })}

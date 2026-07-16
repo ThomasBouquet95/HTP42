@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TimesheetRecord, TimesheetStatus } from "@/lib/airtable";
 import { StatusBadge, timesheetStatusLabel } from "@/components/status-badge";
+import { reviewerLine } from "@/app/timesheets/[id]/read-only";
 import { ConfirmDialog } from "@/components/modal";
 import { Button } from "@/components/form-controls";
 import { EditIcon, EyeIcon, IconButton, TrashIcon } from "@/components/admin-icons";
@@ -461,6 +462,7 @@ export function SummaryClient({
               <th className="text-left px-2 py-1.5 font-medium whitespace-nowrap">Week</th>
               <th className="text-left px-2 py-1.5 font-medium">Staffing</th>
               <th className="text-left px-2 py-1.5 font-medium">Status</th>
+              <th className="text-left px-2 py-1.5 font-medium">Review</th>
               {DAY_KEYS.map((k) => (
                 <th key={k} className="text-right px-2 py-1.5 font-medium normal-case tracking-normal">
                   {DAY_LABELS[k].slice(0, 3)}
@@ -473,7 +475,7 @@ export function SummaryClient({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={editable ? 10 : 9} className="text-center text-slate-500 py-8 text-xs">
+                <td colSpan={editable ? 11 : 10} className="text-center text-slate-500 py-8 text-xs">
                   No timesheets match these filters.
                 </td>
               </tr>
@@ -494,15 +496,21 @@ export function SummaryClient({
                     </div>
                   </td>
                   <td className="px-2 py-1.5">
-                    <StatusBadge
-                      status={t.status}
-                      review={{
-                        reviewMethod: t.reviewMethod,
-                        reviewedBy: t.reviewedBy,
-                        reviewedAt: t.reviewedAt,
-                        reviewComment: t.reviewComment,
-                      }}
-                    />
+                    <StatusBadge status={t.status} />
+                  </td>
+                  <td className="px-2 py-1.5 max-w-[18rem]">
+                    {t.status === "Approved" || t.status === "Rejected" ? (
+                      <div className="text-[11px]">
+                        <div className="text-slate-600">{reviewerLine(t) || "—"}</div>
+                        {t.reviewComment ? (
+                          <div className="mt-0.5 whitespace-pre-line text-slate-500">
+                            “{t.reviewComment}”
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
                   </td>
                   {DAY_KEYS.map((k) => (
                     <td key={k} className="px-2 py-1.5 text-right tabular-nums">
