@@ -157,10 +157,14 @@ export function InvoicesClient({
               </tr>
             ) : (
               rows.map((inv) => {
-                // The payment that settles the invoice is authoritative — the
-                // invoice's own status field can be stale (e.g. after the
-                // payment is cancelled). Fall back to it only if no payment.
-                const effStatus = paymentStatusByInvoiceId[inv.id] || inv.status;
+                // The payment that settles the invoice is authoritative. With
+                // no live payment mapped (creation still pending/failed, or a
+                // blank legacy status), treat it as "Under review" so it isn't
+                // mislabelled "in progress" and the member keeps the Cancel
+                // action — unless the invoice itself is already Paid/Cancelled.
+                const effStatus =
+                  paymentStatusByInvoiceId[inv.id] ||
+                  (inv.status === "Paid" || inv.status === "Cancelled" ? inv.status : "Under review");
                 return (
                 <tr key={inv.id} className="border-t border-slate-100">
                   <td className="px-3 py-2 whitespace-nowrap text-slate-600">

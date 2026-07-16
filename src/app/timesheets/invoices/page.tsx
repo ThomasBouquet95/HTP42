@@ -46,7 +46,10 @@ export default async function InvoicesPage() {
         paymentDateByInvoiceId[invId] = p.paymentDate;
       }
       const cur = paymentStatusByInvoiceId[invId];
-      if (!cur || cur === "Canceled") {
+      // A live payment wins over a dead one (Canceled OR Rejected), matching
+      // getPaymentStatusByInvoiceId, so a stale rejected payment can't mask a
+      // live one and the note comes from the winning payment.
+      if (!cur || cur === "Canceled" || cur === "Rejected") {
         paymentStatusByInvoiceId[invId] = p.paymentStatus || "";
         memberNoteByInvoiceId[invId] = p.memberNote || "";
       }

@@ -336,7 +336,7 @@ export function PaymentReviewClient({
   }
 
   async function approveTimesheets(ids: string[]) {
-    await Promise.all(
+    const results = await Promise.all(
       ids.map((id) =>
         fetch(`/api/admin/timesheets/${encodeURIComponent(id)}`, {
           method: "PATCH",
@@ -345,6 +345,12 @@ export function PaymentReviewClient({
         }),
       ),
     );
+    // A failed approval (e.g. a 403 for a scoped Project Manager) must block the
+    // payment from advancing — throw so the caller skips onProceed and toasts.
+    const failed = results.filter((r) => !r.ok).length;
+    if (failed > 0) {
+      throw new Error(`${failed} linked timesheet${failed === 1 ? "" : "s"} could not be approved.`);
+    }
   }
 
   if (data.length === 0) {
@@ -487,7 +493,7 @@ export function PaymentReviewClient({
         title="Approve linked timesheets?"
         message={`${approveConfirm?.count ?? 0} linked timesheet${
           approveConfirm?.count === 1 ? " is" : "s are"
-        } still under review. Approving this payment will automatically approve ${
+        } not yet approved (under review or rejected). Approving this payment will automatically approve ${
           approveConfirm?.count === 1 ? "it" : "them"
         }. Continue?`}
         confirmLabel="Approve and continue"
