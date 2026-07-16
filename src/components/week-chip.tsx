@@ -1,7 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
-import { formatWeekRange, parseIsoDate, thisMondayIso, toIsoDate } from "@/lib/dates";
+import { formatWeekRange, parseIsoDate, toIsoDate } from "@/lib/dates";
 
 type Props = {
   startIso: string | null;
@@ -40,14 +40,11 @@ export function WeekChip({ startIso, endIso, variant = "chip", className }: Prop
   if (!startIso || !endIso) {
     return <span className={className ?? "text-slate-400"}>—</span>;
   }
-  const isCurrent = startIso === thisMondayIso();
-  // The current week is emphasised in blue (a slightly stronger brand tint),
-  // not yellow, to stay consistent with the rest of the app.
+  // Every week chip looks the same — no special highlight for the current
+  // week — so the column reads consistently.
   const labelCls =
     variant === "plain"
-      ? `${isCurrent ? "text-brand-700 font-medium" : "text-slate-700"} ${className ?? ""}`
-      : isCurrent
-      ? `inline-flex items-center rounded-md bg-brand-100 px-2 py-0.5 text-brand-800 ring-1 ring-brand-300 font-medium ${className ?? ""}`
+      ? `text-slate-700 ${className ?? ""}`
       : `inline-flex items-center rounded-md bg-brand-50 px-2 py-0.5 text-brand-700 ring-1 ring-brand-100 ${className ?? ""}`;
   return (
     <>
