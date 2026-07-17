@@ -62,10 +62,20 @@ export async function POST(request: Request) {
       return NextResponse.json(result);
     }
 
-    // apply
+    // apply — dedupe so the 1:1 invariant (one tx ↔ one payment) holds even if
+    // a stale/edited payload arrives: keep the first occurrence of each txId and
+    // each paymentId, drop the rest.
+    const seenTx = new Set<string>();
+    const seenPayment = new Set<string>();
+    const links = parsed.data.links.filter((l) => {
+      if (seenTx.has(l.txId) || seenPayment.has(l.paymentId)) return false;
+      seenTx.add(l.txId);
+      seenPayment.add(l.paymentId);
+      return true;
+    });
     const matchedAt = new Date().toISOString().slice(0, 10);
-    const linked = await applyReconciliationLinks(parsed.data.links, matchedAt);
-    return NextResponse.json({ linked });
+    const { applied, failed } = await applyReconciliationLinks(links, matchedAt);
+    return NextResponse.json({ linked: applied, failed });
   } catch (e) {
     return apiError(e, parsed.data.action === "scan" ? "scan for matches" : "link the payments");
   }

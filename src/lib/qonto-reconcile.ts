@@ -115,9 +115,10 @@ function scoreOne(
   p: ReconInputPayment,
   tx: QontoTx,
 ): { score: number; confidence: ReconProposal["confidence"]; reasons: string[] } | null {
-  // Direction is mandatory.
+  // Direction is mandatory: an undirected payment can't be safely matched to
+  // either side, so require a known, agreeing direction.
   const pSide = sideOf(p.direction);
-  if (pSide && pSide !== tx.side) return null;
+  if (!pSide || pSide !== tx.side) return null;
 
   const amt = amountMatch(p, tx);
   if (!amt) return null;
@@ -126,12 +127,19 @@ function scoreOne(
   const amountScore = amt.exact ? 1 : 0.6;
   reasons.push(amt.exact ? "amount exact" : "amount ~match");
 
-  // Name / reference.
+  // Name / reference. A reference match only counts when the reference is
+  // distinctive — a short pure-digit ref (e.g. "123") would otherwise match a
+  // coincidental digit run inside an IBAN or another number in the memo.
   const txText = `${tx.label} ${tx.reference} ${tx.note}`;
-  let nameScore: number;
   const ref = normalizeText(p.reference);
-  if (ref.length >= 3 && normalizeText(txText).includes(ref)) {
+  const refCompact = ref.replace(/\s+/g, "");
+  const refDistinctive = refCompact.length >= 5 || (/[a-z]/.test(refCompact) && refCompact.length >= 3);
+  let nameScore: number;
+  let referenceMatch = false;
+  let nameHits = 0;
+  if (refDistinctive && normalizeText(txText).includes(ref)) {
     nameScore = 1;
+    referenceMatch = true;
     reasons.push("reference match");
   } else {
     const pTokens = tokens(p.names.join(" "));
@@ -139,9 +147,9 @@ function scoreOne(
       nameScore = 0.2;
     } else {
       const q = new Set(tokens(txText));
-      const hits = pTokens.filter((t) => q.has(t)).length;
-      nameScore = hits / pTokens.length;
-      if (hits > 0) reasons.push(`name ${hits}/${pTokens.length}`);
+      nameHits = pTokens.filter((t) => q.has(t)).length;
+      nameScore = nameHits / pTokens.length;
+      if (nameHits > 0) reasons.push(`name ${nameHits}/${pTokens.length}`);
     }
   }
 
@@ -156,8 +164,20 @@ function scoreOne(
   }
 
   const score = 0.5 * amountScore + 0.3 * nameScore + 0.2 * dateScore;
-  const confidence: ReconProposal["confidence"] =
-    score >= 0.8 ? "high" : score >= 0.62 ? "medium" : "low";
+
+  // Confidence needs corroboration beyond amount alone, so recurring / round
+  // amounts don't auto-select the wrong row:
+  //  - high: exact amount AND a strong identity signal (reference or ≥half the
+  //          name tokens matched).
+  //  - medium: exact amount AND some identity/date signal.
+  //  - low: everything else (amount ~match, or amount-only with no support).
+  const strongName = referenceMatch || nameScore >= 0.5;
+  const someSignal = referenceMatch || nameHits > 0 || (dd != null && dd <= 30);
+  let confidence: ReconProposal["confidence"];
+  if (amt.exact && strongName) confidence = "high";
+  else if (amt.exact && someSignal) confidence = "medium";
+  else confidence = "low";
+
   return { score, confidence, reasons };
 }
 
@@ -169,7 +189,12 @@ export function proposeReconciliation(
   txs: QontoTx[],
   minScore = 0.5,
 ): ReconResult {
-  const usableTx = txs.filter((t) => t.status.toLowerCase() !== "declined");
+  // Only match transactions that carry a stable Qonto id. Synthetic fallback
+  // ids (built from iban|date|amount|index when the API omits one) can shift
+  // between fetches, so a link made against them could later point nowhere.
+  const usableTx = txs.filter(
+    (t) => t.status.toLowerCase() !== "declined" && !t.id.includes("|"),
+  );
 
   // Transactions already claimed by an existing link are off the table.
   const alreadyLinkedTxIds = new Set(

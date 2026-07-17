@@ -111,6 +111,34 @@ describe("proposeReconciliation", () => {
     expect(proposeReconciliation(payments, txs).proposals).toHaveLength(0);
   });
 
+  it("does not match a payment with an unknown (empty) direction", () => {
+    const payments = [pay({ id: "p1", direction: "", names: ["ACME"] })];
+    const txs = [tx({ id: "t1", side: "outflow", label: "ACME" })];
+    expect(proposeReconciliation(payments, txs).proposals).toHaveLength(0);
+  });
+
+  it("keeps an amount-only match (no name, far date) at low confidence", () => {
+    const payments = [pay({ id: "p1", names: [], reference: "", date: "2026-01-01" })];
+    const txs = [tx({ id: "t1", amount: 1000, label: "SEPA CREDIT", settledAt: "2026-06-15" })];
+    const { proposals } = proposeReconciliation(payments, txs);
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0].confidence).toBe("low");
+  });
+
+  it("ignores a short pure-digit reference to avoid coincidental matches", () => {
+    const payments = [pay({ id: "p1", reference: "123", names: [], date: "2026-01-01" })];
+    const txs = [tx({ id: "t1", amount: 1000, reference: "FR7630001007941234", settledAt: "2026-06-15" })];
+    const { proposals } = proposeReconciliation(payments, txs);
+    // Amount matches but "123" must not count as a reference match → stays low.
+    expect(proposals[0].confidence).toBe("low");
+  });
+
+  it("skips transactions with a synthetic (unstable) id", () => {
+    const payments = [pay({ id: "p1", names: ["ACME"], reference: "INV-1" })];
+    const txs = [tx({ id: "FR76|2026-06-15||INV-1|1000|0", label: "ACME", reference: "INV-1" })];
+    expect(proposeReconciliation(payments, txs).proposals).toHaveLength(0);
+  });
+
   it("matches a EUR bank line against a foreign-currency invoice via EUR value", () => {
     const payments = [pay({ id: "p1", currency: "USD", value: 1100, valueEur: 1000, names: ["ACME"] })];
     const txs = [tx({ id: "t1", currency: "EUR", amount: 1000, label: "ACME" })];

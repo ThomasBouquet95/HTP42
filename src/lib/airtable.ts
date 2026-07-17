@@ -3207,25 +3207,33 @@ export async function setPaymentQontoLink(
 export async function applyReconciliationLinks(
   links: Array<{ paymentId: string; txId: string; reference: string }>,
   matchedAt: string,
-): Promise<number> {
-  if (links.length === 0) return 0;
+): Promise<{ applied: number; failed: number }> {
+  if (links.length === 0) return { applied: 0, failed: 0 };
   await ensurePaymentQontoFields();
   let applied = 0;
+  let failed = 0;
+  // Best-effort per chunk: a failing chunk doesn't discard the ones already
+  // written, and the caller still learns how many succeeded.
   for (let i = 0; i < links.length; i += 10) {
     const chunk = links.slice(i, i + 10);
-    await base(TABLES.payments).update(
-      chunk.map((l) => ({
-        id: l.paymentId,
-        fields: {
-          [FIELDS.payments.qontoTransactionId]: l.txId,
-          [FIELDS.payments.qontoReference]: l.reference || null,
-          [FIELDS.payments.qontoMatchedAt]: matchedAt,
-        } as FieldSet,
-      })),
-    );
-    applied += chunk.length;
+    try {
+      await base(TABLES.payments).update(
+        chunk.map((l) => ({
+          id: l.paymentId,
+          fields: {
+            [FIELDS.payments.qontoTransactionId]: l.txId,
+            [FIELDS.payments.qontoReference]: l.reference || null,
+            [FIELDS.payments.qontoMatchedAt]: matchedAt,
+          } as FieldSet,
+        })),
+      );
+      applied += chunk.length;
+    } catch (e) {
+      failed += chunk.length;
+      console.error("applyReconciliationLinks: chunk failed:", e);
+    }
   }
-  return applied;
+  return { applied, failed };
 }
 
 // One-off (re-runnable) backfill: for every payment that settles a member

@@ -36,6 +36,7 @@ export function ReconcileModal({
   const [result, setResult] = useState<ReconResult | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [linkedCount, setLinkedCount] = useState(0);
+  const [failedCount, setFailedCount] = useState(0);
 
   function reset() {
     setStep("confirm");
@@ -44,6 +45,7 @@ export function ReconcileModal({
     setResult(null);
     setSelected(new Set());
     setLinkedCount(0);
+    setFailedCount(0);
   }
   function close() {
     if (busy) return;
@@ -99,6 +101,7 @@ export function ReconcileModal({
         return;
       }
       setLinkedCount(data.linked ?? links.length);
+      setFailedCount(data.failed ?? 0);
       setStep("done");
       onApplied();
     } catch {
@@ -175,6 +178,11 @@ export function ReconcileModal({
             ✓
           </div>
           Linked {linkedCount} payment{linkedCount === 1 ? "" : "s"} to Qonto transactions.
+          {failedCount > 0 ? (
+            <div className="mt-2 text-xs text-amber-700">
+              {failedCount} link{failedCount === 1 ? "" : "s"} couldn&apos;t be saved — try again.
+            </div>
+          ) : null}
         </div>
       )}
     </Modal>
@@ -276,6 +284,9 @@ function ProposalRow({
       <td className="px-2 py-2">
         <ConfidencePill confidence={p.confidence} />
         <div className="mt-1 text-[10px] text-slate-500">{p.reasons.join(" · ")}</div>
+        {p.paymentCurrency !== p.txCurrency ? (
+          <div className="mt-0.5 text-[10px] text-slate-400">matched via EUR value</div>
+        ) : null}
       </td>
     </tr>
   );

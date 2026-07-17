@@ -592,7 +592,7 @@ function TransactionsView({
             </div>
           </FilterBar>
           <div className="flex items-center gap-2">
-            {types.length || accountFilter.length || search || tab !== "all" ? (
+            {types.length || accountFilter.length || search || tab !== "all" || linkFilter !== "all" ? (
               <button
                 type="button"
                 onClick={() => {
@@ -600,6 +600,7 @@ function TransactionsView({
                   setAccountFilter([]);
                   setSearch("");
                   setTab("all");
+                  setLinkFilter("all");
                 }}
                 className="whitespace-nowrap rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
               >
