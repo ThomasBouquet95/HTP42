@@ -66,6 +66,25 @@ type Props = {
   // Review bundles keyed by payment id — carry the linked invoice + timesheets
   // so an expanded row can list its weeks like the By project / By member views.
   bundleById?: Record<string, ReviewBundle>;
+  // Per-payment covered-timesheets editor data (the billed weeks + the weeks
+  // that can be added). Only payments with a linked member invoice have an
+  // entry.
+  coveredByPaymentId?: Record<string, CoveredEditor>;
+};
+
+// A timesheet week shown in the covered-timesheets editor.
+export type CoveredTs = {
+  id: string;
+  code: string;
+  startDate: string | null;
+  endDate: string | null;
+  totalHours: number;
+  status: string;
+};
+export type CoveredEditor = {
+  invoiceId: string;
+  covered: CoveredTs[];
+  addable: CoveredTs[];
 };
 
 type Filters = {
@@ -259,6 +278,7 @@ export function PaymentsClient({
   initialSearch,
   initialPaymentId,
   bundleById,
+  coveredByPaymentId,
 }: Props) {
   const router = useRouter();
   const linkedPaymentIdSet = new Set(linkedPaymentIds ?? []);
@@ -284,6 +304,30 @@ export function PaymentsClient({
     const t = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // Covered-timesheets editing (add/remove billed weeks on the settling invoice).
+  const [coveredBusy, setCoveredBusy] = useState(false);
+  const [removeCovered, setRemoveCovered] = useState<{ paymentId: string; ts: CoveredTs } | null>(
+    null,
+  );
+  async function postCovered(paymentId: string, body: { add?: string; remove?: string }) {
+    setCoveredBusy(true);
+    try {
+      const res = await fetch(`/api/admin/payments/${encodeURIComponent(paymentId)}/covered`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(d.error ?? "Update failed");
+      setToast({ kind: "ok", msg: body.add ? "Timesheet added" : "Timesheet removed" });
+      router.refresh();
+    } catch (e) {
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Update failed" });
+    } finally {
+      setCoveredBusy(false);
+    }
+  }
   // The Airtable API returns linked-record fields as raw record IDs, so we resolve
   // them here against the loaded option lists instead of trusting `*Codes` arrays.
   const projectsById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
@@ -1197,6 +1241,14 @@ export function PaymentsClient({
                     <tr className="border-t border-slate-100 bg-slate-50/60">
                       <td />
                       <td colSpan={12} className="px-3 py-3">
+                        {coveredByPaymentId?.[p.id] ? (
+                          <CoveredTimesheetsEditor
+                            data={coveredByPaymentId[p.id]}
+                            busy={coveredBusy}
+                            onAdd={(ts) => postCovered(p.id, { add: ts.id })}
+                            onRemove={(ts) => setRemoveCovered({ paymentId: p.id, ts })}
+                          />
+                        ) : null}
                         <PaymentDetails
                           p={p}
                           projectLabel={projectLabel(p)}
@@ -1613,6 +1665,29 @@ export function PaymentsClient({
         onConfirm={closeModalNow}
       />
 
+      <ConfirmDialog
+        open={!!removeCovered}
+        title="Remove this timesheet?"
+        message={
+          <>
+            Remove the week{" "}
+            <span className="font-mono">{removeCovered?.ts.code || removeCovered?.ts.startDate}</span>{" "}
+            from this payment? It will no longer be billed here and becomes available to add to
+            another payment.
+          </>
+        }
+        confirmLabel="Remove"
+        confirmTone="danger"
+        busy={coveredBusy}
+        onCancel={() => (coveredBusy ? undefined : setRemoveCovered(null))}
+        onConfirm={async () => {
+          const c = removeCovered;
+          if (!c) return;
+          await postCovered(c.paymentId, { remove: c.ts.id });
+          setRemoveCovered(null);
+        }}
+      />
+
       <PaidDateModal
         open={!!paidTarget}
         label={paidTarget?.label}
@@ -1803,6 +1878,98 @@ function Spinner() {
       <circle cx="12" cy="12" r="9" opacity="0.25" />
       <path d="M21 12a9 9 0 0 0-9-9" strokeLinecap="round" />
     </svg>
+  );
+}
+
+// Covered-timesheets editor shown in an expanded payment row: the billed weeks
+// (each removable, with a confirm) and an "Add" picker of eligible weeks (same
+// staffing, Under review/Approved, not on another payment).
+function CoveredTimesheetsEditor({
+  data,
+  busy,
+  onAdd,
+  onRemove,
+}: {
+  data: CoveredEditor;
+  busy: boolean;
+  onAdd: (ts: CoveredTs) => void;
+  onRemove: (ts: CoveredTs) => void;
+}) {
+  const [picking, setPicking] = useState(false);
+  const label = (ts: CoveredTs) => (ts.startDate ? ts.startDate.slice(0, 10) : ts.code || "week");
+  return (
+    <div className="mb-3 rounded-lg border border-slate-200 bg-white p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Covered timesheets
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setPicking((v) => !v)}
+          className="inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-60"
+        >
+          + Add timesheet
+        </button>
+      </div>
+      {data.covered.length === 0 ? (
+        <p className="mt-2 text-[11px] text-slate-400">No timesheets are billed by this payment.</p>
+      ) : (
+        <ul className="mt-2 flex flex-wrap gap-1.5">
+          {data.covered.map((ts) => (
+            <li
+              key={ts.id}
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px]"
+            >
+              <span className="font-mono text-slate-500">{ts.code || "—"}</span>
+              <span className="text-slate-700">{label(ts)}</span>
+              <span className="tabular-nums text-slate-500">{ts.totalHours.toFixed(1)}h</span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onRemove(ts)}
+                title="Remove from this payment"
+                aria-label="Remove"
+                className="ml-0.5 text-slate-400 hover:text-rose-600 disabled:opacity-60"
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {picking ? (
+        <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+          <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+            Add a week — same staffing, Under review or Approved, not on another payment
+          </div>
+          {data.addable.length === 0 ? (
+            <p className="mt-1 text-[11px] text-slate-400">No eligible weeks to add.</p>
+          ) : (
+            <ul className="mt-1 flex flex-wrap gap-1.5">
+              {data.addable.map((ts) => (
+                <li key={ts.id}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      onAdd(ts);
+                      setPicking(false);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-white px-2 py-0.5 text-[11px] text-brand-700 hover:bg-brand-50 disabled:opacity-60"
+                  >
+                    <span className="font-mono">{ts.code || "—"}</span>
+                    <span>{label(ts)}</span>
+                    <span className="tabular-nums text-slate-500">{ts.totalHours.toFixed(1)}h</span>
+                    <span className="font-semibold text-brand-500">+</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

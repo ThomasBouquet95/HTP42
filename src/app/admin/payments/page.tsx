@@ -77,6 +77,55 @@ export default async function AdminPaymentsPage({
     }
   }
 
+  // Covered-timesheets editor data per payment: the weeks its settling invoice
+  // bills (covered) plus the weeks that could be added (same staffing, Under
+  // review/Approved, not already billed by another live payment). A timesheet
+  // belongs to one payment, so "associated" spans every live (non
+  // Canceled/Rejected) payment's covered weeks.
+  const tsById = new Map(timesheets.map((t) => [t.id, t]));
+  const invoiceById = new Map(invoices.map((i) => [i.id, i]));
+  const associated = new Set<string>();
+  for (const p of payments) {
+    if (p.paymentStatus === "Canceled" || p.paymentStatus === "Rejected") continue;
+    for (const invId of p.memberInvoiceRecordIds) {
+      const inv = invoiceById.get(invId);
+      if (inv) for (const tid of inv.coveredTimesheetIds) associated.add(tid);
+    }
+  }
+  const toRow = (t: (typeof timesheets)[number]) => ({
+    id: t.id,
+    code: t.timesheetCode,
+    startDate: t.startDate,
+    endDate: t.endDate,
+    totalHours: t.totalHours,
+    status: t.status,
+  });
+  const coveredByPaymentId: Record<
+    string,
+    { invoiceId: string; covered: ReturnType<typeof toRow>[]; addable: ReturnType<typeof toRow>[] }
+  > = {};
+  for (const p of payments) {
+    const invId = p.memberInvoiceRecordIds[0];
+    if (!invId) continue;
+    const inv = invoiceById.get(invId);
+    if (!inv) continue;
+    const covered = inv.coveredTimesheetIds
+      .map((tid) => tsById.get(tid))
+      .filter((t): t is (typeof timesheets)[number] => !!t)
+      .map(toRow);
+    const addable = inv.staffingRecordId
+      ? timesheets
+          .filter(
+            (t) =>
+              t.staffingRecordId === inv.staffingRecordId &&
+              (t.status === "Submitted" || t.status === "Approved") &&
+              !associated.has(t.id),
+          )
+          .map(toRow)
+      : [];
+    coveredByPaymentId[p.id] = { invoiceId: invId, covered, addable };
+  }
+
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <AdminTabs active="payments" />
@@ -124,6 +173,7 @@ export default async function AdminPaymentsPage({
           initialPaymentId={payment ?? ""}
           reviewGroups={groups}
           bundleById={bundleById}
+          coveredByPaymentId={coveredByPaymentId}
           totalUnderReview={totalUnderReview}
         />
     </main>

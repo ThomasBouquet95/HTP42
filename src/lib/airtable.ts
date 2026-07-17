@@ -2779,6 +2779,9 @@ export type MemberInvoiceRecord = {
   currency: Currency | "";
   status: InvoiceStatus | "";
   comment: string;
+  // Timesheet record ids this invoice bills (the covered weeks). Drives the
+  // one-payment-per-timesheet lock and the admin add/remove UI.
+  coveredTimesheetIds: string[];
   emailSent: boolean;
   emailSentAt: string | null;
   emailError: string;
@@ -2818,6 +2821,10 @@ function invoiceFromRecord(
     currency: str(r, FIELDS.memberInvoices.currency) as Currency | "",
     status: (str(r, FIELDS.memberInvoices.status) as InvoiceStatus) || "",
     comment: str(r, FIELDS.memberInvoices.comment),
+    coveredTimesheetIds: str(r, FIELDS.memberInvoices.coveredTimesheets)
+      .split(/[\s,]+/)
+      .map((x) => x.trim())
+      .filter(Boolean),
     emailSent: r.get(FIELDS.memberInvoices.emailSent) === true,
     emailSentAt: (r.get(FIELDS.memberInvoices.emailSentAt) as string | undefined) ?? null,
     emailError: str(r, FIELDS.memberInvoices.emailError),
@@ -3268,6 +3275,21 @@ async function ensureInvoiceCoveredTimesheetsField(): Promise<boolean> {
     console.error("ensureInvoiceCoveredTimesheetsField failed:", e);
     return false;
   }
+}
+
+// Admin edit: set the exact list of timesheet weeks an invoice bills. Used by
+// the payment overview add/remove controls. Creates the field if needed.
+export async function setInvoiceCoveredTimesheets(
+  invoiceRecordId: string,
+  timesheetIds: string[],
+): Promise<void> {
+  await ensureInvoiceCoveredTimesheetsField();
+  await base(TABLES.memberInvoices).update([
+    {
+      id: invoiceRecordId,
+      fields: { [FIELDS.memberInvoices.coveredTimesheets]: timesheetIds.join("\n") } as FieldSet,
+    },
+  ]);
 }
 
 // Payment status shown to members, keyed off the payment (the invoice's own
