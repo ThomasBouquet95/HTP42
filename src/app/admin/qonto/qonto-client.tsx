@@ -30,10 +30,27 @@ export function QontoClient({ result }: { result: QontoResult }) {
     return <ConnectPanel error={result.error} onRefresh={() => router.refresh()} />;
   }
 
-  return <Loaded accounts={result.accounts} transactions={result.transactions} />;
+  return (
+    <Loaded
+      accounts={result.accounts}
+      transactions={result.transactions}
+      truncated={result.truncated}
+      warnings={result.warnings}
+    />
+  );
 }
 
-function Loaded({ accounts, transactions }: { accounts: QontoAccount[]; transactions: QontoTx[] }) {
+function Loaded({
+  accounts,
+  transactions,
+  truncated,
+  warnings,
+}: {
+  accounts: QontoAccount[];
+  transactions: QontoTx[];
+  truncated: boolean;
+  warnings: string[];
+}) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("all");
   const [search, setSearch] = useState("");
@@ -47,11 +64,11 @@ function Loaded({ accounts, transactions }: { accounts: QontoAccount[]; transact
     return [...set.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [transactions]);
 
-  const filtered = useMemo(() => {
+  // Everything matching the filters EXCEPT the In/Out tab — drives both the tab
+  // badge counts (so they agree with what's shown) and the per-tab list.
+  const preTab = useMemo(() => {
     const q = search.trim().toLowerCase();
     return transactions.filter((t) => {
-      if (tab === "inflows" && t.side !== "inflow") return false;
-      if (tab === "outflows" && t.side !== "outflow") return false;
       if (types.length && !types.includes(t.operationType)) return false;
       if (accountFilter.length && !accountFilter.includes(t.accountIban)) return false;
       if (q) {
@@ -60,7 +77,17 @@ function Loaded({ accounts, transactions }: { accounts: QontoAccount[]; transact
       }
       return true;
     });
-  }, [transactions, tab, types, accountFilter, search]);
+  }, [transactions, types, accountFilter, search]);
+
+  const filtered = useMemo(
+    () =>
+      preTab.filter((t) => {
+        if (tab === "inflows") return t.side === "inflow";
+        if (tab === "outflows") return t.side === "outflow";
+        return true;
+      }),
+    [preTab, tab],
+  );
 
   // Totals over the FILTERED set, split by currency so multi-currency accounts
   // never silently add euros to dollars.
@@ -77,26 +104,35 @@ function Loaded({ accounts, transactions }: { accounts: QontoAccount[]; transact
 
   return (
     <div className="space-y-4">
-      {/* Accounts + balances */}
-      {accounts.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {accounts.map((a) => (
-            <span
-              key={a.iban || a.name}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs"
-            >
-              <span className="font-medium text-slate-700">{a.name}</span>
-              {a.balance != null ? (
-                <span className="font-semibold tabular-nums text-slate-900">
-                  {money(a.balance, a.currency)}
-                </span>
-              ) : null}
-              {a.iban ? <span className="font-mono text-[10px] text-slate-400">{ibanTail(a.iban)}</span> : null}
-            </span>
-          ))}
-          <Button tone="secondary" size="sm" className="ml-auto" onClick={() => router.refresh()}>
-            Refresh
-          </Button>
+      {/* Accounts + balances, with a Refresh always available. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {accounts.map((a) => (
+          <span
+            key={a.iban || a.name}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs"
+          >
+            <span className="font-medium text-slate-700">{a.name}</span>
+            {a.balance != null ? (
+              <span className="font-semibold tabular-nums text-slate-900">
+                {money(a.balance, a.currency)}
+              </span>
+            ) : null}
+            {a.iban ? <span className="font-mono text-[10px] text-slate-400">{ibanTail(a.iban)}</span> : null}
+          </span>
+        ))}
+        <Button tone="secondary" size="sm" className="ml-auto" onClick={() => router.refresh()}>
+          Refresh
+        </Button>
+      </div>
+
+      {warnings.length > 0 ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+          Some accounts couldn&apos;t be loaded: {warnings.join("; ")}
+        </div>
+      ) : null}
+      {truncated ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+          Showing the most recent transactions; older history beyond the fetch limit isn&apos;t listed.
         </div>
       ) : null}
 
@@ -149,9 +185,9 @@ function Loaded({ accounts, transactions }: { accounts: QontoAccount[]; transact
             value={tab}
             onChange={(v) => setTab(v as Tab)}
             options={[
-              { value: "all", label: "Overview", badge: <Count n={countBy(transactions, "all")} /> },
-              { value: "inflows", label: "Inflows", badge: <Count n={countBy(transactions, "in")} /> },
-              { value: "outflows", label: "Outflows", badge: <Count n={countBy(transactions, "out")} /> },
+              { value: "all", label: "Overview", badge: <Count n={countBy(preTab, "all")} /> },
+              { value: "inflows", label: "Inflows", badge: <Count n={countBy(preTab, "in")} /> },
+              { value: "outflows", label: "Outflows", badge: <Count n={countBy(preTab, "out")} /> },
             ]}
           />
         </div>
@@ -184,8 +220,16 @@ function Loaded({ accounts, transactions }: { accounts: QontoAccount[]; transact
                   <Fragment key={t.id}>
                     <tr
                       onClick={() => setOpenId(open ? null : t.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setOpenId(open ? null : t.id);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
                       aria-expanded={open}
-                      className="cursor-pointer border-t border-slate-100 align-top hover:bg-slate-50"
+                      className="cursor-pointer border-t border-slate-100 align-top hover:bg-slate-50 focus:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
                     >
                       <td className="px-1 py-2 text-center">
                         <Chevron open={open} />

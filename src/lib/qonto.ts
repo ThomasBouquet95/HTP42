@@ -35,7 +35,15 @@ export type QontoTx = {
 };
 
 export type QontoResult =
-  | { ok: true; accounts: QontoAccount[]; transactions: QontoTx[] }
+  | {
+      ok: true;
+      accounts: QontoAccount[];
+      transactions: QontoTx[];
+      // True if any account hit the page cap (oldest transactions omitted).
+      truncated: boolean;
+      // Non-fatal per-account issues (e.g. one account failed to load).
+      warnings: string[];
+    }
   | { ok: false; error: string };
 
 export function qontoConfigured(): boolean {
@@ -87,8 +95,10 @@ export function normalizeTransaction(raw: RawTx, account: { name: string; iban: 
   const label =
     (raw.clean_counterparty_name || raw.label || raw.reference || "").toString().trim() ||
     "Transaction";
+  const fallbackId = [account.iban, raw.settled_at ?? "", raw.emitted_at ?? "", raw.reference ?? "", amount]
+    .join("|");
   return {
-    id: (raw.transaction_id || raw.id || `${account.iban}-${raw.settled_at}-${amount}`).toString(),
+    id: (raw.transaction_id || raw.id || fallbackId).toString(),
     side: raw.side === "credit" ? "inflow" : "outflow",
     amount,
     currency: (raw.currency || "EUR").toString(),
@@ -142,21 +152,26 @@ async function fetchAccounts(): Promise<QontoAccount[]> {
   }));
 }
 
-// Fetch every transaction for one bank account, following pagination.
-async function fetchTransactionsForAccount(account: QontoAccount): Promise<QontoTx[]> {
+// Fetch every transaction for one bank account, following pagination. Returns
+// the rows plus whether the page cap was hit (older rows omitted). Includes
+// pending + completed + declined (the API defaults to completed-only).
+async function fetchTransactionsForAccount(
+  account: QontoAccount,
+): Promise<{ txs: QontoTx[]; truncated: boolean }> {
   const out: QontoTx[] = [];
+  let truncated = false;
   let page = 1;
   for (; page <= MAX_PAGES; page += 1) {
-    const q = new URLSearchParams({
-      bank_account_id: account.id,
-      per_page: "100",
-      page: String(page),
-      "sort_by": "settled_at:desc",
-    });
+    const q = new URLSearchParams();
+    q.set("bank_account_id", account.id);
+    q.set("per_page", "100");
+    q.set("page", String(page));
+    q.set("sort_by", "settled_at:desc");
+    for (const s of ["pending", "completed", "declined"]) q.append("status[]", s);
     const res = await qontoGet(`/transactions?${q.toString()}`);
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`Qonto transactions read failed (${res.status})${text ? `: ${text.slice(0, 160)}` : ""}`);
+      throw new Error(`transactions read failed (${res.status})${text ? `: ${text.slice(0, 160)}` : ""}`);
     }
     const data = (await res.json()) as {
       transactions?: Array<Record<string, unknown>>;
@@ -167,26 +182,51 @@ async function fetchTransactionsForAccount(account: QontoAccount): Promise<Qonto
     }
     const nextPage = data.meta?.next_page ?? null;
     if (!nextPage) break;
+    if (page === MAX_PAGES) truncated = true; // more pages exist but we stop here
   }
-  return out;
+  return { txs: out, truncated };
 }
 
 // Top-level: read accounts + all their transactions. Never throws — returns a
-// tagged result so the page can render a clean error/connect state.
+// tagged result. One account failing doesn't sink the rest: successes still
+// render, with a per-account warning; only an all-failed read (or no accounts
+// reachable) surfaces as a hard error.
 export async function listQontoTransactions(): Promise<QontoResult> {
   if (!qontoConfigured()) {
     return { ok: false, error: "not-configured" };
   }
+  let accounts: QontoAccount[];
   try {
-    const accounts = await fetchAccounts();
-    const perAccount = await Promise.all(accounts.map((a) => fetchTransactionsForAccount(a)));
-    const transactions = perAccount.flat().sort((a, b) => {
-      const ad = a.settledAt || a.emittedAt || "";
-      const bd = b.settledAt || b.emittedAt || "";
-      return bd.localeCompare(ad); // newest first
-    });
-    return { ok: true, accounts, transactions };
+    accounts = await fetchAccounts();
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Unknown Qonto error" };
   }
+
+  const settled = await Promise.allSettled(accounts.map((a) => fetchTransactionsForAccount(a)));
+  const transactions: QontoTx[] = [];
+  const warnings: string[] = [];
+  let truncated = false;
+  let failures = 0;
+  settled.forEach((r, i) => {
+    if (r.status === "fulfilled") {
+      transactions.push(...r.value.txs);
+      if (r.value.truncated) truncated = true;
+    } else {
+      failures += 1;
+      const msg = r.reason instanceof Error ? r.reason.message : "read failed";
+      warnings.push(`${accounts[i]?.name || "Account"}: ${msg}`);
+    }
+  });
+
+  // Every account failed → treat as a hard error so the UI shows "try again".
+  if (accounts.length > 0 && failures === accounts.length) {
+    return { ok: false, error: warnings.join("\n") || "Qonto read failed." };
+  }
+
+  transactions.sort((a, b) => {
+    const ad = a.settledAt || a.emittedAt || "";
+    const bd = b.settledAt || b.emittedAt || "";
+    return bd.localeCompare(ad); // newest first
+  });
+  return { ok: true, accounts, transactions, truncated, warnings };
 }

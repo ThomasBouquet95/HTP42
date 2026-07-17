@@ -75,9 +75,9 @@ export const env = {
   // instead of erroring.
   get qonto() {
     const combined = process.env.QONTO_API_KEY ?? "";
-    const [comboLogin, comboSecret] = combined.includes(":")
-      ? combined.split(":", 2)
-      : ["", ""];
+    const sep = combined.indexOf(":");
+    const comboLogin = sep >= 0 ? combined.slice(0, sep) : "";
+    const comboSecret = sep >= 0 ? combined.slice(sep + 1) : "";
     return {
       login: (process.env.QONTO_LOGIN ?? comboLogin ?? "").trim(),
       secretKey: (process.env.QONTO_SECRET_KEY ?? comboSecret ?? "").trim(),
