@@ -68,4 +68,19 @@ export const env = {
       "INT-IT"
     );
   },
+  // Qonto Business API credentials for reading bank transactions. `login` is
+  // the organization slug, `secretKey` the API secret (Qonto → Settings →
+  // API). A combined "login:secret" value in QONTO_API_KEY is also accepted.
+  // All optional: when unset the Bank (Qonto) tab shows a "connect" state
+  // instead of erroring.
+  get qonto() {
+    const combined = process.env.QONTO_API_KEY ?? "";
+    const [comboLogin, comboSecret] = combined.includes(":")
+      ? combined.split(":", 2)
+      : ["", ""];
+    return {
+      login: (process.env.QONTO_LOGIN ?? comboLogin ?? "").trim(),
+      secretKey: (process.env.QONTO_SECRET_KEY ?? comboSecret ?? "").trim(),
+    };
+  },
 };

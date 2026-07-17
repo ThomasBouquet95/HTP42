@@ -25,6 +25,7 @@ export const ADMIN_PAGES: { key: string; label: string; category: string; href: 
   { key: "timesheets", label: "Timesheets", category: "Projects", href: "/admin/timesheets" },
   { key: "cockpit", label: "Finance cockpit", category: "Finance", href: "/admin/cockpit" },
   { key: "payments", label: "Payments", category: "Finance", href: "/admin/payments" },
+  { key: "bank", label: "Bank (Qonto)", category: "Finance", href: "/admin/qonto" },
   { key: "invoices", label: "Invoices", category: "Finance", href: "/admin/invoices" },
   { key: "retribution", label: "Retribution", category: "Finance", href: "/admin/retribution" },
   { key: "legalcockpit", label: "Legal cockpit", category: "Legal", href: "/admin/legal" },

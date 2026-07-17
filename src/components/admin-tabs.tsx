@@ -19,6 +19,7 @@ type PageKey =
   | "projects"
   | "timesheets"
   | "payments"
+  | "bank"
   | "cockpit"
   | "retribution"
   | "invoices"
@@ -71,6 +72,7 @@ const CATEGORIES: Category[] = [
     pages: [
       { key: "cockpit", href: "/admin/cockpit", label: "Cockpit" },
       { key: "payments", href: "/admin/payments", label: "Payments" },
+      { key: "bank", href: "/admin/qonto", label: "Bank (Qonto)" },
       { key: "invoices", href: "/admin/invoices", label: "Invoices" },
       { key: "retribution", href: "/admin/retribution", label: "Retribution" },
     ],
