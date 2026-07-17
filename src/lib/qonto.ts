@@ -254,25 +254,47 @@ async function fetchTransactionsForAccount(
 // tagged result. One account failing doesn't sink the rest: successes still
 // render, with a per-account warning; only an all-failed read (or no accounts
 // reachable) surfaces as a hard error.
-// Cross-request in-memory cache. Reading every transaction from Qonto on each
-// visit is slow (several sequential API round-trips), and admins navigate in
-// and out of the Bank tab often — so cache the successful result briefly. The
-// Refresh button forces a fresh read (force: true).
+// Cross-request in-memory cache with stale-while-revalidate. Reading every
+// transaction from Qonto is slow (several sequential API round-trips), so:
+//  - once warm, every visit is served instantly from cache;
+//  - when the cache is older than FRESH_MS, we still return it immediately and
+//    kick off a refresh in the BACKGROUND (the user never waits for it);
+//  - only a cold cache (or an explicit Refresh) awaits a live read.
+// Net effect: transactions effectively reload ~every 10 min without the admin
+// ever seeing a spinner after the first load.
 let txCache: { at: number; result: QontoResult } | null = null;
-const CACHE_TTL_MS = 90_000;
+let inflight: Promise<void> | null = null;
+const FRESH_MS = 10 * 60 * 1000;
+
+function kickoffRefresh(): Promise<void> {
+  if (inflight) return inflight;
+  inflight = computeQontoTransactions()
+    .then((r) => {
+      if (r.ok) txCache = { at: performance.now(), result: r };
+    })
+    .catch(() => {})
+    .finally(() => {
+      inflight = null;
+    });
+  return inflight;
+}
 
 export async function listQontoTransactions(opts?: { force?: boolean }): Promise<QontoResult> {
-  if (
-    !opts?.force &&
-    txCache &&
-    txCache.result.ok &&
-    performance.now() - txCache.at < CACHE_TTL_MS
-  ) {
+  if (opts?.force) {
+    const result = await computeQontoTransactions();
+    if (result.ok) txCache = { at: performance.now(), result };
+    return result;
+  }
+  if (txCache?.result.ok) {
+    // Stale → refresh in the background but serve the cached copy now.
+    if (performance.now() - txCache.at > FRESH_MS) void kickoffRefresh();
     return txCache.result;
   }
-  const result = await computeQontoTransactions();
-  if (result.ok) txCache = { at: performance.now(), result };
-  return result;
+  // Cold cache: must wait for a live read (deduped across concurrent requests).
+  await kickoffRefresh();
+  if (txCache?.result.ok) return txCache.result;
+  // Refresh failed (no cache to fall back to) — surface the live error.
+  return computeQontoTransactions();
 }
 
 async function computeQontoTransactions(): Promise<QontoResult> {
