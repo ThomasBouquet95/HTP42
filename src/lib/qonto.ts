@@ -208,14 +208,18 @@ async function fetchAccounts(): Promise<QontoAccount[]> {
 // Fetch every transaction for one bank account, following pagination. Returns
 // the rows plus whether the page cap was hit (older rows omitted). Includes
 // pending + completed + declined (the API defaults to completed-only).
+// Concurrency for parallel page fetches — enough to collapse many pages into a
+// few round-trips without hammering Qonto's rate limit.
+const PAGE_BATCH = 6;
+
 async function fetchTransactionsForAccount(
   account: QontoAccount,
   deadline: number,
 ): Promise<{ txs: QontoTx[]; truncated: boolean }> {
   const out: QontoTx[] = [];
   let truncated = false;
-  let page = 1;
-  for (; page <= MAX_PAGES; page += 1) {
+
+  const fetchPage = async (page: number) => {
     const q = new URLSearchParams();
     q.set("bank_account_id", account.id);
     q.set("per_page", "100");
@@ -227,20 +231,35 @@ async function fetchTransactionsForAccount(
       const text = await res.text().catch(() => "");
       throw new Error(`transactions read failed (${res.status})${text ? `: ${text.slice(0, 160)}` : ""}`);
     }
-    const data = (await res.json()) as {
+    return (await res.json()) as {
       transactions?: Array<Record<string, unknown>>;
       meta?: { next_page?: number | null; total_pages?: number };
     };
-    const rows = data.transactions ?? [];
-    rows.forEach((raw, i) => {
+  };
+
+  const collect = (page: number, rows?: Array<Record<string, unknown>>) => {
+    (rows ?? []).forEach((raw, i) => {
       out.push(normalizeTransaction(raw as RawTx, account, (page - 1) * 100 + i));
     });
-    const nextPage = data.meta?.next_page ?? null;
-    if (!nextPage) break;
-    if (page === MAX_PAGES) {
-      truncated = true; // more pages exist but we stop here
-      break;
-    }
+  };
+
+  // Page 1 tells us how many pages exist, so the rest can be fetched in
+  // parallel batches instead of one slow sequential request at a time.
+  const first = await fetchPage(1);
+  collect(1, first.transactions);
+  const totalPages = Math.max(1, first.meta?.total_pages ?? 1);
+  let last = totalPages;
+  if (totalPages > MAX_PAGES) {
+    last = MAX_PAGES;
+    truncated = true; // older history beyond the cap is omitted
+  }
+
+  for (let start = 2; start <= last; start += PAGE_BATCH) {
+    const end = Math.min(start + PAGE_BATCH - 1, last);
+    const pages: number[] = [];
+    for (let p = start; p <= end; p += 1) pages.push(p);
+    const results = await Promise.all(pages.map((p) => fetchPage(p).then((d) => ({ p, d }))));
+    for (const { p, d } of results) collect(p, d.transactions);
     // Overall wall-clock guard: stop paging (and flag) once we've run long.
     if (performance.now() > deadline) {
       truncated = true;
