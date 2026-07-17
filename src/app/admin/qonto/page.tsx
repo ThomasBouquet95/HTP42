@@ -14,16 +14,17 @@ export default async function AdminQontoPage() {
   if (!access) redirect("/admin");
 
   const result = await listQontoTransactions();
-  const count = result.ok ? result.transactions.length : 0;
   const configStatus = qontoConfigStatus();
+  const subtitle = result.ok
+    ? `· ${result.accounts.length} account${result.accounts.length === 1 ? "" : "s"} · ${
+        result.transactions.length
+      } transaction${result.transactions.length === 1 ? "" : "s"}`
+    : undefined;
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <AdminTabs active="bank" />
-      <PageHeader
-        title="Bank (Qonto)"
-        subtitle={result.ok ? `· ${count} transaction${count === 1 ? "" : "s"}` : undefined}
-      />
+      <PageHeader title="Bank (Qonto)" subtitle={subtitle} />
       <QontoClient result={result} configStatus={configStatus} />
     </main>
   );

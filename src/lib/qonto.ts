@@ -17,8 +17,14 @@ export type QontoAccount = {
   id: string;
   name: string;
   iban: string;
+  bic: string;
   currency: string;
   balance: number | null;
+  // "Authorized" balance = current balance + any overdraft the account may use.
+  authorizedBalance: number | null;
+  status: string; // active, closed, …
+  main: boolean; // Qonto flags one account as the main / primary one
+  updatedAt: string | null;
 };
 
 export type QontoTx = {
@@ -177,17 +183,19 @@ async function fetchAccounts(): Promise<QontoAccount[]> {
     organization?: { bank_accounts?: Array<Record<string, unknown>> };
   };
   const accounts = data.organization?.bank_accounts ?? [];
+  const money = (cents: unknown, plain: unknown): number | null =>
+    typeof cents === "number" ? cents / 100 : typeof plain === "number" ? plain : null;
   return accounts.map((a) => ({
     id: String(a.id ?? a.slug ?? a.iban ?? ""),
     name: String(a.name ?? a.slug ?? "Account"),
     iban: String(a.iban ?? ""),
+    bic: String(a.bic ?? ""),
     currency: String(a.currency ?? "EUR"),
-    balance:
-      typeof a.balance_cents === "number"
-        ? (a.balance_cents as number) / 100
-        : typeof a.balance === "number"
-          ? (a.balance as number)
-          : null,
+    balance: money(a.balance_cents, a.balance),
+    authorizedBalance: money(a.authorized_balance_cents, a.authorized_balance),
+    status: String(a.status ?? ""),
+    main: a.main === true,
+    updatedAt: typeof a.updated_at === "string" ? a.updated_at : null,
   }));
 }
 
