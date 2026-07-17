@@ -22,9 +22,13 @@ const MAX_PAGES = 60;
 // Overall wall-clock budget for the whole read, so a slow/large history can't
 // hang the (uncached) read for minutes. On hit we stop paging and flag it.
 const DEADLINE_MS = 45_000;
-// Concurrency for parallel page fetches — enough to collapse many pages into a
-// few round-trips without hammering Qonto's rate limit.
-const PAGE_BATCH = 6;
+// Concurrency for parallel page fetches — a few at a time collapses round-trips
+// without overwhelming Qonto/the proxy (which can push a request past its
+// timeout).
+const PAGE_BATCH = 4;
+// Per-request timeout. Qonto's transactions endpoint can be slow on the main
+// account; give it room but never hang forever.
+const REQUEST_TIMEOUT_MS = 30_000;
 // Small fixed backoffs for a 429 (rate-limited).
 const RETRY_BACKOFF_MS = [500, 1500, 3000];
 // Never wait longer than this for a single retry, even if the server's
@@ -45,7 +49,7 @@ async function qontoGet(path: string): Promise<Response> {
       },
       cache: "no-store",
       // Qonto can be slow on large histories; give it room but never hang forever.
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
   let res = await doFetch();
@@ -139,8 +143,21 @@ async function fetchTransactionsForAccount(
     const end = Math.min(start + PAGE_BATCH - 1, last);
     const pages: number[] = [];
     for (let p = start; p <= end; p += 1) pages.push(p);
-    const results = await Promise.all(pages.map((p) => fetchPage(p).then((d) => ({ p, d }))));
-    for (const { p, d } of results) collect(p, d.transactions);
+    // Degrade gracefully: if a page times out or errors, keep the pages that
+    // did load (most recent first) and stop, flagging truncated — far better
+    // than dropping the whole account over one slow page.
+    const results = await Promise.allSettled(
+      pages.map((p) => fetchPage(p).then((d) => ({ p, d }))),
+    );
+    let anyFailed = false;
+    for (const r of results) {
+      if (r.status === "fulfilled") collect(r.value.p, r.value.d.transactions);
+      else anyFailed = true;
+    }
+    if (anyFailed) {
+      truncated = true;
+      break;
+    }
     // Overall wall-clock guard: stop paging (and flag) once we've run long.
     if (performance.now() > deadline) {
       truncated = true;
