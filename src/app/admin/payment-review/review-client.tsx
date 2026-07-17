@@ -8,7 +8,7 @@ import { ConfirmDialog } from "@/components/modal";
 import { PaidDateModal } from "@/components/paid-date-modal";
 import { SearchInput } from "@/components/search-input";
 import { SegmentedTabs } from "@/components/filters";
-import { Badge, StatusPill } from "@/components/badge";
+import { Badge } from "@/components/badge";
 import { StatusBadge, type ReviewInfo } from "@/components/status-badge";
 import { Button } from "@/components/form-controls";
 import type { TimesheetStatus } from "@/lib/airtable";
@@ -158,15 +158,57 @@ function addDaysIso(iso: string, n: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
-// Buckets a stored status into a visual family the admin reads at a glance.
-type StatusTone = "paid" | "approved" | "cancelled" | "review" | "other";
-function statusTone(status: string): StatusTone {
-  const s = status.toLowerCase();
-  if (s === "paid") return "paid";
-  if (s === "to be paid" || s === "scheduled") return "approved";
-  if (s === "canceled" || s === "cancelled") return "cancelled";
-  if (s === "under review") return "review";
-  return "other";
+// One distinct, non-yellow colour per payment status, shared by the status
+// pill and the card ring so a status reads the same everywhere. "To be paid"
+// is indigo (in flight), clearly different from "Under review" sky.
+const PAY_META: Record<string, { label: string; pill: string; ring: string }> = {
+  "Under Review": {
+    label: "Under review",
+    pill: "border-sky-200 bg-sky-50 text-sky-700",
+    ring: "border-sky-300 ring-1 ring-sky-100",
+  },
+  Scheduled: {
+    label: "Scheduled",
+    pill: "border-indigo-200 bg-indigo-50 text-indigo-700",
+    ring: "border-indigo-200 ring-1 ring-indigo-100",
+  },
+  "To be paid": {
+    label: "To be paid",
+    pill: "border-indigo-200 bg-indigo-50 text-indigo-700",
+    ring: "border-indigo-200 ring-1 ring-indigo-100",
+  },
+  Paid: {
+    label: "Paid",
+    pill: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    ring: "border-slate-200",
+  },
+  Rejected: {
+    label: "Rejected",
+    pill: "border-rose-200 bg-rose-50 text-rose-700",
+    ring: "border-slate-200",
+  },
+  Canceled: {
+    label: "Canceled",
+    pill: "border-slate-200 bg-slate-100 text-slate-500 line-through",
+    ring: "border-slate-200",
+  },
+};
+function payMeta(status: string) {
+  return (
+    PAY_META[status] ?? {
+      label: status || "Under review",
+      pill: "border-sky-200 bg-sky-50 text-sky-700",
+      ring: "border-sky-300 ring-1 ring-sky-100",
+    }
+  );
+}
+function PayStatusPill({ status }: { status: string }) {
+  const meta = payMeta(status);
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${meta.pill}`}>
+      {meta.label}
+    </span>
+  );
 }
 export function PaymentReviewClient({
   groups,
@@ -579,18 +621,9 @@ function BundleDetail({
   const isRejected = status === "Rejected";
   const isCanceled = status === "Canceled";
   const isUnderReview = !isToPay && !isPaid && !isRejected && !isCanceled;
-  const statusLabel = status === "Under Review" ? "Under review" : status;
   const [note, setNote] = useState(selected.payment.memberNote ?? "");
   return (
-    <div
-      className={`overflow-hidden rounded-lg border bg-white ${
-        isUnderReview
-          ? "border-amber-300 ring-1 ring-amber-100"
-          : isToPay
-          ? "border-brand-200 ring-1 ring-brand-100"
-          : "border-slate-200"
-      }`}
-    >
+    <div className={`overflow-hidden rounded-lg border bg-white ${payMeta(status).ring}`}>
       {/* Header + actions */}
       <div className="p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -614,7 +647,7 @@ function BundleDetail({
               <span className="rounded-md bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] text-white">
                 #{selected.payment.code || "—"}
               </span>
-              <StatusPill status={status} label={statusLabel} />
+              <PayStatusPill status={status} />
               {selected.payment.type ? <span>{selected.payment.type}</span> : null}
             </button>
           </div>
