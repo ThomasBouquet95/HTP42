@@ -135,10 +135,16 @@ export function MonthlyBarChart({
   rows,
   showPlannedSplit,
   currencySymbol = "€",
+  selectedMonth = null,
+  onSelectMonth,
 }: {
   rows: MonthRow[];
   showPlannedSplit: boolean;
   currencySymbol?: string;
+  // Optional interactivity: when onSelectMonth is provided, month groups become
+  // clickable and the selected one is highlighted (others dimmed).
+  selectedMonth?: string | null;
+  onSelectMonth?: (month: string) => void;
 }) {
   const [ref, width] = useContainerWidth();
   if (rows.length === 0) {
@@ -189,8 +195,32 @@ export function MonthlyBarChart({
           const outH = max === 0 ? 0 : (outTotal / max) * (chartH - 16);
           const inExecH = inTotal === 0 ? 0 : (inExecuted / inTotal) * inH;
           const outExecH = outTotal === 0 ? 0 : (outExecuted / outTotal) * outH;
+          const interactive = !!onSelectMonth;
+          const dimmed = selectedMonth != null && selectedMonth !== month;
           return (
-            <g key={month}>
+            <g
+              key={month}
+              opacity={dimmed ? 0.35 : 1}
+              style={interactive ? { cursor: "pointer" } : undefined}
+              onClick={interactive ? () => onSelectMonth?.(month) : undefined}
+            >
+              {/* Full-slot transparent hit area so clicks land even between bars. */}
+              {interactive ? (
+                <rect x={cx - slot / 2} y={0} width={slot} height={chartH} fill="transparent">
+                  <title>{`${month} · click to focus`}</title>
+                </rect>
+              ) : null}
+              {selectedMonth === month ? (
+                <rect
+                  x={cx - groupW / 2 - 4}
+                  y={0}
+                  width={groupW + 8}
+                  height={chartH}
+                  rx={4}
+                  fill="#1E91F9"
+                  opacity={0.08}
+                />
+              ) : null}
               {inH > 0 ? (
                 <>
                   <rect x={x} y={chartH - inExecH} width={barW} height={inExecH} fill={inflowSolid} rx={2}>

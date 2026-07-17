@@ -79,6 +79,36 @@ function Loaded({
   const router = useRouter();
   const [view, setView] = useState<View>("accounts");
 
+  // Transaction filter state lives here (not inside TransactionsView) so the
+  // Accounts and Statistics views can drill through into a pre-filtered ledger.
+  const [tab, setTab] = useState<Tab>("all");
+  const [search, setSearch] = useState("");
+  const [types, setTypes] = useState<string[]>([]);
+  const [accountFilter, setAccountFilter] = useState<string[]>([]);
+
+  // Jump to the Transactions view with a single clean filter applied.
+  const focusAccount = (iban: string) => {
+    setSearch("");
+    setTypes([]);
+    setTab("all");
+    setAccountFilter(iban ? [iban] : []);
+    setView("transactions");
+  };
+  const focusType = (type: string) => {
+    setSearch("");
+    setAccountFilter([]);
+    setTab("all");
+    setTypes([type]);
+    setView("transactions");
+  };
+  const focusCounterparty = (label: string) => {
+    setTypes([]);
+    setAccountFilter([]);
+    setTab("all");
+    setSearch(label);
+    setView("transactions");
+  };
+
   return (
     <div className="space-y-4">
       {/* Shared header: primary view switch + always-available Refresh. */}
@@ -113,12 +143,29 @@ function Loaded({
           accounts={accounts}
           transactions={transactions}
           truncated={truncated}
-          onSeeTransactions={() => setView("transactions")}
+          onViewAccount={focusAccount}
         />
       ) : view === "transactions" ? (
-        <TransactionsView accounts={accounts} transactions={transactions} truncated={truncated} />
+        <TransactionsView
+          accounts={accounts}
+          transactions={transactions}
+          truncated={truncated}
+          tab={tab}
+          setTab={setTab}
+          search={search}
+          setSearch={setSearch}
+          types={types}
+          setTypes={setTypes}
+          accountFilter={accountFilter}
+          setAccountFilter={setAccountFilter}
+        />
       ) : (
-        <StatisticsView transactions={transactions} truncated={truncated} />
+        <StatisticsView
+          transactions={transactions}
+          truncated={truncated}
+          onFilterType={focusType}
+          onFilterCounterparty={focusCounterparty}
+        />
       )}
     </div>
   );
@@ -132,13 +179,25 @@ function AccountsView({
   accounts,
   transactions,
   truncated,
-  onSeeTransactions,
+  onViewAccount,
 }: {
   accounts: QontoAccount[];
   transactions: QontoTx[];
   truncated: boolean;
-  onSeeTransactions: () => void;
+  onViewAccount: (iban: string) => void;
 }) {
+  // Highest balance first (nulls last), so the primary accounts lead.
+  const ranked = useMemo(
+    () =>
+      [...accounts].sort((a, b) => {
+        if (a.balance == null && b.balance == null) return 0;
+        if (a.balance == null) return 1;
+        if (b.balance == null) return -1;
+        return b.balance - a.balance;
+      }),
+    [accounts],
+  );
+
   // Total balance across accounts, split by currency (never mix EUR with USD).
   const totalsByCcy = useMemo(() => {
     const byCcy = new Map<string, number>();
@@ -187,7 +246,7 @@ function AccountsView({
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
-          {accounts.map((a) => {
+          {ranked.map((a) => {
             const stats = statsByAccount.get(a.iban || a.name);
             return (
               <AccountCard
@@ -195,7 +254,7 @@ function AccountsView({
                 account={a}
                 stats={stats}
                 truncated={truncated}
-                onSeeTransactions={onSeeTransactions}
+                onView={() => onViewAccount(a.iban)}
               />
             );
           })}
@@ -209,12 +268,12 @@ function AccountCard({
   account: a,
   stats,
   truncated,
-  onSeeTransactions,
+  onView,
 }: {
   account: QontoAccount;
   stats?: { count: number; inCents: number; outCents: number };
   truncated: boolean;
-  onSeeTransactions: () => void;
+  onView: () => void;
 }) {
   const showAuthorized = a.authorizedBalance != null && a.authorizedBalance !== a.balance;
   return (
@@ -289,7 +348,7 @@ function AccountCard({
         <span>{a.updatedAt ? `Updated ${fmtDate(a.updatedAt)}` : ""}</span>
         <button
           type="button"
-          onClick={onSeeTransactions}
+          onClick={onView}
           className="font-medium text-brand-700 hover:text-brand-800 hover:underline"
         >
           View transactions →
@@ -370,15 +429,27 @@ function TransactionsView({
   accounts,
   transactions,
   truncated,
+  tab,
+  setTab,
+  search,
+  setSearch,
+  types,
+  setTypes,
+  accountFilter,
+  setAccountFilter,
 }: {
   accounts: QontoAccount[];
   transactions: QontoTx[];
   truncated: boolean;
+  tab: Tab;
+  setTab: (t: Tab) => void;
+  search: string;
+  setSearch: (s: string) => void;
+  types: string[];
+  setTypes: (t: string[]) => void;
+  accountFilter: string[];
+  setAccountFilter: (a: string[]) => void;
 }) {
-  const [tab, setTab] = useState<Tab>("all");
-  const [search, setSearch] = useState("");
-  const [types, setTypes] = useState<string[]>([]);
-  const [accountFilter, setAccountFilter] = useState<string[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const typeOptions = useMemo(() => {
@@ -480,12 +551,27 @@ function TransactionsView({
               />
             ) : null}
           </FilterBar>
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Search label, reference, note…"
-            className="w-64"
-          />
+          <div className="flex items-center gap-2">
+            {types.length || accountFilter.length || search ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setTypes([]);
+                  setAccountFilter([]);
+                  setSearch("");
+                }}
+                className="whitespace-nowrap rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Clear filters
+              </button>
+            ) : null}
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search label, reference, note…"
+              className="w-64"
+            />
+          </div>
         </div>
         <div className="mt-3">
           <SegmentedTabs
@@ -627,10 +713,17 @@ const OUTFLOW_COLOR = "#f87171"; // red, matches the Finance cockpit
 function StatisticsView({
   transactions,
   truncated,
+  onFilterType,
+  onFilterCounterparty,
 }: {
   transactions: QontoTx[];
   truncated: boolean;
+  onFilterType: (type: string) => void;
+  onFilterCounterparty: (label: string) => void;
 }) {
+  // Click a month bar to scope the KPIs / categories / counterparties to it.
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+
   // Dominant currency = the one with the most transactions. Everything below is
   // computed within it so we never add euros to dollars.
   const { dominant, otherCount } = useMemo(() => {
@@ -642,9 +735,19 @@ function StatisticsView({
     return { dominant: dom, otherCount: other };
   }, [transactions]);
 
+  // All in-currency, non-declined rows — drives the month chart (never scoped).
   const rows = useMemo(
     () => transactions.filter((t) => t.currency === dominant && t.status.toLowerCase() !== "declined"),
     [transactions, dominant],
+  );
+
+  // Rows scoped to the selected month (if any) — drives KPIs, categories, top.
+  const scoped = useMemo(
+    () =>
+      selectedMonth
+        ? rows.filter((t) => (t.settledAt || t.emittedAt || "").slice(0, 7) === selectedMonth)
+        : rows,
+    [rows, selectedMonth],
   );
 
   // Declined rows in the dominant currency are excluded from the stats too —
@@ -661,18 +764,20 @@ function StatisticsView({
   const totals = useMemo(() => {
     let inC = 0;
     let outC = 0;
-    for (const t of rows) {
+    for (const t of scoped) {
       const c = Math.round(t.amount * 100);
       if (t.side === "inflow") inC += c;
       else outC += c;
     }
     return { inflow: inC / 100, outflow: outC / 100, net: (inC - outC) / 100 };
-  }, [rows]);
+  }, [scoped]);
 
   const monthly = useMemo(() => buildQontoMonthly(rows), [rows]);
-  const outCats = useMemo(() => buildCategories(rows, "outflow"), [rows]);
-  const inCats = useMemo(() => buildCategories(rows, "inflow"), [rows]);
-  const topOut = useMemo(() => buildTopCounterparties(rows, "outflow", 6), [rows]);
+  const outCats = useMemo(() => buildCategories(scoped, "outflow"), [scoped]);
+  const inCats = useMemo(() => buildCategories(scoped, "inflow"), [scoped]);
+  const topOut = useMemo(() => buildTopCounterparties(scoped, "outflow", 6), [scoped]);
+
+  const scopeSuffix = selectedMonth ? ` · ${monthLabel(selectedMonth)}` : "";
 
   if (transactions.length === 0) {
     return (
@@ -686,9 +791,9 @@ function StatisticsView({
     <div className="space-y-4">
       {/* KPIs */}
       <div className="grid gap-3 sm:grid-cols-3">
-        <StatCard label={`Total in (${dominant})`} value={money(totals.inflow, "")} tone="in" />
-        <StatCard label={`Total out (${dominant})`} value={money(totals.outflow, "")} tone="out" />
-        <StatCard label={`Net (${dominant})`} value={money(totals.net, "")} tone="net" />
+        <StatCard label={`Total in (${dominant})${scopeSuffix}`} value={money(totals.inflow, "")} tone="in" />
+        <StatCard label={`Total out (${dominant})${scopeSuffix}`} value={money(totals.outflow, "")} tone="out" />
+        <StatCard label={`Net (${dominant})${scopeSuffix}`} value={money(totals.net, "")} tone="net" />
       </div>
 
       {(truncated || otherCount > 0 || declinedCount > 0) ? (
@@ -707,30 +812,64 @@ function StatisticsView({
         </div>
       ) : null}
 
-      {/* Spend over time */}
-      <ChartCard title="Inflow vs outflow by month">
-        <MonthlyBarChart rows={monthly} showPlannedSplit={hasPending} currencySymbol={symbol} />
+      {/* Active month-scope chip */}
+      {selectedMonth ? (
+        <div className="flex items-center gap-2 text-[11px]">
+          <span className="text-slate-500">Focused on</span>
+          <button
+            type="button"
+            onClick={() => setSelectedMonth(null)}
+            className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 font-medium text-brand-700 hover:bg-brand-100"
+          >
+            {monthLabel(selectedMonth)}
+            <span aria-hidden>✕</span>
+            <span className="sr-only">Clear month filter</span>
+          </button>
+        </div>
+      ) : null}
+
+      {/* Spend over time — click a month to focus */}
+      <ChartCard title="Inflow vs outflow by month — click a month to focus">
+        <MonthlyBarChart
+          rows={monthly}
+          showPlannedSplit={hasPending}
+          currencySymbol={symbol}
+          selectedMonth={selectedMonth}
+          onSelectMonth={(m) => setSelectedMonth((cur) => (cur === m ? null : m))}
+        />
       </ChartCard>
       <ChartCard title="Net cash flow (cumulative)">
         <CumulativeCashFlowChart rows={monthly} currencySymbol={symbol} />
       </ChartCard>
 
-      {/* Categories */}
+      {/* Categories — click a category to open its transactions */}
       <div className="grid gap-3 lg:grid-cols-2">
-        <ChartCard title="Outflow by category">
-          <CategoryBars cats={outCats} color={OUTFLOW_COLOR} />
+        <ChartCard title={`Outflow by category${scopeSuffix}`}>
+          <CategoryBars cats={outCats} color={OUTFLOW_COLOR} onSelect={onFilterType} />
         </ChartCard>
-        <ChartCard title="Inflow by category">
-          <CategoryBars cats={inCats} color={INFLOW_COLOR} />
+        <ChartCard title={`Inflow by category${scopeSuffix}`}>
+          <CategoryBars cats={inCats} color={INFLOW_COLOR} onSelect={onFilterType} />
         </ChartCard>
       </div>
 
       {/* Top counterparties */}
-      <ChartCard title="Top outflow counterparties">
-        <TopList items={topOut} color={OUTFLOW_COLOR} />
+      <ChartCard title={`Top outflow counterparties${scopeSuffix}`}>
+        <TopList items={topOut} color={OUTFLOW_COLOR} onSelect={onFilterCounterparty} />
       </ChartCard>
     </div>
   );
+}
+
+// "2026-06" → "June 2026"
+function monthLabel(month: string): string {
+  const m = month.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return month;
+  const [, y, mo] = m;
+  const names = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ];
+  return `${names[Number(mo) - 1] ?? mo} ${y}`;
 }
 
 // Bucket transactions into months, mapping pending → "planned" (hatched in the
@@ -801,7 +940,15 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   );
 }
 
-function CategoryBars({ cats, color }: { cats: { type: string; value: number }[]; color: string }) {
+function CategoryBars({
+  cats,
+  color,
+  onSelect,
+}: {
+  cats: { type: string; value: number }[];
+  color: string;
+  onSelect?: (type: string) => void;
+}) {
   if (cats.length === 0) {
     return <div className="py-6 text-center text-xs text-slate-500">No data.</div>;
   }
@@ -812,13 +959,14 @@ function CategoryBars({ cats, color }: { cats: { type: string; value: number }[]
         const pct = max === 0 ? 0 : (c.value / max) * 100;
         return (
           <li key={c.type}>
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-700">{operationTypeLabel(c.type)}</span>
-              <span className="tabular-nums text-slate-600 demo-blur">{money(c.value, "")}</span>
-            </div>
-            <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
-              <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
-            </div>
+            <Bar
+              label={operationTypeLabel(c.type)}
+              value={money(c.value, "")}
+              pct={pct}
+              color={color}
+              onClick={onSelect ? () => onSelect(c.type) : undefined}
+              title={onSelect ? `View ${operationTypeLabel(c.type)} transactions` : undefined}
+            />
           </li>
         );
       })}
@@ -826,7 +974,15 @@ function CategoryBars({ cats, color }: { cats: { type: string; value: number }[]
   );
 }
 
-function TopList({ items, color }: { items: { label: string; value: number }[]; color: string }) {
+function TopList({
+  items,
+  color,
+  onSelect,
+}: {
+  items: { label: string; value: number }[];
+  color: string;
+  onSelect?: (label: string) => void;
+}) {
   if (items.length === 0) {
     return <div className="py-6 text-center text-xs text-slate-500">No data.</div>;
   }
@@ -837,17 +993,62 @@ function TopList({ items, color }: { items: { label: string; value: number }[]; 
         const pct = max === 0 ? 0 : (c.value / max) * 100;
         return (
           <li key={`${c.label}-${i}`}>
-            <div className="flex items-center justify-between gap-3 text-[11px]">
-              <span className="truncate text-slate-700 demo-blur">{c.label}</span>
-              <span className="shrink-0 tabular-nums text-slate-600 demo-blur">{money(c.value, "")}</span>
-            </div>
-            <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
-              <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
-            </div>
+            <Bar
+              label={c.label}
+              value={money(c.value, "")}
+              pct={pct}
+              color={color}
+              blurLabel
+              onClick={onSelect ? () => onSelect(c.label) : undefined}
+              title={onSelect ? "View this counterparty's transactions" : undefined}
+            />
           </li>
         );
       })}
     </ul>
+  );
+}
+
+// A labelled horizontal bar. When onClick is set, the whole row is a button
+// (drill-through into the filtered ledger).
+function Bar({
+  label,
+  value,
+  pct,
+  color,
+  onClick,
+  title,
+  blurLabel,
+}: {
+  label: string;
+  value: string;
+  pct: number;
+  color: string;
+  onClick?: () => void;
+  title?: string;
+  blurLabel?: boolean;
+}) {
+  const body = (
+    <>
+      <div className="flex items-center justify-between gap-3 text-[11px]">
+        <span className={`truncate text-slate-700 ${blurLabel ? "demo-blur" : ""}`}>{label}</span>
+        <span className="shrink-0 tabular-nums text-slate-600 demo-blur">{value}</span>
+      </div>
+      <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
+      </div>
+    </>
+  );
+  if (!onClick) return <div>{body}</div>;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="block w-full rounded px-1 py-0.5 text-left transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+    >
+      {body}
+    </button>
   );
 }
 
