@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/form-controls";
@@ -43,10 +43,12 @@ export function QontoClient({
   result,
   configStatus,
   paymentByTxId,
+  initialTxId,
 }: {
   result: QontoResult;
   configStatus: { hasLogin: boolean; hasSecret: boolean };
   paymentByTxId: PaymentByTxId;
+  initialTxId?: string;
 }) {
   const router = useRouter();
 
@@ -67,6 +69,7 @@ export function QontoClient({
       truncated={result.truncated}
       warnings={result.warnings}
       paymentByTxId={paymentByTxId}
+      initialTxId={initialTxId}
     />
   );
 }
@@ -77,15 +80,19 @@ function Loaded({
   truncated,
   warnings,
   paymentByTxId,
+  initialTxId,
 }: {
   accounts: QontoAccount[];
   transactions: QontoTx[];
   truncated: boolean;
   warnings: string[];
   paymentByTxId: PaymentByTxId;
+  initialTxId?: string;
 }) {
   const router = useRouter();
-  const [view, setView] = useState<View>("accounts");
+  // Deep link from a payment (?tx=…) lands directly on the Transactions view.
+  const focusTxId = initialTxId && transactions.some((t) => t.id === initialTxId) ? initialTxId : undefined;
+  const [view, setView] = useState<View>(focusTxId ? "transactions" : "accounts");
 
   // Transaction filter state lives here (not inside TransactionsView) so the
   // Accounts and Statistics views can drill through into a pre-filtered ledger.
@@ -161,6 +168,7 @@ function Loaded({
           transactions={transactions}
           truncated={truncated}
           paymentByTxId={paymentByTxId}
+          focusTxId={focusTxId}
           tab={tab}
           setTab={setTab}
           search={search}
@@ -441,6 +449,7 @@ function TransactionsView({
   transactions,
   truncated,
   paymentByTxId,
+  focusTxId,
   tab,
   setTab,
   search,
@@ -454,6 +463,7 @@ function TransactionsView({
   transactions: QontoTx[];
   truncated: boolean;
   paymentByTxId: PaymentByTxId;
+  focusTxId?: string;
   tab: Tab;
   setTab: (t: Tab) => void;
   search: string;
@@ -463,8 +473,12 @@ function TransactionsView({
   accountFilter: string[];
   setAccountFilter: (a: string[]) => void;
 }) {
-  const [openId, setOpenId] = useState<string | null>(null);
+  // Start with the deep-linked transaction expanded (if any).
+  const [openId, setOpenId] = useState<string | null>(focusTxId ?? null);
   const [linkFilter, setLinkFilter] = useState<LinkFilter>("all");
+  const focusRowRef = useRef<HTMLTableRowElement | null>(null);
+  // Briefly highlight the deep-linked row so it's easy to spot.
+  const [highlight, setHighlight] = useState<boolean>(!!focusTxId);
 
   const typeOptions = useMemo(() => {
     const set = new Map<string, string>();
@@ -501,9 +515,23 @@ function TransactionsView({
 
   // Collapse any open row when the visible set changes (filter/search/tab), so
   // a stale expanded detail can't linger under a row that's no longer shown.
+  // Skip the first run so a deep-linked (focusTxId) expansion survives mount.
+  const firstFilterRun = useRef(true);
   useEffect(() => {
+    if (firstFilterRun.current) {
+      firstFilterRun.current = false;
+      return;
+    }
     setOpenId(null);
   }, [tab, search, types, accountFilter, linkFilter]);
+
+  // Scroll the deep-linked row into view once, then fade the highlight.
+  useEffect(() => {
+    if (!focusTxId) return;
+    focusRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const t = setTimeout(() => setHighlight(false), 2500);
+    return () => clearTimeout(t);
+  }, [focusTxId]);
 
   // Totals over the FILTERED set, split by currency so multi-currency accounts
   // never silently add euros to dollars.
@@ -657,11 +685,15 @@ function TransactionsView({
                 const detailId = `qonto-detail-${i}`;
                 const toggle = () => setOpenId(open ? null : t.id);
                 const linkedPayment = paymentByTxId[t.id];
+                const isFocus = focusTxId === t.id;
                 return (
                   <Fragment key={t.id}>
                     <tr
+                      ref={isFocus ? focusRowRef : undefined}
                       onClick={toggle}
-                      className="cursor-pointer border-t border-slate-100 align-top hover:bg-slate-50"
+                      className={`cursor-pointer border-t border-slate-100 align-top hover:bg-slate-50 ${
+                        isFocus && highlight ? "bg-brand-50 ring-2 ring-inset ring-brand-300" : ""
+                      }`}
                     >
                       <td className="px-1 py-2 text-center">
                         <button

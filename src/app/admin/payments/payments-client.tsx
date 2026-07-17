@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
@@ -1224,15 +1225,17 @@ export function PaymentsClient({
                       <div className="flex items-center gap-1">
                         <span>{p.invoiceReference || <span className="text-slate-300">—</span>}</span>
                         {p.qontoTransactionId ? (
-                          <span
-                            title={`Reconciled with Qonto${p.qontoReference ? `: ${p.qontoReference}` : ""}`}
-                            className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700"
+                          <Link
+                            href={`/admin/qonto?tx=${encodeURIComponent(p.qontoTransactionId)}`}
+                            onClick={(e) => e.stopPropagation()}
+                            title={`View the linked Qonto transaction${p.qontoReference ? `: ${p.qontoReference}` : ""}`}
+                            className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700 hover:bg-emerald-100"
                           >
                             <svg viewBox="0 0 16 16" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                               <path d="M6.5 9.5l-2-2M9.5 6.5a2.5 2.5 0 0 0-3.5 0M6 10a2.5 2.5 0 0 0 3.5 0l1.5-1.5a2.5 2.5 0 0 0-3.5-3.5" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                             Qonto
-                          </span>
+                          </Link>
                         ) : null}
                       </div>
                     </td>

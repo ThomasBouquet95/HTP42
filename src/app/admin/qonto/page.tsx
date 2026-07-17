@@ -10,9 +10,15 @@ import { QontoClient } from "./qonto-client";
 // (no caching — the admin sees the current state each time they open it).
 export const dynamic = "force-dynamic";
 
-export default async function AdminQontoPage() {
+export default async function AdminQontoPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tx?: string }>;
+}) {
   const access = await requireAdminPage("bank");
   if (!access) redirect("/admin");
+
+  const { tx: initialTxId } = await searchParams;
 
   const [result, payments] = await Promise.all([listQontoTransactions(), listPayments()]);
   const configStatus = qontoConfigStatus();
@@ -33,7 +39,12 @@ export default async function AdminQontoPage() {
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <AdminTabs active="bank" />
       <PageHeader title="Bank (Qonto)" subtitle={subtitle} />
-      <QontoClient result={result} configStatus={configStatus} paymentByTxId={paymentByTxId} />
+      <QontoClient
+        result={result}
+        configStatus={configStatus}
+        paymentByTxId={paymentByTxId}
+        initialTxId={initialTxId}
+      />
     </main>
   );
 }
