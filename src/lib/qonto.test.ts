@@ -56,6 +56,13 @@ describe("normalizeTransaction", () => {
     expect(tx.amount).toBe(12.5); // absolute value
     expect(tx.currency).toBe("EUR");
   });
+
+  it("gives identical id-less rows distinct ids via the index", () => {
+    const raw = { amount_cents: 1000, side: "debit", reference: "SAME", settled_at: "2026-06-30" };
+    const a = normalizeTransaction(raw, ACCOUNT, 0);
+    const b = normalizeTransaction(raw, ACCOUNT, 1);
+    expect(a.id).not.toBe(b.id);
+  });
 });
 
 describe("operationTypeLabel", () => {

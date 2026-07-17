@@ -9,6 +9,9 @@ import { env } from "./env";
 const QONTO_BASE = "https://thirdparty.qonto.com/v2";
 // Safety cap so a huge history can't loop forever (100/page × 60 = 6000 tx).
 const MAX_PAGES = 60;
+// Overall wall-clock budget for the whole read, so a slow/large history can't
+// hang the (uncached) page for minutes. On hit we stop paging and flag it.
+const DEADLINE_MS = 45_000;
 
 export type QontoAccount = {
   id: string;
@@ -88,14 +91,20 @@ type RawTx = {
 };
 
 // Pure mapper (unit-tested): raw Qonto transaction → normalized QontoTx.
-export function normalizeTransaction(raw: RawTx, account: { name: string; iban: string }): QontoTx {
+// `index` disambiguates the synthetic fallback id when the API omits a real one
+// (two rows with identical date/reference/amount would otherwise collide).
+export function normalizeTransaction(
+  raw: RawTx,
+  account: { name: string; iban: string },
+  index = 0,
+): QontoTx {
   const cents = typeof raw.amount_cents === "number" ? raw.amount_cents : null;
   const amount =
     cents != null ? cents / 100 : typeof raw.amount === "number" ? Math.abs(raw.amount) : 0;
   const label =
     (raw.clean_counterparty_name || raw.label || raw.reference || "").toString().trim() ||
     "Transaction";
-  const fallbackId = [account.iban, raw.settled_at ?? "", raw.emitted_at ?? "", raw.reference ?? "", amount]
+  const fallbackId = [account.iban, raw.settled_at ?? "", raw.emitted_at ?? "", raw.reference ?? "", amount, index]
     .join("|");
   return {
     id: (raw.transaction_id || raw.id || fallbackId).toString(),
@@ -114,17 +123,38 @@ export function normalizeTransaction(raw: RawTx, account: { name: string; iban: 
   };
 }
 
+// Small fixed backoffs for a 429 (rate-limited). Qonto's limit is generous for
+// our read volume, but a burst across several accounts can still trip it.
+const RETRY_BACKOFF_MS = [500, 1500, 3000];
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function qontoGet(path: string): Promise<Response> {
   const { login, secretKey } = env.qonto;
-  return fetch(`${QONTO_BASE}${path}`, {
-    headers: {
-      Authorization: `${login}:${secretKey}`,
-      Accept: "application/json",
-    },
-    cache: "no-store",
-    // Qonto can be slow on large histories; give it room but never hang forever.
-    signal: AbortSignal.timeout(20_000),
-  });
+  const doFetch = () =>
+    fetch(`${QONTO_BASE}${path}`, {
+      headers: {
+        Authorization: `${login}:${secretKey}`,
+        Accept: "application/json",
+      },
+      cache: "no-store",
+      // Qonto can be slow on large histories; give it room but never hang forever.
+      signal: AbortSignal.timeout(20_000),
+    });
+
+  let res = await doFetch();
+  // Retry only on 429 (rate limit). Other statuses are handled by the caller.
+  for (let attempt = 0; res.status === 429 && attempt < RETRY_BACKOFF_MS.length; attempt += 1) {
+    const retryAfter = Number(res.headers.get("retry-after"));
+    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? retryAfter * 1000
+      : RETRY_BACKOFF_MS[attempt];
+    await sleep(waitMs);
+    res = await doFetch();
+  }
+  return res;
 }
 
 // Fetch the organization's bank accounts.
@@ -157,6 +187,7 @@ async function fetchAccounts(): Promise<QontoAccount[]> {
 // pending + completed + declined (the API defaults to completed-only).
 async function fetchTransactionsForAccount(
   account: QontoAccount,
+  deadline: number,
 ): Promise<{ txs: QontoTx[]; truncated: boolean }> {
   const out: QontoTx[] = [];
   let truncated = false;
@@ -177,12 +208,21 @@ async function fetchTransactionsForAccount(
       transactions?: Array<Record<string, unknown>>;
       meta?: { next_page?: number | null; total_pages?: number };
     };
-    for (const raw of data.transactions ?? []) {
-      out.push(normalizeTransaction(raw as RawTx, account));
-    }
+    const rows = data.transactions ?? [];
+    rows.forEach((raw, i) => {
+      out.push(normalizeTransaction(raw as RawTx, account, (page - 1) * 100 + i));
+    });
     const nextPage = data.meta?.next_page ?? null;
     if (!nextPage) break;
-    if (page === MAX_PAGES) truncated = true; // more pages exist but we stop here
+    if (page === MAX_PAGES) {
+      truncated = true; // more pages exist but we stop here
+      break;
+    }
+    // Overall wall-clock guard: stop paging (and flag) once we've run long.
+    if (performance.now() > deadline) {
+      truncated = true;
+      break;
+    }
   }
   return { txs: out, truncated };
 }
@@ -202,7 +242,10 @@ export async function listQontoTransactions(): Promise<QontoResult> {
     return { ok: false, error: e instanceof Error ? e.message : "Unknown Qonto error" };
   }
 
-  const settled = await Promise.allSettled(accounts.map((a) => fetchTransactionsForAccount(a)));
+  const deadline = performance.now() + DEADLINE_MS;
+  const settled = await Promise.allSettled(
+    accounts.map((a) => fetchTransactionsForAccount(a, deadline)),
+  );
   const transactions: QontoTx[] = [];
   const warnings: string[] = [];
   let truncated = false;

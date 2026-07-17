@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
@@ -89,17 +89,28 @@ function Loaded({
     [preTab, tab],
   );
 
+  // Collapse any open row when the visible set changes (filter/search/tab), so
+  // a stale expanded detail can't linger under a row that's no longer shown.
+  useEffect(() => {
+    setOpenId(null);
+  }, [tab, search, types, accountFilter]);
+
   // Totals over the FILTERED set, split by currency so multi-currency accounts
   // never silently add euros to dollars.
   const totals = useMemo(() => {
+    // Accumulate in integer cents so repeated float additions can't drift
+    // (0.1 + 0.2 problems over hundreds of rows), then convert back once.
     const byCcy = new Map<string, { inflow: number; outflow: number }>();
     for (const t of filtered) {
       const cur = byCcy.get(t.currency) ?? { inflow: 0, outflow: 0 };
-      if (t.side === "inflow") cur.inflow += t.amount;
-      else cur.outflow += t.amount;
+      const cents = Math.round(t.amount * 100);
+      if (t.side === "inflow") cur.inflow += cents;
+      else cur.outflow += cents;
       byCcy.set(t.currency, cur);
     }
-    return [...byCcy.entries()];
+    return [...byCcy.entries()].map(
+      ([ccy, t]) => [ccy, { inflow: t.inflow / 100, outflow: t.outflow / 100 }] as const,
+    );
   }, [filtered]);
 
   return (
@@ -108,7 +119,7 @@ function Loaded({
       <div className="flex flex-wrap items-center gap-2">
         {accounts.map((a) => (
           <span
-            key={a.iban || a.name}
+            key={a.id || a.iban || a.name}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs"
           >
             <span className="font-medium text-slate-700">{a.name}</span>
@@ -210,29 +221,38 @@ function Loaded({
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={accounts.length > 1 ? 6 : 5} className="py-10 text-center text-slate-500">
-                  No transactions match.
+                  {transactions.length === 0
+                    ? "No transactions found on this Qonto account yet."
+                    : "No transactions match the current filters."}
                 </td>
               </tr>
             ) : (
-              filtered.map((t) => {
+              filtered.map((t, i) => {
                 const open = openId === t.id;
+                const detailId = `qonto-detail-${i}`;
+                const toggle = () => setOpenId(open ? null : t.id);
                 return (
                   <Fragment key={t.id}>
                     <tr
-                      onClick={() => setOpenId(open ? null : t.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          setOpenId(open ? null : t.id);
-                        }
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      aria-expanded={open}
-                      className="cursor-pointer border-t border-slate-100 align-top hover:bg-slate-50 focus:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                      onClick={toggle}
+                      className="cursor-pointer border-t border-slate-100 align-top hover:bg-slate-50"
                     >
                       <td className="px-1 py-2 text-center">
-                        <Chevron open={open} />
+                        <button
+                          type="button"
+                          // Real control carries the keyboard + AT semantics; the
+                          // row click is a mouse-only convenience on top of it.
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggle();
+                          }}
+                          aria-expanded={open}
+                          aria-controls={open ? detailId : undefined}
+                          aria-label={open ? "Collapse transaction details" : "Expand transaction details"}
+                          className="inline-flex items-center justify-center rounded p-0.5 text-slate-400 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                        >
+                          <Chevron open={open} />
+                        </button>
                       </td>
                       <td className="px-2 py-2 whitespace-nowrap text-slate-600">
                         {fmtDate(t.settledAt || t.emittedAt)}
@@ -263,7 +283,7 @@ function Loaded({
                       </td>
                     </tr>
                     {open ? (
-                      <tr className="border-t border-slate-100 bg-slate-50/60">
+                      <tr id={detailId} className="border-t border-slate-100 bg-slate-50/60">
                         <td />
                         <td colSpan={accounts.length > 1 ? 5 : 4} className="px-2 py-2">
                           <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
