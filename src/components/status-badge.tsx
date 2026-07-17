@@ -8,11 +8,12 @@ import { Tooltip } from "@/components/tooltip";
 // Paid green. Rejected/Deleted are red; Cancelled is a struck-through neutral.
 const TONE: Record<TimesheetStatus, BadgeTone> = {
   Draft: "neutral",
-  // "Under review" reads blue (info), not yellow — matches the rest of the app.
-  Submitted: "info",
+  // "Under review" is sky, "Invoiced" indigo — same lifecycle palette as
+  // payments, and never yellow.
+  Submitted: "review",
   Approved: "success",
   Rejected: "danger",
-  Invoiced: "info",
+  Invoiced: "scheduled",
   Paid: "success",
   Cancelled: "cancelled",
   Deleted: "danger",

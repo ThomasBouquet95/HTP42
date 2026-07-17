@@ -626,12 +626,14 @@ function RelatedInvoices({
 // small chevron tacked on so admins can see at a glance that it's editable.
 // Mirrors StatusBadge: neutral → amber → blue → solid green across the
 // Draft → Submitted → Invoiced → Paid lifecycle; Deleted is a red tombstone.
+// Matches the app-wide lifecycle palette (Under review = sky, Invoiced =
+// indigo, Approved/Paid = emerald, Rejected/Deleted = rose, Cancelled = slate).
 const STATUS_CHIP: Record<TimesheetStatus, string> = {
   Draft: "bg-slate-100 text-slate-600 border-slate-200",
-  Submitted: "bg-amber-50 text-amber-700 border-amber-200",
+  Submitted: "bg-sky-50 text-sky-700 border-sky-200",
   Approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
   Rejected: "bg-rose-50 text-rose-700 border-rose-200",
-  Invoiced: "bg-blue-50 text-blue-700 border-blue-200",
+  Invoiced: "bg-indigo-50 text-indigo-700 border-indigo-200",
   Paid: "bg-emerald-100 text-emerald-800 border-emerald-300",
   Cancelled: "bg-slate-100 text-slate-500 border-slate-200 line-through",
   Deleted: "bg-rose-50 text-rose-700 border-rose-200",

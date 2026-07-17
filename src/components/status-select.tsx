@@ -10,6 +10,8 @@ const SELECT_TONE: Record<BadgeTone, string> = {
   neutral: "bg-slate-100 border-slate-300 text-slate-700",
   warning: "bg-amber-50 border-amber-300 text-amber-800",
   info: "bg-brand-50 border-brand-300 text-brand-700",
+  review: "bg-sky-50 border-sky-300 text-sky-800",
+  scheduled: "bg-indigo-50 border-indigo-300 text-indigo-800",
   success: "bg-emerald-50 border-emerald-300 text-emerald-800",
   danger: "bg-rose-50 border-rose-300 text-rose-700",
   cancelled: "bg-slate-100 border-slate-300 text-slate-500",

@@ -14,6 +14,8 @@ export type BadgeTone =
   | "neutral"
   | "warning"
   | "info"
+  | "review"
+  | "scheduled"
   | "success"
   | "danger"
   | "cancelled";
@@ -22,6 +24,10 @@ const TONES: Record<BadgeTone, string> = {
   neutral: "bg-slate-100 text-slate-600 border-slate-200",
   warning: "bg-amber-50 text-amber-700 border-amber-200",
   info: "bg-brand-50 text-brand-700 border-brand-200",
+  // Timesheet/payment lifecycle colours, kept distinct and yellow-free:
+  // "under review" is sky, "to be paid / scheduled / invoiced" is indigo.
+  review: "bg-sky-50 text-sky-700 border-sky-200",
+  scheduled: "bg-indigo-50 text-indigo-700 border-indigo-200",
   success: "bg-emerald-100 text-emerald-800 border-emerald-300",
   danger: "bg-rose-50 text-rose-700 border-rose-200",
   cancelled: "bg-slate-100 text-slate-500 border-slate-200 line-through",
@@ -60,26 +66,28 @@ const STATUS_TONE: Record<string, BadgeTone> = {
   todo: "neutral",
   "to do": "neutral",
   open: "neutral",
-  // awaiting action / on hold / due
-  submitted: "warning",
+  // under review (timesheet / payment) → sky
+  submitted: "review",
+  "under review": "review",
+  "needs review": "review",
+  // to be paid / scheduled / invoiced (in flight toward payment) → indigo
+  "to be paid": "scheduled",
+  "awaiting payment": "scheduled",
+  scheduled: "scheduled",
+  invoiced: "scheduled",
+  // other awaiting/on-hold states (non timesheet/payment) stay amber
   pending: "warning",
-  "under review": "warning",
   "under negotiation": "warning",
   "pending signature": "warning",
-  "needs review": "warning",
   "on hold": "warning",
   "partially active": "warning",
   "at risk": "warning",
-  "to be paid": "warning",
-  "awaiting payment": "warning",
   due: "warning",
   overdue: "warning",
   // in flight / active
-  invoiced: "info",
   "in progress": "info",
   "in-progress": "info",
   active: "info",
-  scheduled: "info",
   ongoing: "info",
   processing: "info",
   sent: "info",

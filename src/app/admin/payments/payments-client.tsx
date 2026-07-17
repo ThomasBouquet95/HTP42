@@ -1711,33 +1711,38 @@ type StatusTone =
   | "scheduled"
   | "tobepaid"
   | "paid"
+  | "rejected"
   | "canceled"
   | "neutral";
 
-// `cell0` is applied to the row's FIRST cell. A ring/box-shadow on a
-// <tr> doesn't paint reliably across browsers, so "Under Review" rows
-// get a thick purple left bar there instead — a flag that always shows.
+// Row tint + select chip tone per payment status. Uses the app-wide lifecycle
+// palette (Under review = sky, To be paid / Scheduled = indigo, Paid = emerald,
+// Rejected = rose, Canceled = slate) so the list matches the review/breakdown
+// tabs. Under-review rows keep an outline flag so they stand out.
 function paymentRowTint(
   status: string,
 ): { row: string; cell0: string; select: StatusTone } {
   if (status === "Under Review") {
     return {
-      row: "bg-brand-50 hover:bg-brand-100 outline outline-2 -outline-offset-2 outline-brand-400",
+      row: "bg-sky-50 hover:bg-sky-100 outline outline-2 -outline-offset-2 outline-sky-300",
       cell0: "",
       select: "underreview",
     };
   }
   if (status === "Scheduled") {
-    return { row: "bg-sky-50/50 hover:bg-sky-50", cell0: "", select: "scheduled" };
+    return { row: "bg-indigo-50/50 hover:bg-indigo-50", cell0: "", select: "scheduled" };
   }
   if (status === "To be paid") {
-    return { row: "bg-amber-50/50 hover:bg-amber-50", cell0: "", select: "tobepaid" };
+    return { row: "bg-indigo-50/50 hover:bg-indigo-50", cell0: "", select: "tobepaid" };
   }
   if (status === "Paid") {
-    return { row: "bg-slate-50 hover:bg-slate-100", cell0: "", select: "paid" };
+    return { row: "bg-emerald-50/40 hover:bg-emerald-50", cell0: "", select: "paid" };
   }
-  if (status === "Canceled" || status === "Rejected") {
-    return { row: "bg-red-50/40 hover:bg-red-50", cell0: "", select: "canceled" };
+  if (status === "Rejected") {
+    return { row: "bg-rose-50/40 hover:bg-rose-50", cell0: "", select: "rejected" };
+  }
+  if (status === "Canceled") {
+    return { row: "bg-slate-50 hover:bg-slate-100", cell0: "", select: "canceled" };
   }
   return { row: "hover:bg-slate-50", cell0: "", select: "neutral" };
 }
@@ -1757,15 +1762,17 @@ function StatusSelect({
 }) {
   const toneCls =
     tone === "underreview"
-      ? "bg-brand-50 border-brand-400 text-brand-700"
-      : tone === "scheduled"
       ? "bg-sky-50 border-sky-300 text-sky-800"
+      : tone === "scheduled"
+      ? "bg-indigo-50 border-indigo-300 text-indigo-800"
       : tone === "tobepaid"
-      ? "bg-amber-50 border-amber-300 text-amber-800"
+      ? "bg-indigo-50 border-indigo-300 text-indigo-800"
       : tone === "paid"
-      ? "bg-slate-100 border-slate-300 text-slate-700"
+      ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+      : tone === "rejected"
+      ? "bg-rose-50 border-rose-300 text-rose-700"
       : tone === "canceled"
-      ? "bg-red-50 border-red-300 text-red-700 line-through"
+      ? "bg-slate-100 border-slate-300 text-slate-500 line-through"
       : "bg-white border-slate-300 text-slate-700";
   return (
     <span className="relative inline-flex w-full items-center">
