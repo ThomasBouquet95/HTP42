@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAdminAction } from "@/lib/auth";
 import { apiError, zodMessage } from "@/lib/errors";
 import { listPayments, applyReconciliationLinks, type PaymentRecord } from "@/lib/airtable";
-import { listQontoTransactions } from "@/lib/qonto";
+import { listQontoTransactions } from "@/lib/qonto-data";
 import { proposeReconciliation, type ReconInputPayment } from "@/lib/qonto-reconcile";
 
 function toReconInput(p: PaymentRecord): ReconInputPayment {

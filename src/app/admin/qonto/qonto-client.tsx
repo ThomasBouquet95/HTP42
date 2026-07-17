@@ -93,11 +93,19 @@ function Loaded({
   // Deep link from a payment (?tx=…) lands directly on the Transactions view.
   const focusTxId = initialTxId && transactions.some((t) => t.id === initialTxId) ? initialTxId : undefined;
   const [view, setView] = useState<View>(focusTxId ? "transactions" : "accounts");
-  // Force a fresh Qonto read (bypasses the server-side cache) via a nonce param.
+  // Force a fresh Qonto read: invalidate the server cache, then re-render.
   const [refreshing, setRefreshing] = useState(false);
-  const forceRefresh = () => {
+  const forceRefresh = async () => {
     setRefreshing(true);
-    router.push(`/admin/qonto?refresh=${Date.now()}`);
+    try {
+      await fetch("/api/admin/qonto/refresh", { method: "POST" });
+    } catch {
+      /* ignore — still refresh below */
+    }
+    router.refresh();
+    // router.refresh() re-renders the server component; clear the busy state
+    // shortly after so the button doesn't stay disabled if data is cached-fast.
+    setTimeout(() => setRefreshing(false), 1500);
   };
 
   // Transaction filter state lives here (not inside TransactionsView) so the
