@@ -54,6 +54,15 @@ export function qontoConfigured(): boolean {
   return !!login && !!secretKey;
 }
 
+// Which credential pieces the server can actually see at runtime. Booleans
+// only — never the values — so it's safe to surface on the (admin-only)
+// connect screen to diagnose a missing/mis-scoped env var without a redeploy
+// guessing game.
+export function qontoConfigStatus(): { hasLogin: boolean; hasSecret: boolean } {
+  const { login, secretKey } = env.qonto;
+  return { hasLogin: !!login, hasSecret: !!secretKey };
+}
+
 // Human-friendly operation-type label.
 export function operationTypeLabel(type: string): string {
   const map: Record<string, string> = {

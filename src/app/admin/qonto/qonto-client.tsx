@@ -23,11 +23,23 @@ function money(amount: number, currency: string): string {
   }`;
 }
 
-export function QontoClient({ result }: { result: QontoResult }) {
+export function QontoClient({
+  result,
+  configStatus,
+}: {
+  result: QontoResult;
+  configStatus: { hasLogin: boolean; hasSecret: boolean };
+}) {
   const router = useRouter();
 
   if (!result.ok) {
-    return <ConnectPanel error={result.error} onRefresh={() => router.refresh()} />;
+    return (
+      <ConnectPanel
+        error={result.error}
+        configStatus={configStatus}
+        onRefresh={() => router.refresh()}
+      />
+    );
   }
 
   return (
@@ -377,8 +389,21 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-function ConnectPanel({ error, onRefresh }: { error: string; onRefresh: () => void }) {
+function ConnectPanel({
+  error,
+  configStatus,
+  onRefresh,
+}: {
+  error: string;
+  configStatus: { hasLogin: boolean; hasSecret: boolean };
+  onRefresh: () => void;
+}) {
   const notConfigured = error === "not-configured";
+  const { hasLogin, hasSecret } = configStatus;
+  // Both missing usually means the deployment hasn't picked up the vars yet
+  // (Vercel needs a redeploy) or they're scoped to a different environment.
+  // One present, one missing points at a naming/typo issue on the other.
+  const bothMissing = !hasLogin && !hasSecret;
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-8 text-center">
       <div className="mx-auto max-w-md">
@@ -386,29 +411,82 @@ function ConnectPanel({ error, onRefresh }: { error: string; onRefresh: () => vo
           {notConfigured ? "Connect your Qonto account" : "Couldn't reach Qonto"}
         </div>
         {notConfigured ? (
-          <p className="mt-2 text-xs text-slate-500">
-            Add your Qonto API credentials as environment variables, then reopen this tab:
-            <br />
-            <code className="mt-1 inline-block rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
-              QONTO_LOGIN
-            </code>{" "}
-            (organization slug) and{" "}
-            <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
-              QONTO_SECRET_KEY
-            </code>{" "}
-            (from Qonto → Settings → API). No key is stored in the app.
-          </p>
+          <>
+            <p className="mt-2 text-xs text-slate-500">
+              Add your Qonto API credentials as environment variables:{" "}
+              <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+                QONTO_LOGIN
+              </code>{" "}
+              (organization slug) and{" "}
+              <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+                QONTO_SECRET_KEY
+              </code>{" "}
+              (from Qonto → Settings → API). No key is stored in the app.
+            </p>
+
+            {/* Live detection so it's clear what the server actually sees. */}
+            <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-left">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Detected on the server
+              </div>
+              <ul className="mt-1 space-y-0.5 text-[12px]">
+                <EnvRow name="QONTO_LOGIN" present={hasLogin} />
+                <EnvRow name="QONTO_SECRET_KEY" present={hasSecret} />
+              </ul>
+            </div>
+
+            <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+              {bothMissing ? (
+                <>
+                  Neither variable is visible yet. On Vercel, env-var changes only
+                  take effect on a <strong>new deployment</strong> — redeploy the
+                  branch you&apos;re viewing, and make sure the variables are enabled
+                  for that environment (Production <em>and</em> Preview).
+                </>
+              ) : (
+                <>
+                  One credential is missing — double-check its exact name and value
+                  for the environment you&apos;re viewing, then redeploy.
+                </>
+              )}
+            </p>
+
+            <div className="mt-4">
+              <Button tone="secondary" size="sm" onClick={onRefresh}>
+                Re-check
+              </Button>
+            </div>
+          </>
         ) : (
-          <p className="mt-2 whitespace-pre-line text-xs text-rose-600">{error}</p>
+          <>
+            <p className="mt-2 whitespace-pre-line text-xs text-rose-600">{error}</p>
+            <div className="mt-4">
+              <Button tone="primary" size="sm" onClick={onRefresh}>
+                Try again
+              </Button>
+            </div>
+          </>
         )}
-        {!notConfigured ? (
-          <div className="mt-4">
-            <Button tone="primary" size="sm" onClick={onRefresh}>
-              Try again
-            </Button>
-          </div>
-        ) : null}
       </div>
     </div>
+  );
+}
+
+function EnvRow({ name, present }: { name: string; present: boolean }) {
+  return (
+    <li className="flex items-center gap-2">
+      <span
+        className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-white ${
+          present ? "bg-emerald-500" : "bg-slate-300"
+        }`}
+        aria-hidden
+      >
+        {present ? "✓" : "×"}
+      </span>
+      <code className="font-mono text-[11px] text-slate-700">{name}</code>
+      <span className={`ml-auto text-[11px] ${present ? "text-emerald-600" : "text-slate-400"}`}>
+        {present ? "detected" : "not detected"}
+      </span>
+    </li>
   );
 }
