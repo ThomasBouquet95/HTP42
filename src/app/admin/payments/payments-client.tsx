@@ -11,6 +11,7 @@ import { DownloadChip } from "@/components/download-chip";
 import { EditIcon } from "@/components/admin-icons";
 import { DateField } from "@/components/date-picker";
 import { PaidDateModal } from "@/components/paid-date-modal";
+import { ReconcileModal } from "./reconcile-modal";
 import { SearchSelect } from "@/components/search-select";
 import { TimesheetBreakdown } from "./payments-breakdown";
 import { RelatedInvoiceLink } from "./related-invoice";
@@ -88,6 +89,7 @@ type Filters = {
   project: string[];
   member: string[];
   counterparty: string[];
+  reconciled: "all" | "linked" | "unlinked";
   dueFrom: string;
   dueTo: string;
   paymentFrom: string;
@@ -102,6 +104,7 @@ const DEFAULT_FILTERS: Filters = {
   project: [],
   member: [],
   counterparty: [],
+  reconciled: "all",
   dueFrom: "",
   dueTo: "",
   paymentFrom: "",
@@ -412,6 +415,7 @@ export function PaymentsClient({
   // collects it before the PATCH.
   const [paidTarget, setPaidTarget] = useState<{ id: string; label: string } | null>(null);
   const [markingPaid, setMarkingPaid] = useState(false);
+  const [reconcileOpen, setReconcileOpen] = useState(false);
 
   // Unsaved edits = form differs from what we opened with, or a PDF was picked.
   const dirty = useMemo(
@@ -485,6 +489,8 @@ export function PaymentsClient({
       if (filters.member.length && !p.memberRecordIds.some((id) => filters.member.includes(id))) return false;
       if (filters.counterparty.length && !counterpartyValues(p).some((c) => filters.counterparty.includes(c)))
         return false;
+      if (filters.reconciled === "linked" && !p.qontoTransactionId) return false;
+      if (filters.reconciled === "unlinked" && p.qontoTransactionId) return false;
       // Date range filters apply only once the user has picked BOTH ends —
       // a half-set range previously hid every payment outside the partial bound.
       if (filters.dueFrom && filters.dueTo) {
@@ -576,6 +582,7 @@ export function PaymentsClient({
     filters.project.length > 0 ||
     filters.member.length > 0 ||
     filters.counterparty.length > 0 ||
+    filters.reconciled !== "all" ||
     filters.dueFrom !== "" ||
     filters.dueTo !== "" ||
     filters.paymentFrom !== "" ||
@@ -1023,6 +1030,12 @@ export function PaymentsClient({
               </svg>
               Export
             </Button>
+            <Button tone="secondary" size="sm" onClick={() => setReconcileOpen(true)}>
+              <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+                <path d="M13 3v4h-4M3 13V9h4M12.5 7a4.5 4.5 0 0 0-8-2M3.5 9a4.5 4.5 0 0 0 8 2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Reconcile
+            </Button>
             <Button tone="primary" size="sm" onClick={openCreate}>
               <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                 <path d="M8 3v10M3 8h10" strokeLinecap="round" />
@@ -1084,6 +1097,30 @@ export function PaymentsClient({
             onFrom={(v) => update("paymentFrom", v)}
             onTo={(v) => update("paymentTo", v)}
           />
+          {/* Qonto reconciliation: show all, only-linked, or only-unlinked. */}
+          <div
+            role="group"
+            aria-label="Filter by Qonto link"
+            className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5"
+          >
+            {(["all", "linked", "unlinked"] as const).map((v) => {
+              const active = filters.reconciled === v;
+              const label = v === "all" ? "Qonto: all" : v === "linked" ? "Linked" : "Unlinked";
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => update("reconciled", v)}
+                  className={`px-2.5 py-1 text-[11px] font-medium rounded-full transition-all ${
+                    active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div className="overflow-x-auto">
         <table className="w-full text-xs">
@@ -1184,7 +1221,20 @@ export function PaymentsClient({
                     </td>
                     <td className="px-2 py-1.5 demo-blur">{counterparty}</td>
                     <td className="px-2 py-1.5 hidden lg:table-cell text-slate-700 demo-blur">
-                      {p.invoiceReference || <span className="text-slate-300">—</span>}
+                      <div className="flex items-center gap-1">
+                        <span>{p.invoiceReference || <span className="text-slate-300">—</span>}</span>
+                        {p.qontoTransactionId ? (
+                          <span
+                            title={`Reconciled with Qonto${p.qontoReference ? `: ${p.qontoReference}` : ""}`}
+                            className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700"
+                          >
+                            <svg viewBox="0 0 16 16" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                              <path d="M6.5 9.5l-2-2M9.5 6.5a2.5 2.5 0 0 0-3.5 0M6 10a2.5 2.5 0 0 0 3.5 0l1.5-1.5a2.5 2.5 0 0 0-3.5-3.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                            Qonto
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell">
                       <DueDateCell dueDate={p.dueDate} status={p.paymentStatus} />
@@ -1777,6 +1827,12 @@ export function PaymentsClient({
             setToast({ kind: "error", msg: "Could not approve the linked timesheets." });
           }
         }}
+      />
+
+      <ReconcileModal
+        open={reconcileOpen}
+        onClose={() => setReconcileOpen(false)}
+        onApplied={() => router.refresh()}
       />
 
       {toast ? (

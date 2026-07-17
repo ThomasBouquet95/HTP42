@@ -253,6 +253,12 @@ export const FIELDS = {
     memberNote: "Member Note",
     invoiceUrl: "Invoice URL",
     invoicePdf: "Invoice PDF",
+    // Reconciliation with Qonto: the linked bank transaction's id + a
+    // human-readable reference, and when the link was made. Lazily created via
+    // the meta API — see ensurePaymentQontoFields.
+    qontoTransactionId: "Qonto Transaction ID",
+    qontoReference: "Qonto Reference",
+    qontoMatchedAt: "Qonto Matched At",
   },
   memberInvoices: {
     invoiceCode: "Invoice Code",
@@ -687,6 +693,9 @@ export type PaymentRecord = {
   memberNote: string;
   invoiceUrl: string;
   invoicePdf: AttachmentRef | null;
+  qontoTransactionId: string;
+  qontoReference: string;
+  qontoMatchedAt: string | null;
 };
 
 export type StaffingRecord = {
@@ -2403,6 +2412,9 @@ function paymentFromRecord(r: AirtableRecord<FieldSet>): PaymentRecord {
     memberNote: str(r, FIELDS.payments.memberNote),
     invoiceUrl: str(r, FIELDS.payments.invoiceUrl),
     invoicePdf: firstAttachment(r, FIELDS.payments.invoicePdf),
+    qontoTransactionId: str(r, FIELDS.payments.qontoTransactionId),
+    qontoReference: str(r, FIELDS.payments.qontoReference),
+    qontoMatchedAt: dateOrNull(r, FIELDS.payments.qontoMatchedAt),
   };
 }
 
@@ -3112,6 +3124,108 @@ async function ensurePaymentMemberNoteField(): Promise<boolean> {
     console.error("ensurePaymentMemberNoteField failed:", e);
     return false;
   }
+}
+
+// Lazily create the three Qonto-reconciliation fields on the Payments table.
+// Best-effort; returns whether all three now exist.
+let paymentQontoFieldsReady = false;
+async function ensurePaymentQontoFields(): Promise<boolean> {
+  if (paymentQontoFieldsReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.payments);
+    if (!table) return false;
+    const existing = new Set(table.fields.map((f) => f.name));
+    const wanted: Array<{ name: string; type: string; options?: unknown; description: string }> = [
+      {
+        name: FIELDS.payments.qontoTransactionId,
+        type: "singleLineText",
+        description: "Linked Qonto bank transaction id (set by reconciliation).",
+      },
+      {
+        name: FIELDS.payments.qontoReference,
+        type: "singleLineText",
+        description: "Human-readable reference/label of the linked Qonto transaction.",
+      },
+      {
+        name: FIELDS.payments.qontoMatchedAt,
+        type: "date",
+        options: { dateFormat: { name: "iso" } },
+        description: "Date this payment was reconciled with a Qonto transaction.",
+      },
+    ];
+    let allOk = true;
+    for (const f of wanted) {
+      if (existing.has(f.name)) continue;
+      const create = await fetch(
+        `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+          body: JSON.stringify(f),
+        },
+      );
+      if (!create.ok) {
+        allOk = false;
+        console.error(
+          `ensurePaymentQontoFields: create ${f.name} failed:`,
+          await create.text().catch(() => ""),
+        );
+      }
+    }
+    if (allOk) paymentQontoFieldsReady = true;
+    return paymentQontoFieldsReady;
+  } catch (e) {
+    console.error("ensurePaymentQontoFields failed:", e);
+    return false;
+  }
+}
+
+// Link (or, with empty txId, unlink) a payment to a Qonto transaction.
+export async function setPaymentQontoLink(
+  recordId: string,
+  link: { txId: string; reference: string; matchedAt: string | null },
+): Promise<void> {
+  await ensurePaymentQontoFields();
+  await base(TABLES.payments).update(recordId, {
+    [FIELDS.payments.qontoTransactionId]: link.txId || null,
+    [FIELDS.payments.qontoReference]: link.reference || null,
+    [FIELDS.payments.qontoMatchedAt]: link.txId ? link.matchedAt : null,
+  } as FieldSet);
+}
+
+// Write a batch of reconciliation links. Returns how many were applied.
+// Airtable caps batch updates at 10 records/request, so we chunk.
+export async function applyReconciliationLinks(
+  links: Array<{ paymentId: string; txId: string; reference: string }>,
+  matchedAt: string,
+): Promise<number> {
+  if (links.length === 0) return 0;
+  await ensurePaymentQontoFields();
+  let applied = 0;
+  for (let i = 0; i < links.length; i += 10) {
+    const chunk = links.slice(i, i + 10);
+    await base(TABLES.payments).update(
+      chunk.map((l) => ({
+        id: l.paymentId,
+        fields: {
+          [FIELDS.payments.qontoTransactionId]: l.txId,
+          [FIELDS.payments.qontoReference]: l.reference || null,
+          [FIELDS.payments.qontoMatchedAt]: matchedAt,
+        } as FieldSet,
+      })),
+    );
+    applied += chunk.length;
+  }
+  return applied;
 }
 
 // One-off (re-runnable) backfill: for every payment that settles a member

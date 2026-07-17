@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
@@ -15,6 +16,8 @@ import {
 
 type Tab = "all" | "inflows" | "outflows";
 type View = "accounts" | "transactions" | "statistics";
+type LinkFilter = "all" | "linked" | "unlinked";
+export type PaymentByTxId = Record<string, { code: string; id: string }>;
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function fmtDate(iso: string | null): string {
@@ -39,9 +42,11 @@ function currencySymbol(currency: string): string {
 export function QontoClient({
   result,
   configStatus,
+  paymentByTxId,
 }: {
   result: QontoResult;
   configStatus: { hasLogin: boolean; hasSecret: boolean };
+  paymentByTxId: PaymentByTxId;
 }) {
   const router = useRouter();
 
@@ -61,6 +66,7 @@ export function QontoClient({
       transactions={result.transactions}
       truncated={result.truncated}
       warnings={result.warnings}
+      paymentByTxId={paymentByTxId}
     />
   );
 }
@@ -70,11 +76,13 @@ function Loaded({
   transactions,
   truncated,
   warnings,
+  paymentByTxId,
 }: {
   accounts: QontoAccount[];
   transactions: QontoTx[];
   truncated: boolean;
   warnings: string[];
+  paymentByTxId: PaymentByTxId;
 }) {
   const router = useRouter();
   const [view, setView] = useState<View>("accounts");
@@ -152,6 +160,7 @@ function Loaded({
           accounts={accounts}
           transactions={transactions}
           truncated={truncated}
+          paymentByTxId={paymentByTxId}
           tab={tab}
           setTab={setTab}
           search={search}
@@ -431,6 +440,7 @@ function TransactionsView({
   accounts,
   transactions,
   truncated,
+  paymentByTxId,
   tab,
   setTab,
   search,
@@ -443,6 +453,7 @@ function TransactionsView({
   accounts: QontoAccount[];
   transactions: QontoTx[];
   truncated: boolean;
+  paymentByTxId: PaymentByTxId;
   tab: Tab;
   setTab: (t: Tab) => void;
   search: string;
@@ -453,6 +464,7 @@ function TransactionsView({
   setAccountFilter: (a: string[]) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [linkFilter, setLinkFilter] = useState<LinkFilter>("all");
 
   const typeOptions = useMemo(() => {
     const set = new Map<string, string>();
@@ -467,13 +479,15 @@ function TransactionsView({
     return transactions.filter((t) => {
       if (types.length && !types.includes(t.operationType)) return false;
       if (accountFilter.length && !accountFilter.includes(t.accountIban || t.accountName)) return false;
+      if (linkFilter === "linked" && !paymentByTxId[t.id]) return false;
+      if (linkFilter === "unlinked" && paymentByTxId[t.id]) return false;
       if (q) {
         const hay = `${t.label} ${t.reference} ${t.note} ${t.accountName}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [transactions, types, accountFilter, search]);
+  }, [transactions, types, accountFilter, search, linkFilter, paymentByTxId]);
 
   const filtered = useMemo(
     () =>
@@ -489,7 +503,7 @@ function TransactionsView({
   // a stale expanded detail can't linger under a row that's no longer shown.
   useEffect(() => {
     setOpenId(null);
-  }, [tab, search, types, accountFilter]);
+  }, [tab, search, types, accountFilter, linkFilter]);
 
   // Totals over the FILTERED set, split by currency so multi-currency accounts
   // never silently add euros to dollars.
@@ -552,6 +566,30 @@ function TransactionsView({
                 options={accounts.map((a) => ({ value: a.iban || a.name, label: a.name }))}
               />
             ) : null}
+            {/* Reconciliation link filter — mirror of the Payments-side filter. */}
+            <div
+              role="group"
+              aria-label="Filter by payment link"
+              className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5"
+            >
+              {(["all", "linked", "unlinked"] as const).map((v) => {
+                const active = linkFilter === v;
+                const label = v === "all" ? "Link: all" : v === "linked" ? "Linked" : "Unlinked";
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setLinkFilter(v)}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-full transition-all ${
+                      active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
           </FilterBar>
           <div className="flex items-center gap-2">
             {types.length || accountFilter.length || search || tab !== "all" ? (
@@ -617,6 +655,7 @@ function TransactionsView({
                 const open = openId === t.id;
                 const detailId = `qonto-detail-${i}`;
                 const toggle = () => setOpenId(open ? null : t.id);
+                const linkedPayment = paymentByTxId[t.id];
                 return (
                   <Fragment key={t.id}>
                     <tr
@@ -644,8 +683,11 @@ function TransactionsView({
                         {fmtDate(t.settledAt || t.emittedAt)}
                       </td>
                       <td className="px-2 py-2">
-                        <div className="truncate max-w-[22rem] font-medium text-slate-800 demo-blur">
-                          {t.label}
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate max-w-[20rem] font-medium text-slate-800 demo-blur">
+                            {t.label}
+                          </span>
+                          {linkedPayment ? <PaymentChip payment={linkedPayment} /> : null}
                         </div>
                         {t.reference ? (
                           <div className="truncate max-w-[22rem] text-[10px] text-slate-400">{t.reference}</div>
@@ -690,6 +732,21 @@ function TransactionsView({
                             <Detail label="Reference" value={t.reference || "—"} />
                             <Detail label="Account" value={`${t.accountName}${t.accountIban ? ` · ${ibanTail(t.accountIban)}` : ""}`} />
                             {t.note ? <Detail label="Note" value={t.note} full /> : null}
+                            {linkedPayment ? (
+                              <div className="flex gap-2 sm:col-span-2">
+                                <dt className="w-20 shrink-0 text-[11px] uppercase tracking-wide text-slate-400">
+                                  Payment
+                                </dt>
+                                <dd className="min-w-0 flex-1 text-[12px]">
+                                  <Link
+                                    href={`/admin/payments?payment=${linkedPayment.id}`}
+                                    className="font-medium text-brand-700 hover:underline"
+                                  >
+                                    {linkedPayment.code} →
+                                  </Link>
+                                </dd>
+                              </div>
+                            ) : null}
                           </dl>
                         </td>
                       </tr>
@@ -1085,6 +1142,22 @@ function TypePill({ side, type }: { side: "inflow" | "outflow"; type: string }) 
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${cls}`}>
       {operationTypeLabel(type)}
     </span>
+  );
+}
+
+function PaymentChip({ payment }: { payment: { code: string; id: string } }) {
+  return (
+    <Link
+      href={`/admin/payments?payment=${payment.id}`}
+      onClick={(e) => e.stopPropagation()}
+      title={`Reconciled with payment ${payment.code}`}
+      className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-brand-200 bg-brand-50 px-1.5 py-0.5 text-[9px] font-semibold text-brand-700 hover:bg-brand-100"
+    >
+      <svg viewBox="0 0 16 16" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path d="M6.5 9.5l-2-2M9.5 6.5a2.5 2.5 0 0 0-3.5 0M6 10a2.5 2.5 0 0 0 3.5 0l1.5-1.5a2.5 2.5 0 0 0-3.5-3.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      {payment.code}
+    </Link>
   );
 }
 
