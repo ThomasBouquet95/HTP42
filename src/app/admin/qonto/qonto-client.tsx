@@ -93,6 +93,12 @@ function Loaded({
   // Deep link from a payment (?tx=…) lands directly on the Transactions view.
   const focusTxId = initialTxId && transactions.some((t) => t.id === initialTxId) ? initialTxId : undefined;
   const [view, setView] = useState<View>(focusTxId ? "transactions" : "accounts");
+  // Force a fresh Qonto read (bypasses the server-side cache) via a nonce param.
+  const [refreshing, setRefreshing] = useState(false);
+  const forceRefresh = () => {
+    setRefreshing(true);
+    router.push(`/admin/qonto?refresh=${Date.now()}`);
+  };
 
   // Transaction filter state lives here (not inside TransactionsView) so the
   // Accounts and Statistics views can drill through into a pre-filtered ledger.
@@ -144,8 +150,8 @@ function Loaded({
             { value: "statistics", label: "Statistics" },
           ]}
         />
-        <Button tone="secondary" size="sm" onClick={() => router.refresh()}>
-          Refresh
+        <Button tone="secondary" size="sm" onClick={forceRefresh} disabled={refreshing}>
+          {refreshing ? "Refreshing…" : "Refresh"}
         </Button>
       </div>
 

@@ -3,7 +3,7 @@ import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
 import { listQontoTransactions, qontoConfigStatus } from "@/lib/qonto";
-import { listPayments } from "@/lib/airtable";
+import { listPaymentsRaw } from "@/lib/airtable";
 import { QontoClient } from "./qonto-client";
 
 // Read fresh on every visit so the list reflects the latest Qonto activity
@@ -13,14 +13,17 @@ export const dynamic = "force-dynamic";
 export default async function AdminQontoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tx?: string }>;
+  searchParams: Promise<{ tx?: string; refresh?: string }>;
 }) {
   const access = await requireAdminPage("bank");
   if (!access) redirect("/admin");
 
-  const { tx: initialTxId } = await searchParams;
+  const { tx: initialTxId, refresh } = await searchParams;
 
-  const [result, payments] = await Promise.all([listQontoTransactions(), listPayments()]);
+  const [result, payments] = await Promise.all([
+    listQontoTransactions({ force: !!refresh }),
+    listPaymentsRaw(),
+  ]);
   const configStatus = qontoConfigStatus();
 
   // Reverse link: Qonto transaction id → the payment it's reconciled with, so

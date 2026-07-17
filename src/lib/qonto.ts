@@ -254,7 +254,28 @@ async function fetchTransactionsForAccount(
 // tagged result. One account failing doesn't sink the rest: successes still
 // render, with a per-account warning; only an all-failed read (or no accounts
 // reachable) surfaces as a hard error.
-export async function listQontoTransactions(): Promise<QontoResult> {
+// Cross-request in-memory cache. Reading every transaction from Qonto on each
+// visit is slow (several sequential API round-trips), and admins navigate in
+// and out of the Bank tab often — so cache the successful result briefly. The
+// Refresh button forces a fresh read (force: true).
+let txCache: { at: number; result: QontoResult } | null = null;
+const CACHE_TTL_MS = 90_000;
+
+export async function listQontoTransactions(opts?: { force?: boolean }): Promise<QontoResult> {
+  if (
+    !opts?.force &&
+    txCache &&
+    txCache.result.ok &&
+    performance.now() - txCache.at < CACHE_TTL_MS
+  ) {
+    return txCache.result;
+  }
+  const result = await computeQontoTransactions();
+  if (result.ok) txCache = { at: performance.now(), result };
+  return result;
+}
+
+async function computeQontoTransactions(): Promise<QontoResult> {
   if (!qontoConfigured()) {
     return { ok: false, error: "not-configured" };
   }

@@ -285,6 +285,13 @@ export function PaymentsClient({
   const [rows, setRows] = useState<PaymentRecord[]>(payments);
   useEffect(() => setRows(payments), [payments]);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  // Deep links (?payment=…) isolate a single payment. Kept in state so the user
+  // can clear the isolation (Reset / "Show all") and get the full list back.
+  const [isolatedId, setIsolatedId] = useState<string>(initialPaymentId ?? "");
+  const clearIsolation = () => {
+    setIsolatedId("");
+    router.replace("/admin/payments");
+  };
   const [expandedRows, setExpandedRows] = useState<Set<string>>(
     () => new Set(initialPaymentId ? [initialPaymentId] : []),
   );
@@ -477,8 +484,8 @@ export function PaymentsClient({
   const filtered = useMemo(() => {
     // A deep link to a specific payment isolates exactly that record — a code
     // substring search (e.g. "139") could otherwise match several rows.
-    if (initialPaymentId) {
-      const one = rows.find((p) => p.id === initialPaymentId);
+    if (isolatedId) {
+      const one = rows.find((p) => p.id === isolatedId);
       return one ? [one] : [];
     }
     const q = filters.search.trim().toLowerCase();
@@ -526,7 +533,7 @@ export function PaymentsClient({
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, filters, initialPaymentId]);
+  }, [rows, filters, isolatedId]);
 
   const sorted = useMemo(() => {
     if (!sort.key) return filtered;
@@ -589,11 +596,13 @@ export function PaymentsClient({
     filters.paymentFrom !== "" ||
     filters.paymentTo !== "" ||
     filters.search !== "" ||
+    isolatedId !== "" ||
     sort.key !== DEFAULT_SORT.key ||
     sort.dir !== DEFAULT_SORT.dir;
   function resetAll() {
     setFilters(DEFAULT_FILTERS);
     setSort(DEFAULT_SORT);
+    if (isolatedId) clearIsolation();
   }
 
   function openCreate() {
@@ -1123,6 +1132,18 @@ export function PaymentsClient({
             })}
           </div>
         </div>
+        {isolatedId ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-brand-100 bg-brand-50 px-3 py-2 text-[11px] text-brand-800">
+            <span>Showing a single payment (opened from a link).</span>
+            <button
+              type="button"
+              onClick={clearIsolation}
+              className="rounded-md border border-brand-200 bg-white px-2 py-1 font-medium text-brand-700 hover:bg-brand-100"
+            >
+              Show all payments
+            </button>
+          </div>
+        ) : null}
         <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 whitespace-nowrap">
