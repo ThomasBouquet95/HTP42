@@ -134,9 +134,11 @@ const CHART_H = 230;
 export function MonthlyBarChart({
   rows,
   showPlannedSplit,
+  currencySymbol = "€",
 }: {
   rows: MonthRow[];
   showPlannedSplit: boolean;
+  currencySymbol?: string;
 }) {
   const [ref, width] = useContainerWidth();
   if (rows.length === 0) {
@@ -192,11 +194,11 @@ export function MonthlyBarChart({
               {inH > 0 ? (
                 <>
                   <rect x={x} y={chartH - inExecH} width={barW} height={inExecH} fill={inflowSolid} rx={2}>
-                    <title>{`${month} · Inflow executed: €${inExecuted.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
+                    <title>{`${month} · Inflow executed: ${currencySymbol}${inExecuted.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
                   </rect>
                   {inPlanned > 0 ? (
                     <rect x={x} y={chartH - inH} width={barW} height={inH - inExecH} fill="url(#hatch-inflow)" stroke={inflowSolid} strokeWidth="1" rx={2}>
-                      <title>{`${month} · Inflow planned: €${inPlanned.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
+                      <title>{`${month} · Inflow planned: ${currencySymbol}${inPlanned.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
                     </rect>
                   ) : null}
                 </>
@@ -204,11 +206,11 @@ export function MonthlyBarChart({
               {outH > 0 ? (
                 <>
                   <rect x={x + barW + 4} y={chartH - outExecH} width={barW} height={outExecH} fill={outflowSolid} rx={2}>
-                    <title>{`${month} · Outflow executed: €${outExecuted.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
+                    <title>{`${month} · Outflow executed: ${currencySymbol}${outExecuted.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
                   </rect>
                   {outPlanned > 0 ? (
                     <rect x={x + barW + 4} y={chartH - outH} width={barW} height={outH - outExecH} fill="url(#hatch-outflow)" stroke={outflowSolid} strokeWidth="1" rx={2}>
-                      <title>{`${month} · Outflow planned: €${outPlanned.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
+                      <title>{`${month} · Outflow planned: ${currencySymbol}${outPlanned.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
                     </rect>
                   ) : null}
                 </>
@@ -238,7 +240,13 @@ export function MonthlyBarChart({
   );
 }
 
-export function CumulativeCashFlowChart({ rows }: { rows: MonthRow[] }) {
+export function CumulativeCashFlowChart({
+  rows,
+  currencySymbol = "€",
+}: {
+  rows: MonthRow[];
+  currencySymbol?: string;
+}) {
   const [ref, width] = useContainerWidth();
   if (rows.length === 0) {
     return (
@@ -269,7 +277,9 @@ export function CumulativeCashFlowChart({ rows }: { rows: MonthRow[] }) {
   const zeroY = yFor(0);
   const path = points.map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(i)} ${yFor(p.cumulative)}`).join(" ");
   const fmt = (n: number) =>
-    Math.abs(n) >= 1000 ? `€${(n / 1000).toFixed(Math.abs(n) >= 10_000 ? 0 : 1)}k` : `€${n.toFixed(0)}`;
+    Math.abs(n) >= 1000
+      ? `${currencySymbol}${(n / 1000).toFixed(Math.abs(n) >= 10_000 ? 0 : 1)}k`
+      : `${currencySymbol}${n.toFixed(0)}`;
   return (
     <div ref={ref} className="w-full">
       <svg width={chartW} height={chartH + 22} role="img" aria-label="Cumulative cash flow">
@@ -289,7 +299,7 @@ export function CumulativeCashFlowChart({ rows }: { rows: MonthRow[] }) {
           return (
             <g key={p.month}>
               <circle cx={xFor(i)} cy={yFor(p.cumulative)} r={3.5} fill="white" stroke={p.cumulative >= 0 ? "#1E91F9" : "#f87171"} strokeWidth="1.8">
-                <title>{`${p.month} · Cumulative: €${p.cumulative.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
+                <title>{`${p.month} · Cumulative: ${currencySymbol}${p.cumulative.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</title>
               </circle>
               {points.length <= 12 ? (
                 <text x={xFor(i)} y={yFor(p.cumulative) + (above ? -8 : 14)} textAnchor="middle" fontSize="9" fill="#475569">

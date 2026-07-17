@@ -29,6 +29,12 @@ function money(amount: number, currency: string): string {
     currency ? " " + currency : ""
   }`;
 }
+// Prefix symbol for the reused charts (which render "{symbol}{amount}"). Falls
+// back to the ISO code + space for currencies without a common glyph.
+function currencySymbol(currency: string): string {
+  const map: Record<string, string> = { EUR: "€", USD: "$", GBP: "£", JPY: "¥", CHF: "CHF " };
+  return map[currency] ?? (currency ? `${currency} ` : "€");
+}
 
 export function QontoClient({
   result,
@@ -234,13 +240,13 @@ function AccountCard({
       {/* Balance */}
       <div className="mt-3">
         <div className="text-[11px] uppercase tracking-wide text-slate-500">Current balance</div>
-        <div className="mt-0.5 text-2xl font-semibold tabular-nums text-slate-900">
+        <div className="mt-0.5 text-2xl font-semibold tabular-nums text-slate-900 demo-blur">
           {a.balance != null ? money(a.balance, a.currency) : "—"}
         </div>
         {showAuthorized ? (
           <div className="mt-0.5 text-[11px] text-slate-500">
             Authorized{" "}
-            <span className="font-medium tabular-nums text-slate-700">
+            <span className="font-medium tabular-nums text-slate-700 demo-blur">
               {money(a.authorizedBalance as number, a.currency)}
             </span>
           </div>
@@ -273,7 +279,7 @@ function AccountCard({
         {a.bic ? (
           <div className="flex items-center gap-2">
             <dt className="w-10 shrink-0 uppercase tracking-wide text-slate-400">BIC</dt>
-            <dd className="min-w-0 flex-1 truncate font-mono text-slate-600">{a.bic}</dd>
+            <dd className="min-w-0 flex-1 truncate font-mono text-slate-600 demo-blur">{a.bic}</dd>
           </div>
         ) : null}
       </dl>
@@ -298,7 +304,7 @@ function MiniStat({ label, value, tone }: { label: string; value: string; tone?:
   return (
     <div>
       <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
-      <div className={`text-xs font-semibold tabular-nums ${color}`}>{value}</div>
+      <div className={`text-xs font-semibold tabular-nums demo-blur ${color}`}>{value}</div>
     </div>
   );
 }
@@ -564,7 +570,7 @@ function TransactionsView({
                       ) : null}
                       <td className="px-2 py-2 text-right">
                         <span
-                          className={`font-semibold tabular-nums ${
+                          className={`font-semibold tabular-nums demo-blur ${
                             t.side === "inflow" ? "text-emerald-700" : "text-rose-600"
                           }`}
                         >
@@ -581,7 +587,15 @@ function TransactionsView({
                             <Detail label="Direction" value={t.side === "inflow" ? "Inflow (credit)" : "Outflow (debit)"} />
                             <Detail label="Type" value={operationTypeLabel(t.operationType)} />
                             <Detail label="Status" value={t.status || "—"} />
-                            <Detail label="Amount" value={money(t.amount, t.currency)} />
+                            <Detail
+                              label="Amount"
+                              value={money(t.amount, t.currency)}
+                              valueClassName={
+                                t.side === "inflow"
+                                  ? "font-semibold text-emerald-700"
+                                  : "font-semibold text-rose-600"
+                              }
+                            />
                             <Detail label="Settled" value={fmtDate(t.settledAt)} />
                             <Detail label="Emitted" value={fmtDate(t.emittedAt)} />
                             <Detail label="Reference" value={t.reference || "—"} />
@@ -633,6 +647,17 @@ function StatisticsView({
     [transactions, dominant],
   );
 
+  // Declined rows in the dominant currency are excluded from the stats too —
+  // report them separately from the currency exclusion so the banner is honest.
+  const declinedCount = useMemo(
+    () =>
+      transactions.filter((t) => t.currency === dominant && t.status.toLowerCase() === "declined")
+        .length,
+    [transactions, dominant],
+  );
+  const hasPending = useMemo(() => rows.some((t) => t.status.toLowerCase() === "pending"), [rows]);
+  const symbol = currencySymbol(dominant);
+
   const totals = useMemo(() => {
     let inC = 0;
     let outC = 0;
@@ -666,21 +691,28 @@ function StatisticsView({
         <StatCard label={`Net (${dominant})`} value={money(totals.net, "")} tone="net" />
       </div>
 
-      {(truncated || otherCount > 0) ? (
+      {(truncated || otherCount > 0 || declinedCount > 0) ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-          {truncated ? "Statistics cover the most recent transactions only. " : ""}
-          {otherCount > 0
-            ? `${otherCount} transaction${otherCount === 1 ? "" : "s"} in other currencies are excluded.`
-            : ""}
+          {[
+            truncated ? "Statistics cover the most recent transactions only." : "",
+            otherCount > 0
+              ? `${otherCount} transaction${otherCount === 1 ? "" : "s"} in other currencies excluded.`
+              : "",
+            declinedCount > 0
+              ? `${declinedCount} declined transaction${declinedCount === 1 ? "" : "s"} excluded.`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
         </div>
       ) : null}
 
       {/* Spend over time */}
       <ChartCard title="Inflow vs outflow by month">
-        <MonthlyBarChart rows={monthly} showPlannedSplit />
+        <MonthlyBarChart rows={monthly} showPlannedSplit={hasPending} currencySymbol={symbol} />
       </ChartCard>
       <ChartCard title="Net cash flow (cumulative)">
-        <CumulativeCashFlowChart rows={monthly} />
+        <CumulativeCashFlowChart rows={monthly} currencySymbol={symbol} />
       </ChartCard>
 
       {/* Categories */}
@@ -760,9 +792,11 @@ function buildTopCounterparties(
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h3>
-      {children}
+    <section className="rounded-lg border border-slate-200 bg-white">
+      <div className="border-b border-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {title}
+      </div>
+      <div className="p-4">{children}</div>
     </section>
   );
 }
@@ -831,9 +865,9 @@ function StatCard({ label, value, tone }: { label: string; value: string; tone?:
   const color =
     tone === "in" ? "text-emerald-700" : tone === "out" ? "text-rose-600" : tone === "net" ? "text-brand-700" : "text-slate-900";
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
+    <div className="rounded-lg border border-slate-200 bg-white p-3 sm:p-4">
       <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`mt-0.5 text-lg font-semibold tabular-nums ${color}`}>{value}</div>
+      <div className={`mt-1 text-xl sm:text-2xl font-semibold tabular-nums demo-blur ${color}`}>{value}</div>
     </div>
   );
 }
@@ -859,11 +893,21 @@ function Count({ n }: { n: number }) {
   );
 }
 
-function Detail({ label, value, full }: { label: string; value: string; full?: boolean }) {
+function Detail({
+  label,
+  value,
+  full,
+  valueClassName = "text-slate-700",
+}: {
+  label: string;
+  value: string;
+  full?: boolean;
+  valueClassName?: string;
+}) {
   return (
     <div className={`flex gap-2 ${full ? "sm:col-span-2" : ""}`}>
       <dt className="w-20 shrink-0 text-[11px] uppercase tracking-wide text-slate-400">{label}</dt>
-      <dd className="min-w-0 flex-1 whitespace-pre-line text-[12px] text-slate-700 demo-blur">{value}</dd>
+      <dd className={`min-w-0 flex-1 whitespace-pre-line text-[12px] demo-blur ${valueClassName}`}>{value}</dd>
     </div>
   );
 }

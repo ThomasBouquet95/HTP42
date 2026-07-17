@@ -141,6 +141,9 @@ export function normalizeTransaction(
 // Small fixed backoffs for a 429 (rate-limited). Qonto's limit is generous for
 // our read volume, but a burst across several accounts can still trip it.
 const RETRY_BACKOFF_MS = [500, 1500, 3000];
+// Never wait longer than this for a single retry, even if the server's
+// Retry-After header asks for more — keeps us inside the overall read deadline.
+const MAX_RETRY_WAIT_MS = 5_000;
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -163,9 +166,12 @@ async function qontoGet(path: string): Promise<Response> {
   // Retry only on 429 (rate limit). Other statuses are handled by the caller.
   for (let attempt = 0; res.status === 429 && attempt < RETRY_BACKOFF_MS.length; attempt += 1) {
     const retryAfter = Number(res.headers.get("retry-after"));
-    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
-      ? retryAfter * 1000
-      : RETRY_BACKOFF_MS[attempt];
+    // Honour Retry-After but cap it — a large server value (e.g. 600s) must not
+    // blow past our overall read deadline and hang the page.
+    const waitMs =
+      Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, MAX_RETRY_WAIT_MS)
+        : RETRY_BACKOFF_MS[attempt];
     await sleep(waitMs);
     res = await doFetch();
   }
