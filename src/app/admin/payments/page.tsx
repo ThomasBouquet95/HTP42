@@ -77,19 +77,20 @@ export default async function AdminPaymentsPage({
     }
   }
 
-  // Covered-timesheets editor data per payment: the weeks its settling invoice
-  // bills (covered) plus the weeks that could be added (same staffing, Under
-  // review/Approved, not already billed by another live payment). A timesheet
-  // belongs to one payment, so "associated" spans every live (non
-  // Canceled/Rejected) payment's covered weeks.
+  // Covered-timesheets editor data per payment. A timesheet belongs to one
+  // payment. Newer invoices record their billed weeks explicitly (covered
+  // weeks); older ones don't, so for those we fall back to the staffing's
+  // billed weeks that no other invoice has explicitly claimed.
+  const BILLED_STATUSES = new Set(["Submitted", "Approved", "Invoiced", "Paid"]);
   const tsById = new Map(timesheets.map((t) => [t.id, t]));
   const invoiceById = new Map(invoices.map((i) => [i.id, i]));
-  const associated = new Set<string>();
+  // Weeks EXPLICITLY billed by any live (non Canceled/Rejected) payment.
+  const explicitlyClaimed = new Set<string>();
   for (const p of payments) {
     if (p.paymentStatus === "Canceled" || p.paymentStatus === "Rejected") continue;
     for (const invId of p.memberInvoiceRecordIds) {
       const inv = invoiceById.get(invId);
-      if (inv) for (const tid of inv.coveredTimesheetIds) associated.add(tid);
+      if (inv) for (const tid of inv.coveredTimesheetIds) explicitlyClaimed.add(tid);
     }
   }
   const toRow = (t: (typeof timesheets)[number]) => ({
@@ -109,20 +110,29 @@ export default async function AdminPaymentsPage({
     if (!invId) continue;
     const inv = invoiceById.get(invId);
     if (!inv) continue;
-    const covered = inv.coveredTimesheetIds
-      .map((tid) => tsById.get(tid))
-      .filter((t): t is (typeof timesheets)[number] => !!t)
-      .map(toRow);
-    const addable = inv.staffingRecordId
-      ? timesheets
-          .filter(
-            (t) =>
-              t.staffingRecordId === inv.staffingRecordId &&
-              (t.status === "Submitted" || t.status === "Approved") &&
-              !associated.has(t.id),
-          )
-          .map(toRow)
+    const staffingWeeks = inv.staffingRecordId
+      ? timesheets.filter((t) => t.staffingRecordId === inv.staffingRecordId)
       : [];
+    const covered =
+      inv.coveredTimesheetIds.length > 0
+        ? inv.coveredTimesheetIds
+            .map((tid) => tsById.get(tid))
+            .filter((t): t is (typeof timesheets)[number] => !!t)
+            .map(toRow)
+        : // Legacy invoice with no recorded weeks: show the staffing's billed
+          // weeks not explicitly claimed by another invoice.
+          staffingWeeks
+            .filter((t) => BILLED_STATUSES.has(t.status) && !explicitlyClaimed.has(t.id))
+            .map(toRow);
+    const coveredIds = new Set(covered.map((c) => c.id));
+    const addable = staffingWeeks
+      .filter(
+        (t) =>
+          (t.status === "Submitted" || t.status === "Approved") &&
+          !coveredIds.has(t.id) &&
+          !explicitlyClaimed.has(t.id),
+      )
+      .map(toRow);
     coveredByPaymentId[p.id] = { invoiceId: invId, covered, addable };
   }
 

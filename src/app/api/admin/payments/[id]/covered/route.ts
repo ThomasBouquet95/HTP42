@@ -12,29 +12,25 @@ import { apiError, zodMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
-// Add or remove a covered timesheet (billed week) on the invoice a payment
-// settles. A timesheet can belong to only one payment, so adding is only
-// allowed for an Under-review/Approved week on the same staffing that isn't
-// already on another live payment.
-const schema = z.object({
-  add: z.string().min(1).optional(),
-  remove: z.string().min(1).optional(),
-});
+// Set the exact list of timesheet weeks a payment bills, by writing its
+// settling invoice's covered weeks. The client sends the complete desired set
+// (so it also works for legacy invoices that never recorded one). A timesheet
+// belongs to only one payment, so any NEWLY added week must be on the same
+// staffing, in a billed status, and not already on another live payment.
+const BILLED = new Set(["Submitted", "Approved", "Invoiced", "Paid"]);
+const schema = z.object({ covered: z.array(z.string().min(1)).max(500) });
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await requireAdminAction("payments", "edit");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await params;
-  const body = await _request.json().catch(() => null);
+  const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: zodMessage(parsed.error) }, { status: 400 });
   }
-  const { add, remove } = parsed.data;
-  if (!add && !remove) {
-    return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
-  }
+  const nextCovered = [...new Set(parsed.data.covered)];
 
   try {
     const payment = await getPaymentById(id);
@@ -49,40 +45,37 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     const invoice = await getInvoiceById(invoiceId);
     if (!invoice) return NextResponse.json({ error: "Linked invoice not found." }, { status: 404 });
 
-    const current = new Set(invoice.coveredTimesheetIds);
+    const old = new Set(invoice.coveredTimesheetIds);
+    // Weeks explicitly billed by any live payment (incl. this invoice's own).
+    const invoiced = await getInvoicedTimesheetStatuses();
 
-    if (remove) {
-      current.delete(remove);
-    }
-
-    if (add) {
-      const ts = await getAdminTimesheetById(add);
-      if (!ts) return NextResponse.json({ error: "Timesheet not found." }, { status: 404 });
-      if (ts.status !== "Submitted" && ts.status !== "Approved") {
+    // Validate only the weeks being NEWLY added.
+    for (const tid of nextCovered) {
+      if (old.has(tid)) continue;
+      if (invoiced.has(tid)) {
         return NextResponse.json(
-          { error: "Only Under-review or Approved weeks can be added." },
+          { error: "One of those weeks is already on another payment." },
           { status: 409 },
         );
       }
+      const ts = await getAdminTimesheetById(tid);
+      if (!ts) return NextResponse.json({ error: "Timesheet not found." }, { status: 404 });
       if (invoice.staffingRecordId && ts.staffingRecordId !== invoice.staffingRecordId) {
         return NextResponse.json(
           { error: "That week belongs to a different staffing." },
           { status: 409 },
         );
       }
-      // Reject weeks already billed by another live payment.
-      const invoiced = await getInvoicedTimesheetStatuses();
-      if (!current.has(add) && invoiced.has(add)) {
+      if (!BILLED.has(ts.status)) {
         return NextResponse.json(
-          { error: "That week is already on another payment." },
+          { error: "Only Under-review or Approved weeks can be added." },
           { status: 409 },
         );
       }
-      current.add(add);
     }
 
-    await setInvoiceCoveredTimesheets(invoiceId, [...current]);
-    return NextResponse.json({ ok: true, covered: [...current] });
+    await setInvoiceCoveredTimesheets(invoiceId, nextCovered);
+    return NextResponse.json({ ok: true, covered: nextCovered });
   } catch (e) {
     return apiError(e, "update the covered timesheets");
   }

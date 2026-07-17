@@ -305,22 +305,25 @@ export function PaymentsClient({
     return () => clearTimeout(t);
   }, [toast]);
 
-  // Covered-timesheets editing (add/remove billed weeks on the settling invoice).
+  // Covered-timesheets editing. The full desired set is sent each time (works
+  // for legacy invoices that never recorded one).
   const [coveredBusy, setCoveredBusy] = useState(false);
-  const [removeCovered, setRemoveCovered] = useState<{ paymentId: string; ts: CoveredTs } | null>(
-    null,
-  );
-  async function postCovered(paymentId: string, body: { add?: string; remove?: string }) {
+  const [removeCovered, setRemoveCovered] = useState<{
+    paymentId: string;
+    ts: CoveredTs;
+    remaining: string[];
+  } | null>(null);
+  async function postCovered(paymentId: string, coveredIds: string[], verb: string) {
     setCoveredBusy(true);
     try {
       const res = await fetch(`/api/admin/payments/${encodeURIComponent(paymentId)}/covered`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ covered: coveredIds }),
       });
       const d = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(d.error ?? "Update failed");
-      setToast({ kind: "ok", msg: body.add ? "Timesheet added" : "Timesheet removed" });
+      setToast({ kind: "ok", msg: `Timesheet ${verb}` });
       router.refresh();
     } catch (e) {
       setToast({ kind: "error", msg: e instanceof Error ? e.message : "Update failed" });
@@ -1245,8 +1248,22 @@ export function PaymentsClient({
                           <CoveredTimesheetsEditor
                             data={coveredByPaymentId[p.id]}
                             busy={coveredBusy}
-                            onAdd={(ts) => postCovered(p.id, { add: ts.id })}
-                            onRemove={(ts) => setRemoveCovered({ paymentId: p.id, ts })}
+                            onAdd={(ts) =>
+                              postCovered(
+                                p.id,
+                                [...coveredByPaymentId[p.id].covered.map((c) => c.id), ts.id],
+                                "added",
+                              )
+                            }
+                            onRemove={(ts) =>
+                              setRemoveCovered({
+                                paymentId: p.id,
+                                ts,
+                                remaining: coveredByPaymentId[p.id].covered
+                                  .filter((c) => c.id !== ts.id)
+                                  .map((c) => c.id),
+                              })
+                            }
                           />
                         ) : null}
                         <PaymentDetails
@@ -1683,7 +1700,7 @@ export function PaymentsClient({
         onConfirm={async () => {
           const c = removeCovered;
           if (!c) return;
-          await postCovered(c.paymentId, { remove: c.ts.id });
+          await postCovered(c.paymentId, c.remaining, "removed");
           setRemoveCovered(null);
         }}
       />
