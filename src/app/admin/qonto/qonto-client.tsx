@@ -87,11 +87,13 @@ function Loaded({
   const [accountFilter, setAccountFilter] = useState<string[]>([]);
 
   // Jump to the Transactions view with a single clean filter applied.
-  const focusAccount = (iban: string) => {
+  // `key` is the account's iban-or-name (never empty), matching how the ledger
+  // and the Account multiselect identify an account.
+  const focusAccount = (key: string) => {
     setSearch("");
     setTypes([]);
     setTab("all");
-    setAccountFilter(iban ? [iban] : []);
+    setAccountFilter(key ? [key] : []);
     setView("transactions");
   };
   const focusType = (type: string) => {
@@ -254,7 +256,7 @@ function AccountsView({
                 account={a}
                 stats={stats}
                 truncated={truncated}
-                onView={() => onViewAccount(a.iban)}
+                onView={() => onViewAccount(a.iban || a.name)}
               />
             );
           })}
@@ -464,7 +466,7 @@ function TransactionsView({
     const q = search.trim().toLowerCase();
     return transactions.filter((t) => {
       if (types.length && !types.includes(t.operationType)) return false;
-      if (accountFilter.length && !accountFilter.includes(t.accountIban)) return false;
+      if (accountFilter.length && !accountFilter.includes(t.accountIban || t.accountName)) return false;
       if (q) {
         const hay = `${t.label} ${t.reference} ${t.note} ${t.accountName}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -547,18 +549,19 @@ function TransactionsView({
                 label="Account"
                 selected={accountFilter}
                 onChange={setAccountFilter}
-                options={accounts.map((a) => ({ value: a.iban, label: a.name }))}
+                options={accounts.map((a) => ({ value: a.iban || a.name, label: a.name }))}
               />
             ) : null}
           </FilterBar>
           <div className="flex items-center gap-2">
-            {types.length || accountFilter.length || search ? (
+            {types.length || accountFilter.length || search || tab !== "all" ? (
               <button
                 type="button"
                 onClick={() => {
                   setTypes([]);
                   setAccountFilter([]);
                   setSearch("");
+                  setTab("all");
                 }}
                 className="whitespace-nowrap rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
               >
