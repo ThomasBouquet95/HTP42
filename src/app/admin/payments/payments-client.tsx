@@ -72,15 +72,9 @@ type Props = {
   coveredByPaymentId?: Record<string, CoveredEditor>;
 };
 
-// A timesheet week shown in the covered-timesheets editor.
-export type CoveredTs = {
-  id: string;
-  code: string;
-  startDate: string | null;
-  endDate: string | null;
-  totalHours: number;
-  status: string;
-};
+// A timesheet week shown in the covered-timesheets editor — same shape as the
+// review-bundle weeks so it renders with day expansion + status.
+export type CoveredTs = ReviewBundle["timesheets"][number];
 export type CoveredEditor = {
   invoiceId: string;
   covered: CoveredTs[];
@@ -312,6 +306,12 @@ export function PaymentsClient({
     paymentId: string;
     ts: CoveredTs;
     remaining: string[];
+  } | null>(null);
+  // The "+ Add" popup: which payment, the eligible weeks, and the current set.
+  const [addTarget, setAddTarget] = useState<{
+    paymentId: string;
+    addable: CoveredTs[];
+    currentIds: string[];
   } | null>(null);
   async function postCovered(paymentId: string, coveredIds: string[], verb: string) {
     setCoveredBusy(true);
@@ -1265,15 +1265,12 @@ export function PaymentsClient({
                               ? {
                                   ...coveredByPaymentId[p.id],
                                   busy: coveredBusy,
-                                  onAdd: (ts) =>
-                                    postCovered(
-                                      p.id,
-                                      [
-                                        ...coveredByPaymentId[p.id].covered.map((c) => c.id),
-                                        ts.id,
-                                      ],
-                                      "added",
-                                    ),
+                                  onOpenAdd: () =>
+                                    setAddTarget({
+                                      paymentId: p.id,
+                                      addable: coveredByPaymentId[p.id].addable,
+                                      currentIds: coveredByPaymentId[p.id].covered.map((c) => c.id),
+                                    }),
                                   onRemove: (ts) =>
                                     setRemoveCovered({
                                       paymentId: p.id,
@@ -1708,6 +1705,48 @@ export function PaymentsClient({
         }}
       />
 
+      <Modal
+        open={!!addTarget}
+        onClose={() => (coveredBusy ? undefined : setAddTarget(null))}
+        busy={coveredBusy}
+        title="Add a timesheet to this payment"
+      >
+        <p className="mb-2 text-xs text-slate-500">
+          Same staffing, Under review or Approved, and not already on another payment.
+        </p>
+        {addTarget && addTarget.addable.length === 0 ? (
+          <p className="py-4 text-center text-sm text-slate-500">No eligible weeks to add.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {addTarget?.addable.map((ts) => (
+              <li key={ts.id} className="flex items-center justify-between gap-3 py-2">
+                <div className="min-w-0">
+                  <div className="text-sm text-slate-800">
+                    {ts.startDate ?? "—"} → {ts.endDate ?? "—"}
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    {(Number(ts.totalHours) || 0).toFixed(1)} h · {ts.status}
+                  </div>
+                </div>
+                <Button
+                  tone="primary"
+                  size="sm"
+                  disabled={coveredBusy}
+                  onClick={async () => {
+                    const t = addTarget;
+                    if (!t) return;
+                    await postCovered(t.paymentId, [...t.currentIds, ts.id], "added");
+                    setAddTarget(null);
+                  }}
+                >
+                  Add
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Modal>
+
       <PaidDateModal
         open={!!paidTarget}
         label={paidTarget?.label}
@@ -1926,7 +1965,7 @@ function PaymentDetails({
   bundle?: ReviewBundle;
   covered?: CoveredEditor & {
     busy: boolean;
-    onAdd: (ts: CoveredTs) => void;
+    onOpenAdd: () => void;
     onRemove: (ts: CoveredTs) => void;
   };
   onEdit: () => void;
@@ -1986,34 +2025,45 @@ function PaymentDetails({
         />
       ) : null}
 
-      {/* Linked timesheets — same week-by-week list as the By project / By
-          member views. When this is a member payment (covered set present) the
-          weeks it bills can be added / removed right here. */}
-      {(bundle && bundle.timesheets.length > 0) || covered ? (
-        <TimesheetBreakdown
-          timesheets={bundle?.timesheets ?? []}
-          approval={
-            bundle?.timesheetApproval ?? {
+      {/* Linked timesheets. For a member payment the list IS the covered set
+          (so removing a week makes its row disappear and adding brings it in);
+          otherwise it's the read-only staffing weeks from the review bundle. */}
+      {(() => {
+        if (!covered && !(bundle && bundle.timesheets.length > 0)) return null;
+        const list = covered ? covered.covered : (bundle?.timesheets ?? []);
+        const done = (s: string) => s === "Approved" || s === "Invoiced" || s === "Paid";
+        const approval = covered
+          ? {
+              total: list.length,
+              approved: list.filter((t) => done(t.status)).length,
+              pending: list.filter((t) => t.status === "Submitted").length,
+              rejected: list.filter((t) => t.status === "Rejected").length,
+              allApproved: list.length > 0 && list.every((t) => done(t.status)),
+            }
+          : (bundle?.timesheetApproval ?? {
               total: 0,
               approved: 0,
               pending: 0,
               rejected: 0,
               allApproved: false,
+            });
+        return (
+          <TimesheetBreakdown
+            timesheets={list}
+            approval={approval}
+            editable={
+              covered
+                ? {
+                    coveredIds: list.map((t) => t.id),
+                    busy: covered.busy,
+                    onOpenAdd: covered.onOpenAdd,
+                    onRemove: covered.onRemove,
+                  }
+                : undefined
             }
-          }
-          editable={
-            covered
-              ? {
-                  coveredIds: covered.covered.map((c) => c.id),
-                  addable: covered.addable,
-                  busy: covered.busy,
-                  onAdd: covered.onAdd,
-                  onRemove: covered.onRemove,
-                }
-              : undefined
-          }
-        />
-      ) : null}
+          />
+        );
+      })()}
 
       <div className="flex flex-wrap items-center justify-end gap-3 text-[11px]">
         <Button tone="secondary" size="sm" onClick={onEdit}>

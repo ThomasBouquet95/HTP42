@@ -100,6 +100,19 @@ export default async function AdminPaymentsPage({
     endDate: t.endDate,
     totalHours: t.totalHours,
     status: t.status,
+    review: {
+      reviewMethod: t.reviewMethod || undefined,
+      reviewedBy: t.reviewedBy || undefined,
+      reviewedAt: t.reviewedAt,
+      reviewComment: t.reviewComment || undefined,
+    },
+    days: {
+      monday: { hours: t.monday.hours, task: t.monday.task },
+      tuesday: { hours: t.tuesday.hours, task: t.tuesday.task },
+      wednesday: { hours: t.wednesday.hours, task: t.wednesday.task },
+      thursday: { hours: t.thursday.hours, task: t.thursday.task },
+      friday: { hours: t.friday.hours, task: t.friday.task },
+    },
   });
   const coveredByPaymentId: Record<
     string,

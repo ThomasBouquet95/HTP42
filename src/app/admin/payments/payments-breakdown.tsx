@@ -14,9 +14,8 @@ import type { CoveredTs } from "./payments-client";
 // bills (used only in the payments Overview, not the read-only breakdowns).
 type EditableCovered = {
   coveredIds: string[];
-  addable: CoveredTs[];
   busy: boolean;
-  onAdd: (ts: CoveredTs) => void;
+  onOpenAdd: () => void;
   onRemove: (ts: CoveredTs) => void;
 };
 
@@ -641,7 +640,6 @@ export function TimesheetBreakdown({
   editable?: EditableCovered;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const [picking, setPicking] = useState(false);
   const [openWeeks, setOpenWeeks] = useState<Set<string>>(new Set());
   const toggleWeek = (id: string) =>
     setOpenWeeks((prev) => {
@@ -680,47 +678,13 @@ export function TimesheetBreakdown({
           <button
             type="button"
             disabled={editable.busy}
-            onClick={() => {
-              setShowAll(true);
-              setPicking((v) => !v);
-            }}
+            onClick={editable.onOpenAdd}
             className="mr-2 inline-flex shrink-0 items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-60"
           >
             + Add
           </button>
         ) : null}
       </div>
-
-      {editable && picking ? (
-        <div className="border-t border-slate-100 bg-slate-50/60 px-2.5 py-2">
-          <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-            Add a week — same staffing, Under review or Approved, not on another payment
-          </div>
-          {editable.addable.length === 0 ? (
-            <p className="mt-1 text-[11px] text-slate-400">No eligible weeks to add.</p>
-          ) : (
-            <ul className="mt-1 flex flex-wrap gap-1.5">
-              {editable.addable.map((ts) => (
-                <li key={ts.id}>
-                  <button
-                    type="button"
-                    disabled={editable.busy}
-                    onClick={() => {
-                      editable.onAdd(ts);
-                      setPicking(false);
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-white px-2 py-0.5 text-[11px] text-brand-700 hover:bg-brand-50 disabled:opacity-60"
-                  >
-                    <span>{weekRange(ts.startDate, ts.endDate)}</span>
-                    <span className="tabular-nums text-slate-500">{(Number(ts.totalHours) || 0).toFixed(1)}h</span>
-                    <span className="font-semibold text-brand-500">+</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ) : null}
 
       {showAll ? (
         <ul className="border-t border-slate-100">
