@@ -1185,9 +1185,9 @@ export function PaymentsClient({
                 <SortHeader label="Counterparty" sort={sort} colKey="counterparty" onToggle={toggleSort} />
               </th>
               <th className="px-2 py-1.5 text-left font-medium hidden lg:table-cell">Invoice ref</th>
-              <th className="px-2 py-1.5 text-left font-medium hidden md:table-cell">
+              <th className="w-24 px-2 py-1.5 text-left font-medium hidden md:table-cell">
                 <DateRangeHeader
-                  label="Due date"
+                  label="Due"
                   colKey="dueDate"
                   sort={sort}
                   onToggle={toggleSort}
@@ -1197,9 +1197,9 @@ export function PaymentsClient({
                   onTo={(v) => update("dueTo", v)}
                 />
               </th>
-              <th className="px-2 py-1.5 text-left font-medium hidden md:table-cell">
+              <th className="w-24 px-2 py-1.5 text-left font-medium hidden md:table-cell">
                 <DateRangeHeader
-                  label="Payment date"
+                  label="Paid"
                   colKey="paymentDate"
                   sort={sort}
                   onToggle={toggleSort}
@@ -1213,7 +1213,7 @@ export function PaymentsClient({
                 <SortHeader label="Amount" sort={sort} colKey="amount" onToggle={toggleSort} align="right" />
               </th>
               <th className="px-2 py-1.5 text-left font-medium">Currency</th>
-              <th className="px-2 py-1.5 text-left font-medium hidden lg:table-cell">Status</th>
+              <th className="w-40 px-2 py-1.5 text-left font-medium hidden lg:table-cell">Status</th>
               <th />
             </tr>
           </thead>
@@ -1283,9 +1283,9 @@ export function PaymentsClient({
                     <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell">
                       <DueDateCell dueDate={p.dueDate} status={p.paymentStatus} />
                     </td>
-                    <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell">
+                    <td className="px-2 py-1.5 whitespace-nowrap hidden md:table-cell tabular-nums text-slate-700">
                       {p.paymentStatus === "Paid" && p.paymentDate ? (
-                        p.paymentDate
+                        shortDate(p.paymentDate)
                       ) : (
                         <span className="text-slate-300">—</span>
                       )}
@@ -1299,7 +1299,7 @@ export function PaymentsClient({
                       {p.invoiceCurrency || "—"}
                     </td>
                     <td
-                      className="px-2 py-1.5 hidden lg:table-cell"
+                      className="w-40 px-2 py-1.5 hidden lg:table-cell"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <StatusSelect
@@ -1942,6 +1942,15 @@ export function PaymentsClient({
   );
 }
 
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// Compact date for the tight table columns: "2026-07-18" → "18 Jul 26".
+function shortDate(iso: string | null): string {
+  if (!iso) return "—";
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  return `${Number(m[3])} ${SHORT_MONTHS[Number(m[2]) - 1] ?? m[2]} ${m[1].slice(2)}`;
+}
+
 function DueDateCell({
   dueDate,
   status,
@@ -1971,7 +1980,7 @@ function DueDateCell({
   }
   return (
     <span className={`inline-flex items-center gap-1 ${cls}`}>
-      <span className="tabular-nums">{dueDate}</span>
+      <span className="tabular-nums">{shortDate(dueDate)}</span>
       {chip ? (
         <span
           className={`text-[10px] font-medium rounded px-1 py-0.5 ${
