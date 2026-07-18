@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
@@ -354,22 +354,40 @@ export function PaymentsClient({
     () => new Map(memberInvoices.filter((i) => i.pdfUrl).map((i) => [i.id, i.pdfUrl])),
     [memberInvoices],
   );
-  const projectLabel = (p: PaymentRecord) =>
-    p.projectRecordIds.map((id) => projectsById.get(id)?.code).filter(Boolean).join(", ");
+  const projectLabel = useCallback(
+    (p: PaymentRecord) =>
+      p.projectRecordIds.map((id) => projectsById.get(id)?.code).filter(Boolean).join(", "),
+    [projectsById],
+  );
   // The staffing a payment is linked to — its own Staffing link first, else the
   // staffing of the member invoice it settles. Shown in the expanded detail.
-  const staffingOptById = new Map(staffings.map((s) => [s.id, s]));
-  const invoiceOptById = new Map(memberInvoices.map((i) => [i.id, i]));
-  const staffingLabel = (p: PaymentRecord) => {
-    const direct = p.staffingRecordIds.map((id) => staffingOptById.get(id)).find(Boolean);
-    if (direct) return direct.staffingCode;
-    const inv = p.memberInvoiceRecordIds.map((id) => invoiceOptById.get(id)).find(Boolean);
-    return inv?.staffingCode ?? "";
-  };
-  const clientLabel = (p: PaymentRecord) =>
-    p.clientRecordIds.map((id) => clientsById.get(id)?.name || clientsById.get(id)?.code).filter(Boolean).join(", ");
-  const memberLabel = (p: PaymentRecord) =>
-    p.memberRecordIds.map((id) => membersById.get(id)?.name || membersById.get(id)?.code).filter(Boolean).join(", ");
+  const staffingOptById = useMemo(() => new Map(staffings.map((s) => [s.id, s])), [staffings]);
+  const invoiceOptById = useMemo(() => new Map(memberInvoices.map((i) => [i.id, i])), [memberInvoices]);
+  const staffingLabel = useCallback(
+    (p: PaymentRecord) => {
+      const direct = p.staffingRecordIds.map((id) => staffingOptById.get(id)).find(Boolean);
+      if (direct) return direct.staffingCode;
+      const inv = p.memberInvoiceRecordIds.map((id) => invoiceOptById.get(id)).find(Boolean);
+      return inv?.staffingCode ?? "";
+    },
+    [staffingOptById, invoiceOptById],
+  );
+  const clientLabel = useCallback(
+    (p: PaymentRecord) =>
+      p.clientRecordIds
+        .map((id) => clientsById.get(id)?.name || clientsById.get(id)?.code)
+        .filter(Boolean)
+        .join(", "),
+    [clientsById],
+  );
+  const memberLabel = useCallback(
+    (p: PaymentRecord) =>
+      p.memberRecordIds
+        .map((id) => membersById.get(id)?.name || membersById.get(id)?.code)
+        .filter(Boolean)
+        .join(", "),
+    [membersById],
+  );
   // Every distinct counterparty a payment touches (linked clients, linked
   // members, and a free-text beneficiary/vendor), used by the counterparty
   // filter so inflows (client), outflows (member), and vendor bills all match.

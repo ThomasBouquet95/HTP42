@@ -1,9 +1,16 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+
 // One search / filter box for the whole app. Replaces the 5+ hand-rolled
 // variants (pill vs square, text-sm vs text-xs, different focus rings) that
 // had drifted across the admin list pages. Square rounded-md to match the
 // shared form inputs, with a leading magnifier and a clear (×) affordance.
+//
+// The input is debounced: it keeps its own responsive value and only pushes to
+// the parent (`onChange`) after a short pause. Admin lists re-filter large
+// arrays and re-render the whole (un-windowed) table on every parent change, so
+// debouncing removes the per-keystroke jank across every list that uses it.
 export function SearchInput({
   value,
   onChange,
@@ -11,6 +18,7 @@ export function SearchInput({
   className,
   ariaLabel,
   autoFocus,
+  debounceMs = 180,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -18,7 +26,25 @@ export function SearchInput({
   className?: string;
   ariaLabel?: string;
   autoFocus?: boolean;
+  debounceMs?: number;
 }) {
+  const [local, setLocal] = useState(value);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Reflect external resets (e.g. a "Clear filters" button) immediately.
+  useEffect(() => {
+    setLocal(value);
+  }, [value]);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
+  function handle(v: string) {
+    setLocal(v);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => onChange(v), debounceMs);
+  }
+
   return (
     <div className={`relative ${className ?? "w-full sm:w-64"}`}>
       <svg
@@ -34,8 +60,8 @@ export function SearchInput({
       </svg>
       <input
         type="search"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        value={local}
+        onChange={(e) => handle(e.target.value)}
         placeholder={placeholder}
         aria-label={ariaLabel ?? placeholder}
         autoFocus={autoFocus}

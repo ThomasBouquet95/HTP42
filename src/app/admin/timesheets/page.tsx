@@ -33,21 +33,23 @@ export default async function AdminTimesheetsPage() {
   // Invoices ride along so an expanded timesheet row can show "related
   // invoices" (same staffing); payments let each invoice link to the payment
   // that settles it.
-  const [allTimesheets, invoices, payments, staffings, contracts] = await Promise.all([
-    listAllTimesheets(),
-    listAllInvoices(),
-    listPayments(),
-    listAllStaffings(),
-    listAllContracts(),
-  ]);
-
-  // Project Managers only see timesheets for projects they're staffed on;
-  // every other admin role sees all. (Access to the page itself is already
-  // gated by the "timesheets" view permission.)
+  // Everything the page needs in ONE parallel wave — including role permissions
+  // and (for a Project Manager) their staffed-project scope, which previously
+  // ran as two extra sequential round-trips after this batch.
   const isProjectManager = session.role === "Project Manager";
-  const scopeCodes = isProjectManager
-    ? new Set(await getMemberStaffedProjectCodes(session.memberCode))
-    : null;
+  const [allTimesheets, invoices, payments, staffings, contracts, stored, scopeCodesArr] =
+    await Promise.all([
+      listAllTimesheets(),
+      listAllInvoices(),
+      listPayments(),
+      listAllStaffings(),
+      listAllContracts(),
+      getRolePermissions(),
+      isProjectManager
+        ? getMemberStaffedProjectCodes(session.memberCode)
+        : Promise.resolve(null),
+    ]);
+  const scopeCodes = scopeCodesArr ? new Set(scopeCodesArr) : null;
   const timesheets = scopeCodes
     ? allTimesheets.filter((t) => scopeCodes.has(t.projectCode))
     : allTimesheets;
@@ -67,7 +69,6 @@ export default async function AdminTimesheetsPage() {
   // Which sub-tabs this role may see, from the level-two "timesheets.*"
   // permissions (e.g. a Project Manager gets Review only). Falls back to all
   // four if a role somehow has none granted, so the page is never empty.
-  const stored = await getRolePermissions();
   const allowedViews = (["review", "overview", "byproject", "bymember"] as const).filter(
     (v) => can(session.role, `timesheets.${v}`, "view", stored),
   );

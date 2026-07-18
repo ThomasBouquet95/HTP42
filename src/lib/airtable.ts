@@ -1006,6 +1006,12 @@ function refCache<T>(key: string, ttlMs: number, load: () => Promise<T>): Promis
 }
 const REF_TTL_MS = 60_000;
 
+// Drop a cached entry immediately after a write so the next read is fresh
+// (used by the role-permissions and email-template save paths).
+function refCacheInvalidate(key: string): void {
+  _refTtl.delete(key);
+}
+
 export const listAllMembers = cache(async function listAllMembers(): Promise<
   MemberAdminRecord[]
 > {
@@ -1362,26 +1368,30 @@ async function ensureRolePermissionsSchema(): Promise<boolean> {
 
 // All saved role overrides as { role -> PagePerms }. Roles without a row fall
 // back to code defaults (handled by can() in lib/permissions).
+// Read on EVERY admin request for auth gating, and almost never changes — so
+// cache it cross-request (TTL) as well as per-request. Invalidated on write.
 export const getRolePermissions = cache(async function getRolePermissions(): Promise<RolePermissions> {
-  try {
-    const ok = await ensureRolePermissionsSchema();
-    if (!ok) return {};
-    const records = await base(TABLES.rolePermissions).select().all();
-    const out: RolePermissions = {};
-    for (const r of records) {
-      const role = str(r, FIELDS.rolePermissions.role);
-      if (!role) continue;
-      try {
-        out[role] = JSON.parse(str(r, FIELDS.rolePermissions.permissions) || "{}") as PagePerms;
-      } catch {
-        out[role] = {};
+  return refCache("rolePerms", REF_TTL_MS, async () => {
+    try {
+      const ok = await ensureRolePermissionsSchema();
+      if (!ok) return {};
+      const records = await base(TABLES.rolePermissions).select().all();
+      const out: RolePermissions = {};
+      for (const r of records) {
+        const role = str(r, FIELDS.rolePermissions.role);
+        if (!role) continue;
+        try {
+          out[role] = JSON.parse(str(r, FIELDS.rolePermissions.permissions) || "{}") as PagePerms;
+        } catch {
+          out[role] = {};
+        }
       }
+      return out;
+    } catch (e) {
+      console.error("getRolePermissions failed:", e);
+      return {};
     }
-    return out;
-  } catch (e) {
-    console.error("getRolePermissions failed:", e);
-    return {};
-  }
+  });
 });
 
 export async function setRolePermissions(role: string, perms: PagePerms): Promise<void> {
@@ -1398,6 +1408,7 @@ export async function setRolePermissions(role: string, perms: PagePerms): Promis
   } else {
     await base(TABLES.rolePermissions).create([{ fields }]);
   }
+  refCacheInvalidate("rolePerms");
 }
 
 // ---------------------------------------------------------------------------
@@ -1484,30 +1495,32 @@ async function ensureEmailTemplatesSchema(): Promise<boolean> {
 export const getEmailTemplateOverrides = cache(async function getEmailTemplateOverrides(): Promise<
   Record<string, StoredEmailTemplate>
 > {
-  try {
-    const ok = await ensureEmailTemplatesSchema();
-    if (!ok) return {};
-    const E = FIELDS.emailTemplates;
-    const records = await base(TABLES.emailTemplates).select().all();
-    const out: Record<string, StoredEmailTemplate> = {};
-    for (const r of records) {
-      const key = str(r, E.key);
-      if (!key) continue;
-      out[key] = {
-        key,
-        subject: str(r, E.subject),
-        body: str(r, E.body),
-        to: str(r, E.to),
-        cc: str(r, E.cc),
-        from: str(r, E.from),
-        updatedAt: str(r, E.updatedAt) || null,
-      };
+  return refCache("emailTemplates", REF_TTL_MS, async () => {
+    try {
+      const ok = await ensureEmailTemplatesSchema();
+      if (!ok) return {};
+      const E = FIELDS.emailTemplates;
+      const records = await base(TABLES.emailTemplates).select().all();
+      const out: Record<string, StoredEmailTemplate> = {};
+      for (const r of records) {
+        const key = str(r, E.key);
+        if (!key) continue;
+        out[key] = {
+          key,
+          subject: str(r, E.subject),
+          body: str(r, E.body),
+          to: str(r, E.to),
+          cc: str(r, E.cc),
+          from: str(r, E.from),
+          updatedAt: str(r, E.updatedAt) || null,
+        };
+      }
+      return out;
+    } catch (e) {
+      console.error("getEmailTemplateOverrides failed:", e);
+      return {};
     }
-    return out;
-  } catch (e) {
-    console.error("getEmailTemplateOverrides failed:", e);
-    return {};
-  }
+  });
 });
 
 export type StoredEmailTemplate = {
@@ -1550,6 +1563,7 @@ export async function setEmailTemplateOverride(
   } else {
     await base(TABLES.emailTemplates).create([{ fields }]);
   }
+  refCacheInvalidate("emailTemplates");
 }
 
 // Remove any override for a key, reverting the email to its coded default.
@@ -1562,6 +1576,7 @@ export async function resetEmailTemplateOverride(key: string): Promise<void> {
   if (existing.length > 0) {
     await base(TABLES.emailTemplates).destroy(existing.map((r) => r.id));
   }
+  refCacheInvalidate("emailTemplates");
 }
 
 // ---------------------------------------------------------------------------
@@ -2343,7 +2358,7 @@ export type AdminTimesheetRecord = TimesheetRecord & {
   memberName: string;
 };
 
-export async function listAllTimesheets(): Promise<AdminTimesheetRecord[]> {
+export const listAllTimesheets = cache(async function listAllTimesheets(): Promise<AdminTimesheetRecord[]> {
   // Staffings across all members: we fetch them all and index by record id.
   const [tsRecords, stRecords, projectNames, memberById] = await Promise.all([
     base(TABLES.timesheets)
@@ -2377,7 +2392,7 @@ export async function listAllTimesheets(): Promise<AdminTimesheetRecord[]> {
       memberName: member?.fullName ?? "",
     };
   });
-}
+});
 
 // ---------------------------------------------------------------------------
 // Admin: Payments
@@ -2421,16 +2436,18 @@ function paymentFromRecord(r: AirtableRecord<FieldSet>): PaymentRecord {
 // Raw payments straight from the table, WITHOUT project inheritance applied.
 // The mismatch audit uses this to see the stored links as-is; everything else
 // should use listPayments (which resolves the project from the linked invoice).
-export async function listPaymentsRaw(): Promise<PaymentRecord[]> {
+// Wrapped in React cache() so a single request that reads payments through
+// several paths (the list + review groups + index helpers) hits Airtable once.
+export const listPaymentsRaw = cache(async function listPaymentsRaw(): Promise<PaymentRecord[]> {
   const records = await base(TABLES.payments)
     .select({ sort: [{ field: FIELDS.payments.invoiceDate, direction: "desc" }] })
     .all();
   return records.map(paymentFromRecord);
-}
+});
 
-export async function listPayments(): Promise<PaymentRecord[]> {
+export const listPayments = cache(async function listPayments(): Promise<PaymentRecord[]> {
   return applyInheritedProjects(await listPaymentsRaw());
-}
+});
 
 export async function getPaymentById(recordId: string): Promise<PaymentRecord | null> {
   try {
@@ -2918,7 +2935,7 @@ export async function listInvoicesForMember(
     .filter((inv) => inv.memberRecordId === memberRecordId);
 }
 
-export async function listAllInvoices(): Promise<MemberInvoiceRecord[]> {
+export const listAllInvoices = cache(async function listAllInvoices(): Promise<MemberInvoiceRecord[]> {
   const [records, projectById, memberById, staffingById] = await Promise.all([
     base(TABLES.memberInvoices)
       .select({ sort: [{ field: FIELDS.memberInvoices.submissionDate, direction: "desc" }] })
@@ -2928,7 +2945,7 @@ export async function listAllInvoices(): Promise<MemberInvoiceRecord[]> {
     getStaffingIndex(),
   ]);
   return records.map((r) => invoiceFromRecord(r, memberById, projectById, staffingById));
-}
+});
 
 // ---------------------------------------------------------------------------
 // Payment ↔ staffing linkage + project inheritance
@@ -4550,7 +4567,7 @@ const getMemberCodeMap = cache(async function getMemberCodeMap(): Promise<Map<st
   });
 });
 
-export async function listAllStaffings(): Promise<StaffingAdminRecord[]> {
+export const listAllStaffings = cache(async function listAllStaffings(): Promise<StaffingAdminRecord[]> {
   const [records, projectNames, memberCodeById, daysUsedByStaffingId] = await Promise.all([
     base(TABLES.projectStaffing).select().all(),
     getProjectNameMap(),
@@ -4568,7 +4585,7 @@ export async function listAllStaffings(): Promise<StaffingAdminRecord[]> {
     // Airtable, not displayed as ghost entries.
     .filter((s) => s.memberRecordIds.length > 0)
     .sort((a, b) => a.staffingCode.localeCompare(b.staffingCode));
-}
+});
 
 export async function getStaffingById(recordId: string): Promise<StaffingAdminRecord | null> {
   try {
@@ -5720,7 +5737,7 @@ const buildLookupMaps = cache(async function buildLookupMaps(): Promise<LookupMa
   return { memberCodeById, clientById, projectById };
 });
 
-export async function listAllContracts(): Promise<ContractRecord[]> {
+export const listAllContracts = cache(async function listAllContracts(): Promise<ContractRecord[]> {
   const [records, maps] = await Promise.all([
     base(TABLES.contracts).select().all(),
     buildLookupMaps(),
@@ -5740,7 +5757,7 @@ export async function listAllContracts(): Promise<ContractRecord[]> {
       };
       return ts(b.signatureDate) - ts(a.signatureDate);
     });
-}
+});
 
 // ---------------------------------------------------------------------------
 // Document search — a unified index of every saved PDF across the portal
@@ -7399,7 +7416,7 @@ export async function ensureVendorInvoicesSchema(): Promise<boolean> {
   }
 }
 
-export async function listVendorInvoices(): Promise<VendorInvoiceRecord[]> {
+export const listVendorInvoices = cache(async function listVendorInvoices(): Promise<VendorInvoiceRecord[]> {
   try {
     const ok = await ensureVendorInvoicesSchema();
     if (!ok) return [];
@@ -7416,7 +7433,7 @@ export async function listVendorInvoices(): Promise<VendorInvoiceRecord[]> {
     console.error("listVendorInvoices failed:", e);
     return [];
   }
-}
+});
 
 export async function getVendorInvoiceById(id: string): Promise<VendorInvoiceRecord | null> {
   try {
