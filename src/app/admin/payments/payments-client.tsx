@@ -424,6 +424,8 @@ export function PaymentsClient({
   const [paidTarget, setPaidTarget] = useState<{ id: string; label: string } | null>(null);
   const [markingPaid, setMarkingPaid] = useState(false);
   const [reconcileOpen, setReconcileOpen] = useState(false);
+  const [resendTarget, setResendTarget] = useState<PaymentRecord | null>(null);
+  const [resending, setResending] = useState(false);
 
   // Unsaved edits = form differs from what we opened with, or a PDF was picked.
   const dirty = useMemo(
@@ -1357,6 +1359,7 @@ export function PaymentsClient({
                               : undefined
                           }
                           onEdit={() => openEdit(p)}
+                          onResend={() => setResendTarget(p)}
                         />
                       </td>
                     </tr>
@@ -1853,6 +1856,37 @@ export function PaymentsClient({
         }}
       />
 
+      <ConfirmDialog
+        open={!!resendTarget}
+        busy={resending}
+        title="Resend payment email?"
+        message={`This resends the payment recap for ${
+          resendTarget?.paymentCode ? `#${resendTarget.paymentCode}` : "this payment"
+        } — with the invoice PDF — to the invoices inbox and the accounting / Qonto recipients. Continue?`}
+        confirmLabel={resending ? "Sending…" : "Resend"}
+        onCancel={() => (resending ? undefined : setResendTarget(null))}
+        onConfirm={async () => {
+          if (!resendTarget) return;
+          setResending(true);
+          try {
+            const res = await fetch(`/api/admin/payments/${resendTarget.id}/resend`, {
+              method: "POST",
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              setToast({ kind: "error", msg: data?.error || "Could not resend the email." });
+            } else {
+              setToast({ kind: "ok", msg: "Payment email resent." });
+            }
+          } catch {
+            setToast({ kind: "error", msg: "Network error resending the email." });
+          } finally {
+            setResending(false);
+            setResendTarget(null);
+          }
+        }}
+      />
+
       <ReconcileModal
         open={reconcileOpen}
         onClose={() => setReconcileOpen(false)}
@@ -2033,6 +2067,7 @@ function PaymentDetails({
   bundle,
   covered,
   onEdit,
+  onResend,
 }: {
   p: PaymentRecord;
   projectLabel: string;
@@ -2049,6 +2084,7 @@ function PaymentDetails({
     onRemove: (ts: CoveredTs) => void;
   };
   onEdit: () => void;
+  onResend: () => void;
 }) {
   const money = (v: number | null, ccy: string) =>
     v == null ? "—" : `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}${ccy ? " " + ccy : ""}`;
@@ -2146,6 +2182,13 @@ function PaymentDetails({
       })()}
 
       <div className="flex flex-wrap items-center justify-end gap-3 text-[11px]">
+        <Button tone="secondary" size="sm" onClick={onResend}>
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+            <path d="M2 4.5h12v7H2z" />
+            <path d="M2.5 5l5.5 4 5.5-4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Resend email
+        </Button>
         <Button tone="secondary" size="sm" onClick={onEdit}>
           <EditIcon />
           Edit payment

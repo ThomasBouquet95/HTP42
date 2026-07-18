@@ -15,7 +15,19 @@ const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
 // whenever ANY payment — inflow or outflow — is marked Paid: from the payments
 // list/modal/review page, AND when an automated vendor invoice auto-creates
 // its Paid payment on import or on manual review.
-export async function notifyPaymentPaid(p: PaymentRecord): Promise<void> {
+export async function notifyPaymentPaid(
+  p: PaymentRecord,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    return await sendPaymentPaidEmail(p);
+  } catch (e) {
+    const error = e instanceof Error ? e.message : "Failed to send payment email";
+    console.error("Payment-paid email failed:", error);
+    return { ok: false, error };
+  }
+}
+
+async function sendPaymentPaidEmail(p: PaymentRecord): Promise<{ ok: boolean; error?: string }> {
   const label =
     p.invoiceReference ||
     p.beneficiary ||
@@ -116,6 +128,7 @@ export async function notifyPaymentPaid(p: PaymentRecord): Promise<void> {
   if (!result.ok) {
     console.error("Payment-paid email failed:", result.error);
   }
+  return result;
 }
 
 async function fetchInvoicePdf(
