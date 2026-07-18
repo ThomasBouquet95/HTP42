@@ -1306,6 +1306,18 @@ export function PaymentsClient({
                         />
                         <button
                           type="button"
+                          onClick={() => setResendTarget(p)}
+                          title="Resend payment email (invoices + accounting / Qonto)"
+                          aria-label="Resend payment email"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                        >
+                          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                            <path d="M2 4.5h12v7H2z" />
+                            <path d="M2.5 5l5.5 4 5.5-4" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => openEdit(p)}
                           title="Edit"
                           aria-label="Edit"
