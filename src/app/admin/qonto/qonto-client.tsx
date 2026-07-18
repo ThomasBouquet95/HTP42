@@ -490,6 +490,7 @@ function TransactionsView({
   // Start with the deep-linked transaction expanded (if any).
   const [openId, setOpenId] = useState<string | null>(focusTxId ?? null);
   const [linkFilter, setLinkFilter] = useState<LinkFilter>("all");
+  const [years, setYears] = useState<string[]>([]);
   const focusRowRef = useRef<HTMLTableRowElement | null>(null);
   // Briefly highlight the deep-linked row so it's easy to spot.
   const [highlight, setHighlight] = useState<boolean>(!!focusTxId);
@@ -503,6 +504,16 @@ function TransactionsView({
     return [...set.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [transactions]);
 
+  // Distinct years present, newest first, for the Year filter.
+  const yearOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of transactions) {
+      const y = (t.settledAt || t.emittedAt || "").slice(0, 4);
+      if (y) set.add(y);
+    }
+    return [...set].sort((a, b) => b.localeCompare(a));
+  }, [transactions]);
+
   // Everything matching the filters EXCEPT the In/Out tab — drives both the tab
   // badge counts (so they agree with what's shown) and the per-tab list.
   const preTab = useMemo(() => {
@@ -512,6 +523,7 @@ function TransactionsView({
     return transactions.filter((t) => {
       if (types.length && !types.includes(t.operationType)) return false;
       if (accountFilter.length && !accountFilter.includes(t.accountIban || t.accountName)) return false;
+      if (years.length && !years.includes((t.settledAt || t.emittedAt || "").slice(0, 4))) return false;
       if (linkFilter === "linked" && !paymentByTxId[t.id]) return false;
       if (linkFilter === "unlinked" && paymentByTxId[t.id]) return false;
       if (q) {
@@ -520,7 +532,7 @@ function TransactionsView({
       }
       return true;
     });
-  }, [transactions, types, accountFilter, search, linkFilter, paymentByTxId, isolatedTx]);
+  }, [transactions, types, accountFilter, years, search, linkFilter, paymentByTxId, isolatedTx]);
 
   const filtered = useMemo(
     () =>
@@ -542,7 +554,7 @@ function TransactionsView({
       return;
     }
     setOpenId(null);
-  }, [tab, search, types, accountFilter, linkFilter]);
+  }, [tab, search, types, accountFilter, linkFilter, years]);
 
   // Scroll the deep-linked row into view once, then fade the highlight.
   useEffect(() => {
@@ -610,6 +622,14 @@ function TransactionsView({
       <div className={`rounded-lg border border-slate-200 bg-white p-3 ${isolatedTx ? "hidden" : ""}`}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <FilterBar>
+            {yearOptions.length > 1 ? (
+              <FilterMultiSelect
+                label="Year"
+                selected={years}
+                onChange={setYears}
+                options={yearOptions.map((y) => ({ value: y, label: y }))}
+              />
+            ) : null}
             {typeOptions.length > 0 ? (
               <FilterMultiSelect
                 label="Type"
@@ -652,12 +672,13 @@ function TransactionsView({
             </div>
           </FilterBar>
           <div className="flex items-center gap-2">
-            {types.length || accountFilter.length || search || tab !== "all" || linkFilter !== "all" ? (
+            {types.length || accountFilter.length || years.length || search || tab !== "all" || linkFilter !== "all" ? (
               <button
                 type="button"
                 onClick={() => {
                   setTypes([]);
                   setAccountFilter([]);
+                  setYears([]);
                   setSearch("");
                   setTab("all");
                   setLinkFilter("all");
