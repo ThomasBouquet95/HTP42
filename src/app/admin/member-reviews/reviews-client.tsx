@@ -209,7 +209,7 @@ function Avatar({ name, photo, size = 34 }: { name: string; photo: string | null
     >
       {photo ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={photo} alt="" className="h-full w-full object-cover" />
+        <img src={photo} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
       ) : (
         initials(name)
       )}

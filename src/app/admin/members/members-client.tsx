@@ -520,7 +520,7 @@ export function MembersAdminClient({
                     <div className="h-7 w-7 rounded-full overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-semibold text-slate-600">
                       {m.photo ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={m.photo.url} alt="" className="h-full w-full object-cover" />
+                        <img src={m.photo.url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                       ) : (
                         memberInitials(m.fullName || m.memberCode)
                       )}

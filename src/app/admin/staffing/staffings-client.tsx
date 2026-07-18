@@ -898,7 +898,7 @@ function MemberInfoModal({
             <div className="h-14 w-14 rounded-full overflow-hidden bg-brand-50 text-brand-700 flex items-center justify-center text-base font-semibold">
               {member.photoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={member.photoUrl} alt="" className="h-full w-full object-cover" />
+                <img src={member.photoUrl} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
               ) : (
                 memberInitials(member.name || member.code)
               )}

@@ -264,7 +264,7 @@ export function SignInActivityClient({
                         <div className="h-7 w-7 rounded-full overflow-hidden bg-brand-50 text-brand-700 flex items-center justify-center text-[10px] font-semibold">
                           {r.photoUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={r.photoUrl} alt="" className="h-full w-full object-cover" />
+                            <img src={r.photoUrl} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                           ) : (
                             initials(r.fullName || r.memberCode)
                           )}
