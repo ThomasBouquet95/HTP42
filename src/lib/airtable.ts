@@ -6154,6 +6154,23 @@ export async function attachPaymentPdf(
   filename: string,
   base64: string,
 ): Promise<void> {
+  // Airtable's uploadAttachment endpoint only APPENDS to the cell. Since the
+  // UI shows the first attachment, uploading a "replacement" would otherwise
+  // leave the old PDF in place and displayed. So capture the existing
+  // attachment ids first, upload the new file, then remove the old ones —
+  // making a replace behave like a replace. (Append-then-prune, not
+  // clear-then-upload, so a failed upload never loses the current PDF.)
+  let oldIds: string[] = [];
+  try {
+    const rec = await base(TABLES.payments).find(recordId);
+    const cur = rec.get(FIELDS.payments.invoicePdf);
+    if (Array.isArray(cur)) {
+      oldIds = (cur as Array<{ id?: string }>).map((a) => a?.id).filter((x): x is string => !!x);
+    }
+  } catch {
+    /* best-effort: if we can't read the current state, we'll just append */
+  }
+
   const url = `https://content.airtable.com/v0/${env.airtableBaseId}/${recordId}/${encodeURIComponent(FIELDS.payments.invoicePdf)}/uploadAttachment`;
   const res = await fetch(url, {
     method: "POST",
@@ -6166,6 +6183,30 @@ export async function attachPaymentPdf(
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Airtable upload failed (${res.status}): ${text}`);
+  }
+
+  // Keep only the newly-added attachment(s) — drop everything that was there
+  // before. Referencing an attachment by {id} retains it; omitted ones are
+  // removed. Non-fatal: if this fails the new PDF is still attached.
+  if (oldIds.length > 0) {
+    try {
+      const rec = await base(TABLES.payments).find(recordId);
+      const cur = rec.get(FIELDS.payments.invoicePdf);
+      const all = Array.isArray(cur) ? (cur as Array<{ id?: string }>) : [];
+      const fresh = all.filter((a) => a?.id && !oldIds.includes(a.id));
+      if (fresh.length > 0) {
+        await base(TABLES.payments).update([
+          {
+            id: recordId,
+            fields: {
+              [FIELDS.payments.invoicePdf]: fresh.map((a) => ({ id: a.id as string })),
+            } as unknown as FieldSet,
+          },
+        ]);
+      }
+    } catch (e) {
+      console.error("attachPaymentPdf: could not prune old attachment(s):", e);
+    }
   }
 }
 
