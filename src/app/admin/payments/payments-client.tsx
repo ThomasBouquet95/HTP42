@@ -1414,7 +1414,7 @@ export function PaymentsClient({
         size="xl"
         footer={
           <>
-            {!creating && editing && !["Paid", "Canceled"].includes(editing.paymentStatus) ? (
+            {!creating && editing && editing.paymentStatus !== "Canceled" ? (
               <Button
                 tone="danger"
                 size="sm"
@@ -1773,6 +1773,12 @@ export function PaymentsClient({
             It stays on record as history but leaves the active workflow (it won&apos;t show as
             awaiting review or payment). To reject work for approval reasons, use Reject in the
             Review tab instead.
+            {deleteTarget?.paymentStatus === "Paid" ? (
+              <span className="mt-2 block text-amber-700">
+                This payment is already marked Paid — cancelling records the change here but does not
+                reverse the actual bank payment or any linked invoice.
+              </span>
+            ) : null}
           </>
         }
         confirmLabel="Cancel payment"
