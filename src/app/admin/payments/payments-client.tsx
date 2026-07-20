@@ -90,6 +90,7 @@ type Filters = {
   project: string[];
   member: string[];
   counterparty: string[];
+  des: string[];
   reconciled: "all" | "linked" | "unlinked";
   dueFrom: string;
   dueTo: string;
@@ -105,6 +106,7 @@ const DEFAULT_FILTERS: Filters = {
   project: [],
   member: [],
   counterparty: [],
+  des: [],
   reconciled: "all",
   dueFrom: "",
   dueTo: "",
@@ -517,6 +519,10 @@ export function PaymentsClient({
       if (filters.member.length && !p.memberRecordIds.some((id) => filters.member.includes(id))) return false;
       if (filters.counterparty.length && !counterpartyValues(p).some((c) => filters.counterparty.includes(c)))
         return false;
+      // Subject to DES is inherited from the linked client; it's only ever
+      // Yes/No for inflows (outflows have no client → ""), so this naturally
+      // scopes to inflows.
+      if (filters.des.length && !filters.des.includes(desForPayment(p))) return false;
       if (filters.reconciled === "linked" && !p.qontoTransactionId) return false;
       if (filters.reconciled === "unlinked" && p.qontoTransactionId) return false;
       // Date range filters apply only once the user has picked BOTH ends —
@@ -610,6 +616,7 @@ export function PaymentsClient({
     filters.project.length > 0 ||
     filters.member.length > 0 ||
     filters.counterparty.length > 0 ||
+    filters.des.length > 0 ||
     filters.reconciled !== "all" ||
     filters.dueFrom !== "" ||
     filters.dueTo !== "" ||
@@ -1113,6 +1120,19 @@ export function PaymentsClient({
             onChange={(v) => update("currency", v)}
             options={currencyOptions.map((c) => ({ value: c, label: c }))}
           />
+          {/* Subject to DES — inherited from the linked client, only meaningful
+              for inflows, so hidden when the list is filtered to outflows. */}
+          {filters.direction !== "Outflow" ? (
+            <FilterMultiSelect
+              label="Subject to DES"
+              selected={filters.des}
+              onChange={(v) => update("des", v)}
+              options={[
+                { value: "Yes", label: "Yes" },
+                { value: "No", label: "No" },
+              ]}
+            />
+          ) : null}
           <FilterDateRange
             label="Due date"
             from={filters.dueFrom}

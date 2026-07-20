@@ -23,6 +23,7 @@ const schema = z.object({
   keyContact: z.string().trim().max(200).optional().default(""),
   notes: z.string().max(5000).optional().default(""),
   subjectToDes: z.union([z.enum(["Yes", "No"]), z.literal("")]).optional().default(""),
+  desNumber: z.string().trim().max(120).optional().default(""),
 });
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {

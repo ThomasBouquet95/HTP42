@@ -21,6 +21,7 @@ type FormState = {
   keyContact: string;
   notes: string;
   subjectToDes: "Yes" | "No" | "";
+  desNumber: string;
 };
 
 const EMPTY: FormState = {
@@ -32,6 +33,7 @@ const EMPTY: FormState = {
   keyContact: "",
   notes: "",
   subjectToDes: "",
+  desNumber: "",
 };
 
 function fromRecord(c: ClientRecord): FormState {
@@ -44,6 +46,7 @@ function fromRecord(c: ClientRecord): FormState {
     keyContact: c.keyContact,
     notes: c.notes,
     subjectToDes: c.subjectToDes,
+    desNumber: c.desNumber,
   };
 }
 
@@ -293,6 +296,11 @@ export function ClientsAdminClient({ clients }: Props) {
                   <td className="px-2 py-1.5 hidden lg:table-cell demo-blur">{c.keyContact || "—"}</td>
                   <td className="px-2 py-1.5">
                     <DesPill value={c.subjectToDes} />
+                    {c.subjectToDes === "Yes" ? (
+                      <div className="mt-0.5 font-mono text-[10px] text-slate-500 demo-blur">
+                        {c.desNumber || <span className="text-slate-300">no number</span>}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     <IconButton title="Edit" onClick={() => openEdit(c)}>
@@ -386,6 +394,14 @@ export function ClientsAdminClient({ clients }: Props) {
             <option value="Yes">Yes</option>
             <option value="No">No</option>
           </FormSelect>
+          {/* DES number only when the client is Subject to DES. */}
+          {form.subjectToDes === "Yes" ? (
+            <FormField
+              label="DES number"
+              value={form.desNumber}
+              onChange={(v) => updateField("desNumber", v)}
+            />
+          ) : null}
         </div>
         <div className="mt-3">
           <FormTextarea

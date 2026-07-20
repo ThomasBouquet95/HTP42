@@ -88,6 +88,9 @@ export const FIELDS = {
     keyContact: "Key Contact",
     notes: "Notes",
     subjectToDes: "Subject to DES",
+    // DES registration number — only meaningful when Subject to DES = Yes.
+    // Lazily created via meta API — see ensureClientsSchema.
+    desNumber: "DES Number",
   },
   opportunities: {
     title: "Title",
@@ -627,6 +630,8 @@ export type ClientRecord = {
   // Whether services to this client must be reported on the DES (Déclaration
   // Européenne de Services). "" = not set.
   subjectToDes: "Yes" | "No" | "";
+  // DES registration number — only relevant when subjectToDes === "Yes".
+  desNumber: string;
 };
 
 // Payment-schedule entries. Discriminated by project type:
@@ -2026,6 +2031,7 @@ function clientFromRecord(r: AirtableRecord<FieldSet>): ClientRecord {
     keyContact: str(r, FIELDS.clients.keyContact),
     notes: str(r, FIELDS.clients.notes),
     subjectToDes: (str(r, FIELDS.clients.subjectToDes) as "Yes" | "No") || "",
+    desNumber: str(r, FIELDS.clients.desNumber),
   };
 }
 
@@ -2055,6 +2061,7 @@ export type ClientInput = {
   keyContact: string;
   notes: string;
   subjectToDes: "Yes" | "No" | "";
+  desNumber: string;
 };
 
 function clientFields(input: ClientInput): Record<string, unknown> {
@@ -2067,6 +2074,9 @@ function clientFields(input: ClientInput): Record<string, unknown> {
     [FIELDS.clients.keyContact]: input.keyContact,
     [FIELDS.clients.notes]: input.notes,
     [FIELDS.clients.subjectToDes]: input.subjectToDes === "" ? null : input.subjectToDes,
+    // Only store a DES number when the client is Subject to DES; clear it
+    // otherwise so a stale number can't linger after toggling to No.
+    [FIELDS.clients.desNumber]: input.subjectToDes === "Yes" ? input.desNumber || null : null,
   };
 }
 
@@ -2087,24 +2097,33 @@ export async function ensureClientsSchema(): Promise<boolean> {
     };
     const table = data.tables.find((t) => t.name === TABLES.clients);
     if (!table) return false;
-    if (table.fields.some((f) => f.name === FIELDS.clients.subjectToDes)) {
-      clientsSchemaReady = true;
-      return true;
-    }
-    const create = await fetch(
-      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+    const existing = new Set(table.fields.map((f) => f.name));
+    const wanted: Array<{ name: string; type: string; options?: unknown }> = [
       {
-        method: "POST",
-        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: FIELDS.clients.subjectToDes,
-          type: "singleSelect",
-          options: { choices: [{ name: "Yes" }, { name: "No" }] },
-        }),
+        name: FIELDS.clients.subjectToDes,
+        type: "singleSelect",
+        options: { choices: [{ name: "Yes" }, { name: "No" }] },
       },
-    );
-    if (create.ok) clientsSchemaReady = true;
-    return create.ok;
+      { name: FIELDS.clients.desNumber, type: "singleLineText" },
+    ];
+    let allOk = true;
+    for (const f of wanted) {
+      if (existing.has(f.name)) continue;
+      const create = await fetch(
+        `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+          body: JSON.stringify(f),
+        },
+      );
+      if (!create.ok) {
+        allOk = false;
+        console.error(`ensureClientsSchema: create ${f.name} failed:`, await create.text().catch(() => ""));
+      }
+    }
+    if (allOk) clientsSchemaReady = true;
+    return allOk;
   } catch (e) {
     console.error("ensureClientsSchema failed:", e);
     return false;
