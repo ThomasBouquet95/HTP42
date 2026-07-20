@@ -548,6 +548,12 @@ export type Currency = "EUR" | "USD" | "CHF";
 export const CURRENCIES: Currency[] = ["EUR", "USD", "CHF"];
 
 export type PaymentDirection = "Inflow" | "Outflow";
+export const PAYMENT_DIRECTIONS: PaymentDirection[] = ["Inflow", "Outflow"];
+// Canonical payment "Type" single-select options (mirrors the admin form).
+// Ensured on the Airtable field before a write so picking one that isn't yet
+// an option can't be rejected with "insufficient permissions to create new
+// select options".
+export const PAYMENT_TYPES = ["Client Invoice", "Subcontractor", "Expense", "Other"] as const;
 // Order matters here: this is the order admins see in the payment status
 // dropdown. "Under Review" sits first because it's the new default for
 // auto-created outflows from member-invoice submissions — admins want to
@@ -2593,12 +2599,86 @@ export async function ensurePaymentStatusChoices(): Promise<{ ok: boolean; error
   }
 }
 
-export async function createPayment(input: PaymentInput): Promise<string> {
-  await ensurePaymentStatusChoices();
-  const resolved = await prepPaymentWrite(input);
-  const [created] = await base(TABLES.payments).create([
-    { fields: paymentFields(resolved) as FieldSet },
+// Generic: make sure every value in `values` exists as a choice on a Payments
+// single-select field, adding the missing ones via the meta API. This is what
+// lets a write pick an option that isn't there yet — the PAT can't create
+// select options through a data write (Airtable answers "insufficient
+// permissions to create new select options"), so we pre-create them here.
+const _paymentSelectReady = new Set<string>();
+async function ensurePaymentSelectChoices(
+  fieldName: string,
+  values: readonly string[],
+): Promise<void> {
+  if (_paymentSelectReady.has(fieldName)) return;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      tables: Array<{
+        id: string;
+        name: string;
+        fields: Array<{
+          id: string;
+          name: string;
+          type: string;
+          options?: { choices?: Array<{ id?: string; name: string }> };
+        }>;
+      }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.payments);
+    const field = table?.fields.find((f) => f.name === fieldName);
+    if (!field || (field.type !== "singleSelect" && field.type !== "multipleSelects")) {
+      _paymentSelectReady.add(fieldName); // not a select — nothing to ensure
+      return;
+    }
+    const existing = field.options?.choices ?? [];
+    const have = new Set(existing.map((c) => c.name));
+    const missing = values.filter((v) => v && !have.has(v));
+    if (missing.length === 0) {
+      _paymentSelectReady.add(fieldName);
+      return;
+    }
+    const choices = [
+      ...existing.map((c) => ({ id: c.id, name: c.name })),
+      ...missing.map((name) => ({ name })),
+    ];
+    const patch = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table!.id}/fields/${field.id}`,
+      {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ options: { choices } }),
+      },
+    );
+    if (patch.ok) _paymentSelectReady.add(fieldName);
+    else console.error(`ensurePaymentSelectChoices(${fieldName}) patch failed:`, await patch.text().catch(() => ""));
+  } catch (e) {
+    console.error(`ensurePaymentSelectChoices(${fieldName}) failed:`, e);
+  }
+}
+
+// Ensure all the single-select options a payment write may set (Type,
+// Direction, Currency) exist. Status is handled by ensurePaymentStatusChoices.
+async function ensurePaymentWriteChoices(): Promise<void> {
+  await Promise.all([
+    ensurePaymentStatusChoices(),
+    ensurePaymentSelectChoices(FIELDS.payments.type, PAYMENT_TYPES),
+    ensurePaymentSelectChoices(FIELDS.payments.direction, PAYMENT_DIRECTIONS),
+    ensurePaymentSelectChoices(FIELDS.payments.invoiceCurrency, CURRENCIES),
   ]);
+}
+
+export async function createPayment(input: PaymentInput): Promise<string> {
+  await ensurePaymentWriteChoices();
+  const resolved = await prepPaymentWrite(input);
+  const [created] = await base(TABLES.payments).create(
+    [{ fields: paymentFields(resolved) as FieldSet }],
+    { typecast: true },
+  );
   return created.id;
 }
 
@@ -2708,11 +2788,12 @@ export async function rejectPaymentsForTimesheet(timesheetRecordId: string): Pro
 }
 
 export async function updatePayment(recordId: string, input: PaymentInput): Promise<void> {
-  await ensurePaymentStatusChoices();
+  await ensurePaymentWriteChoices();
   const resolved = await prepPaymentWrite(input);
-  await base(TABLES.payments).update([
-    { id: recordId, fields: paymentFields(resolved) as FieldSet },
-  ]);
+  await base(TABLES.payments).update(
+    [{ id: recordId, fields: paymentFields(resolved) as FieldSet }],
+    { typecast: true },
+  );
 }
 
 // Resolve staffing + project for a write, and make sure the Staffing field
