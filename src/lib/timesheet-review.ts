@@ -1,6 +1,7 @@
 import {
   decideTimesheet,
   generateReviewToken,
+  getAdminTimesheetById,
   getStaffingById,
   getTimesheetById,
   listPendingClientReviews,
@@ -19,20 +20,29 @@ export const REVIEW_TOKEN_TTL_DAYS = 14;
 export const CLIENT_REVIEW_AUTO_APPROVE_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// Pure (unit-tested): given the token expiry a client-review timesheet carries
-// (submit time + TTL) and "now", is it past the auto-approve window? The review
-// request went out at (expiry − TTL); it's stale once that's ≥ thresholdDays
-// old. Returns false for missing/invalid input (never auto-approve blindly).
+function parseMs(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
+// Pure (unit-tested): is a client-review timesheet past the auto-approve
+// window? Anchors on when the review request was actually sent
+// (reviewRequestedAt). For tokens minted before that field existed it falls
+// back to deriving it from the token expiry (submit + TTL) — this fallback is
+// the only place coupled to the TTL constant, so a future TTL change can't
+// misdate rows that carry an explicit reviewRequestedAt. Returns false on
+// missing/invalid input (never auto-approve blindly).
 export function isClientReviewStale(
-  reviewTokenExpiresAt: string | null | undefined,
+  row: { reviewRequestedAt?: string | null; reviewTokenExpiresAt?: string | null },
   now: number,
-  ttlDays: number = REVIEW_TOKEN_TTL_DAYS,
   thresholdDays: number = CLIENT_REVIEW_AUTO_APPROVE_DAYS,
+  ttlDays: number = REVIEW_TOKEN_TTL_DAYS,
 ): boolean {
-  if (!reviewTokenExpiresAt) return false;
-  const expiry = new Date(reviewTokenExpiresAt).getTime();
-  if (Number.isNaN(expiry)) return false;
-  const requestSentAt = expiry - ttlDays * DAY_MS;
+  const requested = parseMs(row.reviewRequestedAt);
+  const expiry = parseMs(row.reviewTokenExpiresAt);
+  const requestSentAt = requested ?? (expiry != null ? expiry - ttlDays * DAY_MS : null);
+  if (requestSentAt == null) return false;
   return now - requestSentAt >= thresholdDays * DAY_MS;
 }
 
@@ -47,15 +57,21 @@ export async function autoApproveStaleClientReviews(now: number = Date.now()): P
   const pending = await listPendingClientReviews();
   const approvedCodes: string[] = [];
   for (const ts of pending) {
-    if (!isClientReviewStale(ts.reviewTokenExpiresAt, now)) continue;
+    if (!isClientReviewStale(ts, now)) continue;
     try {
+      // Re-read right before writing and bail if the row already moved on (a
+      // client may have clicked Approve/Reject since the list was fetched).
+      // Airtable has no atomic compare-and-set; this narrows the race the same
+      // way the token route does. A decided row has no live token expiry.
+      const fresh = await getAdminTimesheetById(ts.id);
+      if (!fresh || fresh.status !== "Submitted" || !fresh.reviewTokenExpiresAt) continue;
       await decideTimesheet({
         recordId: ts.id,
         timesheetCode: ts.timesheetCode,
         staffingCode: ts.staffingCode,
         decision: "Approved",
         reviewMethod: "Client",
-        reviewedBy: `Auto-approved — no client response in ${CLIENT_REVIEW_AUTO_APPROVE_DAYS} days`,
+        reviewedBy: "System (auto-approval)",
         comment: `Automatically approved: the client did not review within ${CLIENT_REVIEW_AUTO_APPROVE_DAYS} days of the review request.`,
       });
       approvedCodes.push(ts.timesheetCode);

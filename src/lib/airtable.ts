@@ -184,6 +184,10 @@ export const FIELDS = {
     reviewComment: "Review Comment",
     reviewToken: "Review Token",
     reviewTokenExpiresAt: "Review Token Expires At",
+    // When the current client-review request was sent (reset on every submit /
+    // resubmit). Anchors the 7-day auto-approve window independently of the
+    // token TTL. Lazily created via meta API.
+    reviewRequestedAt: "Review Requested At",
   },
   rolePermissions: {
     role: "Role",
@@ -794,6 +798,8 @@ export type TimesheetRecord = {
   // Expiry of the active client-review link (null when none). The token value
   // itself is intentionally never surfaced on the record.
   reviewTokenExpiresAt: string | null;
+  // When the active client-review request was sent (null when none).
+  reviewRequestedAt: string | null;
 };
 
 function str(r: AirtableRecord<FieldSet>, field: string): string {
@@ -3929,6 +3935,7 @@ function toTimesheet(r: AirtableRecord<FieldSet>, staffings: Map<string, Staffin
     reviewedAt: (r.get(FIELDS.timesheets.reviewedAt) as string | undefined) ?? null,
     reviewComment: str(r, FIELDS.timesheets.reviewComment),
     reviewTokenExpiresAt: (r.get(FIELDS.timesheets.reviewTokenExpiresAt) as string | undefined) ?? null,
+    reviewRequestedAt: (r.get(FIELDS.timesheets.reviewRequestedAt) as string | undefined) ?? null,
   };
 }
 
@@ -4181,6 +4188,7 @@ export async function ensureTimesheetApprovalSchema(): Promise<boolean> {
       { name: T.reviewComment, type: "multilineText" },
       { name: T.reviewToken, type: "singleLineText" },
       { name: T.reviewTokenExpiresAt, type: "singleLineText" },
+      { name: T.reviewRequestedAt, type: "singleLineText" },
     ]);
 
     const S = FIELDS.projectStaffing;
@@ -4338,6 +4346,7 @@ export async function setTimesheetReviewToken(
         [FIELDS.timesheets.reviewMethod]: "Client",
         [FIELDS.timesheets.reviewToken]: token,
         [FIELDS.timesheets.reviewTokenExpiresAt]: expiresAtIso,
+        [FIELDS.timesheets.reviewRequestedAt]: new Date().toISOString(),
       } as FieldSet,
     },
   ]);
