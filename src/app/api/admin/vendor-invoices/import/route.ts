@@ -127,6 +127,7 @@ function buildPaidPayment(
 }
 
 async function run() {
+  console.log("[cron] vendor-invoices/import: start");
   const ready = await ensureVendorInvoicesSchema();
   if (!ready) {
     return NextResponse.json({ error: "Could not prepare the Vendor Invoices table." }, { status: 500 });
@@ -185,6 +186,9 @@ async function run() {
     }
   }
 
+  console.log(
+    `[cron] vendor-invoices/import: done — imported ${imported}, scanned ${mail.scanned}, withPdf ${mail.invoices.length}`,
+  );
   return NextResponse.json({
     imported,
     skipped: mail.invoices.length - fresh.length,

@@ -11,7 +11,9 @@ export const runtime = "nodejs";
 // repairs rows edited directly in Airtable, outside the portal.
 
 async function run() {
+  console.log("[cron] backfill-eur: start");
   const result = await backfillPaymentEur();
+  console.log(`[cron] backfill-eur: done — scanned ${result.scanned}, updated ${result.updated}`);
   return NextResponse.json(result);
 }
 

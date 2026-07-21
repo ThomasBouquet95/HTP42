@@ -11,7 +11,12 @@ export const runtime = "nodejs";
 // billing isn't stuck on an unresponsive client. Idempotent.
 
 async function run() {
+  console.log("[cron] auto-approve-timesheets: start");
   const result = await autoApproveStaleClientReviews();
+  console.log(
+    `[cron] auto-approve-timesheets: done — scanned ${result.scanned}, approved ${result.approved}` +
+      (result.approvedCodes.length ? ` (${result.approvedCodes.join(", ")})` : ""),
+  );
   return NextResponse.json(result);
 }
 
@@ -20,14 +25,27 @@ async function run() {
 // (fail-safe). A signed-in admin can also trigger it manually.
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
+  const hasHeader = !!request.headers.get("authorization");
   const authorized = !!secret && request.headers.get("authorization") === `Bearer ${secret}`;
   if (!authorized) {
     const session = await requireAdminSession();
-    if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!session) {
+      console.warn(
+        `[cron] auto-approve-timesheets: rejected 403 — ${
+          !secret
+            ? "CRON_SECRET is not set on this deployment"
+            : hasHeader
+              ? "Authorization header did not match CRON_SECRET"
+              : "no Authorization header and no admin session"
+        }`,
+      );
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
   }
   try {
     return await run();
   } catch (e) {
+    console.error("[cron] auto-approve-timesheets: failed", e);
     return apiError(e, "auto-approve client-review timesheets");
   }
 }
