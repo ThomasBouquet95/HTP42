@@ -1689,7 +1689,7 @@ export function PaymentsClient({
               ))}
             </FormSelect>
             <FormField
-              label="Invoice value"
+              label="Invoice value (excl. tax)"
               value={form.invoiceValue}
               onChange={(v) => updateField("invoiceValue", v)}
               type="number"

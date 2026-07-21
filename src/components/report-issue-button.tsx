@@ -70,7 +70,7 @@ export function ReportIssueButton() {
         type="button"
         onClick={() => setOpen(true)}
         title="Report an issue or suggest an improvement"
-        className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+        className="inline-flex items-center gap-1.5 rounded-full border border-orange-300 bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-700 hover:bg-orange-100"
       >
         <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
           <path d="M8 1.5 14.5 13h-13z" strokeLinejoin="round" />
