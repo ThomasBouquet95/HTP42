@@ -41,11 +41,16 @@ const ADMIN_NAV: NavItem = {
 export function AppHeader({
   session,
   photoUrl,
+  canAccessAdmin,
 }: {
   session: SessionPayload;
   photoUrl?: string | null;
+  // Whether this user actually has the admin panel available (admin role AND at
+  // least one viewable admin page). Falls back to the role check when not
+  // provided. Gates the Admin nav + the report/suggest button.
+  canAccessAdmin?: boolean;
 }) {
-  const admin = isAdmin(session);
+  const admin = canAccessAdmin ?? isAdmin(session);
   const pathname = usePathname() ?? "";
   const items = admin ? [...NAV, ADMIN_NAV] : NAV;
   const effectivePhoto = photoUrl ?? session.photoUrl ?? null;

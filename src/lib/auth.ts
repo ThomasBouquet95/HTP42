@@ -3,7 +3,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { env } from "./env";
 import { findActiveMemberByEmail, getRolePermissions, type MemberRecord } from "./airtable";
 import { isAdmin, isAdminRoleName, type SessionPayload } from "./session";
-import { can, type AdminAction } from "./permissions";
+import { ADMIN_PAGES, can, type AdminAction } from "./permissions";
 
 const SESSION_COOKIE = "htp42_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
@@ -138,6 +138,18 @@ export async function requireAdminAction(
   if (!session) return null;
   const stored = await getRolePermissions();
   return can(session.role, pageKey, action, stored) ? session : null;
+}
+
+// True when the user genuinely has the admin panel available: an admin role
+// AND at least one admin page they may view. A role that's admin-typed but has
+// every page revoked doesn't "qualify" — used to hide the Admin nav + the
+// report/suggest button for them (mirrors what the /admin landing allows).
+export async function canAccessAdminPanel(
+  session: SessionPayload | null | undefined,
+): Promise<boolean> {
+  if (!session || !isAdminRoleName(session.role)) return false;
+  const stored = await getRolePermissions();
+  return ADMIN_PAGES.some((p) => can(session.role, p.key, "view", stored));
 }
 
 export async function requireSession(): Promise<SessionPayload> {

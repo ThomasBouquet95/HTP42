@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
+import { canAccessAdminPanel, getSession } from "@/lib/auth";
 import { getMemberById } from "@/lib/airtable";
 import { AppHeader } from "@/components/app-header";
 
@@ -15,9 +15,10 @@ export default async function TimesheetsLayout({
   // pulling it server-side keeps the header avatar current without a re-login.
   const member = await getMemberById(session.sub);
   const photoUrl = member?.photo?.url ?? session.photoUrl ?? null;
+  const canAccessAdmin = await canAccessAdminPanel(session);
   return (
     <>
-      <AppHeader session={session} photoUrl={photoUrl} />
+      <AppHeader session={session} photoUrl={photoUrl} canAccessAdmin={canAccessAdmin} />
       {children}
     </>
   );
