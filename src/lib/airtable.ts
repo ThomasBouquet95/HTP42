@@ -34,6 +34,7 @@ export const TABLES = {
   rolePermissions: "Role Permissions",
   emailTemplates: "Email Templates",
   emailLog: "Email Log",
+  supportTickets: "Support Tickets",
 } as const;
 
 export const FIELDS = {
@@ -213,6 +214,18 @@ export const FIELDS = {
     sourceId: "Source Id",
     // The actual attachment files, so they can be opened from the log.
     files: "Files",
+  },
+  supportTickets: {
+    summary: "Summary",
+    type: "Type",
+    urgency: "Urgency",
+    description: "Description",
+    screenshot: "Screenshot",
+    status: "Status",
+    submittedBy: "Submitted By",
+    submittedEmail: "Submitted Email",
+    page: "Page",
+    submittedAt: "Submitted At",
   },
   timesheetReviews: {
     entry: "Entry",
@@ -7749,4 +7762,195 @@ export async function attachVendorInvoicePdf(
     const text = await res.text().catch(() => "");
     throw new Error(`Airtable upload failed (${res.status}): ${text}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Support tickets — admin-reported issues / improvement suggestions.
+// ---------------------------------------------------------------------------
+
+export const SUPPORT_TICKET_TYPES = ["Bug", "Improvement", "Question", "Other"] as const;
+export const SUPPORT_TICKET_URGENCIES = ["Low", "Medium", "High", "Critical"] as const;
+export const SUPPORT_TICKET_STATUSES = ["New", "In progress", "Resolved", "Closed"] as const;
+export type SupportTicketType = (typeof SUPPORT_TICKET_TYPES)[number];
+export type SupportTicketUrgency = (typeof SUPPORT_TICKET_URGENCIES)[number];
+export type SupportTicketStatus = (typeof SUPPORT_TICKET_STATUSES)[number];
+
+export type SupportTicketRecord = {
+  id: string;
+  summary: string;
+  type: string;
+  urgency: string;
+  description: string;
+  status: string;
+  submittedBy: string;
+  submittedEmail: string;
+  page: string;
+  submittedAt: string | null;
+  screenshot: AttachmentRef | null;
+};
+
+function supportTicketFromRecord(r: AirtableRecord<FieldSet>): SupportTicketRecord {
+  const S = FIELDS.supportTickets;
+  return {
+    id: r.id,
+    summary: str(r, S.summary),
+    type: str(r, S.type),
+    urgency: str(r, S.urgency),
+    description: str(r, S.description),
+    status: str(r, S.status) || "New",
+    submittedBy: str(r, S.submittedBy),
+    submittedEmail: str(r, S.submittedEmail),
+    page: str(r, S.page),
+    submittedAt: dateOrNull(r, S.submittedAt),
+    screenshot: firstAttachment(r, S.screenshot),
+  };
+}
+
+let supportTicketsTableReady = false;
+// Create the Support Tickets table (and lazily fill any missing field) via the
+// meta API — same pattern as the Vendor Invoices table.
+export async function ensureSupportTicketsTable(): Promise<boolean> {
+  if (supportTicketsTableReady) return true;
+  try {
+    const S = FIELDS.supportTickets;
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const fieldDefs: Array<{ name: string; type: string; options?: unknown }> = [
+      { name: S.summary, type: "singleLineText" }, // primary
+      {
+        name: S.type,
+        type: "singleSelect",
+        options: { choices: SUPPORT_TICKET_TYPES.map((name) => ({ name })) },
+      },
+      {
+        name: S.urgency,
+        type: "singleSelect",
+        options: { choices: SUPPORT_TICKET_URGENCIES.map((name) => ({ name })) },
+      },
+      { name: S.description, type: "multilineText" },
+      { name: S.screenshot, type: "multipleAttachments" },
+      {
+        name: S.status,
+        type: "singleSelect",
+        options: { choices: SUPPORT_TICKET_STATUSES.map((name) => ({ name })) },
+      },
+      { name: S.submittedBy, type: "singleLineText" },
+      { name: S.submittedEmail, type: "singleLineText" },
+      { name: S.page, type: "singleLineText" },
+      { name: S.submittedAt, type: "singleLineText" },
+    ];
+    const existing = data.tables.find((t) => t.name === TABLES.supportTickets);
+    if (existing) {
+      const have = new Set(existing.fields.map((f) => f.name));
+      for (const f of fieldDefs) {
+        if (have.has(f.name)) continue;
+        await fetch(
+          `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${existing.id}/fields`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+            body: JSON.stringify(f),
+          },
+        ).catch(() => {});
+      }
+      supportTicketsTableReady = true;
+      return true;
+    }
+    const create = await fetch(metaUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: TABLES.supportTickets,
+        description: "Issues + improvement suggestions reported by admins from the app.",
+        fields: fieldDefs,
+      }),
+    });
+    if (create.ok) {
+      supportTicketsTableReady = true;
+      return true;
+    }
+    console.error("Failed to create Support Tickets table:", await create.text().catch(() => ""));
+    return false;
+  } catch (e) {
+    console.error("ensureSupportTicketsTable failed:", e);
+    return false;
+  }
+}
+
+export async function listSupportTickets(): Promise<SupportTicketRecord[]> {
+  const ok = await ensureSupportTicketsTable();
+  if (!ok) return [];
+  const records = await base(TABLES.supportTickets).select().all();
+  const rows = records.map(supportTicketFromRecord);
+  // Newest first by submitted date, falling back to Airtable creation order.
+  rows.sort((a, b) => (b.submittedAt || "").localeCompare(a.submittedAt || ""));
+  return rows;
+}
+
+export async function createSupportTicket(input: {
+  type: string;
+  urgency: string;
+  description: string;
+  submittedBy: string;
+  submittedEmail: string;
+  page: string;
+}): Promise<string> {
+  await ensureSupportTicketsTable();
+  const S = FIELDS.supportTickets;
+  const summary =
+    input.description.trim().split("\n")[0].slice(0, 80) || `${input.type} report`;
+  const [created] = await base(TABLES.supportTickets).create(
+    [
+      {
+        fields: {
+          [S.summary]: summary,
+          [S.type]: input.type || null,
+          [S.urgency]: input.urgency || null,
+          [S.description]: input.description,
+          [S.status]: "New",
+          [S.submittedBy]: input.submittedBy,
+          [S.submittedEmail]: input.submittedEmail,
+          [S.page]: input.page,
+          [S.submittedAt]: new Date().toISOString(),
+        } as FieldSet,
+      },
+    ],
+    { typecast: true },
+  );
+  return created.id;
+}
+
+export async function attachSupportTicketScreenshot(
+  recordId: string,
+  filename: string,
+  base64: string,
+  contentType: string,
+): Promise<void> {
+  const url = `https://content.airtable.com/v0/${env.airtableBaseId}/${recordId}/${encodeURIComponent(
+    FIELDS.supportTickets.screenshot,
+  )}/uploadAttachment`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ contentType, filename, file: base64 }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Screenshot upload failed (${res.status}): ${text}`);
+  }
+}
+
+export async function updateSupportTicketStatus(recordId: string, status: string): Promise<void> {
+  await ensureSupportTicketsTable();
+  await base(TABLES.supportTickets).update(
+    [{ id: recordId, fields: { [FIELDS.supportTickets.status]: status } as FieldSet }],
+    { typecast: true },
+  );
 }

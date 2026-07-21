@@ -5,6 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { isAdmin, type SessionPayload } from "@/lib/session";
 import { Heartbeat } from "@/components/heartbeat";
+import { ReportIssueButton } from "@/components/report-issue-button";
 
 type NavItem = { href: string; label: string; match: (p: string) => boolean };
 
@@ -96,6 +97,7 @@ export function AppHeader({
           </nav>
         </div>
         <div className="flex items-center gap-3 text-sm">
+          {admin ? <ReportIssueButton /> : null}
           <span className="text-slate-600 hidden sm:inline">
             {session.fullName || session.email} ·{" "}
             <span className="font-mono">{session.memberCode}</span>

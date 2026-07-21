@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
-import { getRolePermissions, MEMBER_ROLES } from "@/lib/airtable";
+import { getRolePermissions, listSupportTickets, MEMBER_ROLES } from "@/lib/airtable";
 import { ADMIN_ACCESS_ROLES } from "@/lib/session";
 import {
   ADMIN_PAGE_ROWS,
@@ -11,7 +11,8 @@ import {
   defaultPermsFor,
   type PagePerms,
 } from "@/lib/permissions";
-import { RolesClient, type RoleKind } from "./roles-client";
+import { type RoleKind } from "./roles-client";
+import { RolesTabsClient } from "./roles-tabs-client";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export default async function AdminRolesPage() {
   if (!access) redirect("/admin");
   const { canEdit } = access;
 
-  const stored = await getRolePermissions();
+  const [stored, tickets] = await Promise.all([getRolePermissions(), listSupportTickets()]);
 
   const kindOf = (role: string): RoleKind =>
     LOCKED_FULL_ROLES.includes(role)
@@ -53,7 +54,11 @@ export default async function AdminRolesPage() {
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <AdminTabs active="settings" />
       <PageHeader title="Roles & access" subtitle="· who can view and edit each admin page" />
-      <RolesClient roles={roles} rows={ADMIN_PAGE_ROWS} canEdit={canEdit} />
+      <RolesTabsClient
+        rolesProps={{ roles, rows: ADMIN_PAGE_ROWS, canEdit }}
+        tickets={tickets}
+        canEdit={canEdit}
+      />
     </main>
   );
 }
