@@ -24,6 +24,14 @@ export async function middleware(req: NextRequest) {
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next();
   }
+  // Vercel cron (and manual "Run") authenticate with the CRON_SECRET bearer, not
+  // a session cookie. Let those through here — the /api/admin cron routes
+  // re-verify the secret themselves, and every other admin route still enforces
+  // its own session/permission guard, so this bypass grants nothing extra.
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && req.headers.get("authorization") === `Bearer ${cronSecret}`) {
+    return NextResponse.next();
+  }
   const token = req.cookies.get("htp42_session")?.value;
   if (!token) return rejectApiOrRedirectLogin(req);
 
