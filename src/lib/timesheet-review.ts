@@ -1,7 +1,9 @@
 import {
+  decideTimesheet,
   generateReviewToken,
   getStaffingById,
   getTimesheetById,
+  listPendingClientReviews,
   recordTimesheetReview,
   setTimesheetReviewToken,
   type StaffingAdminRecord,
@@ -10,6 +12,59 @@ import {
 import { sendTimesheetReviewRequest } from "./timesheet-notify";
 
 export const REVIEW_TOKEN_TTL_DAYS = 14;
+// A client-review timesheet auto-approves this many days after the review email
+// went out if the client hasn't approved or rejected it. Must be < the token
+// TTL so the token is still derivable when we sweep (and it's cleared on
+// approval, so the emailed link stops working).
+export const CLIENT_REVIEW_AUTO_APPROVE_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Pure (unit-tested): given the token expiry a client-review timesheet carries
+// (submit time + TTL) and "now", is it past the auto-approve window? The review
+// request went out at (expiry − TTL); it's stale once that's ≥ thresholdDays
+// old. Returns false for missing/invalid input (never auto-approve blindly).
+export function isClientReviewStale(
+  reviewTokenExpiresAt: string | null | undefined,
+  now: number,
+  ttlDays: number = REVIEW_TOKEN_TTL_DAYS,
+  thresholdDays: number = CLIENT_REVIEW_AUTO_APPROVE_DAYS,
+): boolean {
+  if (!reviewTokenExpiresAt) return false;
+  const expiry = new Date(reviewTokenExpiresAt).getTime();
+  if (Number.isNaN(expiry)) return false;
+  const requestSentAt = expiry - ttlDays * DAY_MS;
+  return now - requestSentAt >= thresholdDays * DAY_MS;
+}
+
+// Sweep every timesheet still awaiting a client decision and approve the ones
+// whose review window has lapsed. Idempotent (approved rows leave "Submitted");
+// safe to run daily from a cron. Never throws for one bad row.
+export async function autoApproveStaleClientReviews(now: number = Date.now()): Promise<{
+  scanned: number;
+  approved: number;
+  approvedCodes: string[];
+}> {
+  const pending = await listPendingClientReviews();
+  const approvedCodes: string[] = [];
+  for (const ts of pending) {
+    if (!isClientReviewStale(ts.reviewTokenExpiresAt, now)) continue;
+    try {
+      await decideTimesheet({
+        recordId: ts.id,
+        timesheetCode: ts.timesheetCode,
+        staffingCode: ts.staffingCode,
+        decision: "Approved",
+        reviewMethod: "Client",
+        reviewedBy: `Auto-approved — no client response in ${CLIENT_REVIEW_AUTO_APPROVE_DAYS} days`,
+        comment: `Automatically approved: the client did not review within ${CLIENT_REVIEW_AUTO_APPROVE_DAYS} days of the review request.`,
+      });
+      approvedCodes.push(ts.timesheetCode);
+    } catch (e) {
+      console.error("autoApproveStaleClientReviews: failed for", ts.timesheetCode, e);
+    }
+  }
+  return { scanned: pending.length, approved: approvedCodes.length, approvedCodes };
+}
 
 function weekLabel(ts: TimesheetRecord): string {
   const fmt = (iso: string | null) => {

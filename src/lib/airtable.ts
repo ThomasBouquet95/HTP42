@@ -4576,6 +4576,23 @@ export async function decideTimesheet(input: {
   }
 }
 
+// Timesheets still awaiting a CLIENT decision: Submitted + client review method
+// + a live review token. Used by the auto-approve sweep (client didn't act in
+// time). Admin-review weeks are excluded — they only ever move on an admin.
+export async function listPendingClientReviews(): Promise<TimesheetRecord[]> {
+  await ensureTimesheetApprovalSchema();
+  const F = FIELDS.timesheets;
+  const [records, staffings] = await Promise.all([
+    base(TABLES.timesheets)
+      .select({
+        filterByFormula: `AND({${F.status}} = "Submitted", {${F.reviewMethod}} = "Client", {${F.reviewToken}} != "")`,
+      })
+      .all(),
+    getStaffingMap(),
+  ]);
+  return records.map((r) => toTimesheet(r, staffings));
+}
+
 // ---------------------------------------------------------------------------
 // Admin: Project Staffings (full CRUD)
 // ---------------------------------------------------------------------------
