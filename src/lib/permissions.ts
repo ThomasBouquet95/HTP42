@@ -91,15 +91,10 @@ export function isLockedFullRole(role: string | null | undefined): boolean {
   return !!role && LOCKED_FULL_ROLES.includes(role);
 }
 
-// Keys a Project Manager can touch by default: the Timesheets page + only its
-// Review sub-section (and only for the projects they're staffed on — enforced
-// in the timesheets page/API). The Managing/Operating Partner can widen this.
-const PROJECT_MANAGER_DEFAULT_KEYS = ["timesheets", "timesheets.review"];
-
 // Default permissions for a role before any override is saved. Locked-full
-// roles get everything; Project Manager starts on Timesheets → Review only;
-// other configurable admin roles start with full access EXCEPT Settings; non-
-// admin roles get nothing.
+// roles get everything; other configurable admin roles start with full access
+// EXCEPT the powerful cross-cutting pages (Settings, Emails); non-admin roles
+// (incl. Project Manager, Network Expert, Support) get nothing.
 export function defaultPermsFor(role: string): PagePerms {
   const perms: PagePerms = {};
   if (isLockedFullRole(role)) {
@@ -111,11 +106,8 @@ export function defaultPermsFor(role: string): PagePerms {
     return perms;
   }
   // Configurable admin role.
-  const projectManager = role === "Project Manager";
   for (const key of ADMIN_PAGE_KEYS) {
-    let on = !projectManager; // most admin roles default to full…
-    if (projectManager) on = PROJECT_MANAGER_DEFAULT_KEYS.includes(key); // …PM to Timesheets · Review
-    if (CONFIG_ROLE_DEFAULT_OFF_PAGES.includes(key)) on = false; // Settings off by default
+    const on = !CONFIG_ROLE_DEFAULT_OFF_PAGES.includes(key); // Settings/Emails off by default
     perms[key] = { view: on, edit: on };
   }
   return perms;

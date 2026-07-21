@@ -53,21 +53,21 @@ describe("can() permission resolution", () => {
     expect(can("Associate Partner", "settings", "view")).toBe(false);
   });
 
-  it("Project Manager defaults to Timesheets only", () => {
-    expect(can("Project Manager", "timesheets", "view")).toBe(true);
-    expect(can("Project Manager", "timesheets", "edit")).toBe(true);
+  it("Project Manager is a normal user with no admin access", () => {
+    // PM is intentionally NOT an admin-access role: no Admin tab, no admin pages.
+    expect(can("Project Manager", "timesheets", "view")).toBe(false);
+    expect(can("Project Manager", "timesheets", "edit")).toBe(false);
+    expect(can("Project Manager", "timesheets.review", "view")).toBe(false);
     expect(can("Project Manager", "staffing", "view")).toBe(false);
-    expect(can("Project Manager", "projects", "view")).toBe(false);
     expect(can("Project Manager", "payments", "view")).toBe(false);
     expect(can("Project Manager", "settings", "view")).toBe(false);
   });
 
-  it("Project Manager sees only the Timesheets Review sub-tab by default", () => {
-    expect(can("Project Manager", "timesheets.review", "view")).toBe(true);
-    expect(can("Project Manager", "timesheets.review", "edit")).toBe(true);
-    expect(can("Project Manager", "timesheets.overview", "view")).toBe(false);
-    expect(can("Project Manager", "timesheets.byproject", "view")).toBe(false);
-    expect(can("Project Manager", "timesheets.bymember", "view")).toBe(false);
+  it("Network Expert and Support have no admin access", () => {
+    for (const role of ["Network Expert", "Support"]) {
+      expect(can(role, "timesheets", "view")).toBe(false);
+      expect(can(role, "payments", "view")).toBe(false);
+    }
   });
 
   it("configurable admin roles see every Timesheets sub-tab by default", () => {

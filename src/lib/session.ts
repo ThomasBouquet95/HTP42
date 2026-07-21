@@ -17,11 +17,12 @@ export type SessionPayload = {
 // migration — existing admin JWT cookies and not-yet-migrated records keep
 // working until they re-login / the migration runs. It's intentionally NOT in
 // MEMBER_ROLES, so it can't be picked for a new/edited member.
+// Roles that may open the admin panel. Project Manager, Network Expert and
+// Support are normal users — they never see the Admin tab or reach /admin.
 export const ADMIN_ACCESS_ROLES = [
   "Managing Partner",
   "Operating Partner",
   "Associate Partner",
-  "Project Manager",
   "Network Operations",
   "Admin",
 ] as const;
