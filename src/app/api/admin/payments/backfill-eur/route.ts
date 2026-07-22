@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdminAction, requireAdminSession } from "@/lib/auth";
 import { backfillPaymentEur } from "@/lib/airtable";
+import { cronSecretMatches } from "@/lib/cron-auth";
 import { apiError } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -33,9 +34,7 @@ export async function POST() {
 // configured the cron is rejected (fails safe) and the write-time normalization
 // still keeps new payments correct.
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  const authorized =
-    !!secret && request.headers.get("authorization") === `Bearer ${secret}`;
+  const authorized = cronSecretMatches(request.headers.get("authorization"));
   if (!authorized) {
     // Allow a signed-in admin to hit it too (e.g. from the browser).
     const session = await requireAdminSession();

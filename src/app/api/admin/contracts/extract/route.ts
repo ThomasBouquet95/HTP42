@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireAdminAction } from "@/lib/auth";
 import { listAllMembers, listClients, listProjects } from "@/lib/airtable";
+import { hasPdfSignature } from "@/lib/file-signatures";
 import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
@@ -98,6 +99,9 @@ export async function POST(request: Request) {
   }
 
   const buf = Buffer.from(await file.arrayBuffer());
+  if (!hasPdfSignature(buf)) {
+    return NextResponse.json({ error: "That file isn't a valid PDF." }, { status: 400 });
+  }
   const base64 = buf.toString("base64");
 
   try {

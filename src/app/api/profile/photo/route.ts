@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { uploadMemberAttachment, clearMemberAttachment } from "@/lib/airtable";
+import { hasImageSignature } from "@/lib/file-signatures";
 import { apiError } from "@/lib/errors";
 
 const MAX_BYTES = 1 * 1024 * 1024;
@@ -25,6 +26,9 @@ export async function POST(request: Request) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
+  if (!hasImageSignature(buffer)) {
+    return NextResponse.json({ error: "Photo must be a valid image file." }, { status: 400 });
+  }
   const base64 = buffer.toString("base64");
 
   try {

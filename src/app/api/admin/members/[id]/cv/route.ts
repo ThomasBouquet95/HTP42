@@ -6,6 +6,7 @@ import {
   uploadMemberAttachment,
 } from "@/lib/airtable";
 import { apiError } from "@/lib/errors";
+import { hasPdfSignature, hasWordSignature } from "@/lib/file-signatures";
 
 export const runtime = "nodejs";
 
@@ -39,14 +40,18 @@ export async function POST(
   if (file.size > MAX_BYTES) {
     return NextResponse.json({ error: "CV must be 2 MB or smaller." }, { status: 400 });
   }
-  if (
-    !ALLOWED_TYPES.includes(file.type) &&
-    !/\.(pdf|docx?|)$/i.test(file.name)
-  ) {
+  if (!ALLOWED_TYPES.includes(file.type) && !/\.(pdf|docx?)$/i.test(file.name)) {
     return NextResponse.json({ error: "CV must be a PDF or Word document." }, { status: 400 });
   }
 
-  const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+  const buf = Buffer.from(await file.arrayBuffer());
+  if (!hasPdfSignature(buf) && !hasWordSignature(buf)) {
+    return NextResponse.json(
+      { error: "CV must be a valid PDF or Word document." },
+      { status: 400 },
+    );
+  }
+  const base64 = buf.toString("base64");
   try {
     const updated = await uploadMemberAttachment(
       id,

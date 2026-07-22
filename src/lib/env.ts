@@ -15,7 +15,13 @@ export const env = {
     return required("AIRTABLE_BASE_ID");
   },
   get authSecret() {
-    return required("AUTH_SECRET");
+    const value = required("AUTH_SECRET");
+    // The session JWT is HMAC-signed with this; a short/guessable secret would
+    // let an attacker forge admin sessions. Enforce a floor at read time.
+    if (value.length < 32) {
+      throw new Error("AUTH_SECRET must be at least 32 characters (use a long random string).");
+    }
+    return value;
   },
   get appUrl() {
     return (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");

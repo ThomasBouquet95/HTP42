@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { uploadMemberAttachment, clearMemberAttachment } from "@/lib/airtable";
+import { hasPdfSignature, hasWordSignature } from "@/lib/file-signatures";
 import { apiError } from "@/lib/errors";
 
 const MAX_BYTES = 1 * 1024 * 1024;
@@ -29,6 +30,12 @@ export async function POST(request: Request) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
+  if (!hasPdfSignature(buffer) && !hasWordSignature(buffer)) {
+    return NextResponse.json(
+      { error: "CV must be a valid PDF or Word document." },
+      { status: 400 },
+    );
+  }
   const base64 = buffer.toString("base64");
 
   try {

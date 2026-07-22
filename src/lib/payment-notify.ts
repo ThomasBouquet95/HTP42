@@ -2,6 +2,7 @@ import { sendMailViaGraph } from "./email";
 import { resolveEmail } from "./email-templates-server";
 import { env } from "./env";
 import { listClients, listProjects, type PaymentRecord } from "./airtable";
+import { assertSafeFetchUrl } from "./net-guard";
 
 // The recipients (finance inbox + the Fulll/Qonto bookkeeping CCs) and sender
 // are resolved from the editable "payment_paid" email template, so an admin can
@@ -47,15 +48,20 @@ async function sendPaymentPaidEmail(p: PaymentRecord): Promise<{ ok: boolean; er
       ? "An outflow payment has just been marked paid in the HTP42 portal."
       : "A payment has just been marked paid in the HTP42 portal.";
 
-  // Attach the invoice PDF — prefer the uploaded attachment, else the invoice
-  // URL. Failures here shouldn't block the email; the metadata still goes out.
-  const pdfSource = p.invoicePdf?.url || p.invoiceUrl || "";
+  // Attach the invoice PDF — prefer the uploaded Airtable attachment (trusted
+  // host, may redirect to signed storage), else the free-text invoice URL. The
+  // latter is user-controlled, so it goes through an SSRF guard and does not
+  // follow redirects. Failures here shouldn't block the email.
+  const uploadedUrl = p.invoicePdf?.url || "";
+  const userUrl = p.invoiceUrl || "";
+  const pdfSource = uploadedUrl || userUrl;
+  const sourceIsUserProvided = !uploadedUrl && !!userUrl;
   let attachment:
     | { filename: string; contentType: string; base64: string }
     | null = null;
   let pdfFailure: string | null = null;
   if (pdfSource) {
-    const fetched = await fetchInvoicePdf(pdfSource, label);
+    const fetched = await fetchInvoicePdf(pdfSource, label, sourceIsUserProvided);
     if (fetched.ok) attachment = fetched.attachment;
     else pdfFailure = fetched.error;
   } else {
@@ -134,12 +140,22 @@ async function sendPaymentPaidEmail(p: PaymentRecord): Promise<{ ok: boolean; er
 async function fetchInvoicePdf(
   url: string,
   label: string,
+  guard: boolean,
 ): Promise<
   | { ok: true; attachment: { filename: string; contentType: string; base64: string } }
   | { ok: false; error: string }
 > {
   try {
-    const res = await fetch(url, { redirect: "follow" });
+    if (guard) {
+      const unsafe = await assertSafeFetchUrl(url);
+      if (unsafe) return { ok: false, error: `Refused to fetch invoice URL (${unsafe})` };
+    }
+    // User-provided URLs don't follow redirects (a public URL could 302 into
+    // the internal network); trusted Airtable URLs may.
+    const res = await fetch(url, { redirect: guard ? "manual" : "follow" });
+    if (guard && (res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400))) {
+      return { ok: false, error: "Invoice URL redirected; upload the PDF instead." };
+    }
     if (!res.ok) {
       return { ok: false, error: `HTTP ${res.status} fetching invoice URL` };
     }

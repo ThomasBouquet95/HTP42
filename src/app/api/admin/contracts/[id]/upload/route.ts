@@ -7,6 +7,7 @@ import {
 import { env } from "@/lib/env";
 import { sendMailViaGraph } from "@/lib/email";
 import { resolveEmail } from "@/lib/email-templates-server";
+import { hasPdfSignature } from "@/lib/file-signatures";
 import { apiError } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -51,6 +52,9 @@ export async function POST(
   // 1) Attach the PDF to the Airtable row. If this fails the contract
   // record itself is untouched, so the admin can retry safely.
   const buf = Buffer.from(await file.arrayBuffer());
+  if (!hasPdfSignature(buf)) {
+    return NextResponse.json({ error: "That file isn't a valid PDF." }, { status: 400 });
+  }
   const base64 = buf.toString("base64");
   const filename = file.name || `contract-${id}.pdf`;
   try {

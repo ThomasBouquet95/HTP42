@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/auth";
 import { apiError } from "@/lib/errors";
+import { hasImageSignature } from "@/lib/file-signatures";
 import {
   attachSupportTicketScreenshot,
   createSupportTicket,
@@ -49,7 +50,11 @@ export async function POST(request: Request) {
     if (file.size > MAX_BYTES) {
       return NextResponse.json({ error: "Screenshot is too large (max 5 MB)." }, { status: 400 });
     }
-    const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+    const shotBuf = Buffer.from(await file.arrayBuffer());
+    if (!hasImageSignature(shotBuf)) {
+      return NextResponse.json({ error: "Screenshot must be a valid image." }, { status: 400 });
+    }
+    const base64 = shotBuf.toString("base64");
     attachment = {
       filename: file.name || "screenshot.png",
       base64,

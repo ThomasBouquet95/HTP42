@@ -14,6 +14,7 @@ import {
   type VendorInvoiceInput,
 } from "@/lib/airtable";
 import { notifyPaymentPaid } from "@/lib/payment-notify";
+import { cronSecretMatches } from "@/lib/cron-auth";
 import { fetchInvoiceMails, type MailInvoice } from "@/lib/mail-import";
 import { env } from "@/lib/env";
 import { apiError } from "@/lib/errors";
@@ -205,8 +206,7 @@ async function run() {
 // `Authorization: Bearer <CRON_SECRET>`). A signed-in admin may also trigger
 // it from the browser.
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  const authorized = !!secret && request.headers.get("authorization") === `Bearer ${secret}`;
+  const authorized = cronSecretMatches(request.headers.get("authorization"));
   if (!authorized) {
     const session = await requireAdminSession();
     if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });

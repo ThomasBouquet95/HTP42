@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/auth";
+import { cronSecretMatches } from "@/lib/cron-auth";
 import { apiError } from "@/lib/errors";
 import { autoApproveStaleClientReviews } from "@/lib/timesheet-review";
 
@@ -26,7 +27,7 @@ async function run() {
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
   const hasHeader = !!request.headers.get("authorization");
-  const authorized = !!secret && request.headers.get("authorization") === `Bearer ${secret}`;
+  const authorized = cronSecretMatches(request.headers.get("authorization"));
   if (!authorized) {
     const session = await requireAdminSession();
     if (!session) {

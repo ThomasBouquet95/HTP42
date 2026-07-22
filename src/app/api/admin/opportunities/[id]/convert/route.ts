@@ -13,6 +13,7 @@ import {
   type ProjectStatus,
   type ProjectType,
 } from "@/lib/airtable";
+import { hasPdfSignature } from "@/lib/file-signatures";
 import { apiError } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -76,7 +77,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (file.size > MAX_BYTES) {
       return NextResponse.json({ error: "The SOW is too large (max 5 MB)." }, { status: 400 });
     }
-    sowBase64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+    const sowBuf = Buffer.from(await file.arrayBuffer());
+    if (!hasPdfSignature(sowBuf)) {
+      return NextResponse.json({ error: "The SOW must be a valid PDF." }, { status: 400 });
+    }
+    sowBase64 = sowBuf.toString("base64");
     sowName = file.name || `SOW-${projectCode}.pdf`;
   }
 

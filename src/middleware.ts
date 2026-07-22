@@ -43,7 +43,9 @@ export async function middleware(req: NextRequest) {
 
   let role = "";
   try {
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
+      algorithms: ["HS256"],
+    });
     role = typeof (payload as { role?: unknown }).role === "string"
       ? ((payload as { role?: string }).role ?? "")
       : "";

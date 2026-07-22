@@ -69,6 +69,7 @@ export async function GET(request: Request) {
   let claims: JWTPayload;
   try {
     const verified = await jwtVerify(tokenBody.id_token, jwks(), {
+      algorithms: ["RS256"],
       issuer: `https://login.microsoftonline.com/${env.azure.tenantId}/v2.0`,
       audience: env.azure.clientId,
     });

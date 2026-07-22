@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdminAction } from "@/lib/auth";
 import { apiError } from "@/lib/errors";
 import { attachProjectSow, getProjectById } from "@/lib/airtable";
+import { hasPdfSignature } from "@/lib/file-signatures";
 
 export const runtime = "nodejs";
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -29,7 +30,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   try {
-    const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+    const buf = Buffer.from(await file.arrayBuffer());
+    if (!hasPdfSignature(buf)) {
+      return NextResponse.json({ error: "The SOW must be a valid PDF." }, { status: 400 });
+    }
+    const base64 = buf.toString("base64");
     const pdf = await attachProjectSow(id, file.name || `SOW-${project.projectCode}.pdf`, base64);
     return NextResponse.json({ pdf });
   } catch (e) {

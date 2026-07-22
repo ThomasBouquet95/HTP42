@@ -24,7 +24,7 @@ async function sign(payload: object, ttlSeconds: number): Promise<string> {
 
 async function verify<T>(token: string): Promise<T | null> {
   try {
-    const { payload } = await jwtVerify(token, secret());
+    const { payload } = await jwtVerify(token, secret(), { algorithms: ["HS256"] });
     return payload as T;
   } catch {
     return null;
