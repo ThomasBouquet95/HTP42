@@ -6,7 +6,6 @@ import {
   adminUpdateTimesheetStatus,
   decideTimesheet,
   getAdminTimesheetById,
-  getMemberStaffedProjectCodes,
   getStaffingById,
   recordTimesheetReview,
   updateTimesheet,
@@ -65,14 +64,6 @@ export async function PATCH(
   const existing = await getAdminTimesheetById(id);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Project Managers may only act on timesheets for projects they're staffed on.
-  if (session.role === "Project Manager") {
-    const scope = new Set(await getMemberStaffedProjectCodes(session.memberCode));
-    if (!scope.has(existing.projectCode)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-  }
-
   try {
     // Content edit: rewrite the week's day hours/tasks, and optionally move it
     // to a different staffing (project) and/or week. Member and status are
@@ -82,20 +73,11 @@ export async function PATCH(
       // member — this is a re-filing, not a re-assignment.
       let staffingRecordId = existing.staffingRecordId;
       let staffingCode = existing.staffingCode;
-      let projectCode = existing.projectCode;
       if (d.staffingRecordId && d.staffingRecordId !== existing.staffingRecordId) {
         const st = await getStaffingById(d.staffingRecordId);
         if (!st) return NextResponse.json({ error: "Unknown staffing." }, { status: 400 });
         staffingRecordId = st.id;
         staffingCode = st.staffingCode;
-        projectCode = st.projectCode;
-        // A Project Manager can only move it onto one of their own projects.
-        if (session.role === "Project Manager") {
-          const scope = new Set(await getMemberStaffedProjectCodes(session.memberCode));
-          if (!scope.has(projectCode)) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-          }
-        }
       }
       // Week: snap any picked date to that week's Monday; end is the Friday.
       const start = d.startDate ? mondayOf(d.startDate) : existing.startDate ?? "";
