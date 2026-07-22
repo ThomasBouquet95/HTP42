@@ -15,6 +15,17 @@ body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }
 
+/* Accessibility baseline: a visible keyboard-focus ring for any interactive
+   element that doesn't define its own. `:where()` keeps specificity at 0 so
+   component-level focus styles (Tailwind `focus-visible:ring…` /
+   `focus:outline-none`) always win — this only fills the gap for raw links and
+   native controls. Mouse clicks are unaffected (`:focus-visible` only). */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid rgba(30, 145, 249, 0.6);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 /* Demo mode: blurs every element tagged with .demo-blur when the admin
    has flipped the toggle in /admin. The data attribute is set on <html>
    by components/demo-mode.tsx so the rule applies app-wide regardless of
@@ -31,4 +42,38 @@ html[data-demo="on"] .demo-blur {
 html[data-demo="on"] .demo-blur:hover,
 html[data-demo="on"] .demo-blur:focus-within {
   filter: blur(0);
+}
+
+/* Modal/dialog entrance — a soft fade for the backdrop and a small rise+scale
+   for the panel. Kept subtle so it reads as polish, not motion. Honours the
+   OS "reduce motion" preference. */
+@keyframes htp-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes htp-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.htp-backdrop-in {
+  animation: htp-fade-in 140ms ease-out;
+}
+.htp-panel-in {
+  animation: htp-panel-in 170ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .htp-backdrop-in,
+  .htp-panel-in {
+    animation: none;
+  }
 }

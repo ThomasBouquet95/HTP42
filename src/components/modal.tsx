@@ -49,7 +49,7 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-start sm:p-6">
       <div
-        className="fixed inset-0 bg-slate-900/40"
+        className="htp-backdrop-in fixed inset-0 bg-slate-900/40 backdrop-blur-[1px]"
         onClick={busy ? undefined : onClose}
         aria-hidden="true"
       />
@@ -57,7 +57,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`relative sm:my-6 flex w-full ${sizeClass} max-h-[92vh] sm:max-h-[85vh] flex-col rounded-t-xl sm:rounded-lg bg-white shadow-xl ring-1 ring-slate-200`}
+        className={`htp-panel-in relative sm:my-6 flex w-full ${sizeClass} max-h-[92vh] sm:max-h-[85vh] flex-col rounded-t-xl sm:rounded-lg bg-white shadow-xl ring-1 ring-slate-200`}
       >
         <div className="flex items-start justify-between border-b border-slate-100 px-4 py-3 sm:px-5">
           <h2 className="text-sm sm:text-base font-semibold text-slate-900">{title}</h2>
@@ -125,7 +125,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 focus-visible:ring-offset-1 disabled:opacity-60"
           >
             Cancel
           </button>
@@ -133,10 +133,10 @@ export function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={busy}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60 ${
+            className={`rounded-md px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-60 ${
               confirmTone === "danger"
-                ? "bg-red-600 hover:bg-red-700"
-                : "bg-brand-600 hover:bg-brand-700"
+                ? "bg-red-600 hover:bg-red-700 focus-visible:ring-red-500/50"
+                : "bg-brand-600 hover:bg-brand-700 focus-visible:ring-brand-500/50"
             }`}
           >
             {busy ? "Working…" : confirmLabel}

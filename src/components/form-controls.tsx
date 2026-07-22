@@ -9,6 +9,15 @@ type Common = {
   className?: string;
 };
 
+// Single source of truth for text-like control styling so inputs, selects and
+// textareas stay pixel-identical. Adds a hover border, a softer 2px focus ring
+// and a clear disabled state. Purely presentational.
+const CONTROL_BASE =
+  "mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900 shadow-sm transition-colors placeholder:text-slate-400 hover:border-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400";
+const CONTROL_READONLY = "bg-slate-50 text-slate-500 hover:border-slate-300";
+
+const LABEL_CLS = "text-[11px] uppercase tracking-wide font-medium text-slate-500";
+
 export function FormField({
   label,
   value,
@@ -21,18 +30,20 @@ export function FormField({
   inputClassName,
   hint,
   className,
+  disabled,
 }: Common & {
   value: string;
   onChange: (v: string) => void;
   type?: string;
   readOnly?: boolean;
+  disabled?: boolean;
   placeholder?: string;
   maxLength?: number;
   inputClassName?: string;
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+      <span className={LABEL_CLS}>
         {label}
         {required ? <span className="text-red-500 ml-0.5">*</span> : null}
       </span>
@@ -42,12 +53,11 @@ export function FormField({
         onChange={(e) => onChange(e.target.value)}
         required={required}
         readOnly={readOnly}
+        disabled={disabled}
         placeholder={placeholder}
         maxLength={maxLength}
         step={type === "number" ? "any" : undefined}
-        className={`mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 ${
-          readOnly ? "bg-slate-50 text-slate-500" : ""
-        } ${inputClassName ?? ""}`}
+        className={`${CONTROL_BASE} ${readOnly ? CONTROL_READONLY : ""} ${inputClassName ?? ""}`}
       />
       {hint ? <div className="mt-1 text-xs">{hint}</div> : null}
     </label>
@@ -71,7 +81,7 @@ export function FormSelect({
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+      <span className={LABEL_CLS}>
         {label}
         {required ? <span className="text-red-500 ml-0.5">*</span> : null}
       </span>
@@ -79,7 +89,7 @@ export function FormSelect({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 disabled:bg-slate-50 disabled:text-slate-400"
+        className={`${CONTROL_BASE} cursor-pointer`}
       >
         {children}
       </select>
@@ -96,6 +106,7 @@ export function FormTextarea({
   placeholder,
   hint,
   className,
+  required,
 }: Common & {
   value: string;
   onChange: (v: string) => void;
@@ -104,13 +115,16 @@ export function FormTextarea({
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">{label}</span>
+      <span className={LABEL_CLS}>
+        {label}
+        {required ? <span className="text-red-500 ml-0.5">*</span> : null}
+      </span>
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={rows}
         placeholder={placeholder}
-        className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+        className={`${CONTROL_BASE} resize-y`}
       />
       {hint ? <div className="mt-1 text-xs">{hint}</div> : null}
     </label>
@@ -129,16 +143,16 @@ export function buttonClasses(
   className?: string,
 ): string {
   const base =
-    "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 focus-visible:ring-offset-1 active:scale-[.98] disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100";
   const sz = size === "sm" ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-sm";
   const toneCls =
     tone === "primary"
-      ? "bg-brand-600 text-white hover:bg-brand-700"
+      ? "bg-brand-600 text-white shadow-sm hover:bg-brand-700"
       : tone === "danger"
-      ? "border border-red-300 bg-white text-red-700 hover:bg-red-50"
+      ? "border border-red-300 bg-white text-red-700 hover:bg-red-50 focus-visible:ring-red-500/40"
       : tone === "ghost"
       ? "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-      : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50";
+      : "border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-400";
   return `${base} ${sz} ${toneCls} ${className ?? ""}`;
 }
 
