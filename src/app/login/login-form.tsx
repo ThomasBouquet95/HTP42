@@ -17,8 +17,17 @@ export default function LoginForm() {
   const error = errorCode ? errorMessages[errorCode] ?? "Something went wrong. Please try again." : null;
 
   return (
-    <main className="min-h-[100dvh] flex items-center justify-center p-6">
-      <div className="w-full max-w-md bg-white rounded-xl shadow-sm border border-slate-200 p-8">
+    <main className="relative min-h-[100dvh] flex items-center justify-center p-6 bg-gradient-to-br from-[#0a2547] via-[#0d3a68] to-[#08447e]">
+      {/* Soft brand glow behind the card for depth on the dark backdrop. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-70"
+        style={{
+          background:
+            "radial-gradient(60% 50% at 50% 30%, rgba(30,145,249,0.35) 0%, rgba(30,145,249,0) 70%)",
+        }}
+      />
+      <div className="relative w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl ring-1 ring-white/10">
         <div className="flex flex-col items-center text-center">
           <Image
             src="/htp42-logo-full.png"
@@ -47,6 +56,9 @@ export default function LoginForm() {
           Access is restricted to active network members.
         </p>
       </div>
+      <p className="absolute bottom-5 left-0 right-0 text-center text-xs text-white/50">
+        HealthTech Partners 42
+      </p>
     </main>
   );
 }
