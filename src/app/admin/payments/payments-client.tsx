@@ -1510,6 +1510,13 @@ export function PaymentsClient({
                   clientId: "",
                   memberId: "",
                   memberInvoiceId: "",
+                  // "Scheduled" isn't used for inflows (receipts) — swap it for
+                  // the natural pending state so we never save an Inflow as
+                  // Scheduled.
+                  paymentStatus:
+                    dir === "Inflow" && prev.paymentStatus === "Scheduled"
+                      ? "To be paid"
+                      : prev.paymentStatus,
                 }));
               }}
               required
@@ -1726,12 +1733,21 @@ export function PaymentsClient({
               onChange={(v) => updateField("paymentStatus", v)}
             >
               {/* Rejected is only set from the Review dashboard; keep it out of
-                  the edit dropdown unless the payment is already Rejected. */}
+                  the edit dropdown unless the payment is already Rejected.
+                  "Scheduled" isn't used for inflows (receipts) — hide it there
+                  unless a legacy row already carries it. */}
               {PAYMENT_STATUSES.filter(
                 (s) => s !== "Rejected" || form.paymentStatus === "Rejected",
-              ).map((s) => (
-                <option key={s} value={s}>{statusLabel(s, form.direction)}</option>
-              ))}
+              )
+                .filter(
+                  (s) =>
+                    s !== "Scheduled" ||
+                    form.direction !== "Inflow" ||
+                    form.paymentStatus === "Scheduled",
+                )
+                .map((s) => (
+                  <option key={s} value={s}>{statusLabel(s, form.direction)}</option>
+                ))}
             </FormSelect>
             <FormField
               label="Payment terms"
@@ -2093,7 +2109,7 @@ function StatusSelect({
   return (
     <span className="relative inline-flex w-full items-center">
       <select
-        value={value || "Scheduled"}
+        value={value || (direction === "Inflow" ? "To be paid" : "Scheduled")}
         onChange={(e) => onChange(e.target.value)}
         disabled={saving}
         className={`block w-full appearance-none rounded-full border px-2.5 py-1 pr-6 text-[11px] font-medium transition-colors ${toneCls} ${
@@ -2101,10 +2117,13 @@ function StatusSelect({
         } focus:outline-none focus:ring-2 focus:ring-brand-500/30`}
       >
         {/* Rejected is set only from the Review dashboard; keep it out of the
-            quick dropdown unless the payment is already Rejected. */}
-        {PAYMENT_STATUSES.filter((s) => s !== "Rejected" || value === "Rejected").map((s) => (
-          <option key={s} value={s}>{statusLabel(s, direction)}</option>
-        ))}
+            quick dropdown unless the payment is already Rejected. "Scheduled"
+            isn't used for inflows — hide it there unless a legacy row has it. */}
+        {PAYMENT_STATUSES.filter((s) => s !== "Rejected" || value === "Rejected")
+          .filter((s) => s !== "Scheduled" || direction !== "Inflow" || value === "Scheduled")
+          .map((s) => (
+            <option key={s} value={s}>{statusLabel(s, direction)}</option>
+          ))}
       </select>
       <span className="pointer-events-none absolute right-1.5 inline-flex h-3 w-3 items-center justify-center text-[10px] opacity-70">
         {saving ? <Spinner /> : "▾"}
