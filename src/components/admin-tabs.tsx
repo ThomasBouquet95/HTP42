@@ -124,7 +124,7 @@ export async function AdminTabs({ active }: { active: PageKey }) {
     <div className="mb-5 space-y-2">
       {/* Category row (pill style) + demo toggle. */}
       <div className="flex items-center justify-between gap-3">
-        <nav className="flex items-center gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1">
+        <nav className="flex items-center gap-1 overflow-x-auto no-scrollbar rounded-lg bg-slate-100 p-1">
           {categories.map((c) => {
             const isActive = c.key === activeCategory.key;
             return (
@@ -150,7 +150,7 @@ export async function AdminTabs({ active }: { active: PageKey }) {
 
       {/* Sub-page row for the active category. */}
       {showSubRow ? (
-        <nav className="flex items-center gap-1 border-b border-slate-200 -mb-px overflow-x-auto">
+        <nav className="flex items-center gap-1 border-b border-slate-200 -mb-px overflow-x-auto no-scrollbar">
           {visiblePages.map((p) => {
             const isActive = p.key === active;
             return (

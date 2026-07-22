@@ -58,7 +58,7 @@ export function ReadOnlyTimesheet({ timesheet }: { timesheet: TimesheetRecord })
 
   return (
     <div className="space-y-3">
-      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>

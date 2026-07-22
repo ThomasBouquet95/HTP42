@@ -139,7 +139,7 @@ export function RolesClient({
         <div className={`rounded-lg border px-4 py-2 text-xs ${banner.cls}`}>{banner.text}</div>
       ) : null}
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>

@@ -106,7 +106,9 @@ export function IconButton({
       : tone === "brand"
       ? "border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100"
       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900";
-  const shared = `inline-flex h-7 w-7 items-center justify-center rounded-md border ${cls}`;
+  // Larger tap target on touch screens (36px) while keeping the compact 28px
+  // size on desktop where rows are dense and pointer-precise.
+  const shared = `inline-flex h-9 w-9 sm:h-7 sm:w-7 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 ${cls}`;
   if (href) {
     return (
       <Link href={href} target={target} title={title} aria-label={title} className={shared}>

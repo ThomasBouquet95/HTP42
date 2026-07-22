@@ -17,7 +17,7 @@ export default function LoginForm() {
   const error = errorCode ? errorMessages[errorCode] ?? "Something went wrong. Please try again." : null;
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-6">
+    <main className="min-h-[100dvh] flex items-center justify-center p-6">
       <div className="w-full max-w-md bg-white rounded-xl shadow-sm border border-slate-200 p-8">
         <div className="flex flex-col items-center text-center">
           <Image

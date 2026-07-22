@@ -60,12 +60,12 @@ export function AppHeader({
       {/* Mounted globally on every authenticated page (the header itself is)
           so we get presence pings as soon as someone opens any route. */}
       <Heartbeat />
-      <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
           <Link
             href="/dashboard"
             aria-label="HealthTech Partners 42, home"
-            className="flex items-center py-3"
+            className="flex items-center py-3 shrink-0"
           >
             <Image
               src="/htp42-mark.png"
@@ -76,14 +76,16 @@ export function AppHeader({
               className="h-7 w-auto"
             />
           </Link>
-          <nav className="flex items-center gap-1 text-sm">
+          {/* Nav scrolls horizontally within the row on small screens so it
+              never pushes the account actions off-screen. */}
+          <nav className="flex items-center gap-0.5 sm:gap-1 text-sm min-w-0 overflow-x-auto no-scrollbar">
             {items.map((item) => {
               const active = item.match(pathname);
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`relative px-3 py-5 text-sm font-medium transition-colors ${
+                  className={`relative px-2.5 sm:px-3 py-3 sm:py-5 text-sm font-medium whitespace-nowrap transition-colors ${
                     active
                       ? "text-brand-600"
                       : "text-slate-600 hover:text-slate-900"
@@ -101,7 +103,7 @@ export function AppHeader({
             })}
           </nav>
         </div>
-        <div className="flex items-center gap-3 text-sm">
+        <div className="flex items-center gap-2 sm:gap-3 text-sm shrink-0">
           {admin ? <ReportIssueButton /> : null}
           <span className="text-slate-600 hidden sm:inline">
             {session.fullName || session.email} ·{" "}

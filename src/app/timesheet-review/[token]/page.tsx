@@ -39,7 +39,7 @@ export default async function TimesheetReviewPage({
   const preset = action === "reject" ? "reject" : action === "approve" ? "approve" : undefined;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-[100dvh] bg-slate-50">
       <div className="mx-auto max-w-2xl px-4 py-10">
         <div className="mb-6">
           <div className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">HTP42</div>

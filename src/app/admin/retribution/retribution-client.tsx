@@ -332,7 +332,7 @@ export function RetributionClient({
   return (
     <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       {/* Project list */}
-      <div className="self-start overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="self-start overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <div className="border-b border-slate-100 p-2">
           <SearchInput
             value={search}
@@ -418,7 +418,7 @@ export function RetributionClient({
             </div>
 
             {/* Rows */}
-            <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
               <table className="w-full text-xs">
                 <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                   <tr>
@@ -515,7 +515,7 @@ export function RetributionClient({
                 <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
                   Per person
                 </h3>
-                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
                   <ul className="divide-y divide-slate-100">
                     {perPerson.map((p) => (
                       <li key={p.key} className="flex items-center gap-3 px-3 py-2.5">

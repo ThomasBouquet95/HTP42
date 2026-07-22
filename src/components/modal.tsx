@@ -57,7 +57,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`htp-panel-in relative sm:my-6 flex w-full ${sizeClass} max-h-[92vh] sm:max-h-[85vh] flex-col rounded-t-xl sm:rounded-lg bg-white shadow-xl ring-1 ring-slate-200`}
+        className={`htp-panel-in relative sm:my-6 flex w-full ${sizeClass} max-h-[92dvh] sm:max-h-[85dvh] flex-col rounded-t-xl sm:rounded-lg bg-white shadow-xl ring-1 ring-slate-200`}
       >
         <div className="flex items-start justify-between border-b border-slate-100 px-4 py-3 sm:px-5">
           <h2 className="text-sm sm:text-base font-semibold text-slate-900">{title}</h2>
@@ -82,7 +82,7 @@ export function Modal({
           {children}
         </div>
         {footer ? (
-          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-4 py-2.5 sm:px-5 sm:py-3 rounded-b-lg">
+          <div className="pb-safe flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-4 py-2.5 sm:px-5 sm:py-3 sm:rounded-b-lg">
             {footer}
           </div>
         ) : null}

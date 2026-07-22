@@ -14,7 +14,7 @@ const TABS: Array<{ key: TabKey; href: string; label: string }> = [
 export function TimesheetsTabs({ active }: { active: TabKey }) {
   return (
     <div className="mb-5 border-b border-slate-200">
-      <nav className="flex items-center gap-1 -mb-px overflow-x-auto">
+      <nav className="flex items-center gap-1 -mb-px overflow-x-auto no-scrollbar">
         {TABS.map((t) => {
           const isActive = t.key === active;
           return (

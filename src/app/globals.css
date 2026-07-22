@@ -15,6 +15,37 @@ body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }
 
+/* iOS Safari zooms the page in whenever a focused input's font is < 16px.
+   Our controls are visually compact (text-xs = 12px), which triggers that
+   jarring zoom on every field tap. Force a 16px font on form controls on
+   small screens only — desktop keeps the compact size. This is the
+   accessibility-friendly fix (pinch-zoom stays enabled). */
+@media (max-width: 640px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Safe-area helper for the iPhone home indicator, used by the bottom-sheet
+   modal footer. `max()` keeps the element's normal padding on screens without
+   an inset (so it never collapses to zero) while clearing the indicator when
+   there is one. */
+.pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom), 0.75rem);
+}
+
+/* Horizontally-scrollable rows (nav/tab bars) that shouldn't show a scrollbar
+   on mobile but must still be swipeable. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Accessibility baseline: a visible keyboard-focus ring for any interactive
    element that doesn't define its own. `:where()` keeps specificity at 0 so
    component-level focus styles (Tailwind `focus-visible:ring…` /
