@@ -13,12 +13,29 @@ import {
   type ChartScope,
 } from "../payments/payment-charts";
 import { SegmentedTabs } from "@/components/filters";
+import { buildIncomeFlow } from "./income-flow";
+import { IncomeSankey } from "./income-sankey";
 
-export function CockpitClient({ payments }: { payments: PaymentRecord[] }) {
+export function CockpitClient({
+  payments,
+  clients,
+}: {
+  payments: PaymentRecord[];
+  clients: { id: string; name: string }[];
+}) {
   const [scope, setScope] = useState<ChartScope>("all");
+
+  const clientNameById = useMemo(
+    () => new Map(clients.map((c) => [c.id, c.name])),
+    [clients],
+  );
 
   const totals = useMemo(() => buildTotals(payments), [payments]);
   const monthly = useMemo(() => buildMonthly(payments, scope), [payments, scope]);
+  const incomeFlow = useMemo(
+    () => buildIncomeFlow(payments, clientNameById, scope),
+    [payments, clientNameById, scope],
+  );
   const breakdown = useMemo(
     () => buildStatusBreakdown(payments, scope),
     [payments, scope],
@@ -58,6 +75,12 @@ export function CockpitClient({ payments }: { payments: PaymentRecord[] }) {
           ]}
         />
       </div>
+
+      {/* Income-statement flow: revenue by client -> gross revenue -> cost
+          items + net result. Full width so the ribbons have room. */}
+      <ChartCard title="Income statement — revenue by client to net result (EUR)">
+        <IncomeSankey flow={incomeFlow} />
+      </ChartCard>
 
       {/* Charts. Two wide charts on top (they need horizontal room to
           breathe), the status breakdown spans full width below. */}
