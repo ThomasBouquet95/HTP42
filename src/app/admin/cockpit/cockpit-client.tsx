@@ -24,21 +24,40 @@ export function CockpitClient({
   clients: { id: string; name: string }[];
 }) {
   const [scope, setScope] = useState<ChartScope>("all");
+  const [year, setYear] = useState<string>("all");
 
   const clientNameById = useMemo(
     () => new Map(clients.map((c) => [c.id, c.name])),
     [clients],
   );
 
-  const totals = useMemo(() => buildTotals(payments), [payments]);
-  const monthly = useMemo(() => buildMonthly(payments, scope), [payments, scope]);
+  // Distinct years present (by invoice date), newest first, for the selector.
+  const yearOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of payments) {
+      const y = (p.invoiceDate ?? "").slice(0, 4);
+      if (y) set.add(y);
+    }
+    return [...set].sort((a, b) => b.localeCompare(a));
+  }, [payments]);
+
+  // Everything downstream works off the year-scoped slice. A specific year
+  // keeps only payments dated in it (undated rows drop out — they can't be
+  // attributed to a period); "all" keeps everything.
+  const scopedPayments = useMemo(() => {
+    if (year === "all") return payments;
+    return payments.filter((p) => (p.invoiceDate ?? "").slice(0, 4) === year);
+  }, [payments, year]);
+
+  const totals = useMemo(() => buildTotals(scopedPayments), [scopedPayments]);
+  const monthly = useMemo(() => buildMonthly(scopedPayments, scope), [scopedPayments, scope]);
   const incomeFlow = useMemo(
-    () => buildIncomeFlow(payments, clientNameById, scope),
-    [payments, clientNameById, scope],
+    () => buildIncomeFlow(scopedPayments, clientNameById, scope),
+    [scopedPayments, clientNameById, scope],
   );
   const breakdown = useMemo(
-    () => buildStatusBreakdown(payments, scope),
-    [payments, scope],
+    () => buildStatusBreakdown(scopedPayments, scope),
+    [scopedPayments, scope],
   );
 
   return (
@@ -63,8 +82,8 @@ export function CockpitClient({
         />
       </div>
 
-      {/* Scope toggle */}
-      <div className="flex items-center gap-3">
+      {/* Scope toggle + year selector */}
+      <div className="flex flex-wrap items-center gap-3">
         <SegmentedTabs
           value={scope}
           onChange={setScope}
@@ -74,6 +93,24 @@ export function CockpitClient({
             { value: "executed", label: "Executed only" },
           ]}
         />
+        {yearOptions.length > 0 ? (
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="uppercase tracking-wide">Year</span>
+            <select
+              value={year}
+              onChange={(e) => setYear(e.target.value)}
+              aria-label="Filter by year"
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            >
+              <option value="all">All years</option>
+              {yearOptions.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
 
       {/* Income-statement flow: revenue by client -> gross revenue -> cost
