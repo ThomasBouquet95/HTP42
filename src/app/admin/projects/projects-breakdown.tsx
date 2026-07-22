@@ -159,6 +159,7 @@ function ProjectCard({
         <Field label="Total" value={money(p.totalAmount, p.currency)} />
         <Field label="Start" value={fmtDate(p.startDate)} />
         <Field label="End" value={fmtDate(p.endDate)} />
+        {p.purchaseOrder ? <Field label="PO" value={p.purchaseOrder} /> : null}
       </dl>
 
       {open ? (

@@ -79,6 +79,9 @@ export const FIELDS = {
     totalAmountEur: "Total Amount EUR",
     status: "Status",
     paymentSchedule: "Payment Schedule",
+    // Optional client purchase-order reference. Lazily created via meta API —
+    // see ensureProjectsSchema.
+    purchaseOrder: "Purchase Order",
   },
   clients: {
     clientCode: "Client Code",
@@ -691,6 +694,8 @@ export type ProjectRecord = {
   totalAmountEur: number | null;
   status: ProjectStatus | "";
   paymentSchedule: PaymentScheduleEntry[];
+  // Optional client purchase-order reference.
+  purchaseOrder: string;
 };
 
 export type PaymentRecord = {
@@ -2280,6 +2285,7 @@ function projectFromRecord(r: AirtableRecord<FieldSet>): ProjectRecord {
     totalAmountEur: numOrNull(r, FIELDS.projects.totalAmountEur),
     status: str(r, FIELDS.projects.status) as ProjectStatus | "",
     paymentSchedule: parsePaymentSchedule(str(r, FIELDS.projects.paymentSchedule)),
+    purchaseOrder: str(r, FIELDS.projects.purchaseOrder),
   };
 }
 
@@ -2313,6 +2319,7 @@ export type ProjectInput = {
   fxToEur: number | null;
   status: ProjectStatus | "";
   paymentSchedule: PaymentScheduleEntry[];
+  purchaseOrder: string;
 };
 
 function serialisePaymentSchedule(entries: PaymentScheduleEntry[]): string | null {
@@ -2336,10 +2343,49 @@ function projectFields(input: ProjectInput): Record<string, unknown> {
     [FIELDS.projects.fxToEur]: input.fxToEur,
     [FIELDS.projects.status]: input.status === "" ? null : input.status,
     [FIELDS.projects.paymentSchedule]: serialisePaymentSchedule(input.paymentSchedule),
+    [FIELDS.projects.purchaseOrder]: input.purchaseOrder || null,
   };
 }
 
+// The Projects table pre-exists; lazily add the optional "Purchase Order" text
+// field so writes can set it. Idempotent + cached.
+let projectsSchemaReady = false;
+export async function ensureProjectsSchema(): Promise<boolean> {
+  if (projectsSchemaReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.projects);
+    if (!table) return false;
+    if (table.fields.some((f) => f.name === FIELDS.projects.purchaseOrder)) {
+      projectsSchemaReady = true;
+      return true;
+    }
+    const create = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: FIELDS.projects.purchaseOrder, type: "singleLineText" }),
+      },
+    );
+    if (create.ok) projectsSchemaReady = true;
+    return projectsSchemaReady;
+  } catch (e) {
+    console.error("ensureProjectsSchema failed:", e);
+    return false;
+  }
+}
+
 export async function createProject(input: ProjectInput): Promise<string> {
+  await ensureProjectsSchema();
   const [created] = await base(TABLES.projects).create([
     { fields: projectFields(input) as FieldSet },
   ]);
@@ -2361,6 +2407,7 @@ export async function updateProjectStatus(
 }
 
 export async function updateProject(recordId: string, input: ProjectInput): Promise<void> {
+  await ensureProjectsSchema();
   await base(TABLES.projects).update([
     { id: recordId, fields: projectFields(input) as FieldSet },
   ]);

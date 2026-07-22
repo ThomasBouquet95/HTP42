@@ -72,6 +72,7 @@ const schema = z.object({
   fxToEur: nullableNumber,
   status: z.union([z.enum(PROJECT_STATUSES as [string, ...string[]]), z.literal("")]).default(""),
   paymentSchedule: paymentScheduleSchema,
+  purchaseOrder: z.string().max(200).default(""),
 });
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -108,6 +109,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
           ? { kind: "milestone" as const, milestone: e.milestone, percent: e.percent, date: e.date ?? null }
           : { kind: "month" as const, month: e.month, percent: e.percent },
       ),
+      purchaseOrder: d.purchaseOrder,
     });
     return NextResponse.json({ ok: true });
   } catch (e) {

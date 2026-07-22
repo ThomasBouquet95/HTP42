@@ -65,6 +65,7 @@ type FormState = {
   fxToEur: string;
   status: string;
   paymentSchedule: PaymentScheduleEntry[];
+  purchaseOrder: string;
 };
 
 function emptyForm(defaultYear: number): FormState {
@@ -82,6 +83,7 @@ function emptyForm(defaultYear: number): FormState {
     fxToEur: "",
     status: "",
     paymentSchedule: [],
+    purchaseOrder: "",
   };
 }
 
@@ -130,6 +132,7 @@ function fromRecord(p: ProjectRecord): FormState {
     fxToEur: p.fxToEur == null ? "" : String(p.fxToEur),
     status: p.status,
     paymentSchedule: p.paymentSchedule.slice(),
+    purchaseOrder: p.purchaseOrder,
   };
 }
 
@@ -404,6 +407,7 @@ export function ProjectsAdminClient({
         fxToEur: form.fxToEur === "" ? null : Number(form.fxToEur),
         status: form.status,
         paymentSchedule: form.paymentSchedule,
+        purchaseOrder: form.purchaseOrder,
       };
       const url = creating ? "/api/admin/projects" : `/api/admin/projects/${editing!.id}`;
       const method = creating ? "POST" : "PUT";
@@ -855,6 +859,12 @@ export function ProjectsAdminClient({
               onChange={(v) => updateField("fxToEur", v)}
               type="number"
             />
+            <FormField
+              label="Purchase order (optional)"
+              value={form.purchaseOrder}
+              onChange={(v) => updateField("purchaseOrder", v)}
+              className="sm:col-span-3"
+            />
           </div>
         </section>
 
@@ -1250,6 +1260,7 @@ function ProjectDetails({
         <Field label="Total amount EUR" value={money(p.totalAmountEur, "EUR")} blur />
         <Field label="Start date" value={p.startDate ?? ""} />
         <Field label="End date" value={p.endDate ?? ""} />
+        <Field label="Purchase order" value={p.purchaseOrder} />
       </dl>
 
       {p.objective ? (

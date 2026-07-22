@@ -99,6 +99,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         ? status
         : "") as ProjectStatus | "",
       paymentSchedule: [],
+      purchaseOrder: "",
     });
   } catch (e) {
     return apiError(e, "convert the opportunity to a project");
