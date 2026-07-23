@@ -6189,9 +6189,70 @@ export async function updateContractFields(
 // updateContractFields' field handling — every key is optional, so the
 // caller can either create a fully blank shell or pre-populate the
 // fields extracted from an uploaded PDF.
+// Ensure every canonical contract type exists as a choice on the "Contract
+// Type" single-select. Like ensurePaymentStatusChoices, the PAT can't create
+// select options via a data write (typecast), so a brand-new type such as
+// "Purchase Order" is added here via the meta API before the first write that
+// uses it. Cached after success.
+let contractTypeChoicesReady = false;
+export async function ensureContractTypeChoices(): Promise<void> {
+  if (contractTypeChoicesReady) return;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      tables: Array<{
+        id: string;
+        name: string;
+        fields: Array<{
+          id: string;
+          name: string;
+          type: string;
+          options?: { choices?: Array<{ id?: string; name: string }> };
+        }>;
+      }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.contracts);
+    const field = table?.fields.find((f) => f.name === FIELDS.contracts.contractType);
+    if (!field || (field.type !== "singleSelect" && field.type !== "multipleSelects")) {
+      contractTypeChoicesReady = true; // free-text or absent — nothing to pre-create
+      return;
+    }
+    const existing = field.options?.choices ?? [];
+    const have = new Set(existing.map((c) => c.name));
+    const missing = CONTRACT_TYPES.filter((t) => !have.has(t));
+    if (missing.length === 0) {
+      contractTypeChoicesReady = true;
+      return;
+    }
+    const choices = [
+      ...existing.map((c) => ({ id: c.id, name: c.name })),
+      ...missing.map((name) => ({ name })),
+    ];
+    const patch = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table!.id}/fields/${field.id}`,
+      {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ options: { choices } }),
+      },
+    );
+    if (patch.ok) contractTypeChoicesReady = true;
+    else console.error("ensureContractTypeChoices: patch failed:", await patch.text().catch(() => ""));
+  } catch (e) {
+    console.error("ensureContractTypeChoices failed:", e);
+  }
+}
+
 export async function createContract(
   fields: ContractEditableFields,
 ): Promise<ContractRecord> {
+  // Make sure the (possibly new) contract type is a valid select option first.
+  await ensureContractTypeChoices();
   const updates: Record<string, unknown> = {};
   const setText = (key: keyof typeof FIELDS.contracts, value: string | undefined) => {
     if (value === undefined || value === "") return;

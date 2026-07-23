@@ -814,6 +814,7 @@ function TypePill({ type }: { type: string }) {
   if (t === "msa" || t.includes("msa")) cls = "bg-violet-50 text-violet-700 border-violet-200";
   else if (t === "nda" || t === "cda") cls = "bg-amber-50 text-amber-700 border-amber-200";
   else if (t.includes("sow") || t === "sow") cls = "bg-sky-50 text-sky-700 border-sky-200";
+  else if (t.includes("purchase order") || t === "po") cls = "bg-indigo-50 text-indigo-700 border-indigo-200";
   else if (t.includes("service")) cls = "bg-emerald-50 text-emerald-700 border-emerald-200";
   else if (t.includes("framework")) cls = "bg-teal-50 text-teal-700 border-teal-200";
   return (
@@ -2271,8 +2272,8 @@ function ContractDetailModal({
                 <ClientPicker
                   label="Client"
                   hint={
-                    typeIsSow
-                      ? "SOW covers one client + one project."
+                    typeLinksProject
+                      ? "SOW / PO covers one client + one project."
                       : "MSA / NDA covers a client across all projects."
                   }
                   clients={clients}
@@ -2285,8 +2286,8 @@ function ContractDetailModal({
                 <MemberPicker
                   label="Network member"
                   hint={
-                    typeIsSow
-                      ? "SOW covers one member + one project (one staffing)."
+                    typeLinksProject
+                      ? "SOW / PO covers one member + one project (one staffing)."
                       : "MSA / NDA covers a network member across all projects."
                   }
                   members={members}
