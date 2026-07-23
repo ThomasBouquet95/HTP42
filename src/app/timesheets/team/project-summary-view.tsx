@@ -10,7 +10,7 @@ import { WeekChip } from "@/components/week-chip";
 import { DateRangeChip } from "@/components/date-range-chip";
 import { MemberInfoModal } from "@/components/member-info-modal";
 
-type Props = { summary: ProjectSummary };
+type Props = { summary: ProjectSummary; variant?: "full" | "embedded" };
 
 const HOURS_PER_DAY = 8;
 
@@ -33,8 +33,9 @@ function strongestRole(m: ProjectTeamMember): ProjectRole | "" {
   return best;
 }
 
-export function ProjectSummaryView({ summary }: Props) {
+export function ProjectSummaryView({ summary, variant = "full" }: Props) {
   const { project, members, totals } = summary;
+  const embedded = variant === "embedded";
   const [expanded, setExpanded] = useState<string | null>(null);
   const [tab, setTab] = useState<"members" | "weeks">("members");
   const [memberOpen, setMemberOpen] = useState<ProjectTeamMember | null>(null);
@@ -60,63 +61,119 @@ export function ProjectSummaryView({ summary }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Header card: name, status, dates on the left; KPI tiles on the right;
-          progress bar across the bottom. */}
-      <section className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              {project.status ? <StatusPill status={project.status} /> : null}
-              <DateRangeChip startIso={project.startDate} endIso={project.endDate} size="sm" />
+      {embedded ? (
+        /* Compact "whole project" totals + exports. The card above already
+           shows the project identity, the viewer's own time, and the team, so
+           we deliberately don't repeat those here — this bar is only the
+           project-wide roll-up, clearly labelled so it isn't confused with the
+           viewer's personal numbers. */
+        <section className="rounded-lg border border-slate-200 bg-white p-3 sm:p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Whole project
+              </span>
+              <MiniKpi label="Team" value={String(members.length)} />
+              <MiniKpi
+                label="Allocated"
+                value={totals.allocatedDays > 0 ? `${totals.allocatedDays.toFixed(1)} d` : "N/A"}
+              />
+              <MiniKpi
+                label="Logged"
+                value={`${totals.actualDays.toFixed(1)} d`}
+                tone={overall ? "warn" : undefined}
+              />
+              <MiniKpi
+                label="Progress"
+                value={allocatedHours > 0 ? `${progressPct.toFixed(0)}%` : "N/A"}
+                tone={overall ? "warn" : allocatedHours > 0 ? "ok" : undefined}
+              />
             </div>
-            <h3 className="mt-1.5 text-lg font-semibold text-slate-900 truncate">
-              {project.projectName || project.projectCode}
-            </h3>
+            <div className="flex items-center gap-2">
+              <Button tone="secondary" size="sm" onClick={() => exportCsv(summary)}>
+                Export CSV
+              </Button>
+              <ButtonLink
+                href={`/timesheets/team/print?project=${encodeURIComponent(project.projectCode)}`}
+                tone="secondary"
+                size="sm"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Export PDF
+              </ButtonLink>
+            </div>
           </div>
-          <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4 lg:w-auto">
-            <KpiTile label="Team" value={String(members.length)} />
-            <KpiTile
-              label="Allocated"
-              value={totals.allocatedDays > 0 ? `${totals.allocatedDays.toFixed(1)} d` : "N/A"}
-            />
-            <KpiTile
-              label="Logged"
-              value={`${totals.actualDays.toFixed(1)} d`}
-              tone={overall ? "warn" : undefined}
-            />
-            <KpiTile
-              label="Progress"
-              value={allocatedHours > 0 ? `${progressPct.toFixed(0)}%` : "N/A"}
-              tone={overall ? "warn" : allocatedHours > 0 ? "ok" : undefined}
-            />
+          {allocatedHours > 0 ? (
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className={`h-full ${overall ? "bg-amber-500" : "bg-brand-600"}`}
+                style={{ width: `${Math.max(2, progressPct)}%` }}
+              />
+            </div>
+          ) : null}
+        </section>
+      ) : (
+        /* Header card: name, status, dates on the left; KPI tiles on the right;
+            progress bar across the bottom. */
+        <section className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                {project.status ? <StatusPill status={project.status} /> : null}
+                <DateRangeChip startIso={project.startDate} endIso={project.endDate} size="sm" />
+              </div>
+              <h3 className="mt-1.5 text-lg font-semibold text-slate-900 truncate">
+                {project.projectName || project.projectCode}
+              </h3>
+            </div>
+            <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4 lg:w-auto">
+              <KpiTile label="Team" value={String(members.length)} />
+              <KpiTile
+                label="Allocated"
+                value={totals.allocatedDays > 0 ? `${totals.allocatedDays.toFixed(1)} d` : "N/A"}
+              />
+              <KpiTile
+                label="Logged"
+                value={`${totals.actualDays.toFixed(1)} d`}
+                tone={overall ? "warn" : undefined}
+              />
+              <KpiTile
+                label="Progress"
+                value={allocatedHours > 0 ? `${progressPct.toFixed(0)}%` : "N/A"}
+                tone={overall ? "warn" : allocatedHours > 0 ? "ok" : undefined}
+              />
+            </div>
           </div>
-        </div>
-        {allocatedHours > 0 ? (
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
-            <div
-              className={`h-full ${overall ? "bg-amber-500" : "bg-brand-600"}`}
-              style={{ width: `${Math.max(2, progressPct)}%` }}
-            />
+          {allocatedHours > 0 ? (
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className={`h-full ${overall ? "bg-amber-500" : "bg-brand-600"}`}
+                style={{ width: `${Math.max(2, progressPct)}%` }}
+              />
+            </div>
+          ) : null}
+          <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+            <Button tone="secondary" size="sm" onClick={() => exportCsv(summary)}>
+              Export CSV
+            </Button>
+            <ButtonLink
+              href={`/timesheets/team/print?project=${encodeURIComponent(project.projectCode)}`}
+              tone="primary"
+              size="sm"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Export PDF
+            </ButtonLink>
           </div>
-        ) : null}
-        <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-          <Button tone="secondary" size="sm" onClick={() => exportCsv(summary)}>
-            Export CSV
-          </Button>
-          <ButtonLink
-            href={`/timesheets/team/print?project=${encodeURIComponent(project.projectCode)}`}
-            tone="primary"
-            size="sm"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Export PDF
-          </ButtonLink>
-        </div>
-      </section>
+        </section>
+      )}
 
-      {/* Team strip */}
-      {orderedMembers.length > 0 ? (
+      {/* Team strip — full view only. When embedded in a project card the card
+          already renders the team avatars just above, so repeating them here
+          only adds noise. */}
+      {!embedded && orderedMembers.length > 0 ? (
         <section className="rounded-lg border border-slate-200 bg-white px-4 py-3 sm:px-5">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -132,31 +189,43 @@ export function ProjectSummaryView({ summary }: Props) {
         </section>
       ) : null}
 
-      {/* Tab toggle, segmented-control style consistent with Tasks. */}
-      <div className="flex items-center">
-        <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-0.5 shadow-sm">
-          {(
-            [
-              { v: "members", label: "By member" },
-              { v: "weeks", label: "By week" },
-            ] as const
-          ).map((t) => {
-            const active = tab === t.v;
-            return (
-              <button
-                key={t.v}
-                type="button"
-                onClick={() => setTab(t.v)}
-                aria-pressed={active}
-                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                  active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {t.label}
-              </button>
-            );
-          })}
+      {/* Breakdown: a titled section with the member/week toggle and a one-line
+          explanation of what the current view shows, so the tables below never
+          land without context. */}
+      <div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Team breakdown
+          </h4>
+          <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-0.5 shadow-sm">
+            {(
+              [
+                { v: "members", label: "By member" },
+                { v: "weeks", label: "By week" },
+              ] as const
+            ).map((t) => {
+              const active = tab === t.v;
+              return (
+                <button
+                  key={t.v}
+                  type="button"
+                  onClick={() => setTab(t.v)}
+                  aria-pressed={active}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                    active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
+        <p className="mt-1.5 text-[11px] text-slate-500">
+          {tab === "members"
+            ? "Each person's logged vs allocated time. Click a row to see their staffings and weekly timesheets."
+            : "Hours logged per person, week by week. Click a cell to open that week's timesheet."}
+        </p>
       </div>
 
       {tab === "members" ? (
@@ -227,6 +296,29 @@ function KpiTile({
         {label}
       </div>
       <div className={`mt-0.5 text-base font-semibold tabular-nums ${v}`}>{value}</div>
+    </div>
+  );
+}
+
+// Inline label/value pair used by the compact embedded stats bar (no border —
+// it sits inside one shared card rather than as its own tile).
+function MiniKpi({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "ok" | "warn";
+}) {
+  const v =
+    tone === "warn" ? "text-amber-700" : tone === "ok" ? "text-brand-700" : "text-slate-900";
+  return (
+    <div className="leading-tight">
+      <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+        {label}
+      </div>
+      <div className={`text-sm font-semibold tabular-nums ${v}`}>{value}</div>
     </div>
   );
 }
@@ -538,7 +630,9 @@ function MemberRow({
               {member.daysAllocatedTotal > 0 ? `${member.daysAllocatedTotal.toFixed(1)}` : "N/A"}
             </span>
           </div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-400">Days</div>
+          <div className="text-[10px] uppercase tracking-wide text-slate-400">
+            Logged / allocated
+          </div>
         </div>
         <span
           className={`shrink-0 rounded-full p-1 text-slate-400 transition-transform ${

@@ -525,7 +525,7 @@ function ProjectCard({
               </button>
             </div>
           ) : summary ? (
-            <ProjectSummaryView summary={summary} />
+            <ProjectSummaryView summary={summary} variant="embedded" />
           ) : null}
         </div>
       ) : null}
