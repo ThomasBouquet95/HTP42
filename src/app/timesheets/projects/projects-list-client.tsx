@@ -6,11 +6,12 @@ import {
   type MyProjectRecord,
   type MyProjectTeamMember,
   type ProjectRole,
+  type ProjectSummary,
 } from "@/lib/airtable";
 import { SubmitTimesheetButton } from "@/components/submit-timesheet-modal";
 import { DateRangeChip } from "@/components/date-range-chip";
 import { MemberInfoModal } from "@/components/member-info-modal";
-import { ProjectSummaryModal } from "@/components/project-summary-modal";
+import { ProjectSummaryView } from "@/app/timesheets/team/project-summary-view";
 import { StatusPill } from "@/components/badge";
 
 const HOURS_PER_DAY = 8;
@@ -50,8 +51,6 @@ function accentClass(status: MyProjectRecord["status"]): string {
 
 export function ProjectsListClient({ projects }: { projects: MyProjectRecord[] }) {
   const [memberOpen, setMemberOpen] = useState<MyProjectTeamMember | null>(null);
-  const [summaryFor, setSummaryFor] = useState<{ code: string; name: string } | null>(null);
-  const [filter, setFilter] = useState<FilterKey>("all");
   const [query, setQuery] = useState("");
 
   const counts = useMemo(() => {
@@ -59,6 +58,13 @@ export function ProjectsListClient({ projects }: { projects: MyProjectRecord[] }
     for (const p of projects) c[bucket(p.status)]++;
     return c;
   }, [projects]);
+
+  // Open on "Active" by default — that's what people come here to act on.
+  // Fall back to "All" only when there's nothing active to show, so the list
+  // is never empty on arrival.
+  const [filter, setFilter] = useState<FilterKey>(() =>
+    counts.active > 0 ? "active" : "all",
+  );
 
   const kpis = useMemo(() => {
     let logged = 0;
@@ -119,23 +125,11 @@ export function ProjectsListClient({ projects }: { projects: MyProjectRecord[] }
       ) : (
         <ul className="grid gap-3">
           {visible.map((p) => (
-            <ProjectCard
-              key={p.projectCode}
-              project={p}
-              onSelectMember={setMemberOpen}
-              onOpenSummary={(pr) =>
-                setSummaryFor({ code: pr.projectCode, name: pr.projectName ?? "" })
-              }
-            />
+            <ProjectCard key={p.projectCode} project={p} onSelectMember={setMemberOpen} />
           ))}
         </ul>
       )}
 
-      <ProjectSummaryModal
-        projectCode={summaryFor?.code ?? null}
-        projectName={summaryFor?.name}
-        onClose={() => setSummaryFor(null)}
-      />
       <MemberInfoModal
         memberId={memberOpen?.memberRecordId ?? null}
         preview={
@@ -335,12 +329,45 @@ function strongestRole(p: MyProjectRecord): ProjectRole | "" {
 function ProjectCard({
   project: p,
   onSelectMember,
-  onOpenSummary,
 }: {
   project: MyProjectRecord;
   onSelectMember: (m: MyProjectTeamMember) => void;
-  onOpenSummary: (p: MyProjectRecord) => void;
 }) {
+  // Inline, expandable project summary (leaders / engagement leads only). The
+  // summary is fetched lazily the first time the card is opened and cached for
+  // the life of the card — reopening is instant.
+  const [open, setOpen] = useState(false);
+  const [summary, setSummary] = useState<ProjectSummary | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadSummary() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(p.projectCode)}/summary`,
+        { cache: "no-store" },
+      );
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? `Couldn't load summary (HTTP ${res.status}).`);
+      }
+      const data = (await res.json()) as { summary: ProjectSummary };
+      setSummary(data.summary);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't load summary.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function toggleSummary() {
+    const next = !open;
+    setOpen(next);
+    if (next && !summary && !loading) void loadSummary();
+  }
+
   const allocHours = p.daysAllocatedTotal * HOURS_PER_DAY;
   const hasAllocation = allocHours > 0;
   const pct = hasAllocation ? Math.round((p.hoursActualTotal / allocHours) * 100) : 0;
@@ -378,15 +405,31 @@ function ProjectCard({
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
             {p.isLeader ? (
               <button
                 type="button"
-                onClick={() => onOpenSummary(p)}
-                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"
+                onClick={toggleSummary}
+                aria-expanded={open}
+                aria-controls={`summary-${p.projectCode}`}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition ${
+                  open
+                    ? "border-brand-200 bg-brand-50 text-brand-700"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+                }`}
               >
                 <SummaryIcon />
-                <span className="hidden sm:inline">Summary</span>
+                <span className="hidden md:inline">Summary</span>
+                <svg
+                  viewBox="0 0 16 16"
+                  className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  aria-hidden
+                >
+                  <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               </button>
             ) : null}
             <SubmitTimesheetButton
@@ -394,8 +437,15 @@ function ProjectCard({
               className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-2.5 py-1.5 text-xs font-medium text-white transition hover:bg-brand-700"
             >
               <PlusIcon />
-              <span className="hidden sm:inline">Log time</span>
+              <span className="hidden md:inline">Add timesheet</span>
             </SubmitTimesheetButton>
+            <Link
+              href={`/timesheets/invoices?project=${encodeURIComponent(p.projectCode)}`}
+              className="inline-flex items-center gap-1.5 rounded-md border border-brand-200 bg-brand-50 px-2.5 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-100"
+            >
+              <InvoiceIcon />
+              <span className="hidden md:inline">Submit invoice</span>
+            </Link>
           </div>
         </div>
 
@@ -451,6 +501,34 @@ function ProjectCard({
           </div>
         </div>
       </div>
+
+      {/* Inline project summary — leaders only, expanded in place (no modal). */}
+      {open ? (
+        <div
+          id={`summary-${p.projectCode}`}
+          className="htp-expand-in border-t border-slate-200 bg-slate-50 px-4 py-4 pl-5 sm:px-5 sm:pl-6"
+        >
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600" />
+              Loading project summary…
+            </div>
+          ) : error ? (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <span>{error}</span>
+              <button
+                type="button"
+                onClick={() => void loadSummary()}
+                className="font-medium underline-offset-2 hover:underline"
+              >
+                Retry
+              </button>
+            </div>
+          ) : summary ? (
+            <ProjectSummaryView summary={summary} />
+          ) : null}
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -632,6 +710,20 @@ function SummaryIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+function InvoiceIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M6 3h9l3 3v15l-2.5-1.5L13 21l-2.5-1.5L8 21l-2-1.5V3z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path d="M9 8h6M9 12h6M9 16h4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );
 }

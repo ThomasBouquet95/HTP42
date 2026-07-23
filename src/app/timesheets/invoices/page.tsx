@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import {
@@ -95,14 +96,16 @@ export default async function InvoicesPage() {
           <h1 className="text-base sm:text-lg font-semibold">Invoices</h1>
         </div>
       </div>
-      <InvoicesClient
-        invoices={invoices}
-        staffings={pickerStaffings}
-        timesheets={invoiceableTimesheets}
-        paymentDateByInvoiceId={paymentDateByInvoiceId}
-        paymentStatusByInvoiceId={paymentStatusByInvoiceId}
-        memberNoteByInvoiceId={memberNoteByInvoiceId}
-      />
+      <Suspense fallback={null}>
+        <InvoicesClient
+          invoices={invoices}
+          staffings={pickerStaffings}
+          timesheets={invoiceableTimesheets}
+          paymentDateByInvoiceId={paymentDateByInvoiceId}
+          paymentStatusByInvoiceId={paymentStatusByInvoiceId}
+          memberNoteByInvoiceId={memberNoteByInvoiceId}
+        />
+      </Suspense>
     </main>
   );
 }

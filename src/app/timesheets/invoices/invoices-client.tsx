@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { MemberInvoiceRecord } from "@/lib/airtable";
 import { formatFriendlyDate } from "@/components/date-picker";
 import { StatusPill } from "@/components/badge";
@@ -81,10 +81,28 @@ export function InvoicesClient({
   memberNoteByInvoiceId?: Record<string, string>;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const search = useSearchParams();
   const [rows, setRows] = useState(invoices);
   useEffect(() => setRows(invoices), [invoices]);
   const [modalOpen, setModalOpen] = useState(false);
+  const [presetStaffingId, setPresetStaffingId] = useState("");
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
+
+  // Deep link from a project card: /timesheets/invoices?project=CODE opens the
+  // New invoice modal with that project's staffing preselected. The param is
+  // cleared afterwards so a refresh or back-nav doesn't reopen the modal.
+  useEffect(() => {
+    const proj = search.get("project");
+    if (!proj) return;
+    const match = staffings.find((s) => s.projectCode === proj);
+    if (match) {
+      setPresetStaffingId(match.id);
+      setModalOpen(true);
+    }
+    router.replace(pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 4500);
@@ -123,7 +141,10 @@ export function InvoicesClient({
         <Button
           tone="primary"
           size="sm"
-          onClick={() => setModalOpen(true)}
+          onClick={() => {
+            setPresetStaffingId("");
+            setModalOpen(true);
+          }}
           disabled={staffings.length === 0}
           title={
             staffings.length === 0
@@ -258,6 +279,7 @@ export function InvoicesClient({
       <NewInvoiceModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
+        initialStaffingId={presetStaffingId}
         staffings={staffings}
         timesheets={timesheets}
         onSubmitted={() => {
@@ -289,6 +311,7 @@ function NewInvoiceModal({
   onClose,
   staffings,
   timesheets,
+  initialStaffingId = "",
   onSubmitted,
   onError,
 }: {
@@ -296,6 +319,7 @@ function NewInvoiceModal({
   onClose: () => void;
   staffings: StaffingOpt[];
   timesheets: TimesheetOpt[];
+  initialStaffingId?: string;
   onSubmitted: () => void;
   onError: (msg: string) => void;
 }) {
@@ -310,14 +334,14 @@ function NewInvoiceModal({
 
   useEffect(() => {
     if (!open) return;
-    setStaffingId("");
+    setStaffingId(initialStaffingId);
     setAmount("");
     setCurrency("");
     setComment("");
     setFile(null);
     setSelectedTimesheetIds(new Set());
     if (fileRef.current) fileRef.current.value = "";
-  }, [open]);
+  }, [open, initialStaffingId]);
 
   // Reset the timesheet selection when the staffing changes, since the list
   // below depends on it.
