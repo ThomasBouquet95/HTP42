@@ -102,9 +102,24 @@ html[data-demo="on"] .demo-blur:focus-within {
 .htp-panel-in {
   animation: htp-panel-in 170ms cubic-bezier(0.16, 1, 0.3, 1);
 }
+/* Expanding row / accordion body — a quick fade + downward slide. */
+@keyframes htp-expand-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.htp-expand-in {
+  animation: htp-expand-in 160ms ease-out;
+}
 @media (prefers-reduced-motion: reduce) {
   .htp-backdrop-in,
-  .htp-panel-in {
+  .htp-panel-in,
+  .htp-expand-in {
     animation: none;
   }
 }
