@@ -92,7 +92,7 @@ function weekLabel(ts: TimesheetRecord): string {
   };
   const from = fmt(ts.startDate);
   const to = fmt(ts.endDate);
-  return from && to ? `${from} – ${to}` : from || to || "—";
+  return from && to ? `${from} to ${to}` : from || to || "the submitted week";
 }
 
 // Runs when a member submits (or resubmits) a timesheet. Always logs the
@@ -136,6 +136,9 @@ async function dispatchClientReview(
 ): Promise<{ ok: boolean; error?: string }> {
   const token = generateReviewToken();
   const expiresAtIso = new Date(Date.now() + REVIEW_TOKEN_TTL_DAYS * 86400000).toISOString();
+  const autoApproveIso = new Date(
+    Date.now() + CLIENT_REVIEW_AUTO_APPROVE_DAYS * 86400000,
+  ).toISOString();
   await setTimesheetReviewToken(ts.id, token, expiresAtIso);
 
   const days = [
@@ -156,6 +159,7 @@ async function dispatchClientReview(
     totalHours: ts.totalHours,
     token,
     expiresAtIso,
+    autoApproveIso,
   });
   await recordTimesheetReview({
     timesheetId: ts.id,

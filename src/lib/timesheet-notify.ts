@@ -18,6 +18,10 @@ export type ReviewRequestArgs = {
   totalHours: number;
   token: string;
   expiresAtIso: string;
+  // The date the timesheet auto-approves if the client hasn't decided by then
+  // (review request + one week). Surfaced in the email so the client knows the
+  // deadline.
+  autoApproveIso: string;
 };
 
 const esc = (s: string) =>
@@ -62,9 +66,9 @@ export async function sendTimesheetReviewRequest(
     html: `<p style="margin:18px 0">${btn(approveUrl, "#059669", "✓ Approve")}${btn(rejectUrl, "#e11d48", "✕ Reject")}</p>`,
   };
 
-  const expiryNote = `You can add a comment on the next screen. These links expire on ${fmtDate(
-    args.expiresAtIso,
-  )} and can be used once. No account needed.`;
+  const expiryNote = `Please review within one week. If you have not approved or rejected it by ${fmtDate(
+    args.autoApproveIso,
+  )}, the timesheet is approved automatically. You can add a comment on the next screen, and these one-click links can be used once (no account needed).`;
 
   const { name, subject, textBody, htmlBody, cc, from } = await resolveEmail("timesheet_review_request", {
     reviewerName: args.reviewerName || "there",
