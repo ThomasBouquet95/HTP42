@@ -1,14 +1,14 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
-import { FilterBar, FilterMultiSelect } from "@/components/filters";
+import { FilterBar, FilterMultiSelect, SegmentedTabs } from "@/components/filters";
 import { StatusPill } from "@/components/badge";
-import { EditIcon, IconButton, ChevronRightIcon } from "@/components/admin-icons";
+import { IconButton, ChevronRightIcon } from "@/components/admin-icons";
 import { DownloadChip } from "@/components/download-chip";
 import { StatusSelect } from "@/components/status-select";
 import type {
@@ -157,6 +157,7 @@ export function MembersAdminClient({
     }
   }
   const [search, setSearch] = useState("");
+  const [tab, setTab] = useState<"all" | "staffed" | "bench">("all");
   const [roleFilter, setRoleFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [countryFilter, setCountryFilter] = useState<string[]>([]);
@@ -262,14 +263,29 @@ export function MembersAdminClient({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return members.filter((m) => {
+      if (tab === "staffed" && (!staffing.staffedIds.has(m.id) || m.status === "Inactive")) return false;
+      if (tab === "bench" && (staffing.staffedIds.has(m.id) || m.status === "Inactive")) return false;
       if (roleFilter.length > 0 && !roleFilter.includes(m.role)) return false;
       if (statusFilter.length > 0 && !statusFilter.includes(m.status)) return false;
       if (countryFilter.length > 0 && !countryFilter.includes(m.country)) return false;
       if (!q) return true;
-      return [m.memberCode, m.fullName, m.email, m.role, m.country]
+      const projects = staffing.projectsByMember.get(m.id) ?? [];
+      return [m.memberCode, m.fullName, m.email, m.role, m.title, m.country, ...projects.flatMap((p) => [p.code, p.name])]
         .some((v) => v && v.toLowerCase().includes(q));
     });
-  }, [members, search, roleFilter, statusFilter, countryFilter]);
+  }, [members, search, roleFilter, statusFilter, countryFilter, tab, staffing]);
+
+  // Counts for the primary Staffed / Bench tabs (over active members).
+  const tabCounts = useMemo(() => {
+    let staffed = 0;
+    let bench = 0;
+    for (const m of members) {
+      if (m.status === "Inactive") continue;
+      if (staffing.staffedIds.has(m.id)) staffed += 1;
+      else bench += 1;
+    }
+    return { all: members.length, staffed, bench };
+  }, [members, staffing]);
 
   function openCreate() {
     setEditing(null);
@@ -492,283 +508,222 @@ export function MembersAdminClient({
         />
       </FilterBar>
 
-      <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-        <table className="w-full table-fixed text-xs">
-          <colgroup>
-            <col className="w-6" />{/* expand chevron */}
-            <col className="w-10" />{/* avatar */}
-            <col className="w-[8%]" />{/* Code */}
-            <col />{/* Name */}
-            <col className="w-[24%]" />{/* Email — widened */}
-            <col />{/* Role */}
-            <col />{/* Status */}
-            <col />{/* Country */}
-            <col />{/* Member rate */}
-            <col />{/* HTP42 rate */}
-            <col className="w-12" />{/* CV — narrowed */}
-            <col className="w-20" />{/* actions */}
-          </colgroup>
-          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="w-6 px-1 py-1.5" />
-              <th className="px-2 py-1.5 font-medium w-9" />
-              <th className="text-left px-2 py-1.5 font-medium">Code</th>
-              <th className="text-left px-2 py-1.5 font-medium">Name</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">Email</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Role</th>
-              <th className="text-left px-2 py-1.5 font-medium">Status</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden lg:table-cell">Country</th>
-              <th className="text-right px-2 py-1.5 font-medium hidden md:table-cell">Member rate</th>
-              <th className="text-right px-2 py-1.5 font-medium hidden md:table-cell">HTP42 rate</th>
-              <th className="text-left px-2 py-1.5 font-medium hidden md:table-cell">CV</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
-              <tr>
-                <td colSpan={12} className="text-center text-slate-500 py-10">
-                  No members match this search.
-                </td>
-              </tr>
-            ) : (
-              filtered.map((m) => {
-                const open = expandedRows.has(m.id);
-                return (
-                <Fragment key={m.id}>
-                <tr
+      {/* Primary tabs: staffing state (secondary filters live above). */}
+      <div className="flex flex-wrap items-center gap-3">
+        <SegmentedTabs
+          value={tab}
+          onChange={setTab}
+          ariaLabel="Filter by staffing"
+          options={[
+            { value: "all", label: `All · ${tabCounts.all}` },
+            { value: "staffed", label: `Staffed · ${tabCounts.staffed}` },
+            { value: "bench", label: `Bench · ${tabCounts.bench}` },
+          ]}
+        />
+        <span className="ml-auto text-[11px] text-slate-500">{filtered.length} shown</span>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="rounded-lg border border-slate-200 bg-white py-12 text-center text-sm text-slate-500">
+          No members match.
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {filtered.map((m) => {
+            const open = expandedRows.has(m.id);
+            const rating = ratings[m.memberCode];
+            const projects = staffing.projectsByMember.get(m.id) ?? [];
+            const isStaffed = staffing.staffedIds.has(m.id);
+            const paidEur = billed[m.id]?.paidEur ?? 0;
+            const pendingEur = billed[m.id]?.pendingEur ?? 0;
+            return (
+              <li
+                key={m.id}
+                className="overflow-hidden rounded-lg border border-slate-200 bg-white transition-shadow hover:shadow-sm"
+              >
+                {/* Collapsed header — click to expand. No money here. */}
+                <button
+                  type="button"
                   onClick={() => toggleRow(m.id)}
                   aria-expanded={open}
-                  className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
-                  title="Click for full member details"
+                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
                 >
-                  <td
-                    className="px-1 py-1.5 text-center"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleRow(m.id);
-                    }}
-                  >
-                    <svg
-                      viewBox="0 0 16 16"
-                      className={`inline h-3 w-3 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      aria-hidden
-                    >
-                      <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <div className="h-7 w-7 rounded-full overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-semibold text-slate-600">
-                      {m.photo ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={m.photo.url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                      ) : (
-                        memberInitials(m.fullName || m.memberCode)
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-2 py-1.5 font-mono text-[11px]">{m.memberCode}</td>
-                  <td className="px-2 py-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="demo-blur">{m.fullName}</span>
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-xs font-semibold text-slate-600">
+                    {m.photo ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={m.photo.url}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        className="h-full w-full object-cover demo-blur"
+                      />
+                    ) : (
+                      memberInitials(m.fullName || m.memberCode)
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <span className="truncate text-sm font-semibold text-slate-900 demo-blur">
+                        {m.fullName || m.memberCode}
+                      </span>
+                      {m.status ? <StatusPill status={m.status} /> : null}
                       {(notes[m.id] ?? "").trim() ? (
-                        <span title="Has an internal note" className="text-amber-500">●</span>
+                        <span title="Has an internal note" className="text-amber-500">
+                          ●
+                        </span>
                       ) : null}
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-2">
-                      {m.status === "Inactive" ? null : staffing.staffedIds.has(m.id) ? (
-                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700 ring-1 ring-emerald-200">
-                          Staffed
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-medium text-amber-700 ring-1 ring-amber-200">
-                          Bench
-                        </span>
-                      )}
-                      <span className="text-xs text-slate-500 md:hidden demo-blur">{m.email}</span>
-                    </div>
-                  </td>
-                  <td className="px-2 py-1.5 text-slate-600 hidden md:table-cell demo-blur">{m.email}</td>
-                  <td className="px-2 py-1.5 hidden lg:table-cell">{m.role || "—"}</td>
-                  <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
-                    <StatusSelect
-                      value={m.status}
-                      options={statuses}
-                      onChange={(next) => updateStatus(m.id, next)}
-                      ariaLabel="Status"
-                      allowEmpty={false}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5 hidden lg:table-cell">{m.country || "—"}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell demo-blur">
-                    {m.dailyRate == null
-                      ? "—"
-                      : `${m.dailyRate.toLocaleString("en-US")} ${m.currency || ""}`.trim()}
-                  </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums hidden md:table-cell demo-blur">
-                    {m.htp42DailyRate == null
-                      ? "—"
-                      : `${m.htp42DailyRate.toLocaleString("en-US")} ${m.currency || ""}`.trim()}
-                  </td>
-                  <td
-                    className="px-2 py-1.5 hidden md:table-cell"
-                    onClick={(e) => e.stopPropagation()}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11px] text-slate-500">
+                      <span className="font-mono">{m.memberCode}</span>
+                      {m.role ? ` · ${m.role}` : ""}
+                      {m.title ? ` · ${m.title}` : ""}
+                    </span>
+                  </span>
+                  {rating ? (
+                    <span
+                      className="hidden shrink-0 items-center gap-1 text-[11px] text-amber-600 sm:inline-flex"
+                      title={`${rating.count} client review${rating.count === 1 ? "" : "s"}`}
+                    >
+                      <span>★</span>
+                      <span className="font-semibold tabular-nums">{rating.avg.toFixed(1)}</span>
+                    </span>
+                  ) : null}
+                  <span className="hidden shrink-0 sm:block">
+                    {m.status === "Inactive" ? (
+                      <span className="text-[10px] uppercase tracking-wide text-slate-400">Inactive</span>
+                    ) : isStaffed ? (
+                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200">
+                        {projects.length > 0
+                          ? `${projects.length} project${projects.length === 1 ? "" : "s"}`
+                          : "Staffed"}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-200">
+                        Bench
+                      </span>
+                    )}
+                  </span>
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    aria-hidden
+                    className={`shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
                   >
-                    <DownloadChip url={m.cv?.url} title="Open CV" emptyTitle="No CV on file" />
-                  </td>
-                  <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-1.5">
-                      <IconButton title="Edit" onClick={() => openEdit(m)}>
-                        <EditIcon />
-                      </IconButton>
+                    <path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+
+                {open ? (
+                  <div className="htp-expand-in border-t border-slate-100 bg-slate-50/50 px-3 py-3">
+                    {/* KPIs — the money + rating live here, on expand. */}
+                    <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                      <MiniStat
+                        label="Staffing"
+                        value={m.status === "Inactive" ? "Inactive" : isStaffed ? "Staffed" : "On bench"}
+                        tone={m.status === "Inactive" ? "muted" : isStaffed ? "positive" : "warn"}
+                      />
+                      <MiniStat label="Billed" value={eur(paidEur + pendingEur)} blur />
+                      <MiniStat label="Paid" value={eur(paidEur)} tone="positive" blur />
+                      <MiniStat label="Pending" value={eur(pendingEur)} blur />
+                      <MiniStat
+                        label="Client rating"
+                        value={rating ? `★ ${rating.avg.toFixed(1)}` : "—"}
+                        sub={rating ? `${rating.count} review${rating.count === 1 ? "" : "s"}` : "no reviews"}
+                        tone={rating ? "amber" : "muted"}
+                      />
+                    </div>
+
+                    {/* Current projects. */}
+                    <div className="mb-3">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                        Current projects
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        {projects.length > 0 ? (
+                          projects.map((p) => (
+                            <span
+                              key={p.code}
+                              title={p.name}
+                              className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-200"
+                            >
+                              <span className="font-mono">{p.code}</span>
+                              <span className="ml-1 max-w-[10rem] truncate text-emerald-600/80">{p.name}</span>
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-[11px] text-slate-400">Not staffed on any live project.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+                      <Field label="Login email" blur>{m.email || "—"}</Field>
+                      <Field label="Personal email" blur>{m.personalEmail || "—"}</Field>
+                      <Field label="Country">{m.country || "—"}</Field>
+                      <Field label="Phone" blur>{m.phone || "—"}</Field>
+                      <Field label="Legal entity">{m.legalEntity || "—"}</Field>
+                      <Field label="Member rate" blur>
+                        {m.dailyRate == null
+                          ? "—"
+                          : `${m.dailyRate.toLocaleString("en-US")} ${m.currency || ""}`.trim()}
+                      </Field>
+                      <Field label="HTP42 rate" blur>
+                        {m.htp42DailyRate == null
+                          ? "—"
+                          : `${m.htp42DailyRate.toLocaleString("en-US")} ${m.currency || ""}`.trim()}
+                      </Field>
+                    </dl>
+
+                    {m.introduction ? (
+                      <div className="mt-3">
+                        <dt className="text-[10px] uppercase tracking-wide text-slate-400">Introduction</dt>
+                        <dd className="mt-0.5 whitespace-pre-line text-xs text-slate-700 demo-blur">
+                          {m.introduction}
+                        </dd>
+                      </div>
+                    ) : null}
+
+                    <div className="mt-3">
+                      <InternalNote
+                        memberId={m.id}
+                        note={notes[m.id] ?? ""}
+                        onSaved={(v) => setNotes((prev) => ({ ...prev, [m.id]: v }))}
+                      />
+                    </div>
+
+                    {/* Actions. */}
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                      <Button tone="secondary" size="sm" onClick={() => openEdit(m)}>
+                        Edit details
+                      </Button>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] uppercase tracking-wide text-slate-400">Status</span>
+                        <StatusSelect
+                          value={m.status}
+                          options={statuses}
+                          onChange={(next) => updateStatus(m.id, next)}
+                          ariaLabel="Status"
+                          allowEmpty={false}
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] uppercase tracking-wide text-slate-400">CV</span>
+                        <DownloadChip url={m.cv?.url} title="Open CV" emptyTitle="No CV on file" />
+                      </div>
                       <IconButton title="Open member page" href={`/admin/members/${m.id}`}>
                         <ChevronRightIcon />
                       </IconButton>
                     </div>
-                  </td>
-                </tr>
-                {open ? (
-                  <tr className="border-t border-slate-100 bg-slate-50/60">
-                    <td />
-                    <td colSpan={11} className="px-3 py-3">
-                      {/* KPI strip — staffing, money billed, client rating. */}
-                      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
-                        <MiniStat
-                          label="Staffing"
-                          value={
-                            m.status === "Inactive"
-                              ? "Inactive"
-                              : staffing.staffedIds.has(m.id)
-                              ? "Staffed"
-                              : "On bench"
-                          }
-                          tone={
-                            m.status === "Inactive"
-                              ? "muted"
-                              : staffing.staffedIds.has(m.id)
-                              ? "positive"
-                              : "warn"
-                          }
-                        />
-                        <MiniStat
-                          label="Billed"
-                          value={eur((billed[m.id]?.paidEur ?? 0) + (billed[m.id]?.pendingEur ?? 0))}
-                          blur
-                        />
-                        <MiniStat label="Paid" value={eur(billed[m.id]?.paidEur ?? 0)} tone="positive" blur />
-                        <MiniStat label="Pending" value={eur(billed[m.id]?.pendingEur ?? 0)} blur />
-                        <MiniStat
-                          label="Client rating"
-                          value={
-                            ratings[m.memberCode]
-                              ? `★ ${ratings[m.memberCode].avg.toFixed(1)}`
-                              : "—"
-                          }
-                          sub={
-                            ratings[m.memberCode]
-                              ? `${ratings[m.memberCode].count} review${ratings[m.memberCode].count === 1 ? "" : "s"}`
-                              : "no reviews"
-                          }
-                          tone={ratings[m.memberCode] ? "amber" : "muted"}
-                        />
-                      </div>
-
-                      {/* Current projects. */}
-                      <div className="mb-3">
-                        <div className="text-[10px] uppercase tracking-wide text-slate-400">
-                          Current projects
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                          {(staffing.projectsByMember.get(m.id) ?? []).length > 0 ? (
-                            (staffing.projectsByMember.get(m.id) ?? []).map((p) => (
-                              <span
-                                key={p.code}
-                                title={p.name}
-                                className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-200"
-                              >
-                                <span className="font-mono">{p.code}</span>
-                                <span className="ml-1 max-w-[10rem] truncate text-emerald-600/80">
-                                  {p.name}
-                                </span>
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-[11px] text-slate-400">
-                              Not staffed on any live project.
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
-                        <Field label="Member code" mono>
-                          {m.memberCode || "—"}
-                        </Field>
-                        <Field label="Full name" blur>
-                          {m.fullName || "—"}
-                        </Field>
-                        <Field label="Login email" blur>
-                          {m.email || "—"}
-                        </Field>
-                        <Field label="Personal email" blur>
-                          {m.personalEmail || "—"}
-                        </Field>
-                        <Field label="Role">{m.role || "—"}</Field>
-                        <Field label="Status">
-                          {m.status ? <StatusPill status={m.status} /> : "—"}
-                        </Field>
-                        <Field label="Title">{m.title || "—"}</Field>
-                        <Field label="Country">{m.country || "—"}</Field>
-                        <Field label="Phone" blur>
-                          {m.phone || "—"}
-                        </Field>
-                        <Field label="Legal entity">{m.legalEntity || "—"}</Field>
-                        <Field label="Member rate" blur>
-                          {m.dailyRate == null
-                            ? "—"
-                            : `${m.dailyRate.toLocaleString("en-US")} ${m.currency || ""}`.trim()}
-                        </Field>
-                        <Field label="HTP42 rate" blur>
-                          {m.htp42DailyRate == null
-                            ? "—"
-                            : `${m.htp42DailyRate.toLocaleString("en-US")} ${m.currency || ""}`.trim()}
-                        </Field>
-                        <Field label="Currency">{m.currency || "—"}</Field>
-                      </dl>
-                      <div className="mt-3">
-                        <dt className="text-[10px] uppercase tracking-wide text-slate-400">
-                          Introduction
-                        </dt>
-                        <dd className="mt-0.5 whitespace-pre-line text-slate-700">
-                          {m.introduction || "—"}
-                        </dd>
-                      </div>
-                      <div className="mt-3">
-                        <dt className="text-[10px] uppercase tracking-wide text-slate-400">CV</dt>
-                        <dd className="mt-0.5" onClick={(e) => e.stopPropagation()}>
-                          <DownloadChip url={m.cv?.url} title="Open CV" emptyTitle="No CV on file" />
-                        </dd>
-                      </div>
-                      <div className="mt-3" onClick={(e) => e.stopPropagation()}>
-                        <InternalNote
-                          memberId={m.id}
-                          note={notes[m.id] ?? ""}
-                          onSaved={(v) => setNotes((prev) => ({ ...prev, [m.id]: v }))}
-                        />
-                      </div>
-                    </td>
-                  </tr>
+                  </div>
                 ) : null}
-                </Fragment>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       <Modal
         open={modalOpen}
