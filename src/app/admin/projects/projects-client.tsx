@@ -48,6 +48,7 @@ type Props = {
   projectStatuses: readonly ProjectStatus[];
   currencies: readonly Currency[];
   sowByProjectId: Record<string, { url: string; filename: string }>;
+  poByProjectId: Record<string, { url: string; filename: string }>;
   staffings: ProjectStaffingLite[];
 };
 
@@ -152,6 +153,7 @@ export function ProjectsAdminClient({
   projectStatuses,
   currencies,
   sowByProjectId,
+  poByProjectId,
   staffings,
 }: Props) {
   const router = useRouter();
@@ -193,6 +195,14 @@ export function ProjectsAdminClient({
   const [sowBusy, setSowBusy] = useState(false);
   const [sowMsg, setSowMsg] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [sowFile, setSowFile] = useState<File | null>(null);
+  // Purchase Order document — same lifecycle as the SOW (immediate attach on
+  // edit, deferred to after-save on create). `poExtracting` covers the AI PO-
+  // number read that runs the moment a file is picked.
+  const [poUrl, setPoUrl] = useState<string | null>(null);
+  const [poBusy, setPoBusy] = useState(false);
+  const [poMsg, setPoMsg] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [poFile, setPoFile] = useState<File | null>(null);
+  const [poExtracting, setPoExtracting] = useState(false);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -236,6 +246,10 @@ export function ProjectsAdminClient({
     setSowUrl(null);
     setSowMsg(null);
     setSowFile(null);
+    setPoUrl(null);
+    setPoMsg(null);
+    setPoFile(null);
+    setPoExtracting(false);
   }
 
   function openEdit(p: ProjectRecord) {
@@ -249,6 +263,10 @@ export function ProjectsAdminClient({
     setSowUrl(sowByProjectId[p.id]?.url ?? null);
     setSowMsg(null);
     setSowFile(null);
+    setPoUrl(poByProjectId[p.id]?.url ?? null);
+    setPoMsg(null);
+    setPoFile(null);
+    setPoExtracting(false);
   }
 
   // Immediate SOW attach/replace — creates or updates the project's linked
@@ -276,6 +294,77 @@ export function ProjectsAdminClient({
       setSowMsg({ kind: "error", text: e instanceof Error ? e.message : "SOW upload failed." });
     } finally {
       setSowBusy(false);
+    }
+  }
+
+  // Read the PO number out of a picked document and pre-fill the field. Runs
+  // for both create and edit (no record needed). The admin can still edit the
+  // value afterwards — this only fills it in.
+  async function extractPoNumber(file: File) {
+    setPoExtracting(true);
+    try {
+      const fd = new FormData();
+      fd.set("pdf", file);
+      const res = await fetch("/api/admin/projects/purchase-order/extract", {
+        method: "POST",
+        body: fd,
+      });
+      const data = (await res.json().catch(() => ({}))) as { poNumber?: string; error?: string };
+      if (res.ok && data.poNumber) {
+        setForm((f) => ({ ...f, purchaseOrder: data.poNumber as string }));
+        setToast({ kind: "ok", msg: `Detected PO #${data.poNumber} — edit to override.` });
+      } else if (res.ok) {
+        setToast({ kind: "ok", msg: "No PO number detected — enter it manually." });
+      }
+    } catch {
+      // Extraction is best-effort; the admin can always type the number.
+    } finally {
+      setPoExtracting(false);
+    }
+  }
+
+  // Immediate PO attach/replace (edit mode) — files the document in Legal as a
+  // Client-side Purchase Order contract for this project and refreshes the chip.
+  async function uploadPo(file: File) {
+    if (!editing) return;
+    setPoBusy(true);
+    setPoMsg(null);
+    try {
+      const fd = new FormData();
+      fd.set("file", file);
+      const res = await fetch(`/api/admin/projects/${editing.id}/purchase-order`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        pdf?: { url: string; filename: string } | null;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error ?? "Purchase order upload failed.");
+      setPoUrl(data.pdf?.url ?? null);
+      setPoMsg({ kind: "ok", text: "Purchase order saved to Legal." });
+      router.refresh();
+    } catch (e) {
+      setPoMsg({
+        kind: "error",
+        text: e instanceof Error ? e.message : "Purchase order upload failed.",
+      });
+    } finally {
+      setPoBusy(false);
+    }
+  }
+
+  // File picked in the PO control: always try to read the number, and on edit
+  // also store the document immediately (on create it's held for after save).
+  function onPickPo(file: File | null) {
+    if (editing) {
+      if (file) {
+        void extractPoNumber(file);
+        void uploadPo(file);
+      }
+    } else {
+      setPoFile(file);
+      if (file) void extractPoNumber(file);
     }
   }
 
@@ -420,19 +509,32 @@ export function ProjectsAdminClient({
         const d = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(d.error ?? "Save failed.");
       }
-      // A new project's SOW is uploaded after creation (needs the record id).
-      if (creating && sowFile) {
+      // A new project's SOW / Purchase Order are uploaded after creation (they
+      // need the record id). Read the created id once, then attach each held
+      // file. Uploads are best-effort but surface a clear error if they fail.
+      if (creating && (sowFile || poFile)) {
         const data = (await res.json().catch(() => ({}))) as { id?: string };
         if (data.id) {
-          const fd = new FormData();
-          fd.set("file", sowFile);
-          const up = await fetch(`/api/admin/projects/${data.id}/sow`, {
-            method: "POST",
-            body: fd,
-          });
-          if (!up.ok) {
-            const d = (await up.json().catch(() => ({}))) as { error?: string };
-            throw new Error(d.error ?? "Project created, but the SOW upload failed.");
+          if (sowFile) {
+            const fd = new FormData();
+            fd.set("file", sowFile);
+            const up = await fetch(`/api/admin/projects/${data.id}/sow`, { method: "POST", body: fd });
+            if (!up.ok) {
+              const d = (await up.json().catch(() => ({}))) as { error?: string };
+              throw new Error(d.error ?? "Project created, but the SOW upload failed.");
+            }
+          }
+          if (poFile) {
+            const fd = new FormData();
+            fd.set("file", poFile);
+            const up = await fetch(`/api/admin/projects/${data.id}/purchase-order`, {
+              method: "POST",
+              body: fd,
+            });
+            if (!up.ok) {
+              const d = (await up.json().catch(() => ({}))) as { error?: string };
+              throw new Error(d.error ?? "Project created, but the purchase order upload failed.");
+            }
           }
         }
       }
@@ -654,6 +756,7 @@ export function ProjectsAdminClient({
                           p={p}
                           clientNames={clientNames || p.clientCodes.join(", ")}
                           sow={sowByProjectId[p.id]}
+                          po={poByProjectId[p.id]}
                         />
                       </td>
                     </tr>
@@ -770,6 +873,103 @@ export function ProjectsAdminClient({
             Saved to Legal as a Client-side SOW contract for this project. PDF, max 5 MB.
           </p>
         </div>
+
+        {/* Purchase order — the PO number (auto-read from the uploaded
+            document, editable to override) alongside the PO document itself,
+            which is filed in Legal as a Client-side Purchase Order for this
+            project. Same upload lifecycle as the SOW. */}
+        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+              Purchase order{" "}
+              <span className="normal-case tracking-normal text-slate-400">(optional)</span>
+            </span>
+            {poExtracting ? (
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+                <SowSpinner /> Reading document…
+              </span>
+            ) : editing && poBusy ? (
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+                <SowSpinner /> Uploading…
+              </span>
+            ) : editing && poMsg ? (
+              <span
+                className={`text-[11px] font-medium ${
+                  poMsg.kind === "ok" ? "text-green-600" : "text-red-600"
+                }`}
+              >
+                {poMsg.text}
+              </span>
+            ) : !editing && poFile ? (
+              <span className="text-[11px] font-medium text-brand-700">Uploads when you save</span>
+            ) : null}
+          </div>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2 sm:items-start">
+            <FormField
+              label="PO number"
+              value={form.purchaseOrder}
+              onChange={(v) => updateField("purchaseOrder", v)}
+              hint={
+                <span className="text-slate-400">Auto-filled from the document; edit to override.</span>
+              }
+            />
+            <div>
+              <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+                Document
+              </span>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <DownloadChip
+                  url={poUrl ?? undefined}
+                  title="Open purchase order"
+                  emptyTitle="No PO on file"
+                />
+                <label
+                  className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 ${
+                    poBusy || poExtracting ? "pointer-events-none opacity-60" : ""
+                  }`}
+                >
+                  {(editing && poBusy) || poExtracting ? <SowSpinner /> : null}
+                  {editing
+                    ? poBusy
+                      ? "Uploading…"
+                      : poUrl
+                      ? "Replace PO"
+                      : "Upload PO"
+                    : poFile
+                    ? "Change file"
+                    : "Upload PO"}
+                  <input
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="hidden"
+                    disabled={poBusy || poExtracting}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] ?? null;
+                      onPickPo(f);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+                {!editing && poFile ? (
+                  <>
+                    <span className="truncate text-[11px] text-slate-500">{poFile.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setPoFile(null)}
+                      className="text-[11px] text-slate-500 hover:text-red-600"
+                    >
+                      Remove
+                    </button>
+                  </>
+                ) : null}
+              </div>
+            </div>
+          </div>
+          <p className="mt-1.5 text-[11px] text-slate-400">
+            Number is found automatically from the document; the PDF is saved to Legal as a
+            Client-side Purchase Order for this project. PDF, max 5 MB.
+          </p>
+        </div>
         {/* Identity */}
         <section className="space-y-3">
           <SectionHeader title="Identity" hint="What the project is and who it's for." />
@@ -858,12 +1058,6 @@ export function ProjectsAdminClient({
               value={form.fxToEur}
               onChange={(v) => updateField("fxToEur", v)}
               type="number"
-            />
-            <FormField
-              label="Purchase order (optional)"
-              value={form.purchaseOrder}
-              onChange={(v) => updateField("purchaseOrder", v)}
-              className="sm:col-span-3"
             />
           </div>
         </section>
@@ -1238,10 +1432,12 @@ function ProjectDetails({
   p,
   clientNames,
   sow,
+  po,
 }: {
   p: ProjectRecord;
   clientNames: string;
   sow?: { url: string; filename: string };
+  po?: { url: string; filename: string };
 }) {
   const money = (v: number | null, ccy: string) =>
     v == null ? "—" : `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}${ccy ? " " + ccy : ""}`;
@@ -1260,7 +1456,7 @@ function ProjectDetails({
         <Field label="Total amount EUR" value={money(p.totalAmountEur, "EUR")} blur />
         <Field label="Start date" value={p.startDate ?? ""} />
         <Field label="End date" value={p.endDate ?? ""} />
-        <Field label="Purchase order" value={p.purchaseOrder} />
+        <Field label="PO number" value={p.purchaseOrder} />
       </dl>
 
       {p.objective ? (
@@ -1270,13 +1466,23 @@ function ProjectDetails({
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2 text-[11px]">
-        <span className="text-[10px] uppercase tracking-wide text-slate-400">SOW</span>
-        <DownloadChip
-          url={sow?.url}
-          title={`Open ${sow?.filename || "SOW"}`}
-          emptyTitle="No SOW on file"
-        />
+      <div className="flex flex-wrap items-center gap-4 text-[11px]">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wide text-slate-400">SOW</span>
+          <DownloadChip
+            url={sow?.url}
+            title={`Open ${sow?.filename || "SOW"}`}
+            emptyTitle="No SOW on file"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wide text-slate-400">Purchase order</span>
+          <DownloadChip
+            url={po?.url}
+            title={`Open ${po?.filename || "purchase order"}`}
+            emptyTitle="No PO on file"
+          />
+        </div>
       </div>
     </div>
   );

@@ -5746,8 +5746,8 @@ export const CONTRACT_SIDES: ContractSide[] = [
 // any number of legacy values ("MSA + SoW", "Customer Facing SoW",
 // "Service Contract", ...) — those keep rendering as-is but new edits
 // snap to this short list.
-export type ContractType = "NDA" | "MSA" | "SOW" | "Other";
-export const CONTRACT_TYPES: ContractType[] = ["NDA", "MSA", "SOW", "Other"];
+export type ContractType = "NDA" | "MSA" | "SOW" | "Purchase Order" | "Other";
+export const CONTRACT_TYPES: ContractType[] = ["NDA", "MSA", "SOW", "Purchase Order", "Other"];
 
 // Canonical contract Status (renamed from "Stage" in the UI). Simplified
 // from the previous 10-value list — every legacy choice was migrated to
@@ -6286,6 +6286,45 @@ export async function attachProjectSow(
     const created = await createContract({
       side: "Client",
       contractType: "SOW",
+      clientRecordIds: project?.clientRecordIds ?? [],
+      projectRecordIds: [projectId],
+      projectCode: project?.projectCode ?? "",
+      signatureDate: today,
+    });
+    contractId = created.id;
+  }
+  await attachContractPdf(contractId, filename, base64);
+  const fresh = await getContractById(contractId);
+  return fresh?.pdf ? { url: fresh.pdf.url, filename: fresh.pdf.filename || filename } : null;
+}
+
+// Attach (or replace) a project's Purchase Order document. Mirrors
+// attachProjectSow: finds the project's existing Client-side "Purchase Order"
+// contract and replaces its PDF, or creates one linked to the project +
+// client. Keeps the PO document filed in Legal under its own category while it
+// is uploaded from the Projects screen. Returns the resulting PDF ref.
+export async function attachProjectPurchaseOrder(
+  projectId: string,
+  filename: string,
+  base64: string,
+): Promise<{ url: string; filename: string } | null> {
+  const [project, contracts] = await Promise.all([
+    getProjectById(projectId),
+    listAllContracts(),
+  ]);
+  const existing = contracts.find(
+    (c) =>
+      c.projectRecordIds.includes(projectId) &&
+      /purchase order|^po\b/i.test(c.contractType || ""),
+  );
+  let contractId: string;
+  if (existing) {
+    contractId = existing.id;
+  } else {
+    const today = new Date().toISOString().slice(0, 10);
+    const created = await createContract({
+      side: "Client",
+      contractType: "Purchase Order",
       clientRecordIds: project?.clientRecordIds ?? [],
       projectRecordIds: [projectId],
       projectCode: project?.projectCode ?? "",

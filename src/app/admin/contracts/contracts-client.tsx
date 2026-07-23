@@ -2089,10 +2089,10 @@ function ContractDetailModal({
       }
       if (key === "contractType") {
         const t = String(value).toLowerCase();
-        // SOW is the only type that links to a project. Anything else
+        // SOWs and Purchase Orders are the project-scoped types. Anything else
         // drops the project link so admins don't accidentally tie an
         // NDA / MSA to a specific project.
-        if (!t.includes("sow")) next.projectRecordIds = [];
+        if (!t.includes("sow") && !t.includes("purchase order")) next.projectRecordIds = [];
       }
       return next;
     });
@@ -2112,6 +2112,9 @@ function ContractDetailModal({
   const sideIsPartner = draft.side === "Partner";
   const typeIsSow = draft.contractType.toLowerCase().includes("sow");
   const typeIsOther = draft.contractType === "Other";
+  // SOWs and Purchase Orders are the project-scoped types → both show a
+  // Project link.
+  const typeLinksProject = typeIsSow || draft.contractType.toLowerCase().includes("purchase order");
 
   return (
     <div
@@ -2302,9 +2305,9 @@ function ContractDetailModal({
                 />
               ) : null}
 
-              {/* SOW always carries a Project link, on both Client and
-                  Network sides. */}
-              {typeIsSow ? (
+              {/* SOWs and Purchase Orders carry a Project link, on both Client
+                  and Network sides. */}
+              {typeLinksProject ? (
                 <ProjectPicker
                   label="Project"
                   projects={projects}

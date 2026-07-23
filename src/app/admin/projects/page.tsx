@@ -50,12 +50,22 @@ export default async function AdminProjectsPage() {
   // Map each project to its SOW contract PDF (a "SOW" contract type), so the
   // projects table can show a download chip. First matching one wins.
   const sowByProjectId: Record<string, { url: string; filename: string }> = {};
+  // And to its Purchase Order document (a "Purchase Order" contract type).
+  const poByProjectId: Record<string, { url: string; filename: string }> = {};
   for (const c of contracts) {
     if (!c.pdf?.url) continue;
-    if (!/sow|statement of work/i.test(c.contractType || "")) continue;
-    for (const pid of c.projectRecordIds) {
-      if (!sowByProjectId[pid]) {
-        sowByProjectId[pid] = { url: c.pdf.url, filename: c.pdf.filename || "SOW.pdf" };
+    const type = c.contractType || "";
+    if (/sow|statement of work/i.test(type)) {
+      for (const pid of c.projectRecordIds) {
+        if (!sowByProjectId[pid]) {
+          sowByProjectId[pid] = { url: c.pdf.url, filename: c.pdf.filename || "SOW.pdf" };
+        }
+      }
+    } else if (/purchase order|^po\b/i.test(type)) {
+      for (const pid of c.projectRecordIds) {
+        if (!poByProjectId[pid]) {
+          poByProjectId[pid] = { url: c.pdf.url, filename: c.pdf.filename || "PO.pdf" };
+        }
       }
     }
   }
@@ -72,6 +82,7 @@ export default async function AdminProjectsPage() {
           projectStatuses={PROJECT_STATUSES}
           currencies={CURRENCIES}
           sowByProjectId={sowByProjectId}
+          poByProjectId={poByProjectId}
           staffings={projectStaffings}
         />
     </main>
