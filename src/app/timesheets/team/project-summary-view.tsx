@@ -6,7 +6,6 @@ import { StatusBadge } from "@/components/status-badge";
 import { StatusPill } from "@/components/badge";
 import { Button, ButtonLink } from "@/components/form-controls";
 import { addWeeksIso, formatHumanDate, formatWeekRange, mondayOf, thisMondayIso } from "@/lib/dates";
-import { WeekChip } from "@/components/week-chip";
 import { DateRangeChip } from "@/components/date-range-chip";
 import { MemberInfoModal } from "@/components/member-info-modal";
 
@@ -35,8 +34,6 @@ function strongestRole(m: ProjectTeamMember): ProjectRole | "" {
 export function ProjectSummaryView({ summary, variant = "full" }: Props) {
   const { project, members, totals } = summary;
   const embedded = variant === "embedded";
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [tab, setTab] = useState<"members" | "weeks">("weeks");
   const [memberOpen, setMemberOpen] = useState<ProjectTeamMember | null>(null);
 
   // Sort team: Project Manager first, then Consultants / others, then by name.
@@ -184,74 +181,19 @@ export function ProjectSummaryView({ summary, variant = "full" }: Props) {
         </section>
       ) : null}
 
-      {/* Breakdown: a titled section with the member/week toggle and a one-line
-          explanation of what the current view shows, so the tables below never
-          land without context. */}
+      {/* Breakdown: the weekly grid with a one-line explanation so the table
+          never lands without context. */}
       <div>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Team breakdown
-          </h4>
-          <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-0.5 shadow-sm">
-            {(
-              [
-                { v: "members", label: "By member" },
-                { v: "weeks", label: "By week" },
-              ] as const
-            ).map((t) => {
-              const active = tab === t.v;
-              return (
-                <button
-                  key={t.v}
-                  type="button"
-                  onClick={() => setTab(t.v)}
-                  aria-pressed={active}
-                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                    active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Team breakdown
+        </h4>
         <p className="mt-1.5 text-[11px] text-slate-500">
-          {tab === "members"
-            ? "Each person's logged vs allocated time. Click a row to see their staffings and weekly timesheets."
-            : "Hours logged per person, week by week. Click a cell to expand that week's day-by-day breakdown."}
+          Hours logged per person, week by week. Click a cell to expand that week&apos;s
+          day-by-day breakdown.
         </p>
       </div>
 
-      {tab === "members" ? (
-        orderedMembers.length === 0 ? (
-          <div className="rounded-lg bg-white py-10 text-center text-sm text-slate-500 ring-1 ring-slate-200">
-            No one is staffed on this project yet.
-          </div>
-        ) : (
-          // Each member is a separate card floating on the drawer, so people
-          // are clearly spaced apart rather than running together as rows.
-          <ul className="space-y-2">
-            {orderedMembers.map((m) => (
-              <li
-                key={m.memberRecordId}
-                className="overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200"
-              >
-                <MemberRow
-                  member={m}
-                  expanded={expanded === m.memberRecordId}
-                  onToggle={() =>
-                    setExpanded(expanded === m.memberRecordId ? null : m.memberRecordId)
-                  }
-                  onOpenMember={() => setMemberOpen(m)}
-                />
-              </li>
-            ))}
-          </ul>
-        )
-      ) : (
-        <ProjectWeeksTab members={orderedMembers} onOpenMember={setMemberOpen} />
-      )}
+      <ProjectWeeksTab members={orderedMembers} onOpenMember={setMemberOpen} />
 
       <MemberInfoModal
         memberId={memberOpen?.memberRecordId ?? null}
@@ -376,19 +318,6 @@ function TeamBubbleRow({
   );
 }
 
-function RolePill({ role }: { role: ProjectRole }) {
-  const cls =
-    role === "Project Manager"
-      ? "border-brand-200 bg-brand-50 text-brand-700"
-      : "border-slate-200 bg-white text-slate-600";
-  return (
-    <span
-      className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${cls}`}
-    >
-      {role}
-    </span>
-  );
-}
 
 function StarIcon() {
   return (
@@ -533,15 +462,29 @@ function ProjectWeeksTab({
                         >
                           {hours > 0 ? (
                             <span
-                              className={`inline-flex min-w-[2.75rem] justify-center rounded-md px-1.5 py-0.5 font-medium ${
+                              className={`inline-flex min-w-[3.25rem] items-center justify-center gap-0.5 rounded-md px-1.5 py-0.5 font-medium ${
                                 isOpen
                                   ? "bg-brand-600 text-white"
                                   : clickable
-                                  ? "bg-slate-100 text-slate-800 hover:bg-brand-100 hover:text-brand-700 cursor-pointer"
+                                  ? "cursor-pointer bg-slate-100 text-slate-800 hover:bg-brand-100 hover:text-brand-700"
                                   : "text-slate-800"
                               }`}
                             >
                               {hours.toFixed(2)}
+                              {clickable ? (
+                                <svg
+                                  viewBox="0 0 16 16"
+                                  className={`h-2.5 w-2.5 shrink-0 transition-transform ${
+                                    isOpen ? "rotate-90 opacity-90" : "opacity-50"
+                                  }`}
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2.2"
+                                  aria-hidden
+                                >
+                                  <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              ) : null}
                             </span>
                           ) : (
                             <span className="text-slate-300">·</span>
@@ -594,258 +537,6 @@ function ProjectWeeksTab({
   );
 }
 
-function MemberRow({
-  member,
-  expanded,
-  onToggle,
-  onOpenMember,
-}: {
-  member: ProjectTeamMember;
-  expanded: boolean;
-  onToggle: () => void;
-  onOpenMember: () => void;
-}) {
-  const allocHours = member.daysAllocatedTotal * HOURS_PER_DAY;
-  const pct = allocHours > 0 ? Math.min(100, (member.hoursActualTotal / allocHours) * 100) : 0;
-  const over = member.hoursActualTotal > allocHours && allocHours > 0;
-  const role = strongestRole(member);
-  // Which of this member's timesheet weeks are expanded to their day breakdown.
-  const [openTs, setOpenTs] = useState<Set<string>>(new Set());
-  function toggleTs(id: string) {
-    setOpenTs((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  return (
-    <div>
-      {/* Plain div (not a <button>) so the avatar inside can be its own
-          interactive element. Click anywhere on the row toggles the expand
-          state; clicking the avatar stops propagation and opens the member
-          info modal instead. */}
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onToggle}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onToggle();
-          }
-        }}
-        className="grid grid-cols-[auto,1fr,auto,auto] items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 cursor-pointer"
-        aria-expanded={expanded}
-      >
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenMember();
-          }}
-          aria-label={`${member.memberName || member.memberCode}, show profile`}
-          title="Show profile"
-          className="flex h-10 w-10 items-center justify-center rounded-full overflow-hidden bg-brand-50 text-brand-700 text-xs font-semibold ring-2 ring-transparent transition hover:ring-brand-300"
-        >
-          {member.photoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={member.photoUrl} alt="" className="h-full w-full object-cover" />
-          ) : (
-            initials(member.memberName || member.memberCode)
-          )}
-        </button>
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
-            <span className="font-semibold text-slate-900 truncate">
-              {member.memberName || member.memberCode}
-            </span>
-            <span className="font-mono text-[10px] text-slate-400">{member.memberCode}</span>
-            {role ? <RolePill role={role} /> : null}
-          </div>
-          <div className="mt-0.5 text-[11px] text-slate-500">
-            {member.timesheets.length} timesheet{member.timesheets.length === 1 ? "" : "s"}
-            {allocHours > 0 ? (
-              <span className={`ml-2 ${over ? "text-amber-700" : "text-slate-500"}`}>
-                · {pct.toFixed(0)}% of allocation
-              </span>
-            ) : null}
-          </div>
-        </div>
-        <div className="text-right shrink-0">
-          <div className={`text-sm font-semibold tabular-nums ${over ? "text-amber-700" : "text-slate-900"}`}>
-            {member.daysActualTotal.toFixed(1)}
-            <span className="text-slate-400">
-              {" "}/{" "}
-              {member.daysAllocatedTotal > 0 ? `${member.daysAllocatedTotal.toFixed(1)}` : "N/A"}
-            </span>
-          </div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-400">
-            Logged / allocated
-          </div>
-        </div>
-        <span
-          className={`shrink-0 rounded-full p-1 text-slate-400 transition-transform ${
-            expanded ? "rotate-180 bg-slate-100 text-slate-700" : ""
-          }`}
-          aria-hidden
-        >
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </span>
-      </div>
-      {allocHours > 0 ? (
-        <div className="px-4 pb-2.5">
-          <div className="h-1 overflow-hidden rounded-full bg-slate-100">
-            <div
-              className={`h-full ${over ? "bg-amber-500" : "bg-brand-600"}`}
-              style={{ width: `${Math.max(2, pct)}%` }}
-            />
-          </div>
-        </div>
-      ) : null}
-      {expanded ? (
-        <div className="space-y-4 border-t border-slate-100 bg-slate-50/70 px-4 pb-4 pt-3 text-sm">
-          {member.staffings.length > 0 ? (
-            <div>
-              <div className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-2">
-                Staffings
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead className="text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="text-left py-1 pr-3 font-medium">Code</th>
-                      <th className="text-left py-1 pr-3 font-medium">Project role</th>
-                      <th className="text-left py-1 pr-3 font-medium">Job title</th>
-                      <th className="text-right py-1 pr-3 font-medium">Days</th>
-                      <th className="text-left py-1 font-medium">Period</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {member.staffings.map((s) => (
-                      <tr key={s.id} className="border-t border-slate-100">
-                        <td className="py-1.5 pr-3 font-mono text-xs text-slate-700">
-                          {s.staffingCode || "—"}
-                        </td>
-                        <td className="py-1.5 pr-3">
-                          {s.projectRole ? (
-                            <RolePill role={s.projectRole} />
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
-                        </td>
-                        <td className="py-1.5 pr-3 text-slate-700">
-                          {s.roleInProject || <span className="text-slate-400">—</span>}
-                        </td>
-                        <td className="py-1.5 pr-3 text-right tabular-nums text-slate-700">
-                          {s.daysAllocated == null ? "N/A" : `${s.daysAllocated} d`}
-                        </td>
-                        <td className="py-1.5 whitespace-nowrap text-slate-600 text-xs">
-                          <DateRangeChip startIso={s.startDate} endIso={s.endDate} variant="plain" />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : null}
-
-          {member.timesheets.length > 0 ? (
-            <div>
-              <div className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-2">
-                Timesheets
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead className="text-[11px] uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="w-5 py-1 pr-1" />
-                      <th className="text-left py-1 pr-3 font-medium">Week</th>
-                      <th className="text-left py-1 pr-3 font-medium">Staffing</th>
-                      <th className="text-left py-1 pr-3 font-medium">Status</th>
-                      <th className="text-right py-1 font-medium">Hours</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {member.timesheets.slice(0, 12).map((t) => {
-                      const isOpen = openTs.has(t.id);
-                      return (
-                        <Fragment key={t.id}>
-                          <tr
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => toggleTs(t.id)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                toggleTs(t.id);
-                              }
-                            }}
-                            aria-expanded={isOpen}
-                            className={`border-t border-slate-100 cursor-pointer hover:bg-slate-50 ${
-                              isOpen ? "bg-slate-50" : ""
-                            }`}
-                          >
-                            <td className="py-1.5 pl-1 pr-1 align-middle">
-                              <svg
-                                viewBox="0 0 16 16"
-                                className={`h-3 w-3 text-slate-400 transition-transform ${isOpen ? "rotate-90" : ""}`}
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                aria-hidden
-                              >
-                                <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            </td>
-                            <td className="py-1.5 pr-3 whitespace-nowrap">
-                              <WeekChip startIso={t.startDate} endIso={t.endDate} />
-                            </td>
-                            <td className="py-1.5 pr-3 font-mono text-[10px] text-slate-500">
-                              {t.staffingCode || "—"}
-                            </td>
-                            <td className="py-1.5 pr-3">
-                              <StatusBadge status={t.status} />
-                            </td>
-                            <td className="py-1.5 text-right tabular-nums font-medium text-slate-900">
-                              {t.totalHours.toFixed(2)} h
-                            </td>
-                          </tr>
-                          {isOpen ? (
-                            <tr className="bg-slate-50">
-                              <td />
-                              <td colSpan={4} className="pb-2.5 pr-1 pt-0.5">
-                                <TimesheetDetail timesheet={t} />
-                              </td>
-                            </tr>
-                          ) : null}
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {member.timesheets.length > 12 ? (
-                <div className="mt-1.5 text-xs text-slate-500">
-                  Showing 12 of {member.timesheets.length} timesheets.
-                </div>
-              ) : null}
-              <div className="mt-1.5 text-[11px] text-slate-400">
-                Click a week to expand its day-by-day breakdown.
-              </div>
-            </div>
-          ) : (
-            <div className="text-xs text-slate-500">No timesheets yet for this member.</div>
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
