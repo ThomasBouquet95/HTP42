@@ -505,7 +505,7 @@ function ProjectCard({
       {open ? (
         <div
           id={`summary-${p.projectCode}`}
-          className="htp-expand-in border-t border-slate-200 bg-slate-50 px-4 py-4 pl-5 sm:px-5 sm:pl-6"
+          className="htp-expand-in border-t border-slate-200 bg-slate-100 px-4 py-4 pl-5 shadow-[inset_0_3px_6px_-4px_rgba(15,23,42,0.25)] sm:px-5 sm:pl-6"
         >
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500">

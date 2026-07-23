@@ -62,10 +62,10 @@ export function ProjectSummaryView({ summary, variant = "full" }: Props) {
            we deliberately don't repeat those here — this bar is only the
            project-wide roll-up, clearly labelled so it isn't confused with the
            viewer's personal numbers. */
-        <section className="rounded-lg border border-slate-200 bg-white p-3 sm:p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <section className="border-b border-slate-200 pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                 Whole project
               </span>
               <MiniKpi label="Team" value={String(members.length)} />
@@ -100,7 +100,7 @@ export function ProjectSummaryView({ summary, variant = "full" }: Props) {
             </div>
           </div>
           {allocatedHours > 0 ? (
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200">
               <div
                 className={`h-full ${overall ? "bg-amber-500" : "bg-brand-600"}`}
                 style={{ width: `${Math.max(2, progressPct)}%` }}
@@ -224,7 +224,7 @@ export function ProjectSummaryView({ summary, variant = "full" }: Props) {
       </div>
 
       {tab === "members" ? (
-        <div className="rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-hidden rounded-lg bg-white ring-1 ring-slate-200">
           {orderedMembers.length === 0 ? (
             <div className="text-center text-sm text-slate-500 py-10">
               No one is staffed on this project yet.
@@ -678,7 +678,7 @@ function MemberRow({
         </div>
       ) : null}
       {expanded ? (
-        <div className="px-4 pb-4 space-y-4 text-sm border-t border-slate-100 pt-3">
+        <div className="space-y-4 border-t border-slate-100 bg-slate-50/70 px-4 pb-4 pt-3 text-sm">
           {member.staffings.length > 0 ? (
             <div>
               <div className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-2">
