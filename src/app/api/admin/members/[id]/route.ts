@@ -61,6 +61,17 @@ const schema = z.object({
   currency: z.union([z.enum(CURRENCIES as [string, ...string[]]), z.literal("")]).optional(),
   // Admin/HR-only note — never surfaced to the member.
   internalNote: z.string().max(5000).optional(),
+  // Admin/HR-only rich notes (bold/italic/underline), sanitised server-side.
+  internalNotes: z
+    .array(
+      z.object({
+        id: z.string().max(64),
+        html: z.string().max(10000),
+        at: z.string().max(40).nullable().optional(),
+      }),
+    )
+    .max(200)
+    .optional(),
 });
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -113,6 +124,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       htp42DailyRate: d.htp42DailyRate,
       currency: d.currency as Currency | "" | undefined,
       internalNote: d.internalNote,
+      internalNotes: d.internalNotes?.map((n) => ({
+        id: n.id,
+        html: n.html,
+        at: n.at ?? null,
+      })),
     });
     if (!updated) {
       return NextResponse.json(

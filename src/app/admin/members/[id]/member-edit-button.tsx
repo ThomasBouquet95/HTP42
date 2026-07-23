@@ -23,7 +23,6 @@ type Editable = {
   htp42DailyRate: number | null;
   currency: Currency | "";
   introduction: string;
-  internalNote: string;
 };
 
 // Admin edit affordance on a member's page: opens a modal with the editable
@@ -86,7 +85,6 @@ export function MemberEditButton({
     htp42DailyRate: member.htp42DailyRate == null ? "" : String(member.htp42DailyRate),
     currency: member.currency,
     introduction: member.introduction,
-    internalNote: member.internalNote,
   }));
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
@@ -114,7 +112,6 @@ export function MemberEditButton({
           htp42DailyRate: form.htp42DailyRate === "" ? null : Number(form.htp42DailyRate),
           currency: form.currency,
           introduction: form.introduction,
-          internalNote: form.internalNote,
         }),
       });
       if (!res.ok) {
@@ -251,15 +248,6 @@ export function MemberEditButton({
             rows={3}
           />
         </Section>
-
-        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50/40 p-3">
-          <FormTextarea
-            label="Internal note (admin only, never shown to the member)"
-            value={form.internalNote}
-            onChange={(v) => set("internalNote", v)}
-            rows={5}
-          />
-        </div>
 
         {error ? <div className="mt-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div> : null}
       </Modal>

@@ -366,7 +366,9 @@ function ProjectWeeksTab({
       const inner = new Map<string, Cell>();
       map.set(m.memberRecordId, inner);
       for (const t of m.timesheets) {
-        if (!t.startDate || t.status === "Deleted") continue;
+        // Team view surfaces only the official record: approved or under
+        // review (Submitted). Drafts / rejected / cancelled / deleted are hidden.
+        if (!t.startDate || (t.status !== "Approved" && t.status !== "Submitted")) continue;
         const monday = mondayOf(t.startDate);
         const cur = inner.get(monday) ?? { hours: 0, ts: [] };
         cur.hours += t.totalHours;

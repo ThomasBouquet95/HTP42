@@ -2,6 +2,7 @@ import { cache } from "react";
 import Airtable, { type FieldSet, type Record as AirtableRecord } from "airtable";
 import { env } from "./env";
 import { resolvePaymentEur } from "./fx";
+import { noteHtmlToPlain, plainTextToHtml, sanitizeNoteHtml } from "./note-html";
 import type { PagePerms, RolePermissions } from "./permissions";
 
 type AirtableBase = ReturnType<Airtable["base"]>;
@@ -68,6 +69,9 @@ export const FIELDS = {
     // (getMemberById / profile / member directory) can't carry it. Lazily
     // created via the meta API — see ensureMemberInternalNoteField.
     internalNote: "Internal Note",
+    // Admin/HR-only rich notes, stored as a JSON array of { id, html, at }.
+    // Same admin-only guarantees as internalNote (never on MemberRecord).
+    internalNotes: "Internal Notes",
   },
   projects: {
     projectCode: "Project Code",
@@ -680,9 +684,15 @@ export type MemberAdminRecord = MemberRecord & {
   htp42DailyRate: number | null;
   currency: Currency | "";
   // Admin/HR-only free-text note. Deliberately NOT on MemberRecord so it
-  // never reaches a member-facing serializer.
+  // never reaches a member-facing serializer. Kept for back-compat; the UI
+  // now uses `internalNotes` (a list of rich notes).
   internalNote: string;
+  internalNotes: MemberNote[];
 };
+
+// A single admin-only internal note. `html` is a sanitised inline-formatting
+// fragment (bold/italic/underline); `at` is the ISO creation timestamp.
+export type MemberNote = { id: string; html: string; at: string | null };
 
 export type ClientKind = "Client" | "Partner";
 export const CLIENT_KINDS: ClientKind[] = ["Client", "Partner"];
@@ -1065,7 +1075,41 @@ function memberAdminFromRecord(r: AirtableRecord<FieldSet>): MemberAdminRecord {
     htp42DailyRate: numOrNull(r, FIELDS.networkMembers.htp42DailyRate),
     currency: str(r, FIELDS.networkMembers.currency) as Currency | "",
     internalNote: str(r, FIELDS.networkMembers.internalNote),
+    internalNotes: parseMemberNotes(
+      str(r, FIELDS.networkMembers.internalNotes),
+      str(r, FIELDS.networkMembers.internalNote),
+    ),
   };
+}
+
+// Parse the JSON notes array; fall back to seeding a single note from the
+// legacy plain-text "Internal Note" field when the array is absent, so old
+// notes keep showing after the upgrade.
+function parseMemberNotes(raw: string, legacy: string): MemberNote[] {
+  if (raw) {
+    try {
+      const arr = JSON.parse(raw) as unknown;
+      if (Array.isArray(arr)) {
+        return arr
+          .filter(
+            (n): n is { id?: unknown; html?: unknown; at?: unknown } =>
+              !!n && typeof n === "object" && typeof (n as { html?: unknown }).html === "string",
+          )
+          .map((n) => ({
+            id: typeof n.id === "string" && n.id ? n.id : `n_${Math.random().toString(36).slice(2)}`,
+            html: sanitizeNoteHtml(String(n.html)),
+            at: typeof n.at === "string" && n.at ? n.at : null,
+          }))
+          .filter((n) => noteHtmlToPlain(n.html).length > 0);
+      }
+    } catch {
+      // fall through to legacy seed
+    }
+  }
+  if (legacy && legacy.trim()) {
+    return [{ id: "legacy", html: plainTextToHtml(legacy), at: null }];
+  }
+  return [];
 }
 
 // Lazily create the admin-only "Internal Note" long-text field on the Network
@@ -1105,6 +1149,45 @@ export async function ensureMemberInternalNoteField(): Promise<void> {
     if (create.ok) memberInternalNoteFieldReady = true;
   } catch (e) {
     console.error("ensureMemberInternalNoteField failed:", e);
+  }
+}
+
+// Lazily create the admin-only "Internal Notes" long-text field (JSON array of
+// rich notes). Idempotent + cached.
+let memberInternalNotesFieldReady = false;
+export async function ensureMemberInternalNotesField(): Promise<void> {
+  if (memberInternalNotesFieldReady) return;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.networkMembers);
+    if (!table) return;
+    if (table.fields.some((f) => f.name === FIELDS.networkMembers.internalNotes)) {
+      memberInternalNotesFieldReady = true;
+      return;
+    }
+    const create = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: FIELDS.networkMembers.internalNotes,
+          type: "multilineText",
+          description: "Admin/HR-only rich notes (JSON). Never shown to the member in the portal.",
+        }),
+      },
+    );
+    if (create.ok) memberInternalNotesFieldReady = true;
+  } catch (e) {
+    console.error("ensureMemberInternalNotesField failed:", e);
   }
 }
 
@@ -1405,6 +1488,7 @@ export type MemberAdminUpdate = MemberProfileUpdate & {
   htp42DailyRate?: number | null;
   currency?: Currency | "";
   internalNote?: string;
+  internalNotes?: MemberNote[];
 };
 
 export type MemberCreateInput = MemberAdminUpdate & {
@@ -2110,6 +2194,14 @@ export async function adminUpdateMember(
   if (input.internalNote !== undefined) {
     await ensureMemberInternalNoteField();
     fields[FIELDS.networkMembers.internalNote] = input.internalNote || null;
+  }
+  if (input.internalNotes !== undefined) {
+    await ensureMemberInternalNotesField();
+    // Sanitise each note server-side and drop empties before persisting.
+    const clean = input.internalNotes
+      .map((n) => ({ id: n.id, html: sanitizeNoteHtml(n.html), at: n.at ?? null }))
+      .filter((n) => noteHtmlToPlain(n.html).length > 0);
+    fields[FIELDS.networkMembers.internalNotes] = clean.length ? JSON.stringify(clean) : null;
   }
   if (Object.keys(fields).length === 0) {
     const r = await base(TABLES.networkMembers).find(recordId);

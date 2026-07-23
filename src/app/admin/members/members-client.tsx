@@ -11,6 +11,7 @@ import { FilterBar, FilterMultiSelect, SegmentedTabs } from "@/components/filter
 import { StatusPill } from "@/components/badge";
 import { DownloadChip } from "@/components/download-chip";
 import { StatusSelect } from "@/components/status-select";
+import { MemberNotes } from "./member-notes";
 import type {
   Currency,
   MemberAdminRecord,
@@ -108,11 +109,6 @@ export function MembersAdminClient({
   ratings,
 }: Props) {
   const router = useRouter();
-  // Admin/HR-only internal notes, edited inline; kept here so a save sticks
-  // without a full refresh (which would drop scroll + filters).
-  const [notes, setNotes] = useState<Record<string, string>>(() =>
-    Object.fromEntries(members.map((m) => [m.id, m.internalNote])),
-  );
   // Active projects per member (non-Completed staffing = current/upcoming),
   // and the set of currently-staffed members.
   const staffing = useMemo(() => {
@@ -632,8 +628,8 @@ export function MembersAdminClient({
                         {m.fullName || m.memberCode}
                       </span>
                       {m.status ? <StatusPill status={m.status} /> : null}
-                      {(notes[m.id] ?? "").trim() ? (
-                        <span title="Has an internal note" className="text-amber-500">
+                      {(m.internalNotes?.length ?? 0) > 0 ? (
+                        <span title="Has internal notes" className="text-amber-500">
                           ●
                         </span>
                       ) : null}
@@ -805,11 +801,7 @@ export function MembersAdminClient({
                     ) : null}
 
                     <div className="mt-3">
-                      <InternalNote
-                        memberId={m.id}
-                        note={notes[m.id] ?? ""}
-                        onSaved={(v) => setNotes((prev) => ({ ...prev, [m.id]: v }))}
-                      />
+                      <MemberNotes memberId={m.id} initialNotes={m.internalNotes ?? []} />
                     </div>
                   </div>
                 ) : null}
@@ -1225,115 +1217,6 @@ function MiniStat({
   );
 }
 
-function InternalNote({
-  memberId,
-  note,
-  onSaved,
-}: {
-  memberId: string;
-  note: string;
-  onSaved: (v: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(note);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/admin/members/${memberId}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ internalNote: value }),
-      });
-      if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? "Could not save the note.");
-      }
-      onSaved(value);
-      setEditing(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save the note.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="rounded-md border border-amber-200 bg-amber-50/40 p-2.5">
-      <div className="flex items-center justify-between">
-        <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-          <NoteLockIcon /> Internal note
-          <span className="ml-1 font-normal normal-case text-amber-600/70">
-            · admin only, never shown to the member
-          </span>
-        </span>
-        {!editing ? (
-          <button
-            type="button"
-            onClick={() => {
-              setValue(note);
-              setEditing(true);
-            }}
-            className="text-[11px] font-medium text-brand-600 hover:text-brand-700"
-          >
-            {note ? "Edit" : "+ Add"}
-          </button>
-        ) : null}
-      </div>
-      {editing ? (
-        <div className="mt-2">
-          <textarea
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            rows={6}
-            autoFocus
-            placeholder="Availability, rate expectations, feedback, follow-ups…"
-            className="block min-h-[8rem] w-full resize-y rounded-md border border-amber-300 bg-white px-2.5 py-2 text-xs leading-relaxed text-slate-800 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-          />
-          {error ? <div className="mt-1 text-[11px] text-red-600">{error}</div> : null}
-          <div className="mt-2 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={save}
-              disabled={saving}
-              className="rounded-md bg-brand-600 px-3 py-1 text-xs font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-60"
-            >
-              {saving ? "Saving…" : "Save note"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setEditing(false);
-                setError(null);
-              }}
-              disabled={saving}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : note ? (
-        <p className="mt-1.5 whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{note}</p>
-      ) : (
-        <button
-          type="button"
-          onClick={() => {
-            setValue("");
-            setEditing(true);
-          }}
-          className="mt-1.5 block w-full rounded-md border border-dashed border-amber-300 py-2.5 text-center text-[11px] italic text-amber-700/70 hover:bg-amber-50"
-        >
-          + Add an internal note
-        </button>
-      )}
-    </div>
-  );
-}
-
 function EditPencil() {
   return (
     <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -1354,14 +1237,6 @@ function ProfileIcon() {
   );
 }
 
-function NoteLockIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <rect x="3" y="7" width="10" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  );
-}
 
 function memberInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);

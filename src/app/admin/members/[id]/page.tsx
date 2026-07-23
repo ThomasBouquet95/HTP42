@@ -18,6 +18,7 @@ import {
 } from "@/lib/airtable";
 import { MemberEditButton } from "./member-edit-button";
 import { MemberTimesheets } from "./member-timesheets";
+import { MemberNotes } from "../member-notes";
 
 export const dynamic = "force-dynamic";
 
@@ -194,7 +195,6 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
               htp42DailyRate: member.htp42DailyRate,
               currency: member.currency,
               introduction: member.introduction,
-              internalNote: member.internalNote,
             }}
             roles={MEMBER_ROLES}
             statuses={MEMBER_STATUSES}
@@ -248,25 +248,7 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
             </div>
           </Card>
 
-          <section className="rounded-lg border border-amber-200 bg-amber-50/40">
-            <div className="flex items-center justify-between gap-2 border-b border-amber-100 px-4 py-2.5">
-              <h2 className="inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-amber-700">
-                <span aria-hidden>🔒</span> Internal note
-              </h2>
-              <span className="text-[10px] text-amber-600/70">admin only</span>
-            </div>
-            <div className="p-4">
-              {member.internalNote ? (
-                <p className="whitespace-pre-line text-xs leading-relaxed text-slate-700">
-                  {member.internalNote}
-                </p>
-              ) : (
-                <p className="text-xs italic text-slate-400">
-                  No internal note. Use “Edit member” to add one. The member never sees it.
-                </p>
-              )}
-            </div>
-          </section>
+          <MemberNotes memberId={member.id} initialNotes={member.internalNotes} />
 
           {member.bankAccountName || member.iban || member.bankAccountAddress ? (
             <Card title="Bank account">
