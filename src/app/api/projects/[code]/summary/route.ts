@@ -16,7 +16,7 @@ export async function GET(
   if (!code) return NextResponse.json({ error: "Missing project code" }, { status: 400 });
 
   // The Project Summary surfaces all the team's hours, so it stays gated to
-  // the project's Engagement Leads / Project Leads (admins can see anything).
+  // the project's Project Managers (admins can see anything).
   const led = await getLedProjects(session.sub, session.memberCode);
   const allowed = isAdmin(session) || led.some((p) => p.projectCode === code);
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });

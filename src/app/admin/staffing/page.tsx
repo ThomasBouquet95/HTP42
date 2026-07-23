@@ -14,6 +14,7 @@ import {
   STAFFING_STATUSES,
 } from "@/lib/airtable";
 import { StaffingsAdminClient } from "./staffings-client";
+import { MigrateRolesButton } from "./migrate-roles-button";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,7 @@ export default async function AdminStaffingPage() {
         <PageHeader
           title="Project Staffing"
           subtitle={`· ${staffings.length} staffing${staffings.length === 1 ? "" : "s"}`}
+          actions={<MigrateRolesButton />}
         />
         <StaffingsAdminClient
           staffings={staffings}

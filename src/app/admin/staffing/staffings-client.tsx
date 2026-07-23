@@ -160,11 +160,8 @@ function validateStaffingForm(f: FormState): string | null {
 }
 
 function roleHint(role: string): string | null {
-  if (role === "Project Lead") {
-    return "Can view team timesheets on this project (Project Staffing Summary).";
-  }
-  if (role === "Engagement Lead") {
-    return "Owns the client relationship, sees the full project team's timesheets and project P&L.";
+  if (role === "Project Manager") {
+    return "Leads the project: can view the full team's timesheets on this project (Project Staffing Summary).";
   }
   if (role === "Consultant") {
     return "Logs their own timesheets only.";
@@ -958,7 +955,7 @@ function memberInitials(name: string): string {
 function ProjectRolePill({ role }: { role: string }) {
   if (!role) return <span className="text-slate-400">—</span>;
   return (
-    <Badge tone={role === "Project Lead" ? "info" : "neutral"} className="whitespace-nowrap">
+    <Badge tone={role === "Project Manager" ? "info" : "neutral"} className="whitespace-nowrap">
       {role}
     </Badge>
   );

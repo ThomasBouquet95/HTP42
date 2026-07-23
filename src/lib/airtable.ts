@@ -467,19 +467,59 @@ export function deriveStaffingStatus(
   return "Not Started";
 }
 
-export type ProjectRole = "Engagement Lead" | "Project Lead" | "Consultant";
-export const PROJECT_ROLES: ProjectRole[] = ["Engagement Lead", "Project Lead", "Consultant"];
+// Project roles. The two legacy lead roles ("Engagement Lead", "Project Lead")
+// were consolidated into a single "Project Manager" role; existing records are
+// migrated with migrateLeadRolesToProjectManager().
+export type ProjectRole = "Project Manager" | "Consultant";
+export const PROJECT_ROLES: ProjectRole[] = ["Project Manager", "Consultant"];
 // Roles that grant access to the team's timesheets (Project Staffing Summary).
-export const LEADER_ROLES: ProjectRole[] = ["Engagement Lead", "Project Lead"];
+export const LEADER_ROLES: ProjectRole[] = ["Project Manager"];
+// Legacy lead-role labels, kept only so pre-migration data and leadership
+// filters still resolve until the migration button has been run.
+export const LEGACY_LEAD_ROLES = ["Engagement Lead", "Project Lead"] as const;
+
+// Normalise a raw "Project Role" cell into the current enum. Legacy lead labels
+// ("Engagement Lead", "Project Lead") collapse to "Project Manager" so the app
+// reads correctly even before migrateLeadRolesToProjectManager() has run;
+// anything unrecognised becomes "".
+export function normalizeProjectRole(raw: string): ProjectRole | "" {
+  if (raw === "Project Manager") return "Project Manager";
+  if (raw === "Consultant") return "Consultant";
+  if ((LEGACY_LEAD_ROLES as readonly string[]).includes(raw)) return "Project Manager";
+  return "";
+}
 
 // Leadership rank — lower is more senior. Used to sort team members in the
-// Project Staffing Summary so Engagement Leads appear first, then Project
-// Leaders, then everyone else.
+// Project Staffing Summary so Project Managers appear first, then everyone else.
 export function leadRank(m: { staffings: Array<{ projectRole: ProjectRole | "" }> }): number {
-  if (m.staffings.some((s) => s.projectRole === "Engagement Lead")) return 0;
-  if (m.staffings.some((s) => s.projectRole === "Project Lead")) return 1;
-  return 2;
+  if (m.staffings.some((s) => s.projectRole === "Project Manager")) return 0;
+  return 1;
 }
+// One-off migration: fold the two legacy lead roles (Engagement Lead, Project
+// Lead) into a single "Project Manager" project role on every staffing.
+// Idempotent — safe to re-run; returns how many rows it changed. typecast lets
+// Airtable create the "Project Manager" single-select option on first write.
+export async function migrateLeadRolesToProjectManager(): Promise<{
+  scanned: number;
+  migrated: number;
+}> {
+  const field = FIELDS.projectStaffing.projectRole;
+  const records = await base(TABLES.projectStaffing)
+    .select({
+      filterByFormula: `OR({${field}} = "Engagement Lead", {${field}} = "Project Lead")`,
+      fields: [field],
+    })
+    .all();
+  const updates = records.map((r) => ({
+    id: r.id,
+    fields: { [field]: "Project Manager" } as unknown as FieldSet,
+  }));
+  for (let i = 0; i < updates.length; i += 10) {
+    await base(TABLES.projectStaffing).update(updates.slice(i, i + 10), { typecast: true });
+  }
+  return { scanned: records.length, migrated: updates.length };
+}
+
 export type SowStatus = "Signed" | "In Progress" | "Draft" | "Not Started";
 export const SOW_STATUSES: SowStatus[] = ["Not Started", "Draft", "In Progress", "Signed"];
 
@@ -4742,7 +4782,7 @@ function staffingAdminFromRecord(
     memberRecordIds,
     memberCodes,
     roleInProject: str(r, FIELDS.projectStaffing.roleInProject),
-    projectRole: str(r, FIELDS.projectStaffing.projectRole) as ProjectRole | "",
+    projectRole: normalizeProjectRole(str(r, FIELDS.projectStaffing.projectRole)),
     ratePerDay: rate,
     currency: str(r, FIELDS.projectStaffing.currency) as Currency | "",
     daysAllocated: days,
@@ -5085,6 +5125,7 @@ export async function getLedProjects(
             filterByFormula: `AND(
               FIND("${escape(memberCode)}", ARRAYJOIN(ARRAYCOMPACT({${FIELDS.projectStaffing.memberCode}}))),
               OR(
+                {${FIELDS.projectStaffing.projectRole}} = "Project Manager",
                 {${FIELDS.projectStaffing.projectRole}} = "Project Lead",
                 {${FIELDS.projectStaffing.projectRole}} = "Engagement Lead"
               )
@@ -5222,7 +5263,7 @@ export async function getProjectSummaryByCode(projectCode: string): Promise<Proj
       id: staffingId,
       staffingCode,
       roleInProject: str(r, FIELDS.projectStaffing.roleInProject),
-      projectRole: str(r, FIELDS.projectStaffing.projectRole) as ProjectRole | "",
+      projectRole: normalizeProjectRole(str(r, FIELDS.projectStaffing.projectRole)),
       ratePerDay: numOrNull(r, FIELDS.projectStaffing.ratePerDay),
       currency: str(r, FIELDS.projectStaffing.currency) as Currency | "",
       daysAllocated,
@@ -5431,8 +5472,8 @@ export async function listMyProjects(
     }
     const acc = out.get(code)!;
     const daysAllocated = numOrNull(r, FIELDS.projectStaffing.daysAllocated);
-    const projectRole = str(r, FIELDS.projectStaffing.projectRole) as ProjectRole | "";
-    if (projectRole === "Project Lead" || projectRole === "Engagement Lead") {
+    const projectRole = normalizeProjectRole(str(r, FIELDS.projectStaffing.projectRole));
+    if (projectRole === "Project Manager") {
       acc.isLeader = true;
     }
     acc.staffings.push({
@@ -5501,10 +5542,9 @@ export async function listMyProjects(
     );
 
     const ROLE_RANK: Record<ProjectRole | "", number> = {
-      "Engagement Lead": 0,
-      "Project Lead": 1,
-      "Consultant": 2,
-      "": 3,
+      "Project Manager": 0,
+      "Consultant": 1,
+      "": 2,
     };
     const upgradeRole = (current: ProjectRole | "", candidate: ProjectRole | ""): ProjectRole | "" =>
       ROLE_RANK[candidate] < ROLE_RANK[current] ? candidate : current;
@@ -5514,7 +5554,7 @@ export async function listMyProjects(
       const acc = out.get(code);
       if (!acc) continue;
       const memberIds = linkedIds(s, FIELDS.projectStaffing.memberCode);
-      const projectRole = str(s, FIELDS.projectStaffing.projectRole) as ProjectRole | "";
+      const projectRole = normalizeProjectRole(str(s, FIELDS.projectStaffing.projectRole));
       for (const mid of memberIds) {
         const m = memberById.get(mid);
         if (!m) continue;
@@ -5531,7 +5571,7 @@ export async function listMyProjects(
           acc.team.push(existing);
         }
         existing.role = upgradeRole(existing.role, projectRole);
-        if (projectRole === "Project Lead" || projectRole === "Engagement Lead") {
+        if (projectRole === "Project Manager") {
           existing.isLeader = true;
         }
       }
@@ -5547,7 +5587,7 @@ export async function listMyProjects(
         const existing = acc.team.find((t) => t.memberRecordId === lid);
         if (existing) {
           existing.isLeader = true;
-          existing.role = upgradeRole(existing.role, "Project Lead");
+          existing.role = upgradeRole(existing.role, "Project Manager");
         } else {
           acc.team.push({
             memberRecordId: lid,
@@ -5555,11 +5595,11 @@ export async function listMyProjects(
             fullName: m.fullName,
             photoUrl: m.photoUrl,
             isLeader: true,
-            role: "Project Lead",
+            role: "Project Manager",
           });
         }
       }
-      // Sort: Engagement Lead → Project Lead → Consultant → others, then by name.
+      // Sort: Project Manager first, then Consultants / others, then by name.
       acc.team.sort((a, b) => {
         const ra = ROLE_RANK[a.role];
         const rb = ROLE_RANK[b.role];

@@ -17,10 +17,9 @@ const HOURS_PER_DAY = 8;
 type MemberTimesheet = ProjectTeamMember["timesheets"][number];
 
 const ROLE_RANK: Record<ProjectRole | "", number> = {
-  "Engagement Lead": 0,
-  "Project Lead": 1,
-  Consultant: 2,
-  "": 3,
+  "Project Manager": 0,
+  Consultant: 1,
+  "": 2,
 };
 
 function strongestRole(m: ProjectTeamMember): ProjectRole | "" {
@@ -40,7 +39,7 @@ export function ProjectSummaryView({ summary, variant = "full" }: Props) {
   const [tab, setTab] = useState<"members" | "weeks">("members");
   const [memberOpen, setMemberOpen] = useState<ProjectTeamMember | null>(null);
 
-  // Sort team: Engagement Lead → Project Lead → Consultant → others, then by name.
+  // Sort team: Project Manager first, then Consultants / others, then by name.
   const orderedMembers = useMemo(() => {
     return [...members].sort((a, b) => {
       const ra = ROLE_RANK[strongestRole(a)];
@@ -325,15 +324,10 @@ function TeamBubbleRow({
     <div className="flex flex-wrap items-end gap-x-1.5 gap-y-3 pt-2">
       {members.map((m) => {
         const role = strongestRole(m);
-        const isEL = role === "Engagement Lead";
-        const isPL = role === "Project Lead";
-        const showStar = isEL || isPL;
-        const ringCls = isEL ? "ring-slate-900" : isPL ? "ring-brand-500" : "ring-slate-200";
-        const fallbackBg = isEL
-          ? "bg-slate-900 text-white"
-          : isPL
-          ? "bg-brand-600 text-white"
-          : "bg-slate-200 text-slate-700";
+        const isPM = role === "Project Manager";
+        const showStar = isPM;
+        const ringCls = isPM ? "ring-brand-500" : "ring-slate-200";
+        const fallbackBg = isPM ? "bg-brand-600 text-white" : "bg-slate-200 text-slate-700";
         const label = `${m.memberName || m.memberCode}${role ? " · " + role : ""}`;
         return (
           <button
@@ -345,9 +339,7 @@ function TeamBubbleRow({
           >
             {showStar ? (
               <span
-                className={`pointer-events-none absolute left-1/2 -translate-x-1/2 -top-2 z-10 flex h-3 w-3 items-center justify-center ${
-                  isEL ? "text-slate-900" : "text-brand-600"
-                }`}
+                className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-2 z-10 flex h-3 w-3 items-center justify-center text-brand-600"
               >
                 <StarIcon />
               </span>
@@ -383,9 +375,7 @@ function TeamBubbleRow({
 
 function RolePill({ role }: { role: ProjectRole }) {
   const cls =
-    role === "Engagement Lead"
-      ? "border-slate-300 bg-slate-100 text-slate-800"
-      : role === "Project Lead"
+    role === "Project Manager"
       ? "border-brand-200 bg-brand-50 text-brand-700"
       : "border-slate-200 bg-white text-slate-600";
   return (

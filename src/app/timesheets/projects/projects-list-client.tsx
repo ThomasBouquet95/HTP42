@@ -309,10 +309,9 @@ function Toolbar({
 /* ------------------------------- Project card ------------------------------ */
 
 const ROLE_RANK: Record<ProjectRole | "", number> = {
-  "Engagement Lead": 0,
-  "Project Lead": 1,
-  Consultant: 2,
-  "": 3,
+  "Project Manager": 0,
+  Consultant: 1,
+  "": 2,
 };
 
 function strongestRole(p: MyProjectRecord): ProjectRole | "" {
@@ -322,7 +321,7 @@ function strongestRole(p: MyProjectRecord): ProjectRole | "" {
       best = s.projectRole;
     }
   }
-  if (!best && p.isLeader) best = "Project Lead";
+  if (!best && p.isLeader) best = "Project Manager";
   return best;
 }
 
@@ -533,8 +532,8 @@ function ProjectCard({
   );
 }
 
-function LeadChip({ role }: { role: ProjectRole | "" }) {
-  const label = role === "Engagement Lead" ? "Engagement Lead" : "Project Lead";
+function LeadChip({ role: _role }: { role: ProjectRole | "" }) {
+  const label = "Project Manager";
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-700">
       <StarIcon />
@@ -560,10 +559,9 @@ function TeamBubbles({
     <div className="flex items-center -space-x-1.5 pt-2">
       {visible.map((m) => {
         const label = `${m.fullName || m.memberCode}${m.role ? " · " + m.role : ""}`;
-        const isEL = m.role === "Engagement Lead";
-        const isPL = m.role === "Project Lead";
-        const showStar = isEL || isPL;
-        const ringCls = isEL ? "ring-slate-900" : isPL ? "ring-brand-500" : "ring-white";
+        const isPM = m.role === "Project Manager";
+        const showStar = isPM;
+        const ringCls = isPM ? "ring-brand-500" : "ring-white";
         return (
           <button
             key={m.memberRecordId}
@@ -574,9 +572,7 @@ function TeamBubbles({
           >
             {showStar ? (
               <span
-                className={`pointer-events-none absolute left-1/2 -top-2 z-10 flex h-3 w-3 -translate-x-1/2 items-center justify-center ${
-                  isEL ? "text-slate-900" : "text-brand-600"
-                }`}
+                className="pointer-events-none absolute left-1/2 -top-2 z-10 flex h-3 w-3 -translate-x-1/2 items-center justify-center text-brand-600"
               >
                 <StarIcon />
               </span>
@@ -586,9 +582,7 @@ function TeamBubbles({
               className={`relative flex h-7 w-7 items-center justify-center overflow-hidden rounded-full text-[11px] font-semibold ring-2 transition-transform group-hover:scale-110 ${ringCls} ${
                 m.photoUrl
                   ? ""
-                  : isEL
-                  ? "bg-slate-900 text-white"
-                  : isPL
+                  : isPM
                   ? "bg-brand-600 text-white"
                   : "bg-slate-200 text-slate-700"
               }`}
