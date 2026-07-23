@@ -407,7 +407,7 @@ function ProjectCard({
   ];
 
   return (
-    <li className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md">
+    <li className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors hover:border-brand-300">
       <div
         role="button"
         tabIndex={0}
@@ -547,7 +547,7 @@ function ProjectCard({
       {open ? (
         <div
           id={`drawer-${p.projectCode}`}
-          className="htp-expand-in border-t border-slate-200 bg-slate-100 px-4 py-4 shadow-[inset_0_3px_6px_-4px_rgba(15,23,42,0.25)] sm:px-5"
+          className="htp-expand-in border-t border-slate-200 bg-slate-50 px-4 py-4 sm:px-5"
         >
           <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
             {TABS.map((t) => {
@@ -755,44 +755,47 @@ function MyInvoicesTab({ rows, projectCode }: { rows: ProjectInvoice[]; projectC
   }
 
   return (
-    <ul className="space-y-2">
-      {rows.map((inv) => (
-        <li key={inv.id} className="rounded-lg bg-white p-3 shadow-sm ring-1 ring-slate-200">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-[11px] text-slate-500">{inv.code}</span>
-                {inv.status ? <StatusPill status={inv.status} className="text-[10px]" /> : null}
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {fmtMoney(inv.amount, inv.currency)}
-              </div>
-              {inv.submissionDate ? (
-                <div className="text-[11px] text-slate-500">
-                  Submitted {fmtDate(inv.submissionDate)}
+    <div className="overflow-hidden rounded-lg bg-white ring-1 ring-slate-200">
+      <ul className="divide-y divide-slate-100">
+        {rows.map((inv) => (
+          <li key={inv.id} className="px-3 py-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-sm font-semibold tabular-nums text-slate-900">
+                    {fmtMoney(inv.amount, inv.currency)}
+                  </span>
+                  <span className="truncate font-mono text-[11px] text-slate-400">{inv.code}</span>
                 </div>
-              ) : null}
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <PaymentPill status={inv.paymentStatus} date={inv.paymentDate} />
-              <DownloadChip url={inv.pdfUrl} title="Open invoice PDF" />
-            </div>
-          </div>
-          {inv.coveredWeeks.length > 0 ? (
-            <div className="mt-2 border-t border-slate-100 pt-2">
-              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                Covers {inv.coveredWeeks.length} week{inv.coveredWeeks.length === 1 ? "" : "s"}
+                <div className="mt-0.5 text-[11px] text-slate-500">
+                  {inv.submissionDate ? `Submitted ${fmtDate(inv.submissionDate)}` : "Not submitted"}
+                  {inv.coveredWeeks.length > 0
+                    ? ` · covers ${inv.coveredWeeks.length} week${inv.coveredWeeks.length === 1 ? "" : "s"}`
+                    : ""}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1.5 text-[11px]">
+              <div className="flex shrink-0 items-center gap-2">
+                <PaymentPill status={inv.paymentStatus} date={inv.paymentDate} />
+                <DownloadChip url={inv.pdfUrl} title="Open invoice PDF" />
+              </div>
+            </div>
+            {inv.coveredWeeks.length > 0 ? (
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {inv.coveredWeeks.map((w, i) => (
-                  <WeekChip key={i} startIso={w.startDate} endIso={w.endDate} />
+                  <WeekChip
+                    key={i}
+                    startIso={w.startDate}
+                    endIso={w.endDate}
+                    variant="plain"
+                    className="text-[11px] text-slate-500"
+                  />
                 ))}
               </div>
-            </div>
-          ) : null}
-        </li>
-      ))}
-    </ul>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

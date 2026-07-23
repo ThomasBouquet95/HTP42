@@ -417,7 +417,6 @@ function ProjectWeeksTab({
           </thead>
           <tbody>
             {weekMondays.map((mon) => {
-              const isCurrent = mon === today;
               let weekTotal = 0;
               for (const m of members) weekTotal += grid.get(m.memberRecordId)?.get(mon)?.hours ?? 0;
               // The member + timesheets for the cell expanded under this week (if
@@ -431,18 +430,11 @@ function ProjectWeeksTab({
                 : [];
               return (
                 <Fragment key={mon}>
-                  <tr
-                    className={`border-t border-slate-100 ${isCurrent ? "bg-amber-50/50" : "hover:bg-slate-50"}`}
-                  >
+                  <tr className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="px-3 py-1.5 whitespace-nowrap">
-                      <span className={`text-[11px] font-medium ${isCurrent ? "text-amber-800" : "text-slate-700"}`}>
+                      <span className="text-[11px] font-medium text-slate-700">
                         Week of {formatHumanDate(mon)}
                       </span>
-                      {isCurrent ? (
-                        <span className="ml-1 rounded-full bg-amber-200 px-1 py-0 text-[9px] font-semibold tracking-wide text-amber-900 align-middle">
-                          THIS
-                        </span>
-                      ) : null}
                     </td>
                     {members.map((m) => {
                       const cell = grid.get(m.memberRecordId)?.get(mon);
