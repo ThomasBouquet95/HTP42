@@ -605,7 +605,7 @@ export function MembersAdminClient({
               >
                 {/* Header — expand toggle + always-visible Edit / Open
                     profile actions, all vertically centred. */}
-                <div className="flex items-center gap-1 pr-2">
+                <div className="flex items-center gap-1.5 pr-3">
                 <button
                   type="button"
                   onClick={() => toggleRow(m.id)}

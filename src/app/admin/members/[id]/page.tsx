@@ -17,6 +17,7 @@ import {
   MEMBER_STATUSES,
 } from "@/lib/airtable";
 import { MemberEditButton } from "./member-edit-button";
+import { MemberTimesheets } from "./member-timesheets";
 
 export const dynamic = "force-dynamic";
 
@@ -394,44 +395,26 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
           </Card>
 
           <Card title={`Timesheets sent · ${memberTimesheets.length}`}>
-            {memberTimesheets.length === 0 ? (
-              <Empty>No timesheets submitted yet.</Empty>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-2 py-1.5 text-left font-medium">Week</th>
-                      <th className="px-2 py-1.5 text-left font-medium">Project</th>
-                      <th className="px-2 py-1.5 text-right font-medium">Hours</th>
-                      <th className="px-2 py-1.5 text-center font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {memberTimesheets.slice(0, 30).map((t) => (
-                      <tr key={t.id} className="border-t border-slate-100 hover:bg-slate-50">
-                        <td className="px-2 py-1.5 whitespace-nowrap text-slate-600">
-                          {prettyDate(t.startDate)}
-                          {t.endDate ? ` → ${prettyDate(t.endDate)}` : ""}
-                        </td>
-                        <td className="px-2 py-1.5 text-slate-600">{t.projectCode || "—"}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">
-                          {(Number(t.totalHours) || 0).toFixed(2)} h
-                        </td>
-                        <td className="px-2 py-1.5 text-center">
-                          <StatusPill status={t.status} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {memberTimesheets.length > 30 ? (
-                  <p className="px-2 py-2 text-[11px] text-slate-400">
-                    Showing the 30 most recent of {memberTimesheets.length}.
-                  </p>
-                ) : null}
-              </div>
-            )}
+            <MemberTimesheets
+              total={memberTimesheets.length}
+              rows={memberTimesheets.slice(0, 30).map((t) => ({
+                id: t.id,
+                code: t.timesheetCode,
+                week: `${prettyDate(t.startDate)}${t.endDate ? ` → ${prettyDate(t.endDate)}` : ""}`,
+                project: t.projectCode,
+                totalHours: Number(t.totalHours) || 0,
+                status: t.status,
+                days: [
+                  { label: "Mon", hours: t.monday.hours, task: t.monday.task },
+                  { label: "Tue", hours: t.tuesday.hours, task: t.tuesday.task },
+                  { label: "Wed", hours: t.wednesday.hours, task: t.wednesday.task },
+                  { label: "Thu", hours: t.thursday.hours, task: t.thursday.task },
+                  { label: "Fri", hours: t.friday.hours, task: t.friday.task },
+                ],
+                reviewedBy: t.reviewedBy,
+                reviewComment: t.reviewComment,
+              }))}
+            />
           </Card>
         </div>
       </div>
