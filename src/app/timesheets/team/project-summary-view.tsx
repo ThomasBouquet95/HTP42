@@ -36,7 +36,7 @@ export function ProjectSummaryView({ summary, variant = "full" }: Props) {
   const { project, members, totals } = summary;
   const embedded = variant === "embedded";
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [tab, setTab] = useState<"members" | "weeks">("members");
+  const [tab, setTab] = useState<"members" | "weeks">("weeks");
   const [memberOpen, setMemberOpen] = useState<ProjectTeamMember | null>(null);
 
   // Sort team: Project Manager first, then Consultants / others, then by name.
@@ -224,30 +224,33 @@ export function ProjectSummaryView({ summary, variant = "full" }: Props) {
       </div>
 
       {tab === "members" ? (
-        <div className="overflow-hidden rounded-lg bg-white ring-1 ring-slate-200">
-          {orderedMembers.length === 0 ? (
-            <div className="text-center text-sm text-slate-500 py-10">
-              No one is staffed on this project yet.
-            </div>
-          ) : (
-            <ul className="divide-y divide-slate-100">
-              {orderedMembers.map((m) => (
-                <li key={m.memberRecordId}>
-                  <MemberRow
-                    member={m}
-                    expanded={expanded === m.memberRecordId}
-                    onToggle={() =>
-                      setExpanded(expanded === m.memberRecordId ? null : m.memberRecordId)
-                    }
-                    onOpenMember={() => setMemberOpen(m)}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        orderedMembers.length === 0 ? (
+          <div className="rounded-lg bg-white py-10 text-center text-sm text-slate-500 ring-1 ring-slate-200">
+            No one is staffed on this project yet.
+          </div>
+        ) : (
+          // Each member is a separate card floating on the drawer, so people
+          // are clearly spaced apart rather than running together as rows.
+          <ul className="space-y-2">
+            {orderedMembers.map((m) => (
+              <li
+                key={m.memberRecordId}
+                className="overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200"
+              >
+                <MemberRow
+                  member={m}
+                  expanded={expanded === m.memberRecordId}
+                  onToggle={() =>
+                    setExpanded(expanded === m.memberRecordId ? null : m.memberRecordId)
+                  }
+                  onOpenMember={() => setMemberOpen(m)}
+                />
+              </li>
+            ))}
+          </ul>
+        )
       ) : (
-        <ProjectWeeksTab members={orderedMembers} />
+        <ProjectWeeksTab members={orderedMembers} onOpenMember={setMemberOpen} />
       )}
 
       <MemberInfoModal
@@ -398,7 +401,13 @@ function StarIcon() {
 // "By week" view: weeks down rows, members across columns. Cells show total
 // hours for that member that week. Click a cell with timesheet(s) to expand a
 // day-by-day breakdown inline, right under that week's row.
-function ProjectWeeksTab({ members }: { members: ProjectTeamMember[] }) {
+function ProjectWeeksTab({
+  members,
+  onOpenMember,
+}: {
+  members: ProjectTeamMember[];
+  onOpenMember: (m: ProjectTeamMember) => void;
+}) {
   const INITIAL_WEEKS = 8;
   const WEEKS_PER_LOAD = 8;
   const [weekCount, setWeekCount] = useState(INITIAL_WEEKS);
@@ -443,28 +452,38 @@ function ProjectWeeksTab({ members }: { members: ProjectTeamMember[] }) {
 
   return (
     <div className="space-y-2">
-      <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
-        <table className="w-full text-xs border-collapse">
-          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+      <div className="overflow-x-auto rounded-lg bg-white ring-1 ring-slate-200">
+        <table className="w-full border-collapse text-xs">
+          <thead className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left px-3 py-2 font-medium align-bottom whitespace-nowrap">Week</th>
+              <th className="whitespace-nowrap px-3 py-2.5 text-left align-bottom font-medium">Week</th>
               {members.map((m) => (
                 <th
                   key={m.memberRecordId}
-                  className="px-2 py-2 font-medium align-bottom"
-                  style={{ minWidth: 100 }}
+                  className="px-2 py-2.5 align-bottom font-medium"
+                  style={{ minWidth: 88 }}
                 >
-                  <div className="flex flex-col items-end gap-0.5 normal-case tracking-normal">
-                    <span className="font-mono text-[10px] text-slate-500 truncate w-full text-right">
-                      {m.memberCode}
-                    </span>
-                    <span className="block text-[11px] font-semibold text-slate-700 truncate w-full text-right">
+                  <div className="flex flex-col items-center gap-1 normal-case tracking-normal">
+                    <button
+                      type="button"
+                      onClick={() => onOpenMember(m)}
+                      title={`${m.memberName || m.memberCode} — open profile`}
+                      className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-brand-50 text-[11px] font-semibold text-brand-700 ring-2 ring-white transition hover:ring-brand-200"
+                    >
+                      {m.photoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={m.photoUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        initials(m.memberName || m.memberCode)
+                      )}
+                    </button>
+                    <span className="block max-w-[6rem] truncate text-center text-[11px] font-semibold normal-case text-slate-700">
                       {m.memberName || m.memberCode}
                     </span>
                   </div>
                 </th>
               ))}
-              <th className="text-right px-3 py-2 font-medium align-bottom whitespace-nowrap">Total</th>
+              <th className="whitespace-nowrap px-3 py-2.5 text-right align-bottom font-medium">Total</th>
             </tr>
           </thead>
           <tbody>
@@ -505,23 +524,33 @@ function ProjectWeeksTab({ members }: { members: ProjectTeamMember[] }) {
                       return (
                         <td
                           key={m.memberRecordId}
-                          className={`px-2 py-1.5 text-right tabular-nums ${
-                            clickable ? "cursor-pointer hover:text-brand-700" : ""
-                          } ${isOpen ? "bg-brand-50 text-brand-700" : ""}`}
+                          className={`px-2 py-1.5 text-center tabular-nums ${
+                            isOpen ? "bg-brand-50" : ""
+                          }`}
                           onClick={clickable ? () => setOpenCell(isOpen ? null : key) : undefined}
                           aria-expanded={clickable ? isOpen : undefined}
                           title={clickable ? "Click to expand this week's days" : undefined}
                         >
                           {hours > 0 ? (
-                            <span className="font-medium text-slate-900">{hours.toFixed(2)}</span>
+                            <span
+                              className={`inline-flex min-w-[2.75rem] justify-center rounded-md px-1.5 py-0.5 font-medium ${
+                                isOpen
+                                  ? "bg-brand-600 text-white"
+                                  : clickable
+                                  ? "bg-slate-100 text-slate-800 hover:bg-brand-100 hover:text-brand-700 cursor-pointer"
+                                  : "text-slate-800"
+                              }`}
+                            >
+                              {hours.toFixed(2)}
+                            </span>
                           ) : (
-                            <span className="text-slate-300">—</span>
+                            <span className="text-slate-300">·</span>
                           )}
                         </td>
                       );
                     })}
                     <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900">
-                      {weekTotal > 0 ? weekTotal.toFixed(2) : <span className="text-slate-300">—</span>}
+                      {weekTotal > 0 ? weekTotal.toFixed(2) : <span className="text-slate-300">·</span>}
                     </td>
                   </tr>
                   {openMember ? (
