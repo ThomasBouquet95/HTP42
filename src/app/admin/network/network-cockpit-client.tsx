@@ -77,7 +77,10 @@ export function NetworkCockpitClient({
     const q = query.trim().toLowerCase();
     return model.rows
       .filter((m) => {
-        if (filter === "staffed" && !m.staffed) return false;
+        // Staffed / Bench are measured over active members, so keep the
+        // filtered cards consistent with the "Staffed · N" / "Bench · N"
+        // counts (exclude Inactive from both).
+        if (filter === "staffed" && (!m.staffed || m.status === "Inactive")) return false;
         if (filter === "bench" && (m.staffed || m.status === "Inactive")) return false;
         if (!q) return true;
         const hay = [
