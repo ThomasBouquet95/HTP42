@@ -7,6 +7,7 @@ import {
   getRolePermissions,
   listAllContracts,
   listAllInvoices,
+  listAllMembers,
   listAllStaffings,
   listAllTimesheets,
   listPayments,
@@ -42,18 +43,28 @@ export default async function AdminTimesheetsPage({
   // and (for a Project Manager) their staffed-project scope, which previously
   // ran as two extra sequential round-trips after this batch.
   const isProjectManager = session.role === "Project Manager";
-  const [allTimesheets, invoices, payments, staffings, contracts, stored, scopeCodesArr] =
+  const [allTimesheets, invoices, payments, staffings, contracts, members, stored, scopeCodesArr] =
     await Promise.all([
       listAllTimesheets(),
       listAllInvoices(),
       listPayments(),
       listAllStaffings(),
       listAllContracts(),
+      listAllMembers(),
       getRolePermissions(),
       isProjectManager
         ? getMemberStaffedProjectCodes(session.memberCode)
         : Promise.resolve(null),
     ]);
+
+  // Lean directory so the Review tab can show WHO approved/rejected with a
+  // photo + category colour (admin / internal member / external client).
+  const reviewers = members.map((m) => ({
+    fullName: m.fullName,
+    email: m.email,
+    personalEmail: m.personalEmail,
+    photoUrl: m.photo?.url ?? null,
+  }));
   const scopeCodes = scopeCodesArr ? new Set(scopeCodesArr) : null;
   const timesheets = scopeCodes
     ? allTimesheets.filter((t) => scopeCodes.has(t.projectCode))
@@ -157,6 +168,7 @@ export default async function AdminTimesheetsPage({
           allowedViews={views}
           initialMemberCode={initialMemberCode ?? null}
           scopeProjects={scopeProjects}
+          reviewers={reviewers}
           staffings={staffings.map((s) => ({
             id: s.id,
             staffingCode: s.staffingCode,

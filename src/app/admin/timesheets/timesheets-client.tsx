@@ -10,7 +10,7 @@ import { Button } from "@/components/form-controls";
 import { FilterBar, FilterMultiSelect, FilterDateRange, SegmentedTabs } from "@/components/filters";
 import { ConfirmDialog } from "@/components/modal";
 import { TimesheetsByProject, TimesheetsByMember } from "./timesheets-breakdown";
-import { TimesheetReviewClient } from "./review-client";
+import { TimesheetReviewClient, type ReviewerMember } from "./review-client";
 import { TimesheetEditModal } from "./timesheet-edit-modal";
 import { dayIsos, downloadTimesheetsCsv } from "./timesheets-export";
 
@@ -73,6 +73,9 @@ type Props = {
   scopeProjects: string[] | null;
   // Staffings, for the edit modal's project + week reassignment.
   staffings: EditStaffingOpt[];
+  // Member directory (name/email → photo) so the Review tab can show who
+  // approved/rejected, with a category colour + photo.
+  reviewers?: ReviewerMember[];
 };
 
 export type EditStaffingOpt = {
@@ -98,7 +101,7 @@ function relatedInvoicesFor(
   );
 }
 
-export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId, sowByStaffing, allowedViews, initialMemberCode, scopeProjects, staffings }: Props) {
+export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId, sowByStaffing, allowedViews, initialMemberCode, scopeProjects, staffings, reviewers }: Props) {
   const router = useRouter();
   // Overview (filterable table) · By project · By member — the two breakdown
   // views live in their own tabs instead of inline cards above the table.
@@ -315,6 +318,7 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
           timesheets={rows}
           sowByStaffing={sowByStaffing}
           scopeProjects={scopeProjects}
+          members={reviewers}
           onEdit={setEditTs}
         />
       ) : view === "byproject" ? (

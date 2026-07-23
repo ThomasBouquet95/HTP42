@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AdminTimesheetRecord } from "@/lib/airtable";
 import { Badge } from "@/components/badge";
@@ -32,13 +32,96 @@ function fmtDate(iso: string | null): string {
     : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
+function initials(name: string): string {
+  const parts = (name || "").trim().split(/[\s@.]+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const first = parts[0][0] ?? "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return `${first}${last}`.toUpperCase();
+}
+
+// One colour per reviewer category so approvals read at a glance:
+// admin (dark), internal team member (brand), external client (emerald).
+const REVIEWER_CATEGORY: Record<
+  ReviewerInfo["category"],
+  { label: string; ring: string; bg: string; text: string; chip: string }
+> = {
+  admin: { label: "Admin", ring: "ring-slate-800", bg: "bg-slate-800", text: "text-white", chip: "bg-slate-100 text-slate-600" },
+  member: { label: "Team", ring: "ring-brand-500", bg: "bg-brand-600", text: "text-white", chip: "bg-brand-50 text-brand-700" },
+  external: { label: "Client", ring: "ring-emerald-500", bg: "bg-emerald-600", text: "text-white", chip: "bg-emerald-50 text-emerald-700" },
+  system: { label: "Auto", ring: "ring-slate-300", bg: "bg-slate-200", text: "text-slate-600", chip: "bg-slate-100 text-slate-500" },
+};
+
+// Who approved/rejected: a photo (or initials) bubble ringed + chipped by
+// category, the reviewer's name, and the decision date.
+function ReviewerLine({
+  status,
+  at,
+  info,
+}: {
+  status: string;
+  at: string | null;
+  info: ReviewerInfo | null;
+}) {
+  const verb = status === "Approved" ? "Approved" : status === "Rejected" ? "Rejected" : status;
+  if (!info) {
+    return (
+      <div className="text-[11px] text-slate-500">
+        {verb}
+        {at ? ` · ${fmtDate(at)}` : ""}
+      </div>
+    );
+  }
+  const meta = REVIEWER_CATEGORY[info.category];
+  return (
+    <div className="flex items-center gap-2">
+      <span
+        className={`flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full text-[10px] font-semibold ring-2 ${meta.ring} ${
+          info.photoUrl ? "" : `${meta.bg} ${meta.text}`
+        }`}
+      >
+        {info.photoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={info.photoUrl} alt="" className="h-full w-full object-cover demo-blur" />
+        ) : (
+          initials(info.name)
+        )}
+      </span>
+      <div className="min-w-0 text-[11px] text-slate-500">
+        <span>{verb} by </span>
+        <span className="font-medium text-slate-800">{info.name}</span>
+        <span
+          className={`ml-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${meta.chip}`}
+        >
+          {meta.label}
+        </span>
+        {at ? <span className="text-slate-400"> · {fmtDate(at)}</span> : null}
+      </div>
+    </div>
+  );
+}
+
 // Admin timesheet review, master-detail like Payment Review: a left rail of
 // members (with a "to review" badge), and per-member Under review / Approved /
 // Rejected sections. Approve/Reject (and override) happen here, not in Overview.
+export type ReviewerMember = {
+  fullName: string;
+  email: string;
+  personalEmail: string;
+  photoUrl: string | null;
+};
+
+type ReviewerInfo = {
+  name: string;
+  category: "admin" | "member" | "external" | "system";
+  photoUrl: string | null;
+};
+
 export function TimesheetReviewClient({
   timesheets,
   sowByStaffing,
   scopeProjects,
+  members,
   onEdit,
 }: {
   timesheets: AdminTimesheetRecord[];
@@ -46,9 +129,43 @@ export function TimesheetReviewClient({
   // When set, this reviewer (a Project Manager) only sees these projects.
   // Rendered as a banner so the limited scope is explicit, not implied.
   scopeProjects?: string[] | null;
+  // Member directory to resolve WHO reviewed (name/email → photo + category).
+  members?: ReviewerMember[];
   onEdit?: (t: AdminTimesheetRecord) => void;
 }) {
   const router = useRouter();
+
+  // name/email (lowercased) → { photo, htp42 }. Lets a decided row show the
+  // reviewer's photo + a colour by category.
+  const reviewerIndex = useMemo(() => {
+    const byKey = new Map<string, { photoUrl: string | null; htp42: boolean }>();
+    for (const m of members ?? []) {
+      const htp42 = [m.email, m.personalEmail].some((e) =>
+        (e || "").trim().toLowerCase().endsWith("@htp42.com"),
+      );
+      const entry = { photoUrl: m.photoUrl, htp42 };
+      for (const k of [m.fullName, m.email, m.personalEmail]) {
+        const key = (k || "").trim().toLowerCase();
+        if (key) byKey.set(key, entry);
+      }
+    }
+    return byKey;
+  }, [members]);
+
+  const resolveReviewer = useCallback(
+    (reviewedBy: string, method: string): ReviewerInfo | null => {
+      const name = (reviewedBy || "").trim();
+      if (!name) return null;
+      if (/^system/i.test(name)) return { name: "Auto-approved", category: "system", photoUrl: null };
+      const match = reviewerIndex.get(name.toLowerCase());
+      // Admin-panel reviews → "admin"; client reviews split into internal
+      // members (HTP42 email on file) vs external client reviewers.
+      const category: ReviewerInfo["category"] =
+        method === "Admin" ? "admin" : match?.htp42 ? "member" : "external";
+      return { name, category, photoUrl: match?.photoUrl ?? null };
+    },
+    [reviewerIndex],
+  );
   const [rows, setRows] = useState(timesheets);
   useEffect(() => setRows(timesheets), [timesheets]);
 
@@ -456,6 +573,7 @@ export function TimesheetReviewClient({
             onEdit={onEdit}
             sowByStaffing={sowByStaffing}
             usedByStaffing={usedByStaffing}
+            resolveReviewer={resolveReviewer}
           />
         </div>
       ) : null}
@@ -600,6 +718,7 @@ function ProjectGroups({
   onEdit,
   sowByStaffing,
   usedByStaffing,
+  resolveReviewer,
 }: {
   items: AdminTimesheetRecord[];
   empty: string;
@@ -608,6 +727,7 @@ function ProjectGroups({
   onEdit?: (t: AdminTimesheetRecord) => void;
   sowByStaffing?: Record<string, SowInfo>;
   usedByStaffing?: Map<string, number>;
+  resolveReviewer: (reviewedBy: string, method: string) => ReviewerInfo | null;
 }) {
   const groups = useMemo(() => {
     const m = new Map<
@@ -674,7 +794,7 @@ function ProjectGroups({
             </div>
             <div className="space-y-3">
               {g.sheets.map((t) => (
-                <ReviewCard key={t.id} t={t} saving={savingId === t.id} onDecide={onDecide} onEdit={onEdit} />
+                <ReviewCard key={t.id} t={t} saving={savingId === t.id} onDecide={onDecide} onEdit={onEdit} resolveReviewer={resolveReviewer} />
               ))}
             </div>
           </div>
@@ -704,11 +824,13 @@ function ReviewCard({
   saving,
   onDecide,
   onEdit,
+  resolveReviewer,
 }: {
   t: AdminTimesheetRecord;
   saving: boolean;
   onDecide: (id: string, action: "approve" | "reject", comment: string) => void;
   onEdit?: (t: AdminTimesheetRecord) => void;
+  resolveReviewer: (reviewedBy: string, method: string) => ReviewerInfo | null;
 }) {
   const decided = t.status === "Approved" || t.status === "Rejected";
   // Under review AND configured for client review → the client decides by email;
@@ -857,11 +979,11 @@ function ReviewCard({
         ) : (
           <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
-              <div className="text-[11px] text-slate-500">
-                {t.reviewedBy ? `${t.status} by ${t.reviewedBy}` : t.status}
-                {t.reviewMethod ? ` · ${t.reviewMethod} review` : ""}
-                {t.reviewedAt ? ` · ${fmtDate(t.reviewedAt)}` : ""}
-              </div>
+              <ReviewerLine
+                status={t.status}
+                at={t.reviewedAt}
+                info={resolveReviewer(t.reviewedBy, t.reviewMethod || "")}
+              />
               {t.reviewComment ? (
                 <div className="mt-1 rounded-md bg-slate-50 px-2 py-1 text-[11px] text-slate-700 whitespace-pre-line">
                   <span className="font-medium text-slate-500">Comment:</span> {t.reviewComment}
