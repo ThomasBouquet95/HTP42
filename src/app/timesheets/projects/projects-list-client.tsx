@@ -10,9 +10,12 @@ import {
 } from "@/lib/airtable";
 import { SubmitTimesheetButton } from "@/components/submit-timesheet-modal";
 import { DateRangeChip } from "@/components/date-range-chip";
+import { WeekChip } from "@/components/week-chip";
+import { DownloadChip } from "@/components/download-chip";
 import { MemberInfoModal } from "@/components/member-info-modal";
 import { ProjectSummaryView } from "@/app/timesheets/team/project-summary-view";
 import { StatusPill } from "@/components/badge";
+import type { ProjectInvoice, ProjectTimesheet } from "./types";
 
 const HOURS_PER_DAY = 8;
 
@@ -49,7 +52,15 @@ function accentClass(status: MyProjectRecord["status"]): string {
   }
 }
 
-export function ProjectsListClient({ projects }: { projects: MyProjectRecord[] }) {
+export function ProjectsListClient({
+  projects,
+  timesheetsByProject,
+  invoicesByProject,
+}: {
+  projects: MyProjectRecord[];
+  timesheetsByProject: Record<string, ProjectTimesheet[]>;
+  invoicesByProject: Record<string, ProjectInvoice[]>;
+}) {
   const [memberOpen, setMemberOpen] = useState<MyProjectTeamMember | null>(null);
   const [query, setQuery] = useState("");
 
@@ -125,7 +136,13 @@ export function ProjectsListClient({ projects }: { projects: MyProjectRecord[] }
       ) : (
         <ul className="grid gap-3">
           {visible.map((p) => (
-            <ProjectCard key={p.projectCode} project={p} onSelectMember={setMemberOpen} />
+            <ProjectCard
+              key={p.projectCode}
+              project={p}
+              timesheets={timesheetsByProject[p.projectCode] ?? []}
+              invoices={invoicesByProject[p.projectCode] ?? []}
+              onSelectMember={setMemberOpen}
+            />
           ))}
         </ul>
       )}
@@ -325,46 +342,50 @@ function strongestRole(p: MyProjectRecord): ProjectRole | "" {
   return best;
 }
 
+type DrawerTab = "timesheets" | "invoices" | "team";
+
 function ProjectCard({
   project: p,
+  timesheets,
+  invoices,
   onSelectMember,
 }: {
   project: MyProjectRecord;
+  timesheets: ProjectTimesheet[];
+  invoices: ProjectInvoice[];
   onSelectMember: (m: MyProjectTeamMember) => void;
 }) {
-  // Inline, expandable project summary (leaders / engagement leads only). The
-  // summary is fetched lazily the first time the card is opened and cached for
-  // the life of the card — reopening is instant.
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<DrawerTab>("timesheets");
+  // The team view is the whole-project roll-up, fetched lazily the first time a
+  // leader opens it and cached for the life of the card.
   const [summary, setSummary] = useState<ProjectSummary | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamError, setTeamError] = useState<string | null>(null);
 
   async function loadSummary() {
-    setLoading(true);
-    setError(null);
+    setTeamLoading(true);
+    setTeamError(null);
     try {
-      const res = await fetch(
-        `/api/projects/${encodeURIComponent(p.projectCode)}/summary`,
-        { cache: "no-store" },
-      );
+      const res = await fetch(`/api/projects/${encodeURIComponent(p.projectCode)}/summary`, {
+        cache: "no-store",
+      });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? `Couldn't load summary (HTTP ${res.status}).`);
+        throw new Error(d.error ?? `Couldn't load the team view (HTTP ${res.status}).`);
       }
       const data = (await res.json()) as { summary: ProjectSummary };
       setSummary(data.summary);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't load summary.");
+      setTeamError(e instanceof Error ? e.message : "Couldn't load the team view.");
     } finally {
-      setLoading(false);
+      setTeamLoading(false);
     }
   }
 
-  function toggleSummary() {
-    const next = !open;
-    setOpen(next);
-    if (next && !summary && !loading) void loadSummary();
+  function selectTab(t: DrawerTab) {
+    setTab(t);
+    if (t === "team" && !summary && !teamLoading) void loadSummary();
   }
 
   const allocHours = p.daysAllocatedTotal * HOURS_PER_DAY;
@@ -379,12 +400,15 @@ function ProjectCard({
       : "";
   const role = strongestRole(p);
 
+  const TABS: { key: DrawerTab; label: string; count?: number }[] = [
+    { key: "timesheets", label: "My timesheets", count: timesheets.length },
+    { key: "invoices", label: "My invoices", count: invoices.length },
+    ...(p.isLeader ? [{ key: "team" as const, label: "Team" }] : []),
+  ];
+
   return (
     <li className="relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md">
-      <span
-        aria-hidden
-        className={`absolute inset-y-0 left-0 w-1 ${accentClass(p.status)}`}
-      />
+      <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${accentClass(p.status)}`} />
       <div className="p-4 pl-5 sm:p-5 sm:pl-6">
         {/* Header: identity + primary actions */}
         <div className="flex items-start justify-between gap-3">
@@ -405,32 +429,29 @@ function ProjectCard({
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            {p.isLeader ? (
-              <button
-                type="button"
-                onClick={toggleSummary}
-                aria-expanded={open}
-                aria-controls={`summary-${p.projectCode}`}
-                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition ${
-                  open
-                    ? "border-brand-200 bg-brand-50 text-brand-700"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900"
-                }`}
+            <button
+              type="button"
+              onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
+              aria-controls={`drawer-${p.projectCode}`}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition ${
+                open
+                  ? "border-brand-200 bg-brand-50 text-brand-700"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              <span className="hidden md:inline">Details</span>
+              <svg
+                viewBox="0 0 16 16"
+                className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden
               >
-                <SummaryIcon />
-                <span className="hidden md:inline">Summary</span>
-                <svg
-                  viewBox="0 0 16 16"
-                  className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  aria-hidden
-                >
-                  <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-            ) : null}
+                <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
             <SubmitTimesheetButton
               presetProjectCode={p.projectCode}
               className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-2.5 py-1.5 text-xs font-medium text-white transition hover:bg-brand-700"
@@ -456,9 +477,7 @@ function ProjectCard({
                 {role ? role : "Time logged"}
               </span>
               <span className="text-[11px] tabular-nums text-slate-500">
-                <span className="font-semibold text-slate-700">
-                  {fmtDays(p.daysActualTotal)}
-                </span>{" "}
+                <span className="font-semibold text-slate-700">{fmtDays(p.daysActualTotal)}</span>{" "}
                 / {hasAllocation ? `${fmtDays(p.daysAllocatedTotal)} d` : "no allocation"}
                 {hasAllocation ? (
                   <span className={`ml-1.5 ${over ? "text-amber-600" : "text-slate-400"}`}>
@@ -501,35 +520,310 @@ function ProjectCard({
         </div>
       </div>
 
-      {/* Inline project summary — leaders only, expanded in place (no modal). */}
+      {/* Expanded workspace: my timesheets, my invoices, and (for leaders) the
+          team timesheet view — a recessed drawer so it reads as a drill-down. */}
       {open ? (
         <div
-          id={`summary-${p.projectCode}`}
+          id={`drawer-${p.projectCode}`}
           className="htp-expand-in border-t border-slate-200 bg-slate-100 px-4 py-4 pl-5 shadow-[inset_0_3px_6px_-4px_rgba(15,23,42,0.25)] sm:px-5 sm:pl-6"
         >
-          {loading ? (
-            <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600" />
-              Loading project summary…
-            </div>
-          ) : error ? (
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-              <span>{error}</span>
-              <button
-                type="button"
-                onClick={() => void loadSummary()}
-                className="font-medium underline-offset-2 hover:underline"
-              >
-                Retry
-              </button>
-            </div>
-          ) : summary ? (
-            <ProjectSummaryView summary={summary} variant="embedded" />
-          ) : null}
+          <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
+            {TABS.map((t) => {
+              const active = tab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => selectTab(t.key)}
+                  aria-pressed={active}
+                  className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                    active
+                      ? "bg-brand-600 text-white"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }`}
+                >
+                  {t.label}
+                  {typeof t.count === "number" ? (
+                    <span
+                      className={`rounded-full px-1.5 text-[10px] tabular-nums ${
+                        active ? "bg-white/25 text-white" : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {t.count}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-3">
+            {tab === "timesheets" ? (
+              <MyTimesheetsTab rows={timesheets} projectCode={p.projectCode} />
+            ) : tab === "invoices" ? (
+              <MyInvoicesTab rows={invoices} projectCode={p.projectCode} />
+            ) : teamLoading ? (
+              <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600" />
+                Loading the team view…
+              </div>
+            ) : teamError ? (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                <span>{teamError}</span>
+                <button
+                  type="button"
+                  onClick={() => void loadSummary()}
+                  className="font-medium underline-offset-2 hover:underline"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : summary ? (
+              <ProjectSummaryView summary={summary} variant="embedded" />
+            ) : null}
+          </div>
         </div>
       ) : null}
     </li>
   );
+}
+
+/* ------------------------- My timesheets (this member) --------------------- */
+
+function MyTimesheetsTab({ rows, projectCode }: { rows: ProjectTimesheet[]; projectCode: string }) {
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  function toggle(id: string) {
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-lg bg-white px-4 py-8 text-center ring-1 ring-slate-200">
+        <p className="text-sm text-slate-600">You haven&apos;t logged any time on this project yet.</p>
+        <div className="mt-3">
+          <SubmitTimesheetButton
+            presetProjectCode={projectCode}
+            className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
+          >
+            <PlusIcon /> Add timesheet
+          </SubmitTimesheetButton>
+        </div>
+      </div>
+    );
+  }
+
+  const loggedDays =
+    rows
+      .filter((t) => ["Submitted", "Approved"].includes(t.status))
+      .reduce((a, t) => a + t.totalHours, 0) / HOURS_PER_DAY;
+
+  return (
+    <div>
+      <div className="mb-2 text-[11px] text-slate-500">
+        {rows.length} week{rows.length === 1 ? "" : "s"} · {fmtDays(loggedDays)} days logged &amp;
+        submitted
+      </div>
+      <div className="overflow-hidden rounded-lg bg-white ring-1 ring-slate-200">
+        <ul className="divide-y divide-slate-100">
+          {rows.map((t) => {
+            const isOpen = open.has(t.id);
+            const label = t.status === "Submitted" ? "Under review" : undefined;
+            return (
+              <li key={t.id}>
+                <button
+                  type="button"
+                  onClick={() => toggle(t.id)}
+                  aria-expanded={isOpen}
+                  className="grid w-full grid-cols-[1rem_1fr_auto_auto] items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"
+                >
+                  <svg
+                    viewBox="0 0 16 16"
+                    className={`h-3 w-3 text-slate-400 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    aria-hidden
+                  >
+                    <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span className="min-w-0">
+                    <WeekChip startIso={t.startDate} endIso={t.endDate} />
+                  </span>
+                  <StatusPill status={t.status} label={label} className="text-[10px]" />
+                  <span className="text-right text-xs font-semibold tabular-nums text-slate-800">
+                    {t.totalHours.toFixed(2)} h
+                  </span>
+                </button>
+                {isOpen ? <DayBreakdown t={t} /> : null}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function DayBreakdown({ t }: { t: ProjectTimesheet }) {
+  return (
+    <div className="htp-expand-in border-t border-slate-100 bg-slate-50/70 px-3 py-2.5">
+      <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+        <table className="w-full text-xs">
+          <tbody>
+            {t.days.map((d) => (
+              <tr key={d.label} className="border-t border-slate-100 first:border-t-0">
+                <td className="w-24 px-3 py-1.5 font-medium text-slate-700">{d.label}</td>
+                <td className="w-16 px-3 py-1.5 text-right tabular-nums">
+                  {d.hours ? d.hours.toFixed(2) : <span className="text-slate-300">·</span>}
+                </td>
+                <td className="whitespace-pre-line px-3 py-1.5 text-slate-700 demo-blur">
+                  {d.task || <span className="text-slate-300">·</span>}
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t border-slate-200 bg-slate-50">
+              <td className="px-3 py-1.5 font-semibold text-slate-700">Total</td>
+              <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-900">
+                {t.totalHours.toFixed(2)}
+              </td>
+              <td />
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {t.reviewComment ? (
+        <div className="mt-2 rounded-md bg-white px-2.5 py-1.5 text-[11px] text-slate-600 ring-1 ring-slate-100">
+          <span className="font-medium text-slate-500">
+            Review{t.reviewedBy ? ` · ${t.reviewedBy}` : ""}:
+          </span>{" "}
+          {t.reviewComment}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* --------------------------- My invoices (this member) --------------------- */
+
+function MyInvoicesTab({ rows, projectCode }: { rows: ProjectInvoice[]; projectCode: string }) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-lg bg-white px-4 py-8 text-center ring-1 ring-slate-200">
+        <p className="text-sm text-slate-600">No invoices submitted for this project yet.</p>
+        <div className="mt-3">
+          <Link
+            href={`/timesheets/invoices?project=${encodeURIComponent(projectCode)}`}
+            className="inline-flex items-center gap-1.5 rounded-md border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-100"
+          >
+            <InvoiceIcon /> Submit invoice
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <ul className="space-y-2">
+      {rows.map((inv) => (
+        <li key={inv.id} className="rounded-lg bg-white p-3 shadow-sm ring-1 ring-slate-200">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-[11px] text-slate-500">{inv.code}</span>
+                {inv.status ? <StatusPill status={inv.status} className="text-[10px]" /> : null}
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {fmtMoney(inv.amount, inv.currency)}
+              </div>
+              {inv.submissionDate ? (
+                <div className="text-[11px] text-slate-500">
+                  Submitted {fmtDate(inv.submissionDate)}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <PaymentPill status={inv.paymentStatus} date={inv.paymentDate} />
+              <DownloadChip url={inv.pdfUrl} title="Open invoice PDF" />
+            </div>
+          </div>
+          {inv.coveredWeeks.length > 0 ? (
+            <div className="mt-2 border-t border-slate-100 pt-2">
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                Covers {inv.coveredWeeks.length} week{inv.coveredWeeks.length === 1 ? "" : "s"}
+              </div>
+              <div className="flex flex-wrap gap-1.5 text-[11px]">
+                {inv.coveredWeeks.map((w, i) => (
+                  <WeekChip key={i} startIso={w.startDate} endIso={w.endDate} />
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// Member-facing payment status of the settling payment (yellow-free, matching
+// the Invoices tab). Empty status = no payment raised yet.
+function PaymentPill({ status, date }: { status: string; date: string | null }) {
+  const s = status.trim().toLowerCase();
+  if (!s) {
+    return (
+      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500">
+        Not yet paid
+      </span>
+    );
+  }
+  let label = `Payment ${s}`;
+  let cls = "border-slate-200 bg-slate-100 text-slate-600";
+  if (s === "to be paid" || s === "scheduled") {
+    label = "Payment in progress";
+    cls = "border-indigo-200 bg-indigo-50 text-indigo-700";
+  } else if (s === "paid") {
+    label = date ? `Paid ${fmtDate(date)}` : "Paid";
+    cls = "border-emerald-200 bg-emerald-50 text-emerald-700";
+  } else if (s === "rejected") {
+    label = "Payment rejected";
+    cls = "border-rose-200 bg-rose-50 text-rose-700";
+  } else if (s === "cancelled" || s === "canceled") {
+    label = "Payment cancelled";
+    cls = "border-slate-200 bg-slate-100 text-slate-500 line-through";
+  } else if (s === "under review") {
+    label = "Payment under review";
+    cls = "border-sky-200 bg-sky-50 text-sky-700";
+  }
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${cls}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function fmtMoney(amount: number | null, currency: string): string {
+  if (amount == null) return "—";
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currency || "EUR",
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${amount.toLocaleString()} ${currency}`.trim();
+  }
+}
+
+function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function LeadChip({ role: _role }: { role: ProjectRole | "" }) {
@@ -690,20 +984,6 @@ function PlusIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function SummaryIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M3 6h13M3 12h13M3 18h9M19 5l2 3-2 3M21 8h-5"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
     </svg>
   );
 }
