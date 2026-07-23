@@ -8,6 +8,7 @@ import type { Currency, MemberRole, MemberStatus } from "@/lib/airtable";
 
 type Editable = {
   id: string;
+  photoUrl: string | null;
   fullName: string;
   email: string;
   personalEmail: string;
@@ -42,6 +43,34 @@ export function MemberEditButton({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(member.photoUrl);
+  const [photoBusy, setPhotoBusy] = useState(false);
+
+  async function changePhoto(file: File | null) {
+    setPhotoBusy(true);
+    setError(null);
+    try {
+      let res: Response;
+      if (file) {
+        const fd = new FormData();
+        fd.set("file", file);
+        res = await fetch(`/api/admin/members/${member.id}/photo`, { method: "POST", body: fd });
+      } else {
+        res = await fetch(`/api/admin/members/${member.id}/photo`, { method: "DELETE" });
+      }
+      const data = (await res.json().catch(() => ({}))) as {
+        member?: { photo?: { url: string } | null };
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error ?? "Photo update failed.");
+      setPhotoUrl(data.member?.photo?.url ?? null);
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Photo update failed.");
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
   const [form, setForm] = useState(() => ({
     fullName: member.fullName,
     email: member.email,
@@ -123,6 +152,55 @@ export function MemberEditButton({
           </>
         }
       >
+        {/* Profile photo — the one picture used across the app. Saved
+            instantly (independent of the field save below). */}
+        <div className="mb-4 flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-xs font-semibold text-slate-600">
+            {photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photoUrl} alt="" className="h-full w-full object-cover demo-blur" />
+            ) : (
+              (form.fullName || "?").trim().slice(0, 1).toUpperCase()
+            )}
+          </span>
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+              Profile photo
+            </div>
+            <div className="mt-1.5 flex items-center gap-2">
+              <label
+                className={`inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 ${
+                  photoBusy ? "pointer-events-none opacity-60" : "cursor-pointer"
+                }`}
+              >
+                {photoBusy ? "Uploading…" : photoUrl ? "Replace" : "Upload"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  className="hidden"
+                  disabled={photoBusy}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null;
+                    if (f) void changePhoto(f);
+                    e.currentTarget.value = "";
+                  }}
+                />
+              </label>
+              {photoUrl ? (
+                <button
+                  type="button"
+                  onClick={() => void changePhoto(null)}
+                  disabled={photoBusy}
+                  className="text-[11px] text-slate-500 hover:text-red-600 disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
+            <p className="mt-1 text-[10px] text-slate-400">Same picture the member sees on their profile. Max 2 MB.</p>
+          </div>
+        </div>
+
         <div className="grid gap-3 sm:grid-cols-2">
           <FormField label="Full name" value={form.fullName} onChange={(v) => set("fullName", v)} required />
           <FormField label="Login email" value={form.email} onChange={(v) => set("email", v)} />

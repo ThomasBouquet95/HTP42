@@ -184,6 +184,8 @@ export function MembersAdminClient({
   const [deleting, setDeleting] = useState(false);
   const [cvBusy, setCvBusy] = useState(false);
   const [cvMsg, setCvMsg] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoMsg, setPhotoMsg] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [baseline, setBaseline] = useState<FormState>(EMPTY);
   const [showDiscard, setShowDiscard] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -249,6 +251,52 @@ export function MembersAdminClient({
       setCvMsg({ kind: "error", text: e instanceof Error ? e.message : "Could not remove CV." });
     } finally {
       setCvBusy(false);
+    }
+  }
+
+  // Admin-side profile photo — same "Photo" attachment the member sets from
+  // their own profile page, so it's the one picture used everywhere.
+  async function uploadPhoto(file: File) {
+    if (!editing) return;
+    setPhotoBusy(true);
+    setPhotoMsg(null);
+    try {
+      const fd = new FormData();
+      fd.set("file", file);
+      const res = await fetch(`/api/admin/members/${editing.id}/photo`, { method: "POST", body: fd });
+      const data = (await res.json().catch(() => ({}))) as {
+        member?: MemberAdminRecord;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error ?? "Photo upload failed.");
+      if (data.member) setEditing((cur) => (cur ? { ...cur, photo: data.member!.photo } : cur));
+      setPhotoMsg({ kind: "success", text: "Photo updated." });
+      router.refresh();
+    } catch (e) {
+      setPhotoMsg({ kind: "error", text: e instanceof Error ? e.message : "Photo upload failed." });
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  async function removePhoto() {
+    if (!editing) return;
+    setPhotoBusy(true);
+    setPhotoMsg(null);
+    try {
+      const res = await fetch(`/api/admin/members/${editing.id}/photo`, { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as {
+        member?: MemberAdminRecord;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error ?? "Could not remove photo.");
+      setEditing((cur) => (cur ? { ...cur, photo: null } : cur));
+      setPhotoMsg({ kind: "success", text: "Photo removed." });
+      router.refresh();
+    } catch (e) {
+      setPhotoMsg({ kind: "error", text: e instanceof Error ? e.message : "Could not remove photo." });
+    } finally {
+      setPhotoBusy(false);
     }
   }
 
@@ -718,6 +766,19 @@ export function MembersAdminClient({
                       <DownloadChip url={m.cv?.url} title="Open CV" emptyTitle="No CV on file" />
                     </div>
 
+                    {m.bankAccountName || m.iban || m.bankAccountAddress ? (
+                      <div className="mt-3 rounded-md border border-slate-200 bg-white p-2.5">
+                        <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                          Bank account
+                        </div>
+                        <dl className="mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
+                          {m.bankAccountName ? <Field label="Account name" blur>{m.bankAccountName}</Field> : null}
+                          {m.iban ? <Field label="IBAN" blur mono>{m.iban}</Field> : null}
+                          {m.bankAccountAddress ? <Field label="Bank address" blur>{m.bankAccountAddress}</Field> : null}
+                        </dl>
+                      </div>
+                    ) : null}
+
                     {m.introduction ? (
                       <div className="mt-3">
                         <dt className="text-[10px] uppercase tracking-wide text-slate-400">Introduction</dt>
@@ -770,6 +831,71 @@ export function MembersAdminClient({
           </>
         }
       >
+        {editing ? (
+          <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+                Profile photo
+              </span>
+              {photoBusy ? (
+                <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+                  <Spinner /> Uploading…
+                </span>
+              ) : photoMsg ? (
+                <span
+                  className={`text-[11px] font-medium ${
+                    photoMsg.kind === "success" ? "text-green-600" : "text-red-600"
+                  }`}
+                >
+                  {photoMsg.text}
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-2 flex items-center gap-3">
+              <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-xs font-semibold text-slate-600">
+                {editing.photo?.url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={editing.photo.url} alt="" className="h-full w-full object-cover demo-blur" />
+                ) : (
+                  memberInitials(editing.fullName || editing.memberCode)
+                )}
+              </span>
+              <label
+                className={`inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 ${
+                  photoBusy ? "pointer-events-none opacity-60" : "cursor-pointer"
+                }`}
+              >
+                {photoBusy ? <Spinner /> : null}
+                {photoBusy ? "Uploading…" : editing.photo?.url ? "Replace photo" : "Upload photo"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  className="hidden"
+                  disabled={photoBusy}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) uploadPhoto(f);
+                    e.currentTarget.value = "";
+                  }}
+                />
+              </label>
+              {editing.photo?.url ? (
+                <button
+                  type="button"
+                  onClick={removePhoto}
+                  disabled={photoBusy}
+                  className="text-[11px] text-slate-500 hover:text-red-600 disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-400">
+              The one profile picture used across the app. Saved instantly. The member can also set
+              it from their profile page. JPG/PNG/WebP/GIF, max 2 MB.
+            </p>
+          </div>
+        ) : null}
         {editing ? (
           <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
             <div className="flex items-center justify-between">

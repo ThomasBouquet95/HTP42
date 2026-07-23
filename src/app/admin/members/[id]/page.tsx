@@ -179,6 +179,7 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
           <MemberEditButton
             member={{
               id: member.id,
+              photoUrl: member.photo?.url ?? null,
               fullName: member.fullName,
               email: member.email,
               personalEmail: member.personalEmail,
@@ -265,6 +266,20 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
               )}
             </div>
           </section>
+
+          {member.bankAccountName || member.iban || member.bankAccountAddress ? (
+            <Card title="Bank account">
+              <dl className="space-y-2 text-xs">
+                {member.bankAccountName ? (
+                  <Stat label="Account name" value={member.bankAccountName} />
+                ) : null}
+                {member.iban ? <Stat label="IBAN" value={member.iban} /> : null}
+                {member.bankAccountAddress ? (
+                  <Stat label="Bank address" value={member.bankAccountAddress} />
+                ) : null}
+              </dl>
+            </Card>
+          ) : null}
 
           <Card title="App connection">
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
