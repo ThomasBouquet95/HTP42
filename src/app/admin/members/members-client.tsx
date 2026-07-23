@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
 import { FilterBar, FilterMultiSelect, SegmentedTabs } from "@/components/filters";
 import { StatusPill } from "@/components/badge";
-import { IconButton, ChevronRightIcon } from "@/components/admin-icons";
 import { DownloadChip } from "@/components/download-chip";
 import { StatusSelect } from "@/components/status-select";
 import type {
@@ -541,12 +541,14 @@ export function MembersAdminClient({
                 key={m.id}
                 className="overflow-hidden rounded-lg border border-slate-200 bg-white transition-shadow hover:shadow-sm"
               >
-                {/* Collapsed header — click to expand. No money here. */}
+                {/* Header — expand toggle + an always-visible link to the
+                    full member page. */}
+                <div className="flex items-stretch">
                 <button
                   type="button"
                   onClick={() => toggleRow(m.id)}
                   aria-expanded={open}
-                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left"
                 >
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-xs font-semibold text-slate-600">
                     {m.photo ? (
@@ -615,6 +617,15 @@ export function MembersAdminClient({
                     <path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
+                  <Link
+                    href={`/admin/members/${m.id}`}
+                    title="Open full member page"
+                    className="flex shrink-0 items-center gap-1.5 border-l border-slate-100 px-3 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-50"
+                  >
+                    <OpenPageIcon />
+                    <span className="hidden sm:inline">Open</span>
+                  </Link>
+                </div>
 
                 {open ? (
                   <div className="htp-expand-in border-t border-slate-100 bg-slate-50/50 px-3 py-3">
@@ -633,6 +644,11 @@ export function MembersAdminClient({
                         value={rating ? `★ ${rating.avg.toFixed(1)}` : "—"}
                         sub={rating ? `${rating.count} review${rating.count === 1 ? "" : "s"}` : "no reviews"}
                         tone={rating ? "amber" : "muted"}
+                        href={
+                          rating
+                            ? `/admin/member-reviews?member=${encodeURIComponent(m.memberCode)}`
+                            : undefined
+                        }
                       />
                     </div>
 
@@ -677,6 +693,11 @@ export function MembersAdminClient({
                       </Field>
                     </dl>
 
+                    <div className="mt-3 flex items-center gap-2">
+                      <span className="text-[10px] uppercase tracking-wide text-slate-400">CV</span>
+                      <DownloadChip url={m.cv?.url} title="Open CV" emptyTitle="No CV on file" />
+                    </div>
+
                     {m.introduction ? (
                       <div className="mt-3">
                         <dt className="text-[10px] uppercase tracking-wide text-slate-400">Introduction</dt>
@@ -694,11 +715,8 @@ export function MembersAdminClient({
                       />
                     </div>
 
-                    {/* Actions. */}
-                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-                      <Button tone="secondary" size="sm" onClick={() => openEdit(m)}>
-                        Edit details
-                      </Button>
+                    {/* Actions — bottom right. */}
+                    <div className="mt-3 flex flex-wrap items-center justify-end gap-3 border-t border-slate-100 pt-3">
                       <div className="flex items-center gap-1.5">
                         <span className="text-[10px] uppercase tracking-wide text-slate-400">Status</span>
                         <StatusSelect
@@ -709,13 +727,9 @@ export function MembersAdminClient({
                           allowEmpty={false}
                         />
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] uppercase tracking-wide text-slate-400">CV</span>
-                        <DownloadChip url={m.cv?.url} title="Open CV" emptyTitle="No CV on file" />
-                      </div>
-                      <IconButton title="Open member page" href={`/admin/members/${m.id}`}>
-                        <ChevronRightIcon />
-                      </IconButton>
+                      <Button tone="secondary" size="sm" onClick={() => openEdit(m)}>
+                        Edit details
+                      </Button>
                     </div>
                   </div>
                 ) : null}
@@ -1017,12 +1031,16 @@ function MiniStat({
   sub,
   tone,
   blur,
+  href,
 }: {
   label: string;
   value: string;
   sub?: string;
   tone?: "positive" | "warn" | "amber" | "muted";
   blur?: boolean;
+  // When set, the whole tile becomes a link (e.g. a rating → the member's
+  // client reviews).
+  href?: string;
 }) {
   const valueColor =
     tone === "positive"
@@ -1034,14 +1052,31 @@ function MiniStat({
       : tone === "muted"
       ? "text-slate-500"
       : "text-slate-900";
-  return (
-    <div className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5">
-      <div className="text-[9px] uppercase tracking-wide text-slate-400">{label}</div>
+  const inner = (
+    <>
+      <div className="flex items-center justify-between">
+        <div className="text-[9px] uppercase tracking-wide text-slate-400">{label}</div>
+        {href ? <span aria-hidden className="text-[10px] text-brand-500">→</span> : null}
+      </div>
       <div className={`text-sm font-semibold tabular-nums ${valueColor} ${blur ? "demo-blur" : ""}`}>
         {value}
       </div>
       {sub ? <div className="text-[9px] text-slate-400">{sub}</div> : null}
-    </div>
+    </>
+  );
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="block rounded-md border border-slate-200 bg-white px-2.5 py-1.5 transition-colors hover:border-brand-300 hover:bg-brand-50/40"
+        title="View this member's client reviews"
+      >
+        {inner}
+      </Link>
+    );
+  }
+  return (
+    <div className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5">{inner}</div>
   );
 }
 
@@ -1151,6 +1186,17 @@ function InternalNote({
         </button>
       )}
     </div>
+  );
+}
+
+function OpenPageIcon() {
+  // Arrow leaving a frame — reads clearly as "open the full page".
+  return (
+    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M11 4h5v5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M16 4l-7 7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.5 5H5.5A1.5 1.5 0 0 0 4 6.5v8A1.5 1.5 0 0 0 5.5 16h8a1.5 1.5 0 0 0 1.5-1.5v-3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
