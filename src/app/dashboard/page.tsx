@@ -75,8 +75,11 @@ export default async function DashboardHomePage() {
 
   const firstName = (session.fullName || "").trim().split(/\s+/)[0] || "team";
 
+  const weekState: "submitted" | "draft" | "none" =
+    submittedThisWeek > 0 ? "submitted" : hoursThisWeek > 0 ? "draft" : "none";
+
   return (
-    <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-5">
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-4">
       <EarningsHero
         name={firstName}
         lifetimeEur={earnings.lifetimeEur}
@@ -84,24 +87,17 @@ export default async function DashboardHomePage() {
         pendingEur={earnings.pendingLifetimeEur}
         thisMonthEur={thisMonthEur}
         monthDelta={monthDelta}
+        months={earnings.months}
         paidByCurrency={earnings.paidByCurrency}
         pendingByCurrency={earnings.pendingByCurrency}
       />
 
-      {/* Earnings chart, kept tight vertically. */}
-      <section className="rounded-lg border border-slate-200 bg-white px-4 py-3 sm:px-5 sm:py-4">
-        <div className="flex items-baseline justify-between gap-4">
-          <h2 className="text-sm font-semibold text-slate-900">
-            Earnings, last 12 months
-          </h2>
-          <span className="text-[11px] text-slate-500">
-            Paid + pending, EUR equivalent
-          </span>
-        </div>
-        <div className="mt-1.5">
-          <EarningsChart months={earnings.months} current={currentMonthKey} />
-        </div>
-      </section>
+      <ThisWeekBanner
+        state={weekState}
+        hoursThisWeek={hoursThisWeek}
+        draftThisWeek={draftThisWeek}
+        streak={earnings.submissionStreakWeeks}
+      />
 
       {/* Stats strip */}
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -143,9 +139,20 @@ export default async function DashboardHomePage() {
         />
       </section>
 
+      {/* Earnings chart */}
+      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 className="text-sm font-semibold text-slate-900">Earnings, last 12 months</h2>
+          <span className="text-[11px] text-slate-500">Paid + pending, EUR equivalent</span>
+        </div>
+        <div className="mt-2">
+          <EarningsChart months={earnings.months} current={currentMonthKey} />
+        </div>
+      </section>
+
       {/* Projects + quick actions */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 lg:col-span-2">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
           <div className="flex items-baseline justify-between">
             <h2 className="text-sm font-semibold text-slate-900">Your projects</h2>
             <Link
@@ -213,7 +220,7 @@ export default async function DashboardHomePage() {
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-4">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-slate-900">Quick actions</h2>
           <div className="mt-3 grid gap-2">
             <ActionLink
@@ -257,6 +264,7 @@ function EarningsHero({
   pendingEur,
   thisMonthEur,
   monthDelta,
+  months,
   paidByCurrency,
   pendingByCurrency,
 }: {
@@ -266,74 +274,93 @@ function EarningsHero({
   pendingEur: number;
   thisMonthEur: number;
   monthDelta: number | null;
+  months: { key: string; paidEur: number; pendingEur: number }[];
   paidByCurrency: Map<string, number>;
   pendingByCurrency: Map<string, number>;
 }) {
-  // Raw per-currency totals for multi-currency consultants. Sum paid +
-  // pending per currency so the chip row is one figure per currency.
+  // Raw per-currency totals for multi-currency consultants.
   const ccyTotals = new Map<string, number>();
   for (const [c, v] of paidByCurrency) ccyTotals.set(c, (ccyTotals.get(c) ?? 0) + v);
   for (const [c, v] of pendingByCurrency) ccyTotals.set(c, (ccyTotals.get(c) ?? 0) + v);
   const ccyEntries = [...ccyTotals.entries()].sort((a, b) => b[1] - a[1]);
 
+  const total = paidEur + pendingEur;
+  const paidPct = total > 0 ? (paidEur / total) * 100 : 0;
+  const pendingPct = total > 0 ? (pendingEur / total) * 100 : 0;
+
   return (
-    <section className="relative overflow-hidden rounded-lg border border-slate-200 bg-gradient-to-br from-white via-brand-50/40 to-brand-50/40 px-5 py-5 sm:px-7 sm:py-6">
-      <DotGrid />
-      <div className="relative grid items-center gap-5 lg:grid-cols-[auto_1fr_minmax(0,auto)] lg:gap-8">
-        <Image
-          src="/htp42-mark.png"
-          alt="HealthTech Partners 42"
-          width={580}
-          height={326}
-          priority
-          className="h-12 w-auto sm:h-14 shrink-0"
-        />
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      {/* Brand band */}
+      <div className="flex items-center justify-between gap-3 bg-gradient-to-r from-brand-600 to-brand-500 px-5 py-3 sm:px-6">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-semibold text-slate-900">
-            Welcome back, <span className="text-brand-600">{name}</span>.
+          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">
+            HealthTech Partners 42
+          </div>
+          <h1 className="truncate text-lg font-semibold text-white sm:text-xl">
+            Welcome back, {name}.
           </h1>
-          <div className="mt-2 text-[11px] uppercase tracking-wide text-slate-500">
+        </div>
+        <span className="shrink-0 rounded-lg bg-white/95 px-2.5 py-1.5 shadow-sm">
+          <Image
+            src="/htp42-mark.png"
+            alt="HealthTech Partners 42"
+            width={580}
+            height={326}
+            priority
+            className="h-6 w-auto sm:h-7"
+          />
+        </span>
+      </div>
+
+      <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[1.5fr_1fr]">
+        {/* Lifetime earnings + paid/pending split */}
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-wide text-slate-400">
             Total earned with HTP42
           </div>
-          <div className="mt-0.5 flex flex-wrap items-baseline gap-2">
-            <span className="text-3xl sm:text-4xl font-semibold tabular-nums text-slate-900">
-              {formatEur(lifetimeEur)}
-            </span>
+          <div className="mt-1 text-4xl font-semibold tabular-nums text-slate-900 sm:text-5xl">
+            {formatEur(lifetimeEur)}
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
-            <span>
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-600 mr-1 align-middle" />
-              {formatEur(paidEur)} paid
-            </span>
-            <span>
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-300 mr-1 align-middle" />
-              {formatEur(pendingEur)} pending
-            </span>
-            {ccyEntries.length > 1 ? (
-              <span className="text-slate-400">
-                ·{" "}
-                {ccyEntries
-                  .map(
-                    ([c, v]) =>
-                      `${v.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${c}`,
-                  )
-                  .join(" · ")}
-              </span>
-            ) : null}
-          </div>
+          {total > 0 ? (
+            <>
+              <div className="mt-4 flex h-2.5 overflow-hidden rounded-full bg-slate-100">
+                <div className="bg-brand-600" style={{ width: `${paidPct}%` }} />
+                <div className="bg-brand-300" style={{ width: `${pendingPct}%` }} />
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-brand-600" />
+                  <b className="font-semibold text-slate-700">{formatEur(paidEur)}</b> paid
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-brand-300" />
+                  <b className="font-semibold text-slate-700">{formatEur(pendingEur)}</b> pending
+                </span>
+                {ccyEntries.length > 1 ? (
+                  <span className="text-slate-400">
+                    ·{" "}
+                    {ccyEntries
+                      .map(([c, v]) => `${v.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${c}`)
+                      .join(" · ")}
+                  </span>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <p className="mt-3 text-xs text-slate-500">
+              Your earnings appear here once your first invoice is raised.
+            </p>
+          )}
         </div>
 
-        {/* This-month panel. Lands to the right on wide screens, drops below
-            on narrow ones so the title never gets squished. */}
-        <div className="rounded-lg border border-slate-200 bg-white/70 px-4 py-3 sm:min-w-[10rem]">
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="text-[11px] uppercase tracking-wide text-slate-500">
-              This month
-            </span>
+        {/* This month + 12-month trend */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[11px] uppercase tracking-wide text-slate-500">This month</span>
             {monthDelta != null ? (
               <span
-                className={`text-[11px] font-medium ${
-                  monthDelta >= 0 ? "text-emerald-600" : "text-red-600"
+                className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                  monthDelta >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
                 }`}
               >
                 {monthDelta >= 0 ? "▲" : "▼"} {Math.abs(monthDelta * 100).toFixed(0)}% vs last
@@ -343,26 +370,131 @@ function EarningsHero({
           <div className="mt-0.5 text-2xl font-semibold tabular-nums text-slate-900">
             {formatEur(thisMonthEur)}
           </div>
+          <div className="mt-3">
+            <Sparkline months={months} />
+          </div>
+          <div className="mt-1 text-[10px] text-slate-400">Last 12 months</div>
         </div>
       </div>
     </section>
   );
 }
 
-function DotGrid() {
-  const css = `
-    .htp42-dotgrid {
-      background-image: radial-gradient(circle, rgba(30,145,249,0.10) 1px, transparent 1px);
-      background-size: 18px 18px;
-      mask-image: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent 70%);
-      -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent 70%);
-    }
-  `;
+// A compact inline trend of monthly earnings (paid + pending, EUR). Server-
+// rendered SVG — a soft brand area with a crisp line and a dot on the latest
+// month.
+function Sparkline({ months }: { months: { paidEur: number; pendingEur: number }[] }) {
+  const vals = months.map((m) => m.paidEur + m.pendingEur);
+  if (vals.length === 0) return <div className="h-10" aria-hidden />;
+  const w = 240;
+  const h = 40;
+  const pad = 3;
+  const max = Math.max(1, ...vals);
+  const n = vals.length;
+  const step = n > 1 ? w / (n - 1) : 0;
+  const pt = (v: number, i: number) => {
+    const x = n > 1 ? i * step : w / 2;
+    const y = h - pad - (v / max) * (h - pad * 2);
+    return [x, y] as const;
+  };
+  const pts = vals.map((v, i) => pt(v, i));
+  const line = pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const area = `0,${h} ${line} ${w},${h}`;
+  const [lx, ly] = pts[pts.length - 1];
   return (
-    <>
-      <style>{css}</style>
-      <div className="htp42-dotgrid absolute inset-0 pointer-events-none" aria-hidden />
-    </>
+    <svg viewBox={`0 0 ${w} ${h}`} className="h-10 w-full" preserveAspectRatio="none" aria-hidden>
+      <defs>
+        <linearGradient id="htp42-spark" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#1E91F9" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="#1E91F9" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon points={area} fill="url(#htp42-spark)" />
+      <polyline
+        points={line}
+        fill="none"
+        stroke="#1E91F9"
+        strokeWidth="2"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+      />
+      <circle cx={lx} cy={ly} r="2.5" fill="#1E91F9" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+// State-aware nudge for the single most important weekly action: logging and
+// submitting the current week's timesheet.
+function ThisWeekBanner({
+  state,
+  hoursThisWeek,
+  draftThisWeek,
+  streak,
+}: {
+  state: "submitted" | "draft" | "none";
+  hoursThisWeek: number;
+  draftThisWeek: number;
+  streak: number;
+}) {
+  const cfg =
+    state === "submitted"
+      ? {
+          ring: "border-emerald-200 bg-emerald-50",
+          iconWrap: "bg-emerald-100 text-emerald-700",
+          icon: <CheckIcon />,
+          title: "This week is submitted",
+          msg: `${hoursThisWeek.toFixed(1)} h logged${streak > 0 ? ` · ${streak}-week streak 🔥` : ""}`,
+          cta: "View timesheets",
+        }
+      : state === "draft"
+        ? {
+            ring: "border-amber-200 bg-amber-50",
+            iconWrap: "bg-amber-100 text-amber-700",
+            icon: <PencilIcon />,
+            title: "Finish this week's timesheet",
+            msg: `${hoursThisWeek.toFixed(1)} h in draft${draftThisWeek > 0 ? ` · ${draftThisWeek} to submit` : ""}`,
+            cta: "Review & submit",
+          }
+        : {
+            ring: "border-brand-200 bg-brand-50",
+            iconWrap: "bg-brand-100 text-brand-700",
+            icon: <ClockIcon />,
+            title: "Log this week's hours",
+            msg: "Nothing logged yet this week — keep your streak going.",
+            cta: "Add timesheet",
+          };
+  return (
+    <Link
+      href="/timesheets/mine"
+      className={`group flex items-center gap-3 rounded-2xl border p-4 shadow-sm transition hover:shadow ${cfg.ring}`}
+    >
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${cfg.iconWrap}`}>
+        {cfg.icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-semibold text-slate-900">{cfg.title}</div>
+        <div className="text-xs text-slate-600">{cfg.msg}</div>
+      </div>
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-white/80 px-3 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200 transition group-hover:bg-white">
+        {cfg.cta} <span aria-hidden>→</span>
+      </span>
+    </Link>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M5 12.5l4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
+      <path d="M4 20l4-1L19 8l-3-3L5 16l-1 4Z" strokeLinejoin="round" />
+    </svg>
   );
 }
 
