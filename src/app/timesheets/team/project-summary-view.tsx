@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type { ProjectSummary, ProjectTeamMember, ProjectRole } from "@/lib/airtable";
 import { StatusBadge } from "@/components/status-badge";
 import { StatusPill } from "@/components/badge";
@@ -39,10 +39,6 @@ export function ProjectSummaryView({ summary, variant = "full" }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [tab, setTab] = useState<"members" | "weeks">("members");
   const [memberOpen, setMemberOpen] = useState<ProjectTeamMember | null>(null);
-  const [activeSheet, setActiveSheet] = useState<{
-    timesheet: MemberTimesheet;
-    member: ProjectTeamMember;
-  } | null>(null);
 
   // Sort team: Engagement Lead → Project Lead → Consultant → others, then by name.
   const orderedMembers = useMemo(() => {
@@ -224,7 +220,7 @@ export function ProjectSummaryView({ summary, variant = "full" }: Props) {
         <p className="mt-1.5 text-[11px] text-slate-500">
           {tab === "members"
             ? "Each person's logged vs allocated time. Click a row to see their staffings and weekly timesheets."
-            : "Hours logged per person, week by week. Click a cell to open that week's timesheet."}
+            : "Hours logged per person, week by week. Click a cell to expand that week's day-by-day breakdown."}
         </p>
       </div>
 
@@ -244,7 +240,6 @@ export function ProjectSummaryView({ summary, variant = "full" }: Props) {
                     onToggle={() =>
                       setExpanded(expanded === m.memberRecordId ? null : m.memberRecordId)
                     }
-                    onOpenTimesheet={(t) => setActiveSheet({ timesheet: t, member: m })}
                     onOpenMember={() => setMemberOpen(m)}
                   />
                 </li>
@@ -253,13 +248,9 @@ export function ProjectSummaryView({ summary, variant = "full" }: Props) {
           )}
         </div>
       ) : (
-        <ProjectWeeksTab
-          members={orderedMembers}
-          onOpenTimesheet={(t, m) => setActiveSheet({ timesheet: t, member: m })}
-        />
+        <ProjectWeeksTab members={orderedMembers} />
       )}
 
-      <TimesheetReadModal active={activeSheet} onClose={() => setActiveSheet(null)} />
       <MemberInfoModal
         memberId={memberOpen?.memberRecordId ?? null}
         preview={
@@ -415,18 +406,14 @@ function StarIcon() {
 }
 
 // "By week" view: weeks down rows, members across columns. Cells show total
-// hours for that member that week. Click a cell with timesheet(s) to open the
-// most recent timesheet's modal.
-function ProjectWeeksTab({
-  members,
-  onOpenTimesheet,
-}: {
-  members: ProjectTeamMember[];
-  onOpenTimesheet: (t: MemberTimesheet, m: ProjectTeamMember) => void;
-}) {
+// hours for that member that week. Click a cell with timesheet(s) to expand a
+// day-by-day breakdown inline, right under that week's row.
+function ProjectWeeksTab({ members }: { members: ProjectTeamMember[] }) {
   const INITIAL_WEEKS = 8;
   const WEEKS_PER_LOAD = 8;
   const [weekCount, setWeekCount] = useState(INITIAL_WEEKS);
+  // Which (week, member) cell is expanded, keyed "monday|memberRecordId".
+  const [openCell, setOpenCell] = useState<string | null>(null);
 
   const weekMondays = useMemo(() => {
     const cur = thisMondayIso();
@@ -495,44 +482,81 @@ function ProjectWeeksTab({
               const isCurrent = mon === today;
               let weekTotal = 0;
               for (const m of members) weekTotal += grid.get(m.memberRecordId)?.get(mon)?.hours ?? 0;
+              // The member + timesheets for the cell expanded under this week (if
+              // the open cell belongs to this week), rendered as a detail row.
+              const openMember =
+                openCell && openCell.startsWith(`${mon}|`)
+                  ? members.find((m) => m.memberRecordId === openCell.slice(mon.length + 1))
+                  : undefined;
+              const openTs = openMember
+                ? grid.get(openMember.memberRecordId)?.get(mon)?.ts ?? []
+                : [];
               return (
-                <tr
-                  key={mon}
-                  className={`border-t border-slate-100 ${isCurrent ? "bg-amber-50/50" : "hover:bg-slate-50"}`}
-                >
-                  <td className="px-3 py-1.5 whitespace-nowrap">
-                    <span className={`text-[11px] font-medium ${isCurrent ? "text-amber-800" : "text-slate-700"}`}>
-                      Week of {formatHumanDate(mon)}
-                    </span>
-                    {isCurrent ? (
-                      <span className="ml-1 rounded-full bg-amber-200 px-1 py-0 text-[9px] font-semibold tracking-wide text-amber-900 align-middle">
-                        THIS
+                <Fragment key={mon}>
+                  <tr
+                    className={`border-t border-slate-100 ${isCurrent ? "bg-amber-50/50" : "hover:bg-slate-50"}`}
+                  >
+                    <td className="px-3 py-1.5 whitespace-nowrap">
+                      <span className={`text-[11px] font-medium ${isCurrent ? "text-amber-800" : "text-slate-700"}`}>
+                        Week of {formatHumanDate(mon)}
                       </span>
-                    ) : null}
-                  </td>
-                  {members.map((m) => {
-                    const cell = grid.get(m.memberRecordId)?.get(mon);
-                    const hours = cell?.hours ?? 0;
-                    const click = cell && cell.ts.length > 0 ? () => onOpenTimesheet(cell.ts[0], m) : undefined;
-                    return (
-                      <td
-                        key={m.memberRecordId}
-                        className={`px-2 py-1.5 text-right tabular-nums ${click ? "cursor-pointer hover:text-brand-700" : ""}`}
-                        onClick={click}
-                        title={click ? "Click to open the timesheet" : undefined}
-                      >
-                        {hours > 0 ? (
-                          <span className="font-medium text-slate-900">{hours.toFixed(2)}</span>
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
+                      {isCurrent ? (
+                        <span className="ml-1 rounded-full bg-amber-200 px-1 py-0 text-[9px] font-semibold tracking-wide text-amber-900 align-middle">
+                          THIS
+                        </span>
+                      ) : null}
+                    </td>
+                    {members.map((m) => {
+                      const cell = grid.get(m.memberRecordId)?.get(mon);
+                      const hours = cell?.hours ?? 0;
+                      const key = `${mon}|${m.memberRecordId}`;
+                      const clickable = !!cell && cell.ts.length > 0;
+                      const isOpen = openCell === key;
+                      return (
+                        <td
+                          key={m.memberRecordId}
+                          className={`px-2 py-1.5 text-right tabular-nums ${
+                            clickable ? "cursor-pointer hover:text-brand-700" : ""
+                          } ${isOpen ? "bg-brand-50 text-brand-700" : ""}`}
+                          onClick={clickable ? () => setOpenCell(isOpen ? null : key) : undefined}
+                          aria-expanded={clickable ? isOpen : undefined}
+                          title={clickable ? "Click to expand this week's days" : undefined}
+                        >
+                          {hours > 0 ? (
+                            <span className="font-medium text-slate-900">{hours.toFixed(2)}</span>
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                    <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900">
+                      {weekTotal > 0 ? weekTotal.toFixed(2) : <span className="text-slate-300">—</span>}
+                    </td>
+                  </tr>
+                  {openMember ? (
+                    <tr className="bg-slate-50">
+                      <td colSpan={members.length + 2} className="px-3 pb-3 pt-1">
+                        <div className="mb-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                          <span className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full bg-brand-50 text-[9px] font-semibold text-brand-700">
+                            {openMember.photoUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={openMember.photoUrl} alt="" className="h-full w-full object-cover" />
+                            ) : (
+                              initials(openMember.memberName || openMember.memberCode)
+                            )}
+                          </span>
+                          {openMember.memberName || openMember.memberCode} · week of {formatHumanDate(mon)}
+                        </div>
+                        <div className="space-y-2">
+                          {openTs.map((t) => (
+                            <TimesheetDetail key={t.id} timesheet={t} />
+                          ))}
+                        </div>
                       </td>
-                    );
-                  })}
-                  <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900">
-                    {weekTotal > 0 ? weekTotal.toFixed(2) : <span className="text-slate-300">—</span>}
-                  </td>
-                </tr>
+                    </tr>
+                  ) : null}
+                </Fragment>
               );
             })}
           </tbody>
@@ -555,19 +579,27 @@ function MemberRow({
   member,
   expanded,
   onToggle,
-  onOpenTimesheet,
   onOpenMember,
 }: {
   member: ProjectTeamMember;
   expanded: boolean;
   onToggle: () => void;
-  onOpenTimesheet: (t: MemberTimesheet) => void;
   onOpenMember: () => void;
 }) {
   const allocHours = member.daysAllocatedTotal * HOURS_PER_DAY;
   const pct = allocHours > 0 ? Math.min(100, (member.hoursActualTotal / allocHours) * 100) : 0;
   const over = member.hoursActualTotal > allocHours && allocHours > 0;
   const role = strongestRole(member);
+  // Which of this member's timesheet weeks are expanded to their day breakdown.
+  const [openTs, setOpenTs] = useState<Set<string>>(new Set());
+  function toggleTs(id: string) {
+    setOpenTs((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   return (
     <div>
@@ -712,6 +744,7 @@ function MemberRow({
                 <table className="w-full text-xs">
                   <thead className="text-[11px] uppercase tracking-wide text-slate-500">
                     <tr>
+                      <th className="w-5 py-1 pr-1" />
                       <th className="text-left py-1 pr-3 font-medium">Week</th>
                       <th className="text-left py-1 pr-3 font-medium">Staffing</th>
                       <th className="text-left py-1 pr-3 font-medium">Status</th>
@@ -719,26 +752,61 @@ function MemberRow({
                     </tr>
                   </thead>
                   <tbody>
-                    {member.timesheets.slice(0, 12).map((t) => (
-                      <tr
-                        key={t.id}
-                        onClick={() => onOpenTimesheet(t)}
-                        className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
-                      >
-                        <td className="py-1.5 pr-3 whitespace-nowrap">
-                          <WeekChip startIso={t.startDate} endIso={t.endDate} />
-                        </td>
-                        <td className="py-1.5 pr-3 font-mono text-[10px] text-slate-500">
-                          {t.staffingCode || "—"}
-                        </td>
-                        <td className="py-1.5 pr-3">
-                          <StatusBadge status={t.status} />
-                        </td>
-                        <td className="py-1.5 text-right tabular-nums font-medium text-slate-900">
-                          {t.totalHours.toFixed(2)} h
-                        </td>
-                      </tr>
-                    ))}
+                    {member.timesheets.slice(0, 12).map((t) => {
+                      const isOpen = openTs.has(t.id);
+                      return (
+                        <Fragment key={t.id}>
+                          <tr
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => toggleTs(t.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                toggleTs(t.id);
+                              }
+                            }}
+                            aria-expanded={isOpen}
+                            className={`border-t border-slate-100 cursor-pointer hover:bg-slate-50 ${
+                              isOpen ? "bg-slate-50" : ""
+                            }`}
+                          >
+                            <td className="py-1.5 pl-1 pr-1 align-middle">
+                              <svg
+                                viewBox="0 0 16 16"
+                                className={`h-3 w-3 text-slate-400 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                aria-hidden
+                              >
+                                <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap">
+                              <WeekChip startIso={t.startDate} endIso={t.endDate} />
+                            </td>
+                            <td className="py-1.5 pr-3 font-mono text-[10px] text-slate-500">
+                              {t.staffingCode || "—"}
+                            </td>
+                            <td className="py-1.5 pr-3">
+                              <StatusBadge status={t.status} />
+                            </td>
+                            <td className="py-1.5 text-right tabular-nums font-medium text-slate-900">
+                              {t.totalHours.toFixed(2)} h
+                            </td>
+                          </tr>
+                          {isOpen ? (
+                            <tr className="bg-slate-50">
+                              <td />
+                              <td colSpan={4} className="pb-2.5 pr-1 pt-0.5">
+                                <TimesheetDetail timesheet={t} />
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -748,7 +816,7 @@ function MemberRow({
                 </div>
               ) : null}
               <div className="mt-1.5 text-[11px] text-slate-400">
-                Click a row to view the full week.
+                Click a week to expand its day-by-day breakdown.
               </div>
             </div>
           ) : (
@@ -842,28 +910,9 @@ const DAY_LABELS_FULL: Record<"monday" | "tuesday" | "wednesday" | "thursday" | 
   friday: "Friday",
 };
 
-function TimesheetReadModal({
-  active,
-  onClose,
-}: {
-  active: { timesheet: MemberTimesheet; member: ProjectTeamMember } | null;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    if (!active) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = "";
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [active, onClose]);
-
-  if (!active) return null;
-  const { timesheet: t, member } = active;
+// Inline day-by-day breakdown of a single timesheet week. Rendered in place
+// (no modal) beneath the timesheet row / week cell the user expanded.
+function TimesheetDetail({ timesheet: t }: { timesheet: MemberTimesheet }) {
   const days = (Object.keys(DAY_LABELS_FULL) as Array<keyof typeof DAY_LABELS_FULL>).map((k) => ({
     key: k,
     label: DAY_LABELS_FULL[k],
@@ -872,76 +921,46 @@ function TimesheetReadModal({
   }));
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-slate-900/60 backdrop-blur-[2px] px-3 py-6 sm:items-center sm:py-10"
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
-          <div className="min-w-0">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-              Timesheet
-            </div>
-            <h2 className="mt-0.5 truncate text-base font-semibold text-slate-900">
-              {member.memberName || member.memberCode}
-            </h2>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-              <span className="rounded-md bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] text-white">
-                {t.timesheetCode}
-              </span>
-              <span>{formatWeekRange(t.startDate, t.endDate)}</span>
-              <span className="font-mono text-slate-400">{t.staffingCode}</span>
-              <StatusBadge status={t.status} />
-              {t.submissionDate ? <span>· Submitted {t.submissionDate}</span> : null}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="text-left px-3 py-1.5 font-medium w-32">Day</th>
-                <th className="text-right px-3 py-1.5 font-medium w-20">Hours</th>
-                <th className="text-left px-3 py-1.5 font-medium">Task description</th>
-              </tr>
-            </thead>
-            <tbody>
-              {days.map((d) => (
-                <tr key={d.key} className="border-t border-slate-100">
-                  <td className="px-3 py-1.5 font-medium text-slate-700">{d.label}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">
-                    {d.hours ? d.hours.toFixed(2) : <span className="text-slate-300">—</span>}
-                  </td>
-                  <td className="px-3 py-1.5 text-slate-700 whitespace-pre-line">
-                    {d.task || <span className="text-slate-300">—</span>}
-                  </td>
-                </tr>
-              ))}
-              <tr className="border-t border-slate-200 bg-slate-50">
-                <td className="px-3 py-1.5 font-semibold text-slate-700">Total</td>
-                <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-900">
-                  {t.totalHours.toFixed(2)}
+    <div className="htp-expand-in overflow-hidden rounded-md border border-slate-200 bg-white">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-3 py-1.5 text-[11px] text-slate-500">
+        <span className="rounded bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] text-white">
+          {t.timesheetCode}
+        </span>
+        <span>{formatWeekRange(t.startDate, t.endDate)}</span>
+        {t.staffingCode ? <span className="font-mono text-slate-400">{t.staffingCode}</span> : null}
+        <StatusBadge status={t.status} />
+        {t.submissionDate ? <span>· Submitted {t.submissionDate}</span> : null}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="text-[10px] uppercase tracking-wide text-slate-400">
+            <tr>
+              <th className="w-28 px-3 py-1 text-left font-medium">Day</th>
+              <th className="w-16 px-3 py-1 text-right font-medium">Hours</th>
+              <th className="px-3 py-1 text-left font-medium">Task description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {days.map((d) => (
+              <tr key={d.key} className="border-t border-slate-100">
+                <td className="px-3 py-1.5 font-medium text-slate-700">{d.label}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums">
+                  {d.hours ? d.hours.toFixed(2) : <span className="text-slate-300">—</span>}
                 </td>
-                <td />
+                <td className="px-3 py-1.5 text-slate-700 whitespace-pre-line demo-blur">
+                  {d.task || <span className="text-slate-300">—</span>}
+                </td>
               </tr>
-            </tbody>
-          </table>
-        </div>
+            ))}
+            <tr className="border-t border-slate-200 bg-slate-50">
+              <td className="px-3 py-1.5 font-semibold text-slate-700">Total</td>
+              <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-900">
+                {t.totalHours.toFixed(2)}
+              </td>
+              <td />
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   );
