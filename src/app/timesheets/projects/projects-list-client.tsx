@@ -407,7 +407,7 @@ function ProjectCard({
   ];
 
   return (
-    <li className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors hover:border-brand-300">
+    <li className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors hover:bg-slate-50">
       <div
         role="button"
         tabIndex={0}
@@ -432,7 +432,7 @@ function ProjectCard({
               />
               <span className="font-mono text-[11px] text-slate-500">{p.projectCode}</span>
               {p.status ? <StatusPill status={p.status} className="text-[10px]" /> : null}
-              {p.isLeader ? <LeadChip role={role} /> : null}
+              {p.isLeader ? <LeadChip /> : null}
             </div>
             <h3 className="mt-1 truncate text-sm font-semibold text-slate-900 sm:text-[15px]">
               {p.projectName || "Untitled project"}
@@ -856,12 +856,10 @@ function fmtDate(iso: string): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function LeadChip({ role: _role }: { role: ProjectRole | "" }) {
-  const label = "Project Manager";
+function LeadChip() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-700">
-      <StarIcon />
-      {label}
+    <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">
+      Project Manager
     </span>
   );
 }

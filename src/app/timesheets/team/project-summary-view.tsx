@@ -5,8 +5,16 @@ import type { ProjectSummary, ProjectTeamMember, ProjectRole } from "@/lib/airta
 import { StatusBadge } from "@/components/status-badge";
 import { StatusPill } from "@/components/badge";
 import { Button, ButtonLink } from "@/components/form-controls";
-import { addWeeksIso, formatHumanDate, formatWeekRange, mondayOf, thisMondayIso } from "@/lib/dates";
+import {
+  addWeeksIso,
+  formatHumanDate,
+  formatWeekRange,
+  fridayOfWeek,
+  mondayOf,
+  thisMondayIso,
+} from "@/lib/dates";
 import { DateRangeChip } from "@/components/date-range-chip";
+import { WeekChip } from "@/components/week-chip";
 import { MemberInfoModal } from "@/components/member-info-modal";
 
 type Props = { summary: ProjectSummary; variant?: "full" | "embedded" };
@@ -432,9 +440,12 @@ function ProjectWeeksTab({
                 <Fragment key={mon}>
                   <tr className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="px-3 py-1.5 whitespace-nowrap">
-                      <span className="text-[11px] font-medium text-slate-700">
-                        Week of {formatHumanDate(mon)}
-                      </span>
+                      <WeekChip
+                        startIso={mon}
+                        endIso={fridayOfWeek(mon)}
+                        variant="plain"
+                        className="text-[11px] font-medium"
+                      />
                     </td>
                     {members.map((m) => {
                       const cell = grid.get(m.memberRecordId)?.get(mon);
