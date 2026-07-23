@@ -628,11 +628,6 @@ export function MembersAdminClient({
                         {m.fullName || m.memberCode}
                       </span>
                       {m.status ? <StatusPill status={m.status} /> : null}
-                      {(m.internalNotes?.length ?? 0) > 0 ? (
-                        <span title="Has internal notes" className="text-amber-500">
-                          ●
-                        </span>
-                      ) : null}
                     </span>
                     <span className="mt-0.5 block truncate text-[11px] text-slate-500">
                       <span className="font-mono">{m.memberCode}</span>
@@ -707,6 +702,7 @@ export function MembersAdminClient({
                         onChange={(next) => updateStatus(m.id, next)}
                         ariaLabel="Status"
                         allowEmpty={false}
+                        className="!w-auto"
                       />
                     </div>
                     {/* KPIs — the money + rating live here, on expand. */}
