@@ -603,14 +603,14 @@ export function MembersAdminClient({
                 key={m.id}
                 className="overflow-hidden rounded-lg border border-slate-200 bg-white transition-shadow hover:shadow-sm"
               >
-                {/* Header — expand toggle + an always-visible link to the
-                    full member page. */}
-                <div className="flex items-stretch">
+                {/* Header — expand toggle + always-visible Edit / Open
+                    profile actions, all vertically centred. */}
+                <div className="flex items-center gap-1 pr-2">
                 <button
                   type="button"
                   onClick={() => toggleRow(m.id)}
                   aria-expanded={open}
-                  className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-3 rounded-l-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50"
                 >
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-xs font-semibold text-slate-600">
                     {m.photo ? (
@@ -679,23 +679,25 @@ export function MembersAdminClient({
                     <path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
-                  <button
-                    type="button"
-                    onClick={() => openEdit(m)}
-                    title="Edit member"
-                    className="flex shrink-0 items-center gap-1.5 border-l border-slate-100 px-3 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
-                  >
-                    <EditPencil />
-                    <span className="hidden sm:inline">Edit</span>
-                  </button>
-                  <Link
-                    href={`/admin/members/${m.id}`}
-                    title="Open profile"
-                    className="flex shrink-0 items-center gap-1.5 self-center rounded-md bg-brand-50 px-2.5 py-1.5 text-xs font-medium text-brand-700 ring-1 ring-brand-200 transition-colors hover:bg-brand-100"
-                  >
-                    <ProfileIcon />
-                    <span className="hidden sm:inline">Open profile</span>
-                  </Link>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(m)}
+                      title="Edit member"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+                    >
+                      <EditPencil />
+                      <span className="hidden sm:inline">Edit</span>
+                    </button>
+                    <Link
+                      href={`/admin/members/${m.id}`}
+                      title="Open profile"
+                      className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-brand-700"
+                    >
+                      <ProfileIcon />
+                      <span className="hidden sm:inline">Open profile</span>
+                    </Link>
+                  </div>
                 </div>
 
                 {open ? (
