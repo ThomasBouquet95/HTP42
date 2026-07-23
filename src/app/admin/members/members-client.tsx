@@ -16,7 +16,15 @@ import type {
   MemberAdminRecord,
   MemberRole,
   MemberStatus,
+  StaffingStatus,
 } from "@/lib/airtable";
+
+type StaffingLite = {
+  memberRecordIds: string[];
+  status: StaffingStatus | "";
+  projectCode: string;
+  projectName: string;
+};
 
 type Props = {
   members: MemberAdminRecord[];
@@ -24,7 +32,17 @@ type Props = {
   statuses: readonly MemberStatus[];
   currencies: readonly Currency[];
   legacyRoleCount?: number;
+  staffings: StaffingLite[];
+  billed: Record<string, { paidEur: number; pendingEur: number }>;
+  ratings: Record<string, { avg: number; count: number }>;
 };
+
+function eur(n: number): string {
+  if (n <= 0) return "€0";
+  if (n >= 1_000_000) return `€${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `€${(n / 1_000).toFixed(n >= 100_000 ? 0 : 1)}k`;
+  return `€${Math.round(n)}`;
+}
 
 type FormState = {
   memberCode: string;
@@ -85,8 +103,34 @@ export function MembersAdminClient({
   statuses,
   currencies,
   legacyRoleCount = 0,
+  staffings,
+  billed,
+  ratings,
 }: Props) {
   const router = useRouter();
+  // Admin/HR-only internal notes, edited inline; kept here so a save sticks
+  // without a full refresh (which would drop scroll + filters).
+  const [notes, setNotes] = useState<Record<string, string>>(() =>
+    Object.fromEntries(members.map((m) => [m.id, m.internalNote])),
+  );
+  // Active projects per member (non-Completed staffing = current/upcoming),
+  // and the set of currently-staffed members.
+  const staffing = useMemo(() => {
+    const projectsByMember = new Map<string, { code: string; name: string }[]>();
+    const staffedIds = new Set<string>();
+    for (const s of staffings) {
+      if (s.status === "Completed") continue;
+      for (const id of s.memberRecordIds) {
+        staffedIds.add(id);
+        const list = projectsByMember.get(id) ?? [];
+        if (s.projectCode && !list.some((p) => p.code === s.projectCode)) {
+          list.push({ code: s.projectCode, name: s.projectName || s.projectCode });
+        }
+        projectsByMember.set(id, list);
+      }
+    }
+    return { projectsByMember, staffedIds };
+  }, [staffings]);
   const [migratingRoles, setMigratingRoles] = useState(false);
   async function migrateRoles() {
     if (
@@ -528,8 +572,24 @@ export function MembersAdminClient({
                   </td>
                   <td className="px-2 py-1.5 font-mono text-[11px]">{m.memberCode}</td>
                   <td className="px-2 py-1.5">
-                    <div className="demo-blur">{m.fullName}</div>
-                    <div className="text-xs text-slate-500 md:hidden demo-blur">{m.email}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="demo-blur">{m.fullName}</span>
+                      {(notes[m.id] ?? "").trim() ? (
+                        <span title="Has an internal note" className="text-amber-500">●</span>
+                      ) : null}
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-2">
+                      {m.status === "Inactive" ? null : staffing.staffedIds.has(m.id) ? (
+                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700 ring-1 ring-emerald-200">
+                          Staffed
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-medium text-amber-700 ring-1 ring-amber-200">
+                          Bench
+                        </span>
+                      )}
+                      <span className="text-xs text-slate-500 md:hidden demo-blur">{m.email}</span>
+                    </div>
                   </td>
                   <td className="px-2 py-1.5 text-slate-600 hidden md:table-cell demo-blur">{m.email}</td>
                   <td className="px-2 py-1.5 hidden lg:table-cell">{m.role || "—"}</td>
@@ -574,6 +634,75 @@ export function MembersAdminClient({
                   <tr className="border-t border-slate-100 bg-slate-50/60">
                     <td />
                     <td colSpan={11} className="px-3 py-3">
+                      {/* KPI strip — staffing, money billed, client rating. */}
+                      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+                        <MiniStat
+                          label="Staffing"
+                          value={
+                            m.status === "Inactive"
+                              ? "Inactive"
+                              : staffing.staffedIds.has(m.id)
+                              ? "Staffed"
+                              : "On bench"
+                          }
+                          tone={
+                            m.status === "Inactive"
+                              ? "muted"
+                              : staffing.staffedIds.has(m.id)
+                              ? "positive"
+                              : "warn"
+                          }
+                        />
+                        <MiniStat
+                          label="Billed"
+                          value={eur((billed[m.id]?.paidEur ?? 0) + (billed[m.id]?.pendingEur ?? 0))}
+                          blur
+                        />
+                        <MiniStat label="Paid" value={eur(billed[m.id]?.paidEur ?? 0)} tone="positive" blur />
+                        <MiniStat label="Pending" value={eur(billed[m.id]?.pendingEur ?? 0)} blur />
+                        <MiniStat
+                          label="Client rating"
+                          value={
+                            ratings[m.memberCode]
+                              ? `★ ${ratings[m.memberCode].avg.toFixed(1)}`
+                              : "—"
+                          }
+                          sub={
+                            ratings[m.memberCode]
+                              ? `${ratings[m.memberCode].count} review${ratings[m.memberCode].count === 1 ? "" : "s"}`
+                              : "no reviews"
+                          }
+                          tone={ratings[m.memberCode] ? "amber" : "muted"}
+                        />
+                      </div>
+
+                      {/* Current projects. */}
+                      <div className="mb-3">
+                        <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                          Current projects
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          {(staffing.projectsByMember.get(m.id) ?? []).length > 0 ? (
+                            (staffing.projectsByMember.get(m.id) ?? []).map((p) => (
+                              <span
+                                key={p.code}
+                                title={p.name}
+                                className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-200"
+                              >
+                                <span className="font-mono">{p.code}</span>
+                                <span className="ml-1 max-w-[10rem] truncate text-emerald-600/80">
+                                  {p.name}
+                                </span>
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-[11px] text-slate-400">
+                              Not staffed on any live project.
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
                       <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
                         <Field label="Member code" mono>
                           {m.memberCode || "—"}
@@ -622,6 +751,13 @@ export function MembersAdminClient({
                         <dd className="mt-0.5" onClick={(e) => e.stopPropagation()}>
                           <DownloadChip url={m.cv?.url} title="Open CV" emptyTitle="No CV on file" />
                         </dd>
+                      </div>
+                      <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                        <InternalNote
+                          memberId={m.id}
+                          note={notes[m.id] ?? ""}
+                          onSaved={(v) => setNotes((prev) => ({ ...prev, [m.id]: v }))}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -917,6 +1053,158 @@ function Field({
         {children}
       </dd>
     </div>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+  sub,
+  tone,
+  blur,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: "positive" | "warn" | "amber" | "muted";
+  blur?: boolean;
+}) {
+  const valueColor =
+    tone === "positive"
+      ? "text-emerald-700"
+      : tone === "warn"
+      ? "text-amber-700"
+      : tone === "amber"
+      ? "text-amber-600"
+      : tone === "muted"
+      ? "text-slate-500"
+      : "text-slate-900";
+  return (
+    <div className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5">
+      <div className="text-[9px] uppercase tracking-wide text-slate-400">{label}</div>
+      <div className={`text-sm font-semibold tabular-nums ${valueColor} ${blur ? "demo-blur" : ""}`}>
+        {value}
+      </div>
+      {sub ? <div className="text-[9px] text-slate-400">{sub}</div> : null}
+    </div>
+  );
+}
+
+function InternalNote({
+  memberId,
+  note,
+  onSaved,
+}: {
+  memberId: string;
+  note: string;
+  onSaved: (v: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(note);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/members/${memberId}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ internalNote: value }),
+      });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? "Could not save the note.");
+      }
+      onSaved(value);
+      setEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save the note.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-amber-200 bg-amber-50/40 p-2.5">
+      <div className="flex items-center justify-between">
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+          <NoteLockIcon /> Internal note
+          <span className="ml-1 font-normal normal-case text-amber-600/70">
+            · admin only, never shown to the member
+          </span>
+        </span>
+        {!editing ? (
+          <button
+            type="button"
+            onClick={() => {
+              setValue(note);
+              setEditing(true);
+            }}
+            className="text-[11px] font-medium text-brand-600 hover:text-brand-700"
+          >
+            {note ? "Edit" : "+ Add"}
+          </button>
+        ) : null}
+      </div>
+      {editing ? (
+        <div className="mt-2">
+          <textarea
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            rows={6}
+            autoFocus
+            placeholder="Availability, rate expectations, feedback, follow-ups…"
+            className="block min-h-[8rem] w-full resize-y rounded-md border border-amber-300 bg-white px-2.5 py-2 text-xs leading-relaxed text-slate-800 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+          />
+          {error ? <div className="mt-1 text-[11px] text-red-600">{error}</div> : null}
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              className="rounded-md bg-brand-600 px-3 py-1 text-xs font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-60"
+            >
+              {saving ? "Saving…" : "Save note"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(false);
+                setError(null);
+              }}
+              disabled={saving}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : note ? (
+        <p className="mt-1.5 whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{note}</p>
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            setValue("");
+            setEditing(true);
+          }}
+          className="mt-1.5 block w-full rounded-md border border-dashed border-amber-300 py-2.5 text-center text-[11px] italic text-amber-700/70 hover:bg-amber-50"
+        >
+          + Add an internal note
+        </button>
+      )}
+    </div>
+  );
+}
+
+function NoteLockIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="3" y="7" width="10" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
   );
 }
 

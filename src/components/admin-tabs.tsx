@@ -42,7 +42,6 @@ const CATEGORIES: Category[] = [
     key: "network",
     label: "Network / HR",
     pages: [
-      { key: "networkcockpit", href: "/admin/network", label: "Cockpit" },
       { key: "members", href: "/admin/members", label: "Members" },
       { key: "memberreviews", href: "/admin/member-reviews", label: "Client review" },
       { key: "signins", href: "/admin/sign-ins", label: "App activity" },
