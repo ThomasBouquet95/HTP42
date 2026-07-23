@@ -844,7 +844,7 @@ function ReviewCard({
           <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5">
             <span aria-hidden className="text-sm">✉</span>
             <span className="min-w-0 flex-1 text-[11px] text-amber-800">
-              Sent to the client to review by email — waiting for their decision. No action needed.
+              Sent to the client to review by email, waiting for their decision. No action needed.
             </span>
             <button
               type="button"

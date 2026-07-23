@@ -441,7 +441,7 @@ export function OpportunitiesClient({
             placeholder="e.g. Data platform build for Acme"
           />
           <FormSelect label="Client" value={form.clientId} onChange={(v) => updateField("clientId", v)}>
-            <option value="">— No client —</option>
+            <option value="">No client</option>
             {clients.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.code}: {c.name}

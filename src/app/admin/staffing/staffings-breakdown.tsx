@@ -410,7 +410,7 @@ export function StaffingsByProject({
   const clients = useMemo(() => {
     const m = new Map<string, StaffingAdminRecord[]>();
     for (const s of staffings) {
-      const client = clientByProjectCode.get(s.projectCode) || "— No client —";
+      const client = clientByProjectCode.get(s.projectCode) || "No client";
       const arr = m.get(client) ?? [];
       arr.push(s);
       m.set(client, arr);

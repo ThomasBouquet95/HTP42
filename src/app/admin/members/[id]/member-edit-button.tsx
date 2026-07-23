@@ -254,7 +254,7 @@ export function MemberEditButton({
 
         <div className="mt-4 rounded-md border border-amber-200 bg-amber-50/40 p-3">
           <FormTextarea
-            label="Internal note — admin only, never shown to the member"
+            label="Internal note (admin only, never shown to the member)"
             value={form.internalNote}
             onChange={(v) => set("internalNote", v)}
             rows={5}

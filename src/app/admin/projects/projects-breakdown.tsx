@@ -7,7 +7,7 @@ import { EditIcon, IconButton } from "@/components/admin-icons";
 import type { ClientRecord, ProjectRecord } from "@/lib/airtable";
 import type { ProjectStaffingLite } from "./projects-client";
 
-const NO_CLIENT = "— No client —";
+const NO_CLIENT = "No client";
 
 function money(v: number | null, ccy: string): string {
   if (v == null) return "—";

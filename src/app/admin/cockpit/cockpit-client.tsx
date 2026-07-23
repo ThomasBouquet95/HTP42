@@ -115,7 +115,7 @@ export function CockpitClient({
 
       {/* Income-statement flow: revenue by client -> gross revenue -> cost
           items + net result. Full width so the ribbons have room. */}
-      <ChartCard title="Income statement — revenue by client to net result (EUR)">
+      <ChartCard title="Income statement: revenue by client to net result (EUR)">
         <IncomeSankey flow={incomeFlow} />
       </ChartCard>
 

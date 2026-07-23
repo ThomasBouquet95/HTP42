@@ -108,7 +108,7 @@ export function ReportIssueButton() {
             <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
               ✓
             </div>
-            Thanks — your report was submitted. The team can see it under Admin → Roles &amp; access →
+            Thanks, your report was submitted. The team can see it under Admin → Roles &amp; access →
             Requests.
           </div>
         ) : (

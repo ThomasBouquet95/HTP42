@@ -1811,7 +1811,7 @@ export function PaymentsClient({
             Review tab instead.
             {deleteTarget?.paymentStatus === "Paid" ? (
               <span className="mt-2 block text-amber-700">
-                This payment is already marked Paid — cancelling records the change here but does not
+                This payment is already marked Paid. Cancelling records the change here but does not
                 reverse the actual bank payment or any linked invoice.
               </span>
             ) : null}
@@ -1937,7 +1937,7 @@ export function PaymentsClient({
         title="Resend payment email?"
         message={`This resends the payment recap for ${
           resendTarget?.paymentCode ? `#${resendTarget.paymentCode}` : "this payment"
-        } — with the invoice PDF — to the invoices inbox and the accounting / Qonto recipients. Continue?`}
+        }, with the invoice PDF, to the invoices inbox and the accounting / Qonto recipients. Continue?`}
         confirmLabel={resending ? "Sending…" : "Resend"}
         onCancel={() => (resending ? undefined : setResendTarget(null))}
         onConfirm={async () => {

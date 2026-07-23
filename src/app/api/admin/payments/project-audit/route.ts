@@ -145,7 +145,7 @@ export async function GET(request: Request) {
   const reasonColor = (r: Reason) =>
     r === "no staffing link" ? "#b91c1c" : r === "wrong staffing" ? "#b45309" : "#7c3aed";
   const list = (pairs: [string, number][]) =>
-    pairs.map(([k, n]) => `<li><code>${esc(k)}</code> — <strong>${n}</strong></li>`).join("");
+    pairs.map(([k, n]) => `<li><code>${esc(k)}</code>: <strong>${n}</strong></li>`).join("");
 
   const rowsHtml = mismatches
     .map(

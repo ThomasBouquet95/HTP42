@@ -54,7 +54,7 @@ export async function POST(request: Request) {
       if (!qonto.ok) {
         const msg =
           qonto.error === "not-configured"
-            ? "Qonto isn't connected yet — add your API credentials in the Bank (Qonto) tab first."
+            ? "Qonto isn't connected yet. Add your API credentials in the Bank (Qonto) tab first."
             : `Couldn't read Qonto transactions: ${qonto.error}`;
         return NextResponse.json({ error: msg }, { status: 502 });
       }

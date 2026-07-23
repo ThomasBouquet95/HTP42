@@ -421,8 +421,8 @@ export function StaffingsAdminClient({
   // timesheet sub-tabs. By project counts distinct clients; by member counts
   // distinct members.
   const tabCounts = useMemo(() => {
-    const projectClient = new Map(projects.map((p) => [p.code, p.clientName || "— No client —"]));
-    const clients = new Set(filtered.map((s) => projectClient.get(s.projectCode) || "— No client —"));
+    const projectClient = new Map(projects.map((p) => [p.code, p.clientName || "No client"]));
+    const clients = new Set(filtered.map((s) => projectClient.get(s.projectCode) || "No client"));
     const memberIds = new Set(
       filtered.flatMap((s) => (s.memberRecordIds.length ? s.memberRecordIds : ["—"])),
     );

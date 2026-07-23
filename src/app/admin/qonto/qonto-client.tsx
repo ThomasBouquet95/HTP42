@@ -975,7 +975,7 @@ function StatisticsView({
       ) : null}
 
       {/* Spend over time — click a month to focus */}
-      <ChartCard title="Inflow vs outflow by month — click a month to focus">
+      <ChartCard title="Inflow vs outflow by month: click a month to focus">
         <MonthlyBarChart
           rows={monthly}
           showPlannedSplit={hasPending}
@@ -1340,13 +1340,13 @@ function ConnectPanel({
               {bothMissing ? (
                 <>
                   Neither variable is visible yet. On Vercel, env-var changes only
-                  take effect on a <strong>new deployment</strong> — redeploy the
+                  take effect on a <strong>new deployment</strong>. Redeploy the
                   branch you&apos;re viewing, and make sure the variables are enabled
                   for that environment (Production <em>and</em> Preview).
                 </>
               ) : (
                 <>
-                  One credential is missing — double-check its exact name and value
+                  One credential is missing. Double-check its exact name and value
                   for the environment you&apos;re viewing, then redeploy.
                 </>
               )}

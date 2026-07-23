@@ -474,7 +474,7 @@ function BusinessProcesses() {
         <Rule tone="warning">
           <strong>Automated status updates.</strong> Marking a payment To be paid / Paid while its
           linked timesheets are still under review (or rejected) auto-approves them on confirm
-          (paying implies acceptance) — this is also how you revive a Rejected payment. Rejecting a
+          (paying implies acceptance). This is also how you revive a Rejected payment. Rejecting a
           timesheet cascades to reject any unpaid payment already raised for that week; the rejected
           week itself cannot be invoiced again until the member revises and resubmits it. Marking
           Paid also marks the related member invoice Paid.

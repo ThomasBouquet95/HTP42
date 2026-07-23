@@ -312,13 +312,13 @@ export function ProjectsAdminClient({
       const data = (await res.json().catch(() => ({}))) as { poNumber?: string; error?: string };
       if (res.ok && data.poNumber) {
         setForm((f) => ({ ...f, purchaseOrder: data.poNumber as string }));
-        setToast({ kind: "ok", msg: `Detected PO #${data.poNumber} — edit to override.` });
+        setToast({ kind: "ok", msg: `Detected PO #${data.poNumber}. Edit to override.` });
       } else if (res.ok) {
-        setToast({ kind: "ok", msg: "No PO number detected — enter it manually." });
+        setToast({ kind: "ok", msg: "No PO number detected. Enter it manually." });
       } else {
         setToast({
           kind: "error",
-          msg: data.error || "Couldn't read the PO number — enter it manually.",
+          msg: data.error || "Couldn't read the PO number. Enter it manually.",
         });
       }
     } catch {
@@ -984,7 +984,7 @@ export function ProjectsAdminClient({
           <SectionHeader title="Identity" hint="What the project is and who it's for." />
           <div className="grid gap-3 sm:grid-cols-2">
             <FormSelect label="Client" value={form.clientId} onChange={onClientChange} required>
-              <option value="">— None —</option>
+              <option value="">None</option>
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.clientCode}: {c.clientName}

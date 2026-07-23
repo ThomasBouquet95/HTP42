@@ -679,7 +679,7 @@ function BundleDetail({
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={2}
-            placeholder="Note to the member (optional) — shown on their invoice, e.g. why it was rejected"
+            placeholder="Note to the member (optional), shown on their invoice, e.g. why it was rejected"
             className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
           />
           <div className="flex flex-wrap items-center gap-2">

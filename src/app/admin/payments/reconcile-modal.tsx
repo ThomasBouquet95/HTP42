@@ -180,7 +180,7 @@ export function ReconcileModal({
           Linked {linkedCount} payment{linkedCount === 1 ? "" : "s"} to Qonto transactions.
           {failedCount > 0 ? (
             <div className="mt-2 text-xs text-amber-700">
-              {failedCount} link{failedCount === 1 ? "" : "s"} couldn&apos;t be saved — try again.
+              {failedCount} link{failedCount === 1 ? "" : "s"} couldn&apos;t be saved. Try again.
             </div>
           ) : null}
         </div>

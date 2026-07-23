@@ -262,7 +262,7 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
                 </p>
               ) : (
                 <p className="text-xs italic text-slate-400">
-                  No internal note. Use “Edit member” to add one — the member never sees it.
+                  No internal note. Use “Edit member” to add one. The member never sees it.
                 </p>
               )}
             </div>
