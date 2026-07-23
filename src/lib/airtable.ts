@@ -79,9 +79,10 @@ export const FIELDS = {
     totalAmountEur: "Total Amount EUR",
     status: "Status",
     paymentSchedule: "Payment Schedule",
-    // Optional client purchase-order reference. Lazily created via meta API —
-    // see ensureProjectsSchema.
+    // Optional client purchase-order reference + the PO document itself.
+    // Both lazily created via the meta API — see ensureProjectsSchema.
     purchaseOrder: "Purchase Order",
+    purchaseOrderPdf: "Purchase Order PDF",
   },
   clients: {
     clientCode: "Client Code",
@@ -694,8 +695,9 @@ export type ProjectRecord = {
   totalAmountEur: number | null;
   status: ProjectStatus | "";
   paymentSchedule: PaymentScheduleEntry[];
-  // Optional client purchase-order reference.
+  // Optional client purchase-order reference + the uploaded PO document.
   purchaseOrder: string;
+  purchaseOrderPdf: AttachmentRef | null;
 };
 
 export type PaymentRecord = {
@@ -2286,6 +2288,7 @@ function projectFromRecord(r: AirtableRecord<FieldSet>): ProjectRecord {
     status: str(r, FIELDS.projects.status) as ProjectStatus | "",
     paymentSchedule: parsePaymentSchedule(str(r, FIELDS.projects.paymentSchedule)),
     purchaseOrder: str(r, FIELDS.projects.purchaseOrder),
+    purchaseOrderPdf: firstAttachment(r, FIELDS.projects.purchaseOrderPdf),
   };
 }
 
@@ -2364,20 +2367,26 @@ export async function ensureProjectsSchema(): Promise<boolean> {
     };
     const table = data.tables.find((t) => t.name === TABLES.projects);
     if (!table) return false;
-    if (table.fields.some((f) => f.name === FIELDS.projects.purchaseOrder)) {
-      projectsSchemaReady = true;
-      return true;
+    const names = new Set(table.fields.map((f) => f.name));
+    const wanted: Array<{ name: string; type: string }> = [
+      { name: FIELDS.projects.purchaseOrder, type: "singleLineText" },
+      { name: FIELDS.projects.purchaseOrderPdf, type: "multipleAttachments" },
+    ];
+    let ok = true;
+    for (const field of wanted) {
+      if (names.has(field.name)) continue;
+      const create = await fetch(
+        `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ name: field.name, type: field.type }),
+        },
+      );
+      if (!create.ok) ok = false;
     }
-    const create = await fetch(
-      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ name: FIELDS.projects.purchaseOrder, type: "singleLineText" }),
-      },
-    );
-    if (create.ok) projectsSchemaReady = true;
-    return projectsSchemaReady;
+    if (ok) projectsSchemaReady = true;
+    return ok;
   } catch (e) {
     console.error("ensureProjectsSchema failed:", e);
     return false;
@@ -5746,8 +5755,8 @@ export const CONTRACT_SIDES: ContractSide[] = [
 // any number of legacy values ("MSA + SoW", "Customer Facing SoW",
 // "Service Contract", ...) — those keep rendering as-is but new edits
 // snap to this short list.
-export type ContractType = "NDA" | "MSA" | "SOW" | "Purchase Order" | "Other";
-export const CONTRACT_TYPES: ContractType[] = ["NDA", "MSA", "SOW", "Purchase Order", "Other"];
+export type ContractType = "NDA" | "MSA" | "SOW" | "Other";
+export const CONTRACT_TYPES: ContractType[] = ["NDA", "MSA", "SOW", "Other"];
 
 // Canonical contract Status (renamed from "Stage" in the UI). Simplified
 // from the previous 10-value list — every legacy choice was migrated to
@@ -5951,7 +5960,7 @@ export const listAllContracts = cache(async function listAllContracts(): Promise
 // place for any document.
 // ---------------------------------------------------------------------------
 
-export type DocumentKind = "Contract" | "CV" | "Invoice";
+export type DocumentKind = "Contract" | "CV" | "Invoice" | "Purchase Order";
 
 export type DocumentRecord = {
   id: string; // `${kind}:${recordId}`
@@ -5966,14 +5975,46 @@ export type DocumentRecord = {
 };
 
 export async function listAllDocuments(): Promise<DocumentRecord[]> {
-  const [contracts, members, invoices, payments] = await Promise.all([
+  const [contracts, members, invoices, payments, projects, clients] = await Promise.all([
     listAllContracts(),
     listAllMembers(),
     listAllInvoices(),
     listPayments(),
+    listProjects(),
+    listClients(),
   ]);
+  const clientNameById = new Map(clients.map((c) => [c.id, c.clientName || c.clientCode]));
 
   const docs: DocumentRecord[] = [];
+
+  // Purchase Order documents — uploaded on a project, stored on the Projects
+  // row (not a Legal contract). Surfaced here as their own kind.
+  for (const p of projects) {
+    if (!p.purchaseOrderPdf?.url) continue;
+    const clientNames = p.clientRecordIds.map((id) => clientNameById.get(id)).filter(Boolean);
+    docs.push({
+      id: `PurchaseOrder:${p.id}`,
+      kind: "Purchase Order",
+      title: p.purchaseOrder ? `PO ${p.purchaseOrder}` : `PO · ${p.projectCode}`,
+      subtitle: [p.projectCode, p.projectName, clientNames.join(", ")].filter(Boolean).join(" · "),
+      date: p.startDate || null,
+      url: p.purchaseOrderPdf.url,
+      filename: p.purchaseOrderPdf.filename || "purchase-order.pdf",
+      keywords: [
+        "purchase order",
+        "po",
+        p.purchaseOrder,
+        p.projectCode,
+        p.projectName,
+        ...clientNames,
+        ...p.clientCodes,
+        p.purchaseOrderPdf.filename,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+    });
+  }
 
   for (const c of contracts) {
     if (!c.pdf?.url) continue;
@@ -6189,70 +6230,9 @@ export async function updateContractFields(
 // updateContractFields' field handling — every key is optional, so the
 // caller can either create a fully blank shell or pre-populate the
 // fields extracted from an uploaded PDF.
-// Ensure every canonical contract type exists as a choice on the "Contract
-// Type" single-select. Like ensurePaymentStatusChoices, the PAT can't create
-// select options via a data write (typecast), so a brand-new type such as
-// "Purchase Order" is added here via the meta API before the first write that
-// uses it. Cached after success.
-let contractTypeChoicesReady = false;
-export async function ensureContractTypeChoices(): Promise<void> {
-  if (contractTypeChoicesReady) return;
-  try {
-    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
-    const res = await fetch(metaUrl, {
-      headers: { Authorization: `Bearer ${env.airtablePat}` },
-      cache: "no-store",
-    });
-    if (!res.ok) return;
-    const data = (await res.json()) as {
-      tables: Array<{
-        id: string;
-        name: string;
-        fields: Array<{
-          id: string;
-          name: string;
-          type: string;
-          options?: { choices?: Array<{ id?: string; name: string }> };
-        }>;
-      }>;
-    };
-    const table = data.tables.find((t) => t.name === TABLES.contracts);
-    const field = table?.fields.find((f) => f.name === FIELDS.contracts.contractType);
-    if (!field || (field.type !== "singleSelect" && field.type !== "multipleSelects")) {
-      contractTypeChoicesReady = true; // free-text or absent — nothing to pre-create
-      return;
-    }
-    const existing = field.options?.choices ?? [];
-    const have = new Set(existing.map((c) => c.name));
-    const missing = CONTRACT_TYPES.filter((t) => !have.has(t));
-    if (missing.length === 0) {
-      contractTypeChoicesReady = true;
-      return;
-    }
-    const choices = [
-      ...existing.map((c) => ({ id: c.id, name: c.name })),
-      ...missing.map((name) => ({ name })),
-    ];
-    const patch = await fetch(
-      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table!.id}/fields/${field.id}`,
-      {
-        method: "PATCH",
-        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ options: { choices } }),
-      },
-    );
-    if (patch.ok) contractTypeChoicesReady = true;
-    else console.error("ensureContractTypeChoices: patch failed:", await patch.text().catch(() => ""));
-  } catch (e) {
-    console.error("ensureContractTypeChoices failed:", e);
-  }
-}
-
 export async function createContract(
   fields: ContractEditableFields,
 ): Promise<ContractRecord> {
-  // Make sure the (possibly new) contract type is a valid select option first.
-  await ensureContractTypeChoices();
   const updates: Record<string, unknown> = {};
   const setText = (key: keyof typeof FIELDS.contracts, value: string | undefined) => {
     if (value === undefined || value === "") return;
@@ -6359,43 +6339,66 @@ export async function attachProjectSow(
   return fresh?.pdf ? { url: fresh.pdf.url, filename: fresh.pdf.filename || filename } : null;
 }
 
-// Attach (or replace) a project's Purchase Order document. Mirrors
-// attachProjectSow: finds the project's existing Client-side "Purchase Order"
-// contract and replaces its PDF, or creates one linked to the project +
-// client. Keeps the PO document filed in Legal under its own category while it
-// is uploaded from the Projects screen. Returns the resulting PDF ref.
+// Attach (or replace) a project's Purchase Order document. The PDF lives
+// directly on the Projects row (its own "Purchase Order PDF" attachment
+// field) — it is NOT a Legal contract; it surfaces in Document search under
+// the "Purchase Order" kind. Append-then-prune so a replace behaves like a
+// replace without ever losing the current file on a failed upload. Returns
+// the resulting PDF ref.
 export async function attachProjectPurchaseOrder(
   projectId: string,
   filename: string,
   base64: string,
 ): Promise<{ url: string; filename: string } | null> {
-  const [project, contracts] = await Promise.all([
-    getProjectById(projectId),
-    listAllContracts(),
-  ]);
-  const existing = contracts.find(
-    (c) =>
-      c.projectRecordIds.includes(projectId) &&
-      /purchase order|^po\b/i.test(c.contractType || ""),
-  );
-  let contractId: string;
-  if (existing) {
-    contractId = existing.id;
-  } else {
-    const today = new Date().toISOString().slice(0, 10);
-    const created = await createContract({
-      side: "Client",
-      contractType: "Purchase Order",
-      clientRecordIds: project?.clientRecordIds ?? [],
-      projectRecordIds: [projectId],
-      projectCode: project?.projectCode ?? "",
-      signatureDate: today,
-    });
-    contractId = created.id;
+  await ensureProjectsSchema();
+  const field = FIELDS.projects.purchaseOrderPdf;
+
+  let oldIds: string[] = [];
+  try {
+    const rec = await base(TABLES.projects).find(projectId);
+    const cur = rec.get(field);
+    if (Array.isArray(cur)) {
+      oldIds = (cur as Array<{ id?: string }>).map((a) => a?.id).filter((x): x is string => !!x);
+    }
+  } catch {
+    /* best-effort: if we can't read current state, we just append */
   }
-  await attachContractPdf(contractId, filename, base64);
-  const fresh = await getContractById(contractId);
-  return fresh?.pdf ? { url: fresh.pdf.url, filename: fresh.pdf.filename || filename } : null;
+
+  const url = `https://content.airtable.com/v0/${env.airtableBaseId}/${projectId}/${encodeURIComponent(field)}/uploadAttachment`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ contentType: "application/pdf", filename, file: base64 }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Airtable upload failed (${res.status}): ${text}`);
+  }
+
+  // Drop the previously-attached file(s) so only the new PO remains.
+  if (oldIds.length > 0) {
+    try {
+      const rec = await base(TABLES.projects).find(projectId);
+      const cur = rec.get(field);
+      const all = Array.isArray(cur) ? (cur as Array<{ id?: string }>) : [];
+      const fresh = all.filter((a) => a?.id && !oldIds.includes(a.id));
+      if (fresh.length > 0 && fresh.length !== all.length) {
+        await base(TABLES.projects).update([
+          {
+            id: projectId,
+            fields: { [field]: fresh.map((a) => ({ id: a.id as string })) } as unknown as FieldSet,
+          },
+        ]);
+      }
+    } catch {
+      /* non-fatal: the new PDF is attached even if pruning the old one fails */
+    }
+  }
+
+  const fresh = await getProjectById(projectId);
+  return fresh?.purchaseOrderPdf
+    ? { url: fresh.purchaseOrderPdf.url, filename: fresh.purchaseOrderPdf.filename || filename }
+    : null;
 }
 
 // Ensure the "Invoice PDF" attachment field exists on the Payments

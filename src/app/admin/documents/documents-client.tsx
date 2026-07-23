@@ -11,6 +11,7 @@ const KIND_FILTERS: Array<{ value: "All" | DocumentKind; label: string }> = [
   { value: "Contract", label: "Contracts" },
   { value: "CV", label: "CVs" },
   { value: "Invoice", label: "Invoices" },
+  { value: "Purchase Order", label: "POs" },
 ];
 
 export function DocumentSearchClient({ documents }: { documents: DocumentRecord[] }) {
@@ -110,12 +111,16 @@ function KindBadge({ kind }: { kind: DocumentKind }) {
       ? "bg-violet-50 text-violet-700 border-violet-200"
       : kind === "CV"
       ? "bg-sky-50 text-sky-700 border-sky-200"
+      : kind === "Purchase Order"
+      ? "bg-indigo-50 text-indigo-700 border-indigo-200"
       : "bg-amber-50 text-amber-700 border-amber-200";
+  // Keep the fixed-width pill readable — the long "Purchase Order" shows as PO.
+  const label = kind === "Purchase Order" ? "PO" : kind;
   return (
     <span
       className={`inline-flex w-16 shrink-0 items-center justify-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${cls}`}
     >
-      {kind}
+      {label}
     </span>
   );
 }
