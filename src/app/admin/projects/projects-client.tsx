@@ -978,10 +978,6 @@ export function ProjectsAdminClient({
               </div>
             </div>
           </div>
-          <p className="mt-1.5 text-[11px] text-slate-400">
-            Number is found automatically from the document; the PDF is saved to Legal as a
-            Client-side Purchase Order for this project. PDF, max 5 MB.
-          </p>
         </div>
         {/* Identity */}
         <section className="space-y-3">
