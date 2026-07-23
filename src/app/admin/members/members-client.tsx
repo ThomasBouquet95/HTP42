@@ -310,7 +310,7 @@ export function MembersAdminClient({
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return members.filter((m) => {
+    const matched = members.filter((m) => {
       if (tab === "staffed" && (!staffing.staffedIds.has(m.id) || m.status === "Inactive")) return false;
       if (tab === "bench" && (staffing.staffedIds.has(m.id) || m.status === "Inactive")) return false;
       if (roleFilter.length > 0 && !roleFilter.includes(m.role)) return false;
@@ -321,7 +321,21 @@ export function MembersAdminClient({
       return [m.memberCode, m.fullName, m.email, m.role, m.title, m.country, ...projects.flatMap((p) => [p.code, p.name])]
         .some((v) => v && v.toLowerCase().includes(q));
     });
-  }, [members, search, roleFilter, statusFilter, countryFilter, tab, staffing]);
+    // Smart default order: most active first, inactive last. Rank by activity
+    // bucket (staffed → bench → inactive), then by amount billed (a proxy for
+    // how active they've been), then name.
+    const rank = (m: MemberAdminRecord) =>
+      m.status === "Inactive" ? 2 : staffing.staffedIds.has(m.id) ? 0 : 1;
+    const billedOf = (m: MemberAdminRecord) =>
+      (billed[m.id]?.paidEur ?? 0) + (billed[m.id]?.pendingEur ?? 0);
+    return matched.sort((a, b) => {
+      const r = rank(a) - rank(b);
+      if (r !== 0) return r;
+      const d = billedOf(b) - billedOf(a);
+      if (d !== 0) return d;
+      return (a.fullName || a.memberCode).localeCompare(b.fullName || b.memberCode);
+    });
+  }, [members, search, roleFilter, statusFilter, countryFilter, tab, staffing, billed]);
 
   // Counts for the primary Staffed / Bench tabs (over active members).
   const tabCounts = useMemo(() => {
@@ -676,11 +690,11 @@ export function MembersAdminClient({
                   </button>
                   <Link
                     href={`/admin/members/${m.id}`}
-                    title="Open full member page"
-                    className="flex shrink-0 items-center gap-1.5 border-l border-slate-100 px-3 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-50"
+                    title="Open profile"
+                    className="flex shrink-0 items-center gap-1.5 self-center rounded-md bg-brand-50 px-2.5 py-1.5 text-xs font-medium text-brand-700 ring-1 ring-brand-200 transition-colors hover:bg-brand-100"
                   >
-                    <OpenPageIcon />
-                    <span className="hidden sm:inline">Open</span>
+                    <ProfileIcon />
+                    <span className="hidden sm:inline">Open profile</span>
                   </Link>
                 </div>
 
@@ -1326,13 +1340,14 @@ function EditPencil() {
   );
 }
 
-function OpenPageIcon() {
-  // Arrow leaving a frame — reads clearly as "open the full page".
+function ProfileIcon() {
+  // Person in a card — reads clearly as "open this person's profile".
   return (
     <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path d="M11 4h5v5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M16 4l-7 7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M8.5 5H5.5A1.5 1.5 0 0 0 4 6.5v8A1.5 1.5 0 0 0 5.5 16h8a1.5 1.5 0 0 0 1.5-1.5v-3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="2.5" y="3.5" width="15" height="13" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="8" cy="9" r="1.9" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5 14c.5-1.6 1.8-2.4 3-2.4s2.5.8 3 2.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M12.5 8h3M12.5 11h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }

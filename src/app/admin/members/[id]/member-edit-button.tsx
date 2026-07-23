@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
@@ -201,47 +202,59 @@ export function MemberEditButton({
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField label="Full name" value={form.fullName} onChange={(v) => set("fullName", v)} required />
-          <FormField label="Login email" value={form.email} onChange={(v) => set("email", v)} />
-          <FormField label="Personal email" value={form.personalEmail} onChange={(v) => set("personalEmail", v)} />
-          <FormSelect label="Status" value={form.status} onChange={(v) => set("status", v as MemberStatus)}>
-            {statuses.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </FormSelect>
-          <FormSelect label="Role" value={form.role} onChange={(v) => set("role", v as MemberRole | "")}>
-            <option value="">—</option>
-            {roles.map((r) => (
-              <option key={r} value={r}>{r}</option>
-            ))}
-          </FormSelect>
-          <FormField label="Title" value={form.title} onChange={(v) => set("title", v)} />
-          <FormField label="Country" value={form.country} onChange={(v) => set("country", v)} />
-          <FormField label="Phone" value={form.phone} onChange={(v) => set("phone", v)} />
-          <FormField label="Legal entity" value={form.legalEntity} onChange={(v) => set("legalEntity", v)} />
-          <FormField label="Member rate" type="number" value={form.dailyRate} onChange={(v) => set("dailyRate", v)} />
-          <FormField label="HTP42 rate" type="number" value={form.htp42DailyRate} onChange={(v) => set("htp42DailyRate", v)} />
-          <FormSelect label="Currency" value={form.currency} onChange={(v) => set("currency", v as Currency | "")}>
-            <option value="">—</option>
-            {currencies.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </FormSelect>
-        </div>
+        <Section title="Identity">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField label="Full name" value={form.fullName} onChange={(v) => set("fullName", v)} required />
+            <FormSelect label="Status" value={form.status} onChange={(v) => set("status", v as MemberStatus)}>
+              {statuses.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </FormSelect>
+            <FormSelect label="Role" value={form.role} onChange={(v) => set("role", v as MemberRole | "")}>
+              <option value="">—</option>
+              {roles.map((r) => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </FormSelect>
+            <FormField label="Title" value={form.title} onChange={(v) => set("title", v)} />
+          </div>
+        </Section>
 
-        <div className="mt-3">
+        <Section title="Contact & location">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField label="Login email" value={form.email} onChange={(v) => set("email", v)} />
+            <FormField label="Personal email" value={form.personalEmail} onChange={(v) => set("personalEmail", v)} />
+            <FormField label="Phone" value={form.phone} onChange={(v) => set("phone", v)} />
+            <FormField label="Country" value={form.country} onChange={(v) => set("country", v)} />
+            <FormField label="Legal entity" value={form.legalEntity} onChange={(v) => set("legalEntity", v)} className="sm:col-span-2" />
+          </div>
+        </Section>
+
+        <Section title="Commercials">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <FormField label="Member rate" type="number" value={form.dailyRate} onChange={(v) => set("dailyRate", v)} />
+            <FormField label="HTP42 rate" type="number" value={form.htp42DailyRate} onChange={(v) => set("htp42DailyRate", v)} />
+            <FormSelect label="Currency" value={form.currency} onChange={(v) => set("currency", v as Currency | "")}>
+              <option value="">—</option>
+              {currencies.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </FormSelect>
+          </div>
+        </Section>
+
+        <Section title="Description">
           <FormTextarea
-            label="Introduction"
+            label=""
             value={form.introduction}
             onChange={(v) => set("introduction", v)}
             rows={3}
           />
-        </div>
+        </Section>
 
-        <div className="mt-3 rounded-md border border-amber-200 bg-amber-50/40 p-3">
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50/40 p-3">
           <FormTextarea
-            label="Internal note (admin only — never shown to the member)"
+            label="Internal note — admin only, never shown to the member"
             value={form.internalNote}
             onChange={(v) => set("internalNote", v)}
             rows={5}
@@ -251,6 +264,17 @@ export function MemberEditButton({
         {error ? <div className="mt-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div> : null}
       </Modal>
     </>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mt-4 first:mt-0">
+      <h3 className="mb-2 border-b border-slate-100 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        {title}
+      </h3>
+      {children}
+    </section>
   );
 }
 
