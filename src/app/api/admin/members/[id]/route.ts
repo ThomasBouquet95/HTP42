@@ -59,6 +59,8 @@ const schema = z.object({
   dailyRate: nullableNumber,
   htp42DailyRate: nullableNumber,
   currency: z.union([z.enum(CURRENCIES as [string, ...string[]]), z.literal("")]).optional(),
+  // Admin/HR-only note — never surfaced to the member.
+  internalNote: z.string().max(5000).optional(),
 });
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -110,6 +112,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       dailyRate: d.dailyRate,
       htp42DailyRate: d.htp42DailyRate,
       currency: d.currency as Currency | "" | undefined,
+      internalNote: d.internalNote,
     });
     if (!updated) {
       return NextResponse.json(

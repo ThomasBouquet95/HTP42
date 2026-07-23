@@ -27,10 +27,17 @@ export default async function AdminNetworkCockpitPage() {
           name: m.fullName,
           status: m.status,
           role: m.role,
+          title: m.title,
+          country: m.country,
+          photoUrl: m.photo?.url ?? null,
+          cv: m.cv ? { url: m.cv.url, filename: m.cv.filename || "cv.pdf" } : null,
+          internalNote: m.internalNote,
         }))}
         staffings={staffings.map((s) => ({
           memberRecordIds: s.memberRecordIds,
           status: s.status,
+          projectCode: s.projectCode,
+          projectName: s.projectName,
         }))}
       />
     </main>

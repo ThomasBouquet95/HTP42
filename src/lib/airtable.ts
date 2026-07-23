@@ -63,6 +63,11 @@ export const FIELDS = {
     bankAccountName: "Bank Account Name",
     bankAccountAddress: "Bank Account Address",
     iban: "IBAN",
+    // Admin/HR-only note. NEVER exposed to the member — lives on
+    // MemberAdminRecord only (not MemberRecord), so member-facing reads
+    // (getMemberById / profile / member directory) can't carry it. Lazily
+    // created via the meta API — see ensureMemberInternalNoteField.
+    internalNote: "Internal Note",
   },
   projects: {
     projectCode: "Project Code",
@@ -634,6 +639,9 @@ export type MemberAdminRecord = MemberRecord & {
   dailyRate: number | null;
   htp42DailyRate: number | null;
   currency: Currency | "";
+  // Admin/HR-only free-text note. Deliberately NOT on MemberRecord so it
+  // never reaches a member-facing serializer.
+  internalNote: string;
 };
 
 export type ClientKind = "Client" | "Partner";
@@ -1016,7 +1024,48 @@ function memberAdminFromRecord(r: AirtableRecord<FieldSet>): MemberAdminRecord {
     dailyRate: numOrNull(r, FIELDS.networkMembers.dailyRate),
     htp42DailyRate: numOrNull(r, FIELDS.networkMembers.htp42DailyRate),
     currency: str(r, FIELDS.networkMembers.currency) as Currency | "",
+    internalNote: str(r, FIELDS.networkMembers.internalNote),
   };
+}
+
+// Lazily create the admin-only "Internal Note" long-text field on the Network
+// Members table. Idempotent + cached; called before an admin write that sets
+// the note.
+let memberInternalNoteFieldReady = false;
+export async function ensureMemberInternalNoteField(): Promise<void> {
+  if (memberInternalNoteFieldReady) return;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.networkMembers);
+    if (!table) return;
+    if (table.fields.some((f) => f.name === FIELDS.networkMembers.internalNote)) {
+      memberInternalNoteFieldReady = true;
+      return;
+    }
+    const create = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: FIELDS.networkMembers.internalNote,
+          type: "multilineText",
+          description: "Admin/HR-only note. Never shown to the member in the portal.",
+        }),
+      },
+    );
+    if (create.ok) memberInternalNoteFieldReady = true;
+  } catch (e) {
+    console.error("ensureMemberInternalNoteField failed:", e);
+  }
 }
 
 // Wrapped in React cache() so repeated calls within one server request (many
@@ -1315,6 +1364,7 @@ export type MemberAdminUpdate = MemberProfileUpdate & {
   dailyRate?: number | null;
   htp42DailyRate?: number | null;
   currency?: Currency | "";
+  internalNote?: string;
 };
 
 export type MemberCreateInput = MemberAdminUpdate & {
@@ -2016,6 +2066,10 @@ export async function adminUpdateMember(
   }
   if (input.currency !== undefined) {
     fields[FIELDS.networkMembers.currency] = input.currency === "" ? null : input.currency;
+  }
+  if (input.internalNote !== undefined) {
+    await ensureMemberInternalNoteField();
+    fields[FIELDS.networkMembers.internalNote] = input.internalNote || null;
   }
   if (Object.keys(fields).length === 0) {
     const r = await base(TABLES.networkMembers).find(recordId);
