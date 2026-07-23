@@ -29,6 +29,7 @@ export type ReviewBundle = {
     beneficiary: string;
     comment: string;
     memberNote: string;
+    reviewedBy: string;
     invoicePdfUrl: string;
     invoiceUrl: string;
   };
@@ -123,6 +124,42 @@ const EMPTY_NOTES: Record<ReviewBucket, string> = {
 function money(v: number | null, currency: string): string {
   if (v == null) return "—";
   return `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}${currency ? " " + currency : ""}`;
+}
+
+function reviewerInitials(name: string): string {
+  const parts = (name || "").trim().split(/[\s@.]+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const first = parts[0][0] ?? "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return `${first}${last}`.toUpperCase();
+}
+
+// Who decided the payment. Payments are always reviewed by an HTP42 admin, so
+// this uses the "admin" (dark) treatment — mirroring the timesheet review
+// reviewer bubble.
+function PaymentReviewer({ status, by }: { status: string; by: string }) {
+  const s = status.toLowerCase();
+  const verb =
+    s === "paid"
+      ? "Paid by"
+      : s === "rejected"
+        ? "Rejected by"
+        : s === "cancelled" || s === "canceled"
+          ? "Cancelled by"
+          : "Approved by";
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[10px] font-semibold text-white ring-2 ring-slate-800">
+        {reviewerInitials(by)}
+      </span>
+      <span className="text-[11px] text-slate-500">
+        {verb} <span className="font-medium text-slate-800">{by}</span>
+        <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-600">
+          Admin
+        </span>
+      </span>
+    </div>
+  );
 }
 
 const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
@@ -669,6 +706,9 @@ function BundleDetail({
             ) : null}
           </div>
         </div>
+        {selected.payment.reviewedBy && status !== "Under Review" ? (
+          <PaymentReviewer status={status} by={selected.payment.reviewedBy} />
+        ) : null}
         {selected.payment.comment ? (
           <p className="mt-2 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-600 demo-blur">
             {selected.payment.comment}

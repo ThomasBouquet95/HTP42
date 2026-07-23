@@ -51,7 +51,8 @@ export async function PATCH(
     // Capture the previous state BEFORE the update so we can detect the
     // Outflow → Paid transition and fire the receipt email exactly once.
     const before = await getPaymentById(id);
-    await updatePaymentStatus(id, nextStatus, paymentDate, parsed.data.memberNote);
+    const reviewer = session.fullName || session.email || "Admin";
+    await updatePaymentStatus(id, nextStatus, paymentDate, parsed.data.memberNote, reviewer);
     if (before && becamePaid(before, nextStatus)) {
       // Re-read the record so the email body uses the saved values (the PATCH
       // only carries the status field, the rest stays as it was). Awaited so it

@@ -284,6 +284,9 @@ export const FIELDS = {
     // (e.g. why it was rejected). Shown to the member on their invoices.
     // Lazily created via meta API — see ensurePaymentMemberNoteField.
     memberNote: "Member Note",
+    // The admin who last decided this payment (approved/paid/rejected).
+    // Lazily created via meta API — see ensurePaymentReviewedByField.
+    reviewedBy: "Reviewed By",
     invoiceUrl: "Invoice URL",
     invoicePdf: "Invoice PDF",
     // Reconciliation with Qonto: the linked bank transaction's id + a
@@ -784,6 +787,8 @@ export type PaymentRecord = {
   beneficiary: string;
   comment: string;
   memberNote: string;
+  // The admin who last decided this payment (set on status change).
+  reviewedBy: string;
   invoiceUrl: string;
   invoicePdf: AttachmentRef | null;
   qontoTransactionId: string;
@@ -2711,6 +2716,7 @@ function paymentFromRecord(r: AirtableRecord<FieldSet>): PaymentRecord {
     beneficiary: str(r, FIELDS.payments.beneficiary),
     comment: str(r, FIELDS.payments.comment),
     memberNote: str(r, FIELDS.payments.memberNote),
+    reviewedBy: str(r, FIELDS.payments.reviewedBy),
     invoiceUrl: str(r, FIELDS.payments.invoiceUrl),
     invoicePdf: firstAttachment(r, FIELDS.payments.invoicePdf),
     qontoTransactionId: str(r, FIELDS.payments.qontoTransactionId),
@@ -2967,6 +2973,7 @@ export async function updatePaymentStatus(
   status: PaymentStatus | "",
   paymentDate?: string | null,
   memberNote?: string,
+  reviewedBy?: string,
 ): Promise<void> {
   const ensured = await ensurePaymentStatusChoices();
   const fields: Record<string, unknown> = {
@@ -2986,6 +2993,12 @@ export async function updatePaymentStatus(
   if (memberNote !== undefined) {
     if (await ensurePaymentMemberNoteField()) {
       fields[FIELDS.payments.memberNote] = memberNote;
+    }
+  }
+  // Stamp who decided the payment (best-effort field create).
+  if (reviewedBy !== undefined) {
+    if (await ensurePaymentReviewedByField()) {
+      fields[FIELDS.payments.reviewedBy] = reviewedBy || null;
     }
   }
   try {
@@ -3500,6 +3513,46 @@ async function ensurePaymentMemberNoteField(): Promise<boolean> {
     return paymentMemberNoteFieldReady;
   } catch (e) {
     console.error("ensurePaymentMemberNoteField failed:", e);
+    return false;
+  }
+}
+
+// "Reviewed By" — the admin who last decided a payment. Created lazily.
+let paymentReviewedByFieldReady = false;
+async function ensurePaymentReviewedByField(): Promise<boolean> {
+  if (paymentReviewedByFieldReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.payments);
+    if (!table) return false;
+    if (table.fields.some((f) => f.name === FIELDS.payments.reviewedBy)) {
+      paymentReviewedByFieldReady = true;
+      return true;
+    }
+    const create = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: FIELDS.payments.reviewedBy,
+          type: "singleLineText",
+          description: "The admin who last set this payment's status (approved / paid / rejected).",
+        }),
+      },
+    );
+    if (create.ok) paymentReviewedByFieldReady = true;
+    return paymentReviewedByFieldReady;
+  } catch (e) {
+    console.error("ensurePaymentReviewedByField failed:", e);
     return false;
   }
 }

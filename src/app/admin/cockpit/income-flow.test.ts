@@ -30,6 +30,7 @@ function pay(over: Partial<PaymentRecord>): PaymentRecord {
     beneficiary: "",
     comment: "",
     memberNote: "",
+    reviewedBy: "",
     invoiceUrl: "",
     invoicePdf: null,
     qontoTransactionId: "",
