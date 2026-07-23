@@ -26,6 +26,23 @@ body {
   textarea {
     font-size: 16px;
   }
+
+  /* Reserve room for the fixed mobile bottom tab bar (see AppHeader) so it
+     never overlaps the last of the page content. The bar is ~3.75rem tall;
+     add the home-indicator inset on top. The `has-mobile-nav` class is
+     toggled on <body> only while an authenticated page with the bar is
+     mounted. */
+  body.has-mobile-nav {
+    padding-bottom: calc(3.75rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Keep the reserved space aligned exactly with Tailwind's `sm:hidden` on the
+   bar (min-width:640px hides it), so 640px itself gets no phantom padding. */
+@media (min-width: 640px) {
+  body.has-mobile-nav {
+    padding-bottom: 0;
+  }
 }
 
 /* Safe-area helper for the iPhone home indicator, used by the bottom-sheet
