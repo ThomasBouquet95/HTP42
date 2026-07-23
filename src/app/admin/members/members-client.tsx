@@ -617,6 +617,15 @@ export function MembersAdminClient({
                     <path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
+                  <button
+                    type="button"
+                    onClick={() => openEdit(m)}
+                    title="Edit member"
+                    className="flex shrink-0 items-center gap-1.5 border-l border-slate-100 px-3 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+                  >
+                    <EditPencil />
+                    <span className="hidden sm:inline">Edit</span>
+                  </button>
                   <Link
                     href={`/admin/members/${m.id}`}
                     title="Open full member page"
@@ -629,6 +638,17 @@ export function MembersAdminClient({
 
                 {open ? (
                   <div className="htp-expand-in border-t border-slate-100 bg-slate-50/50 px-3 py-3">
+                    {/* Quick status change, top-right and visible on expand. */}
+                    <div className="mb-3 flex items-center justify-end gap-1.5">
+                      <span className="text-[10px] uppercase tracking-wide text-slate-400">Status</span>
+                      <StatusSelect
+                        value={m.status}
+                        options={statuses}
+                        onChange={(next) => updateStatus(m.id, next)}
+                        ariaLabel="Status"
+                        allowEmpty={false}
+                      />
+                    </div>
                     {/* KPIs — the money + rating live here, on expand. */}
                     <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                       <MiniStat
@@ -713,23 +733,6 @@ export function MembersAdminClient({
                         note={notes[m.id] ?? ""}
                         onSaved={(v) => setNotes((prev) => ({ ...prev, [m.id]: v }))}
                       />
-                    </div>
-
-                    {/* Actions — bottom right. */}
-                    <div className="mt-3 flex flex-wrap items-center justify-end gap-3 border-t border-slate-100 pt-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] uppercase tracking-wide text-slate-400">Status</span>
-                        <StatusSelect
-                          value={m.status}
-                          options={statuses}
-                          onChange={(next) => updateStatus(m.id, next)}
-                          ariaLabel="Status"
-                          allowEmpty={false}
-                        />
-                      </div>
-                      <Button tone="secondary" size="sm" onClick={() => openEdit(m)}>
-                        Edit details
-                      </Button>
                     </div>
                   </div>
                 ) : null}
@@ -1186,6 +1189,14 @@ function InternalNote({
         </button>
       )}
     </div>
+  );
+}
+
+function EditPencil() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M11.5 2.5l2 2L6 12l-2.5.5L4 10z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
   );
 }
 

@@ -25,10 +25,15 @@ export type SowInfo = {
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminTimesheetsPage() {
+export default async function AdminTimesheetsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ member?: string }>;
+}) {
   const access = await requireAdminPage("timesheets");
   if (!access) redirect("/admin");
   const { session } = access;
+  const { member: initialMemberCode } = await searchParams;
 
   // Invoices ride along so an expanded timesheet row can show "related
   // invoices" (same staffing); payments let each invoice link to the payment
@@ -150,6 +155,7 @@ export default async function AdminTimesheetsPage() {
           paymentByInvoiceId={paymentByInvoiceId}
           sowByStaffing={sowByStaffing}
           allowedViews={views}
+          initialMemberCode={initialMemberCode ?? null}
           scopeProjects={scopeProjects}
           staffings={staffings.map((s) => ({
             id: s.id,

@@ -65,6 +65,9 @@ type Props = {
   // Sub-tabs this role may see (level-two permissions). The first one is the
   // landing tab. A Project Manager, for example, only gets "review".
   allowedViews: TimesheetView[];
+  // Deep-link: pre-filter the Overview to a single member (e.g. arriving from
+  // a member's page). Null = no pre-filter.
+  initialMemberCode?: string | null;
   // When set, this role only sees timesheets for these projects (Project
   // Manager scoping). Null means "all projects" (unscoped admin roles).
   scopeProjects: string[] | null;
@@ -95,7 +98,7 @@ function relatedInvoicesFor(
   );
 }
 
-export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId, sowByStaffing, allowedViews, scopeProjects, staffings }: Props) {
+export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId, sowByStaffing, allowedViews, initialMemberCode, scopeProjects, staffings }: Props) {
   const router = useRouter();
   // Overview (filterable table) · By project · By member — the two breakdown
   // views live in their own tabs instead of inline cards above the table.
@@ -106,7 +109,9 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
   );
   // Timesheet open in the admin edit modal (from any view).
   const [editTs, setEditTs] = useState<AdminTimesheetRecord | null>(null);
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<Filters>(() =>
+    initialMemberCode ? { ...DEFAULT_FILTERS, memberCodes: [initialMemberCode] } : DEFAULT_FILTERS,
+  );
   // Jumping from a breakdown group into the Overview, pre-filtered to that
   // project + member.
   function drillToOverview(projectCode: string | null, memberCode: string | null) {

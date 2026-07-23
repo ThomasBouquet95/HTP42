@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { DownloadChip } from "@/components/download-chip";
+import { ButtonLink } from "@/components/form-controls";
 import { Badge, StatusPill } from "@/components/badge";
 import {
   listAllInvoices,
@@ -11,7 +12,11 @@ import {
   listPayments,
   listSignInActivity,
   listSurveys,
+  CURRENCIES,
+  MEMBER_ROLES,
+  MEMBER_STATUSES,
 } from "@/lib/airtable";
+import { MemberEditButton } from "./member-edit-button";
 
 export const dynamic = "force-dynamic";
 
@@ -170,12 +175,53 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
             </div>
           ) : null}
         </div>
-        <div className="text-right text-xs text-slate-500">
-          <div className="text-[10px] uppercase tracking-wide text-slate-400">Daily rate</div>
-          <div className="demo-blur font-medium text-slate-700">
-            {money(member.htp42DailyRate ?? member.dailyRate, member.currency)}
+        <div className="flex flex-col items-end gap-2">
+          <MemberEditButton
+            member={{
+              id: member.id,
+              fullName: member.fullName,
+              email: member.email,
+              personalEmail: member.personalEmail,
+              role: member.role,
+              status: member.status,
+              title: member.title,
+              country: member.country,
+              phone: member.phone,
+              legalEntity: member.legalEntity,
+              dailyRate: member.dailyRate,
+              htp42DailyRate: member.htp42DailyRate,
+              currency: member.currency,
+              introduction: member.introduction,
+              internalNote: member.internalNote,
+            }}
+            roles={MEMBER_ROLES}
+            statuses={MEMBER_STATUSES}
+            currencies={CURRENCIES}
+          />
+          <div className="text-right text-xs text-slate-500">
+            <div className="text-[10px] uppercase tracking-wide text-slate-400">Daily rate</div>
+            <div className="demo-blur font-medium text-slate-700">
+              {money(member.htp42DailyRate ?? member.dailyRate, member.currency)}
+            </div>
           </div>
         </div>
+      </div>
+
+      {/* Quick links into the rest of the app, scoped to this member. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="text-[10px] uppercase tracking-wide text-slate-400">Jump to</span>
+        <ButtonLink href={`/admin/timesheets?member=${encodeURIComponent(member.memberCode)}`} size="sm">
+          Timesheets
+        </ButtonLink>
+        <ButtonLink href={`/admin/invoices?search=${encodeURIComponent(member.memberCode)}`} size="sm">
+          Invoices
+        </ButtonLink>
+        <ButtonLink href={`/admin/payments?search=${encodeURIComponent(member.memberCode)}`} size="sm">
+          Payments
+        </ButtonLink>
+        <ButtonLink href={`/admin/member-reviews?member=${encodeURIComponent(member.memberCode)}`} size="sm">
+          Client reviews
+        </ButtonLink>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -199,6 +245,26 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
               </div>
             </div>
           </Card>
+
+          <section className="rounded-lg border border-amber-200 bg-amber-50/40">
+            <div className="flex items-center justify-between gap-2 border-b border-amber-100 px-4 py-2.5">
+              <h2 className="inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-amber-700">
+                <span aria-hidden>🔒</span> Internal note
+              </h2>
+              <span className="text-[10px] text-amber-600/70">admin only</span>
+            </div>
+            <div className="p-4">
+              {member.internalNote ? (
+                <p className="whitespace-pre-line text-xs leading-relaxed text-slate-700">
+                  {member.internalNote}
+                </p>
+              ) : (
+                <p className="text-xs italic text-slate-400">
+                  No internal note. Use “Edit member” to add one — the member never sees it.
+                </p>
+              )}
+            </div>
+          </section>
 
           <Card title="App connection">
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
