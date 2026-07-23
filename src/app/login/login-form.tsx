@@ -45,7 +45,7 @@ export default function LoginForm() {
             Welcome back
           </h1>
           <p className="mt-2 text-sm text-slate-300">
-            One home for the HealthTech Partners 42 network — projects,
+            One home for the HealthTech Partners 42 network: projects,
             timesheets and everything in between.
           </p>
         </div>
