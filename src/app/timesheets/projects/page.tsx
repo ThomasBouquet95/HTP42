@@ -1,11 +1,13 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import {
+  CURRENCIES,
   getTimesheetsForMember,
   listInvoicesForMember,
   listMyProjects,
   listPayments,
 } from "@/lib/airtable";
+import { isFounderEarningsUser } from "@/lib/founder-earnings"; // FOUNDER-EARNINGS (temporary)
 import { TimesheetsTabs } from "@/components/timesheets-tabs";
 import { SubmitTimesheetButton } from "@/components/submit-timesheet-modal";
 import { ProjectsListClient } from "./projects-list-client";
@@ -124,6 +126,9 @@ export default async function MyProjectsPage() {
         projects={projects}
         timesheetsByProject={timesheetsByProject}
         invoicesByProject={invoicesByProject}
+        /* FOUNDER-EARNINGS (temporary) — simplified "record earnings" path. */
+        founderMode={isFounderEarningsUser(session)}
+        currencies={CURRENCIES}
       />
     </main>
   );

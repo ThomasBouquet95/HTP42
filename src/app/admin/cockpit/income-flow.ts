@@ -56,6 +56,10 @@ export function buildIncomeFlow(
   payments: PaymentRecord[],
   clientNameById: Map<string, string>,
   scope: ChartScope,
+  // FOUNDER-EARNINGS (temporary) — extra cost nodes not backed by a payment
+  // (e.g. a founder's recorded earnings). Appended after the payment-derived
+  // cost buckets. Remove this param to drop the feature.
+  extraCosts: FlowItem[] = [],
 ): IncomeFlow {
   const rows = liveRows(payments, scope);
 
@@ -103,6 +107,8 @@ export function buildIncomeFlow(
     label: byCat.get(k)!.label,
     value: byCat.get(k)!.value,
   }));
+  // FOUNDER-EARNINGS (temporary) — append any non-payment cost nodes.
+  for (const c of extraCosts) if (c.value > 0) costs.push(c);
   const totalCosts = costs.reduce((s, c) => s + c.value, 0);
 
   return { revenue, clients, costs, totalCosts, net: revenue - totalCosts };

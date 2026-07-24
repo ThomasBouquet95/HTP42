@@ -19,9 +19,12 @@ import { IncomeSankey } from "./income-sankey";
 export function CockpitClient({
   payments,
   clients,
+  founderCosts = [],
 }: {
   payments: PaymentRecord[];
   clients: { id: string; name: string }[];
+  // FOUNDER-EARNINGS (temporary) — non-payment cost rows (name + year + EUR).
+  founderCosts?: { label: string; year: string; amountEur: number }[];
 }) {
   const [scope, setScope] = useState<ChartScope>("all");
   const [year, setYear] = useState<string>("all");
@@ -49,11 +52,27 @@ export function CockpitClient({
     return payments.filter((p) => (p.invoiceDate ?? "").slice(0, 4) === year);
   }, [payments, year]);
 
+  // FOUNDER-EARNINGS (temporary) — year-scope + sum per person into extra cost
+  // nodes for the income statement. Independent of the paid/all scope (there is
+  // no payment behind these).
+  const founderExtraCosts = useMemo(() => {
+    const byName = new Map<string, number>();
+    for (const e of founderCosts) {
+      if (year !== "all" && e.year !== year) continue;
+      byName.set(e.label, (byName.get(e.label) ?? 0) + e.amountEur);
+    }
+    return [...byName.entries()].map(([label, value]) => ({
+      key: `founder:${label}`,
+      label,
+      value,
+    }));
+  }, [founderCosts, year]);
+
   const totals = useMemo(() => buildTotals(scopedPayments), [scopedPayments]);
   const monthly = useMemo(() => buildMonthly(scopedPayments, scope), [scopedPayments, scope]);
   const incomeFlow = useMemo(
-    () => buildIncomeFlow(scopedPayments, clientNameById, scope),
-    [scopedPayments, clientNameById, scope],
+    () => buildIncomeFlow(scopedPayments, clientNameById, scope, founderExtraCosts),
+    [scopedPayments, clientNameById, scope, founderExtraCosts],
   );
   const breakdown = useMemo(
     () => buildStatusBreakdown(scopedPayments, scope),

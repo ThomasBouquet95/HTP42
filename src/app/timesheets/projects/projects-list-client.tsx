@@ -16,6 +16,7 @@ import { MemberInfoModal } from "@/components/member-info-modal";
 import { ProjectSummaryView } from "@/app/timesheets/team/project-summary-view";
 import { StatusPill } from "@/components/badge";
 import type { ProjectInvoice, ProjectTimesheet } from "./types";
+import { FounderEarningsButton } from "./founder-earnings-modal"; // FOUNDER-EARNINGS (temporary)
 
 const HOURS_PER_DAY = 8;
 
@@ -56,10 +57,15 @@ export function ProjectsListClient({
   projects,
   timesheetsByProject,
   invoicesByProject,
+  founderMode = false,
+  currencies = [],
 }: {
   projects: MyProjectRecord[];
   timesheetsByProject: Record<string, ProjectTimesheet[]>;
   invoicesByProject: Record<string, ProjectInvoice[]>;
+  // FOUNDER-EARNINGS (temporary) — record-only invoice path for one founder.
+  founderMode?: boolean;
+  currencies?: readonly string[];
 }) {
   const [memberOpen, setMemberOpen] = useState<MyProjectTeamMember | null>(null);
   const [query, setQuery] = useState("");
@@ -142,6 +148,8 @@ export function ProjectsListClient({
               timesheets={timesheetsByProject[p.projectCode] ?? []}
               invoices={invoicesByProject[p.projectCode] ?? []}
               onSelectMember={setMemberOpen}
+              founderMode={founderMode}
+              currencies={currencies}
             />
           ))}
         </ul>
@@ -349,11 +357,15 @@ function ProjectCard({
   timesheets,
   invoices,
   onSelectMember,
+  founderMode,
+  currencies,
 }: {
   project: MyProjectRecord;
   timesheets: ProjectTimesheet[];
   invoices: ProjectInvoice[];
   onSelectMember: (m: MyProjectTeamMember) => void;
+  founderMode: boolean;
+  currencies: readonly string[];
 }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<DrawerTab>("timesheets");
@@ -478,13 +490,25 @@ function ProjectCard({
               <PlusIcon />
               <span className="hidden md:inline">Add timesheet</span>
             </SubmitTimesheetButton>
-            <Link
-              href={`/timesheets/invoices?project=${encodeURIComponent(p.projectCode)}`}
-              className="inline-flex items-center gap-1.5 rounded-md border border-brand-200 bg-brand-50 px-2.5 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-100"
-            >
-              <InvoiceIcon />
-              <span className="hidden md:inline">Submit invoice</span>
-            </Link>
+            {founderMode ? (
+              /* FOUNDER-EARNINGS (temporary) — record-only, no PDF/invoice/payment. */
+              <FounderEarningsButton
+                projectCode={p.projectCode}
+                currencies={currencies}
+                className="inline-flex items-center gap-1.5 rounded-md border border-brand-200 bg-brand-50 px-2.5 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-100"
+              >
+                <InvoiceIcon />
+                <span className="hidden md:inline">Record earnings</span>
+              </FounderEarningsButton>
+            ) : (
+              <Link
+                href={`/timesheets/invoices?project=${encodeURIComponent(p.projectCode)}`}
+                className="inline-flex items-center gap-1.5 rounded-md border border-brand-200 bg-brand-50 px-2.5 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-100"
+              >
+                <InvoiceIcon />
+                <span className="hidden md:inline">Submit invoice</span>
+              </Link>
+            )}
           </div>
         </div>
 

@@ -85,6 +85,22 @@ describe("buildIncomeFlow", () => {
     expect(buildIncomeFlow(payments, names, "executed").revenue).toBe(100);
   });
 
+  // FOUNDER-EARNINGS (temporary) — extra (non-payment) cost nodes.
+  it("appends extra cost nodes and folds them into totalCosts + net", () => {
+    const payments = [
+      pay({ id: "a", direction: "Inflow", clientRecordIds: ["c1"], invoiceValueEur: 1000 }),
+      pay({ id: "b", direction: "Outflow", type: "Subcontractor", invoiceValueEur: 200 }),
+    ];
+    const flow = buildIncomeFlow(payments, names, "all", [
+      { key: "founder:Pascal", label: "Pascal Bouquet", value: 300 },
+      { key: "founder:Zero", label: "Zero", value: 0 }, // dropped (<= 0)
+    ]);
+    expect(flow.costs.map((c) => c.label)).toContain("Pascal Bouquet");
+    expect(flow.costs.some((c) => c.label === "Zero")).toBe(false);
+    expect(flow.totalCosts).toBe(500);
+    expect(flow.net).toBe(500);
+  });
+
   it("falls back to beneficiary then Unattributed for inflows without a client", () => {
     const payments = [
       pay({ id: "a", direction: "Inflow", beneficiary: "Walk-in", invoiceValueEur: 10 }),
