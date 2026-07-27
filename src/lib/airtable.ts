@@ -2522,8 +2522,18 @@ function serialisePaymentSchedule(entries: PaymentScheduleEntry[]): string | nul
   return JSON.stringify(entries);
 }
 
-function projectFields(input: ProjectInput): Record<string, unknown> {
-  return {
+// Build the Airtable field payload for a project. The "Purchase Order" text
+// field is created lazily (see ensureProjectsSchema) and may not exist in a
+// base where the API token can't create schema — so it's OMITTED unless the
+// caller confirms it's present. Writing to a non-existent field makes Airtable
+// reject the WHOLE record with UNKNOWN_FIELD_NAME, which would break every
+// create/edit; leaving it out keeps the core save working (PO is optional and
+// can also be set via the document-upload path).
+function projectFields(
+  input: ProjectInput,
+  opts?: { includePurchaseOrder?: boolean },
+): Record<string, unknown> {
+  const fields: Record<string, unknown> = {
     [FIELDS.projects.projectCode]: input.projectCode,
     [FIELDS.projects.projectName]: input.projectName,
     [FIELDS.projects.clientCode]: input.clientRecordIds,
@@ -2537,8 +2547,11 @@ function projectFields(input: ProjectInput): Record<string, unknown> {
     [FIELDS.projects.fxToEur]: input.fxToEur,
     [FIELDS.projects.status]: input.status === "" ? null : input.status,
     [FIELDS.projects.paymentSchedule]: serialisePaymentSchedule(input.paymentSchedule),
-    [FIELDS.projects.purchaseOrder]: input.purchaseOrder || null,
   };
+  if (opts?.includePurchaseOrder) {
+    fields[FIELDS.projects.purchaseOrder] = input.purchaseOrder || null;
+  }
+  return fields;
 }
 
 // The Projects table pre-exists; lazily add the optional "Purchase Order" text
@@ -2585,12 +2598,13 @@ export async function ensureProjectsSchema(): Promise<boolean> {
 }
 
 export async function createProject(input: ProjectInput): Promise<string> {
-  await ensureProjectsSchema();
-  // typecast lets Airtable accept single-select values (Type / Status /
-  // Currency) that exist in our code enums but haven't been added as a saved
-  // choice on the field yet — without it Airtable 422s the whole create.
+  // Only write the optional "Purchase Order" field if the schema check confirms
+  // it exists (see projectFields). typecast lets Airtable accept single-select
+  // values (Type / Status / Currency) that exist in our code enums but aren't
+  // yet a saved choice on the field — without it Airtable 422s the whole create.
+  const includePurchaseOrder = await ensureProjectsSchema();
   const [created] = await base(TABLES.projects).create(
-    [{ fields: projectFields(input) as FieldSet }],
+    [{ fields: projectFields(input, { includePurchaseOrder }) as FieldSet }],
     { typecast: true },
   );
   return created.id;
@@ -2611,9 +2625,9 @@ export async function updateProjectStatus(
 }
 
 export async function updateProject(recordId: string, input: ProjectInput): Promise<void> {
-  await ensureProjectsSchema();
+  const includePurchaseOrder = await ensureProjectsSchema();
   await base(TABLES.projects).update(
-    [{ id: recordId, fields: projectFields(input) as FieldSet }],
+    [{ id: recordId, fields: projectFields(input, { includePurchaseOrder }) as FieldSet }],
     { typecast: true },
   );
 }

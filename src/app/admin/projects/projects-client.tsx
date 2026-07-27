@@ -547,7 +547,12 @@ export function ProjectsAdminClient({
       setToast({ kind: "ok", msg: creating ? "Project created" : "Project saved" });
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed.");
+      const msg = e instanceof Error ? e.message : "Save failed.";
+      setError(msg);
+      // Also surface as a toast: the inline error sits at the bottom of a long,
+      // scrollable modal and is easy to miss, so a fixed toast guarantees the
+      // exact reason (e.g. an Airtable field rejection) is always visible.
+      setToast({ kind: "error", msg });
     } finally {
       setSaving(false);
     }
