@@ -4,6 +4,7 @@ import { requireAdminAction } from "@/lib/auth";
 import { apiError, zodMessage } from "@/lib/errors";
 import {
   createProject,
+  findProjectIdByCode,
   PROJECT_STATUSES,
   PROJECT_TYPES,
   CURRENCIES,
@@ -59,6 +60,15 @@ export async function POST(request: Request) {
   }
 
   const d = parsed.data;
+  // Project code is a unique business key (timesheets, invoices and payments
+  // reference it), so reject a duplicate up front with a clear message.
+  const clash = await findProjectIdByCode(d.projectCode);
+  if (clash) {
+    return NextResponse.json(
+      { error: `A project with the code "${d.projectCode.trim()}" already exists. Project codes must be unique.` },
+      { status: 409 },
+    );
+  }
   try {
     const id = await createProject({
       projectCode: d.projectCode,

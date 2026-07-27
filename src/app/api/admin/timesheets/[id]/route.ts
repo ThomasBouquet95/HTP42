@@ -119,6 +119,13 @@ export async function PATCH(
           : null;
 
     if (decision) {
+      // A rejection must state why (defence-in-depth alongside the UI check).
+      if (decision === "Rejected" && !d.comment?.trim()) {
+        return NextResponse.json(
+          { error: "Please add a reason for rejecting this timesheet." },
+          { status: 400 },
+        );
+      }
       // Admins may decide a timesheet that is Under Review, and may OVERRIDE an
       // existing Approved/Rejected decision (e.g. a client's) — but never once
       // it has been Invoiced/Paid, to avoid un-settling billing.

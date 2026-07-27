@@ -23,6 +23,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
+  // A rejection must carry a reason (defence-in-depth alongside the form check).
+  if (parsed.data.action === "reject" && !parsed.data.comment?.trim()) {
+    return NextResponse.json(
+      { error: "Please add a reason for rejecting this timesheet." },
+      { status: 400 },
+    );
+  }
 
   const ts = await getTimesheetByReviewToken(token);
   if (!ts) {

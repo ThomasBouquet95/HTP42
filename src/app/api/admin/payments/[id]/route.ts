@@ -47,6 +47,14 @@ export async function PATCH(
       { status: 400 },
     );
   }
+  // Rejecting a payment must state why — the note is shown to the member so
+  // they know what to fix (defence-in-depth alongside the review-dashboard UI).
+  if (nextStatus === "Rejected" && !parsed.data.memberNote?.trim()) {
+    return NextResponse.json(
+      { error: "Please add a reason for rejecting this payment." },
+      { status: 400 },
+    );
+  }
   try {
     // Capture the previous state BEFORE the update so we can detect the
     // Outflow → Paid transition and fire the receipt email exactly once.

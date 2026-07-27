@@ -9,6 +9,11 @@ export function ReviewForm({ token, preset }: { token: string; preset?: "approve
   const [error, setError] = useState<string | null>(null);
 
   async function submit(action: "approve" | "reject") {
+    // A rejection must say why, so the consultant and HTP42 know what to fix.
+    if (action === "reject" && !comment.trim()) {
+      setError("Please add a reason for rejecting this timesheet.");
+      return;
+    }
     setBusy(action);
     setError(null);
     try {
@@ -53,7 +58,7 @@ export function ReviewForm({ token, preset }: { token: string; preset?: "approve
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5">
       <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
-        Comment (optional)
+        Comment <span className="normal-case tracking-normal text-slate-400">(optional to approve, required to reject)</span>
       </label>
       <textarea
         value={comment}

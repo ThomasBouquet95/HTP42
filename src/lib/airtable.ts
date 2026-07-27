@@ -2659,6 +2659,23 @@ export async function nextProjectCode(clientCode: string, year: number): Promise
   return `${prefix}${String(n).padStart(2, "0")}`;
 }
 
+// Return the record id of a project whose code matches (case-insensitively),
+// or null if none. Used to enforce that no two projects share a code — the
+// code is a business key referenced by timesheets, invoices and payments, so a
+// duplicate would make those links ambiguous. Trims and lower-cases both sides
+// so "AGX-2026-01" and " agx-2026-01 " are treated as the same code.
+export async function findProjectIdByCode(code: string): Promise<string | null> {
+  const wanted = code.trim().toLowerCase();
+  if (!wanted) return null;
+  const records = await base(TABLES.projects)
+    .select({
+      fields: [FIELDS.projects.projectCode],
+      filterByFormula: `LOWER(TRIM({${FIELDS.projects.projectCode}})) = "${escape(wanted)}"`,
+    })
+    .all();
+  return records[0]?.id ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Admin: Timesheets (all members)
 // ---------------------------------------------------------------------------

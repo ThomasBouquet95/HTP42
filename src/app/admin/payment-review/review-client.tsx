@@ -659,6 +659,15 @@ function BundleDetail({
   const isCanceled = status === "Canceled";
   const isUnderReview = !isToPay && !isPaid && !isRejected && !isCanceled;
   const [note, setNote] = useState(selected.payment.memberNote ?? "");
+  // Rejecting a payment must say why — flagged if Reject is clicked with no note.
+  const [reasonMissing, setReasonMissing] = useState(false);
+  function rejectPayment() {
+    if (!note.trim()) {
+      setReasonMissing(true);
+      return;
+    }
+    onSetStatus("Rejected", note);
+  }
   return (
     <div className={`overflow-hidden rounded-lg border bg-white ${payMeta(status).ring}`}>
       {/* Header + actions */}
@@ -717,11 +726,24 @@ function BundleDetail({
         <div className="mt-3 space-y-2">
           <textarea
             value={note}
-            onChange={(e) => setNote(e.target.value)}
+            onChange={(e) => {
+              setNote(e.target.value);
+              if (reasonMissing) setReasonMissing(false);
+            }}
             rows={2}
-            placeholder="Note to the member (optional), shown on their invoice, e.g. why it was rejected"
-            className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+            placeholder="Note to the member, shown on their invoice, e.g. why it was rejected (required to reject)"
+            aria-invalid={reasonMissing}
+            className={`w-full rounded-md border px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 ${
+              reasonMissing
+                ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500"
+                : "border-slate-300 focus:border-brand-600 focus:ring-brand-600"
+            }`}
           />
+          {reasonMissing ? (
+            <p className="text-[11px] font-medium text-rose-600">
+              Please add a reason before rejecting this payment.
+            </p>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             {/* Advance to "To be paid": from Under review (validates timesheets)
                 or reviving a Rejected payment. */}
@@ -763,7 +785,7 @@ function BundleDetail({
               </Button>
             ) : null}
             {isUnderReview || isToPay ? (
-              <Button tone="danger" size="sm" disabled={saving} onClick={() => onSetStatus("Rejected", note)}>
+              <Button tone="danger" size="sm" disabled={saving} onClick={rejectPayment}>
                 Reject
               </Button>
             ) : null}

@@ -4,6 +4,7 @@ import { requireAdminAction } from "@/lib/auth";
 import { apiError, zodMessage } from "@/lib/errors";
 import {
   deleteProject,
+  findProjectIdByCode,
   getProjectById,
   updateProject,
   updateProjectStatus,
@@ -90,6 +91,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   }
 
   const d = parsed.data;
+  // Enforce a unique project code: reject if another project already uses it.
+  const clash = await findProjectIdByCode(d.projectCode);
+  if (clash && clash !== id) {
+    return NextResponse.json(
+      { error: `A project with the code "${d.projectCode.trim()}" already exists. Project codes must be unique.` },
+      { status: 409 },
+    );
+  }
   try {
     await updateProject(id, {
       projectCode: d.projectCode,

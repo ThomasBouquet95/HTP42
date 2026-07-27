@@ -838,6 +838,8 @@ function ReviewCard({
   const clientPending = t.status === "Submitted" && t.reviewMethod === "Client";
   const [open, setOpen] = useState(false);
   const [comment, setComment] = useState("");
+  // A rejection must state why; flagged if Reject is clicked with no reason.
+  const [reasonMissing, setReasonMissing] = useState(false);
   // Decided and client-pending cards stay clean: the admin Approve/Reject is an
   // override, revealed on demand so it isn't mistaken for the primary action.
   const [overriding, setOverriding] = useState(false);
@@ -940,9 +942,17 @@ function ReviewCard({
               <input
                 type="text"
                 value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder={overriding ? "Reason (optional)" : "Comment (optional)"}
-                className="h-8 min-w-0 flex-1 rounded-md border border-slate-300 px-2.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                onChange={(e) => {
+                  setComment(e.target.value);
+                  if (reasonMissing) setReasonMissing(false);
+                }}
+                placeholder="Comment (required to reject)"
+                aria-invalid={reasonMissing}
+                className={`h-8 min-w-0 flex-1 rounded-md border px-2.5 text-xs focus:outline-none focus:ring-1 ${
+                  reasonMissing
+                    ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500"
+                    : "border-slate-300 focus:border-brand-600 focus:ring-brand-600"
+                }`}
               />
               <Button
                 tone="primary"
@@ -956,11 +966,22 @@ function ReviewCard({
                 tone="danger"
                 size="sm"
                 disabled={saving || t.status === "Rejected"}
-                onClick={() => onDecide(t.id, "reject", comment)}
+                onClick={() => {
+                  if (!comment.trim()) {
+                    setReasonMissing(true);
+                    return;
+                  }
+                  onDecide(t.id, "reject", comment);
+                }}
               >
                 Reject
               </Button>
             </div>
+            {reasonMissing ? (
+              <p className="text-[11px] font-medium text-rose-600">
+                Please add a reason before rejecting.
+              </p>
+            ) : null}
           </div>
         ) : clientPending ? (
           <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5">
