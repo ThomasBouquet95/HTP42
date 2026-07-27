@@ -384,10 +384,15 @@ export function PaymentsClient({
   );
   const memberLabel = useCallback(
     (p: PaymentRecord) =>
-      p.memberRecordIds
-        .map((id) => membersById.get(id)?.name || membersById.get(id)?.code)
-        .filter(Boolean)
-        .join(", "),
+      // Members only make sense on outflows (paying a consultant). An inflow is
+      // client revenue, so never surface a linked member on it — even if the
+      // record carries a stray link.
+      p.direction === "Inflow"
+        ? ""
+        : p.memberRecordIds
+            .map((id) => membersById.get(id)?.name || membersById.get(id)?.code)
+            .filter(Boolean)
+            .join(", "),
     [membersById],
   );
   // Every distinct counterparty a payment touches (linked clients, linked
@@ -399,9 +404,12 @@ export function PaymentsClient({
       const c = clientsById.get(id);
       if (c) out.push(c.name || c.code);
     }
-    for (const id of p.memberRecordIds) {
-      const m = membersById.get(id);
-      if (m) out.push(m.name || m.code);
+    // Skip member links on inflows (see memberLabel).
+    if (p.direction !== "Inflow") {
+      for (const id of p.memberRecordIds) {
+        const m = membersById.get(id);
+        if (m) out.push(m.name || m.code);
+      }
     }
     if (p.beneficiary) out.push(p.beneficiary);
     return out;
@@ -2204,7 +2212,7 @@ function PaymentDetails({
         <PField label="Project" value={projectLabel} mono />
         {staffingLabel ? <PField label="Staffing" value={staffingLabel} mono /> : null}
         <PField label="Client" value={clientLabel} blur />
-        <PField label="Member" value={memberLabel} blur />
+        {p.direction === "Outflow" ? <PField label="Member" value={memberLabel} blur /> : null}
         <PField label="Beneficiary" value={p.beneficiary} blur />
         <PField label="Invoice ref" value={p.invoiceReference} />
         <PField label="Invoice date" value={p.invoiceDate ?? ""} />

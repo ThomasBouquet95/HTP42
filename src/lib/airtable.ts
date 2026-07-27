@@ -2586,9 +2586,13 @@ export async function ensureProjectsSchema(): Promise<boolean> {
 
 export async function createProject(input: ProjectInput): Promise<string> {
   await ensureProjectsSchema();
-  const [created] = await base(TABLES.projects).create([
-    { fields: projectFields(input) as FieldSet },
-  ]);
+  // typecast lets Airtable accept single-select values (Type / Status /
+  // Currency) that exist in our code enums but haven't been added as a saved
+  // choice on the field yet — without it Airtable 422s the whole create.
+  const [created] = await base(TABLES.projects).create(
+    [{ fields: projectFields(input) as FieldSet }],
+    { typecast: true },
+  );
   return created.id;
 }
 
@@ -2608,9 +2612,10 @@ export async function updateProjectStatus(
 
 export async function updateProject(recordId: string, input: ProjectInput): Promise<void> {
   await ensureProjectsSchema();
-  await base(TABLES.projects).update([
-    { id: recordId, fields: projectFields(input) as FieldSet },
-  ]);
+  await base(TABLES.projects).update(
+    [{ id: recordId, fields: projectFields(input) as FieldSet }],
+    { typecast: true },
+  );
 }
 
 export async function deleteProject(recordId: string): Promise<void> {
