@@ -335,7 +335,10 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
               label="Status"
               selected={filters.status}
               onChange={(v) => update("status", v as TimesheetStatus[])}
-              options={TIMESHEET_STATUSES.map((s) => ({ value: s, label: s }))}
+              // Label with the friendly lifecycle names (e.g. Submitted shows as
+              // "Under Review") so the filter matches the status pills everywhere
+              // else — otherwise there's no visible "Under Review" option to pick.
+              options={TIMESHEET_STATUSES.map((s) => ({ value: s, label: timesheetStatusLabel(s) }))}
             />
             <FilterMultiSelect
               label="Member"

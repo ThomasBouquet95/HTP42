@@ -7,6 +7,7 @@ import { Button } from "@/components/form-controls";
 import { FilterBar, FilterMultiSelect, FilterDateRange } from "@/components/filters";
 import { SearchSelect } from "@/components/search-select";
 import { TIMESHEET_STATUSES } from "@/lib/airtable";
+import { timesheetStatusLabel } from "@/components/status-badge";
 import type { AdminTimesheetRecord } from "@/lib/airtable";
 import { downloadTimesheetsCsv } from "./timesheets-export";
 
@@ -215,7 +216,9 @@ function GroupedTimesheets({
   }, [rows]);
 
   const statusOptions = useMemo(
-    () => TIMESHEET_STATUSES.map((s) => ({ value: s, label: s })),
+    // Friendly labels (Submitted → "Under Review") so the option matches the
+    // status pills; without it there's no visible "Under Review" to filter on.
+    () => TIMESHEET_STATUSES.map((s) => ({ value: s, label: timesheetStatusLabel(s) })),
     [],
   );
 
