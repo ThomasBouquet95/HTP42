@@ -168,10 +168,15 @@ export function PaymentsByMember({
   const memberCode = members.find((m) => m.id === memberId)?.code ?? "";
 
   // Match by linked member record id or the member code lookup (legacy rows).
+  // Inflows are client revenue and never belong to a member, so exclude them
+  // even if a record carries a stray member link (e.g. a client invoice that
+  // was mistakenly linked to a member).
   const rows = useMemo(
     () =>
       payments.filter(
-        (p) => p.memberRecordIds.includes(memberId) || (!!memberCode && p.memberCodes.includes(memberCode)),
+        (p) =>
+          p.direction !== "Inflow" &&
+          (p.memberRecordIds.includes(memberId) || (!!memberCode && p.memberCodes.includes(memberCode))),
       ),
     [payments, memberId, memberCode],
   );

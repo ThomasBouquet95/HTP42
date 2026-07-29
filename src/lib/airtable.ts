@@ -2827,7 +2827,10 @@ function paymentFields(input: PaymentInput): Record<string, unknown> {
     [FIELDS.payments.type]: input.type,
     [FIELDS.payments.project]: input.projectRecordIds,
     [FIELDS.payments.client]: input.clientRecordIds,
-    [FIELDS.payments.member]: input.memberRecordIds,
+    // Inflows are client revenue and must never be linked to a member. Force
+    // the link empty on inflows so a stray member (e.g. a mis-linked client
+    // invoice) is cleared on the next save and future inflows can't acquire one.
+    [FIELDS.payments.member]: input.direction === "Inflow" ? [] : input.memberRecordIds,
     [FIELDS.payments.memberInvoice]: input.memberInvoiceRecordIds,
     // Only touch Staffing when the caller provided a value (undefined = leave
     // as-is so an unrelated admin edit doesn't wipe the link).
