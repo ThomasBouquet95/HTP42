@@ -4,6 +4,7 @@ import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
 import { listClients, listPayments } from "@/lib/airtable";
 import { listFounderEarnings } from "@/lib/founder-earnings"; // FOUNDER-EARNINGS (temporary)
+import { FounderMigrationPanel } from "./founder-migration-panel"; // FOUNDER-EARNINGS (temporary)
 import { CockpitClient } from "./cockpit-client";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,8 @@ export default async function AdminCockpitPage() {
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <AdminTabs active="cockpit" />
       <PageHeader title="Financial cockpit" />
+      {/* FOUNDER-EARNINGS (temporary) — one-off migration tool, admins with edit only. */}
+      {access.canEdit ? <FounderMigrationPanel /> : null}
       <CockpitClient
         payments={payments}
         clients={clients.map((c) => ({ id: c.id, name: c.clientName || c.clientCode }))}

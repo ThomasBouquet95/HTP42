@@ -7,7 +7,8 @@ import {
   listMyProjects,
   listPayments,
 } from "@/lib/airtable";
-import { isFounderEarningsUser } from "@/lib/founder-earnings"; // FOUNDER-EARNINGS (temporary)
+import { isFounderEarningsUser, listFounderEarnings } from "@/lib/founder-earnings"; // FOUNDER-EARNINGS (temporary)
+import { FounderEarningsSummary } from "./founder-earnings-summary"; // FOUNDER-EARNINGS (temporary)
 import { TimesheetsTabs } from "@/components/timesheets-tabs";
 import { SubmitTimesheetButton } from "@/components/submit-timesheet-modal";
 import { ProjectsListClient } from "./projects-list-client";
@@ -18,6 +19,14 @@ export const dynamic = "force-dynamic";
 export default async function MyProjectsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
+
+  // FOUNDER-EARNINGS (temporary) — the founder's own read-back of the amounts he
+  // records (past migrated + future), so his own view reflects what the Cockpit
+  // shows for him. Empty for everyone else.
+  const founderMode = isFounderEarningsUser(session);
+  const myFounderEarnings = founderMode
+    ? (await listFounderEarnings()).filter((e) => e.memberCode === session.memberCode)
+    : [];
 
   const [allProjects, myTimesheets, myInvoices, payments] = await Promise.all([
     listMyProjects(session.sub, session.memberCode),
@@ -122,12 +131,14 @@ export default async function MyProjectsPage() {
         <h1 className="text-base sm:text-lg font-semibold">Projects</h1>
         <SubmitTimesheetButton />
       </div>
+      {/* FOUNDER-EARNINGS (temporary) — the founder's own read-back of recorded earnings. */}
+      {founderMode ? <FounderEarningsSummary earnings={myFounderEarnings} /> : null}
       <ProjectsListClient
         projects={projects}
         timesheetsByProject={timesheetsByProject}
         invoicesByProject={invoicesByProject}
         /* FOUNDER-EARNINGS (temporary) — simplified "record earnings" path. */
-        founderMode={isFounderEarningsUser(session)}
+        founderMode={founderMode}
         currencies={CURRENCIES}
       />
     </main>
