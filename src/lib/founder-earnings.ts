@@ -19,7 +19,13 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { env } from "./env";
-import { findMemberByCode, listInvoicesForMember, listPayments, listProjects } from "./airtable";
+import {
+  findMemberByCode,
+  listInvoicesForMember,
+  listPayments,
+  listProjects,
+  updateInvoiceStatus,
+} from "./airtable";
 import { effectiveEur } from "./fx";
 import { toEur } from "./earnings";
 
@@ -186,7 +192,8 @@ export type FounderMigrationResult = {
   skippedStatus: number; // skipped: Cancelled invoices
   noDate: number; // rows with no submission date (no year on the Cockpit)
   removedPaymentArtifacts: number; // stale [mig-pay:] rows deleted on apply
-  migrated: number; // apply only: how many were actually moved
+  migrated: number; // apply only: how many were actually mirrored
+  cancelledInvoices: number; // apply only: source invoices set to Cancelled
   errors: string[];
 };
 
@@ -309,12 +316,14 @@ export async function migrateFounderInvoicesForMember(opts: {
   const rows: FounderMigrationRow[] = [];
 
   for (const inv of invoices) {
-    if (DEAD_INVOICE.has(inv.status)) {
-      skippedStatus++;
-      continue;
-    }
+    // Marker check first: after apply the invoice is Cancelled, but it's still
+    // "already migrated", not a fresh skip.
     if (migratedInv.has(inv.id)) {
       alreadyMigrated++;
+      continue;
+    }
+    if (DEAD_INVOICE.has(inv.status)) {
+      skippedStatus++;
       continue;
     }
     if (!inv.submissionDate) noDate++;
@@ -342,6 +351,7 @@ export async function migrateFounderInvoicesForMember(opts: {
     noDate,
     removedPaymentArtifacts: 0,
     migrated: 0,
+    cancelledInvoices: 0,
     errors: [],
   };
 
@@ -357,9 +367,12 @@ export async function migrateFounderInvoicesForMember(opts: {
     }
   }
 
-  // 2. Mirror each live invoice into a Founder Earnings row. Invoices are not
-  //    touched, so his own dashboard is unaffected.
+  // 2. Mirror each live invoice into a Founder Earnings row, THEN cancel the
+  //    invoice — for the founder there should never be a real payment/payable,
+  //    so the invoice must stop counting; the Founder Earnings row is what
+  //    counts his figure now. His own views read the Founder Earnings table.
   for (const r of rows) {
+    let mirrored = false;
     try {
       await createFounderEarning({
         memberCode,
@@ -371,9 +384,17 @@ export async function migrateFounderInvoicesForMember(opts: {
         comment: `Migrated from member invoice ${r.invoiceCode} (${r.status}). [mig-inv:${r.invoiceId}]`,
         submittedAt: r.date ? new Date(r.date).toISOString() : undefined,
       });
+      mirrored = true;
       result.migrated++;
+      await updateInvoiceStatus(r.invoiceId, "Cancelled");
+      result.cancelledInvoices++;
     } catch (e) {
-      result.errors.push(`${r.invoiceCode}: ${e instanceof Error ? e.message : String(e)}`);
+      const msg = e instanceof Error ? e.message : String(e);
+      result.errors.push(
+        mirrored
+          ? `${r.invoiceCode}: mirrored but FAILED to cancel the invoice — cancel it by hand. ${msg}`
+          : `${r.invoiceCode}: mirror failed, invoice left untouched. ${msg}`,
+      );
     }
   }
   return result;

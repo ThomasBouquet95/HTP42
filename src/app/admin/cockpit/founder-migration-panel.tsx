@@ -31,6 +31,7 @@ type Result = {
   noDate: number;
   removedPaymentArtifacts: number;
   migrated: number;
+  cancelledInvoices: number;
   errors: string[];
 };
 
@@ -80,7 +81,7 @@ export function FounderMigrationPanel() {
     if (
       apply &&
       !window.confirm(
-        `Mirror ${result?.rows.length ?? ""} member invoice(s) into Founder Earnings (and remove ${result?.removedPaymentArtifacts ?? 0 ? "the old payment-based entries" : "any old payment-based entries"})? This changes live data.`,
+        `Mirror ${result?.rows.length ?? ""} member invoice(s) into Founder Earnings AND cancel those invoices (so they no longer count as payments)? This changes live data.`,
       )
     ) {
       return;
@@ -131,9 +132,10 @@ export function FounderMigrationPanel() {
       <p className="mt-1 text-xs text-amber-800">
         <strong>Diagnose</strong> shows where his money lives. <strong>Preview</strong> lists the
         member invoices to mirror. <strong>Apply</strong> creates a Founder Earnings row per invoice
-        (dated to its submission date) and removes the earlier payment-based entries, so his node
-        equals his real billed earnings. Invoices themselves aren&rsquo;t touched. Idempotent &mdash;
-        safe to re-run.
+        (dated to its submission date), <strong>cancels the invoice</strong> so it stops counting as
+        a payment/payable, and removes the earlier payment-based entries — so his node equals his
+        earnings and nothing double-counts. His own views read the Founder Earnings table. Idempotent
+        &mdash; safe to re-run.
       </p>
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -192,9 +194,9 @@ export function FounderMigrationPanel() {
           <div className="text-xs">
             {result.apply ? (
               <span className="font-medium text-emerald-700">
-                Mirrored {result.migrated} of {result.rows.length} invoice(s); removed{" "}
-                {result.removedPaymentArtifacts} old payment-based entr
-                {result.removedPaymentArtifacts === 1 ? "y" : "ies"}.
+                Mirrored {result.migrated} of {result.rows.length} invoice(s), cancelled{" "}
+                {result.cancelledInvoices}; removed {result.removedPaymentArtifacts} old
+                payment-based entr{result.removedPaymentArtifacts === 1 ? "y" : "ies"}.
               </span>
             ) : (
               <span className="font-medium">

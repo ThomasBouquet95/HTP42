@@ -7,8 +7,11 @@ import {
   listInvoicesForMember,
   listMyProjects,
   listProjects,
+  type InvoiceStatus,
+  type MemberInvoiceRecord,
   type MyProjectRecord,
 } from "@/lib/airtable";
+import { isFounderEarningsUser, listFounderEarnings } from "@/lib/founder-earnings"; // FOUNDER-EARNINGS (temporary)
 import { thisMondayIso } from "@/lib/dates";
 import { rollupEarnings } from "@/lib/earnings";
 import { StatusPill } from "@/components/badge";
@@ -64,8 +67,43 @@ export default async function DashboardHomePage() {
     })
     .slice(0, 3);
 
+  // FOUNDER-EARNINGS (temporary) — the founder's member invoices are cancelled
+  // (he never really charges the company); his figures live in the Founder
+  // Earnings table. Drive his dashboard from there instead, preserving the
+  // paid/pending status captured on each row at migration time.
+  let earningsInvoices: MemberInvoiceRecord[] = invoices;
+  if (isFounderEarningsUser(session)) {
+    const fe = (await listFounderEarnings()).filter((e) => e.memberCode === session.memberCode);
+    earningsInvoices = fe.map((e) => {
+      const m = e.comment.match(/member invoice .+? \(([^)]+)\)/);
+      const status: InvoiceStatus = m?.[1] === "To be paid" ? "To be paid" : "Paid";
+      return {
+        id: e.id,
+        invoiceCode: "",
+        memberRecordId: session.sub,
+        memberCode: e.memberCode,
+        memberName: e.memberName,
+        staffingRecordId: "",
+        staffingCode: "",
+        projectRecordId: "",
+        projectCode: e.projectCode,
+        projectName: e.projectCode,
+        pdf: null,
+        submissionDate: (e.submittedAt || "").slice(0, 10) || null,
+        amount: e.amountEur,
+        currency: "EUR",
+        status,
+        comment: "",
+        coveredTimesheetIds: [],
+        emailSent: false,
+        emailSentAt: null,
+        emailError: "",
+      };
+    });
+  }
+
   // Earnings rollup, EUR-converted via each invoice's project FX rate.
-  const earnings = rollupEarnings({ invoices, projects: allProjects, timesheets });
+  const earnings = rollupEarnings({ invoices: earningsInvoices, projects: allProjects, timesheets });
   const currentMonthKey = new Date().toISOString().slice(0, 7);
   const thisMonthBucket = earnings.months[earnings.months.length - 1];
   const prevMonthBucket = earnings.months[earnings.months.length - 2];
