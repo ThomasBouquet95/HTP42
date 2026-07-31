@@ -19,7 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { env } from "./env";
-import { listPayments, updatePaymentStatus } from "./airtable";
+import { findMemberByCode, listPayments, updatePaymentStatus } from "./airtable";
 import { effectiveEur } from "./fx";
 
 // Who gets the special path. Matched by email (preferred) or full name — edit
@@ -197,7 +197,26 @@ export async function migrateFounderPaymentsForMember(opts: {
 }): Promise<FounderMigrationResult> {
   const { memberCode, apply } = opts;
 
-  const [payments, existing] = await Promise.all([listPayments(), listFounderEarnings()]);
+  const [payments, existing, member] = await Promise.all([
+    listPayments(),
+    listFounderEarnings(),
+    findMemberByCode(memberCode),
+  ]);
+
+  // The Payments "Member" link resolves to the member's PRIMARY field (his
+  // name), not the code — so match by record id (robust), with name/code/
+  // beneficiary as fallbacks. Every outflow to him is the workaround: per the
+  // owner, "there should never be a payment outflow from Pascal Bouquet".
+  const memberId = member?.id ?? "";
+  const memberFullName = member?.fullName ?? "";
+  const nameLc = memberFullName.trim().toLowerCase();
+  const linkedToMember = (p: (typeof payments)[number]) => {
+    if (memberId && p.memberRecordIds.includes(memberId)) return true;
+    if (p.memberCodes.includes(memberCode)) return true;
+    if (nameLc && p.memberCodes.some((c) => c.trim().toLowerCase() === nameLc)) return true;
+    if (nameLc && p.beneficiary.trim().toLowerCase() === nameLc) return true;
+    return false;
+  };
 
   // Payment ids already migrated (idempotency).
   const migratedIds = new Set<string>();
@@ -210,12 +229,12 @@ export async function migrateFounderPaymentsForMember(opts: {
   let alreadyMigrated = 0;
   let canceledOrRejected = 0;
   let noDate = 0;
-  let memberName = "";
+  let memberName = memberFullName;
   const rows: FounderMigrationRow[] = [];
 
   for (const p of payments) {
     if (p.direction !== "Outflow") continue;
-    if (!p.memberCodes.includes(memberCode)) continue;
+    if (!linkedToMember(p)) continue;
     if (migratedIds.has(p.id)) {
       alreadyMigrated++;
       continue;
