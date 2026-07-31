@@ -137,7 +137,7 @@ export function ReconcileModal({
             Cancel
           </Button>
           <Button tone="primary" size="sm" onClick={apply} disabled={busy || selected.size === 0}>
-            {busy ? "Linking…" : `Link selected (${selected.size})`}
+            {busy ? "Linking…" : `Link payments (${selected.size})`}
           </Button>
         </div>
       </div>
