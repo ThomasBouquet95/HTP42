@@ -24,6 +24,9 @@ const schema = z.object({
     .max(64)
     .regex(/^$|^[A-Z0-9 ]{6,64}$/i, "IBAN can only contain letters, digits, and spaces.")
     .optional(),
+  billingCompanyName: z.string().max(200).optional(),
+  billingCompanyCountry: z.string().max(120).optional(),
+  billingCompanyAddress: z.string().max(2000).optional(),
 });
 
 export async function PUT(request: Request) {

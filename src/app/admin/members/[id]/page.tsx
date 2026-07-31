@@ -264,6 +264,28 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
             </Card>
           ) : null}
 
+          <Card title="Billing company">
+            {member.billingCompanyName ||
+            member.billingCompanyCountry ||
+            member.billingCompanyAddress ? (
+              <dl className="space-y-2 text-xs">
+                {member.billingCompanyName ? (
+                  <Stat label="Company name" value={member.billingCompanyName} />
+                ) : null}
+                {member.billingCompanyCountry ? (
+                  <Stat label="Country" value={member.billingCompanyCountry} />
+                ) : null}
+                {member.billingCompanyAddress ? (
+                  <Stat label="Address" value={member.billingCompanyAddress} />
+                ) : null}
+              </dl>
+            ) : (
+              <p className="text-xs text-slate-400">
+                Not set. Add it from Edit if the member hasn&rsquo;t filled it in.
+              </p>
+            )}
+          </Card>
+
           <Card title="App connection">
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
               <Stat label="Last sign-in" value={relative(conn?.lastSignIn, now)} sub={prettyDate(conn?.lastSignIn)} />

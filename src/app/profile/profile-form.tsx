@@ -23,6 +23,7 @@ export function ProfileForm({ initial }: Props) {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; message: string } | null>(null);
   const [bankOpen, setBankOpen] = useState(false);
+  const [billingOpen, setBillingOpen] = useState(false);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -90,6 +91,8 @@ export function ProfileForm({ initial }: Props) {
 
         <BankAccountCard member={member} onEdit={() => setBankOpen(true)} />
 
+        <BillingCompanyCard member={member} onEdit={() => setBillingOpen(true)} />
+
         {notice ? (
           <div
             className={`rounded-md p-2.5 text-xs ${
@@ -120,7 +123,143 @@ export function ProfileForm({ initial }: Props) {
           router.refresh();
         }}
       />
+
+      <BillingCompanyModal
+        open={billingOpen}
+        member={member}
+        onClose={() => setBillingOpen(false)}
+        onSaved={(m) => {
+          setMember(m);
+          setBillingOpen(false);
+          setNotice({ kind: "ok", message: "Billing company saved." });
+          router.refresh();
+        }}
+      />
     </div>
+  );
+}
+
+// Card + modal for the optional billing company (the legal entity that invoices
+// HTP42). Mirrors the bank-account card; lives just below it on the profile.
+function BillingCompanyCard({ member, onEdit }: { member: MemberRecord; onEdit: () => void }) {
+  const hasAny =
+    member.billingCompanyName || member.billingCompanyCountry || member.billingCompanyAddress;
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="text-[11px] uppercase tracking-wide font-medium text-slate-500">
+            Billing company
+          </div>
+          <div className="mt-0.5 text-xs text-slate-700">
+            {hasAny ? (
+              <>
+                <span className="font-medium">{member.billingCompanyName || "(no name)"}</span>
+                {member.billingCompanyCountry ? (
+                  <span className="ml-2 text-slate-500">{member.billingCompanyCountry}</span>
+                ) : null}
+              </>
+            ) : (
+              <span className="text-slate-400">
+                Not set yet. Add the company that invoices HTP42 for your work.
+              </span>
+            )}
+          </div>
+        </div>
+        <Button tone="secondary" size="sm" onClick={onEdit} className="shrink-0">
+          {hasAny ? "Edit" : "Add"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function BillingCompanyModal({
+  open,
+  member,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  member: MemberRecord;
+  onClose: () => void;
+  onSaved: (m: MemberRecord) => void;
+}) {
+  const [name, setName] = useState(member.billingCompanyName);
+  const [countryVal, setCountryVal] = useState(member.billingCompanyCountry);
+  const [address, setAddress] = useState(member.billingCompanyAddress);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setName(member.billingCompanyName);
+    setCountryVal(member.billingCompanyCountry);
+    setAddress(member.billingCompanyAddress);
+    setErr(null);
+  }, [open, member.billingCompanyName, member.billingCompanyCountry, member.billingCompanyAddress]);
+
+  async function save() {
+    setErr(null);
+    setSaving(true);
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          billingCompanyName: name,
+          billingCompanyCountry: countryVal,
+          billingCompanyAddress: address,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        member?: MemberRecord;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error ?? "Save failed.");
+      if (data.member) onSaved(data.member);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Billing company"
+      size="md"
+      busy={saving}
+      footer={
+        <>
+          <Button tone="secondary" size="sm" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button tone="primary" size="sm" onClick={save} disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-xs text-slate-500">
+          The legal entity that invoices HTP42 for your work. Optional. Visible to admins only.
+        </p>
+        <Field
+          label="Company name"
+          value={name}
+          onChange={setName}
+          placeholder="e.g. HTP42 SAS"
+        />
+        <Field label="Country" value={countryVal} onChange={setCountryVal} placeholder="e.g. France" />
+        <TextArea label="Address" value={address} onChange={setAddress} rows={3} />
+        {err ? (
+          <div className="rounded-md bg-red-50 p-2 text-xs text-red-700">{err}</div>
+        ) : null}
+      </div>
+    </Modal>
   );
 }
 

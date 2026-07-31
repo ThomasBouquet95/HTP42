@@ -64,6 +64,12 @@ export const FIELDS = {
     bankAccountName: "Bank Account Name",
     bankAccountAddress: "Bank Account Address",
     iban: "IBAN",
+    // Optional billing company (like the bank account): the legal entity that
+    // invoices HTP42. Captured via the profile "Billing company" card; admins
+    // can also fill it in. Lazily created — see ensureBillingCompanyFields.
+    billingCompanyName: "Billing Company Name",
+    billingCompanyCountry: "Billing Company Country",
+    billingCompanyAddress: "Billing Company Address",
     // Admin/HR-only note. NEVER exposed to the member — lives on
     // MemberAdminRecord only (not MemberRecord), so member-facing reads
     // (getMemberById / profile / member directory) can't carry it. Lazily
@@ -680,6 +686,11 @@ export type MemberRecord = {
   bankAccountName: string;
   bankAccountAddress: string;
   iban: string;
+  // Optional billing company (the legal entity that invoices HTP42). All
+  // optional; captured on the profile page, editable by admins too.
+  billingCompanyName: string;
+  billingCompanyCountry: string;
+  billingCompanyAddress: string;
 };
 
 export type MemberAdminRecord = MemberRecord & {
@@ -959,6 +970,9 @@ function memberFromRecord(r: AirtableRecord<FieldSet>): MemberRecord {
     bankAccountName: str(r, FIELDS.networkMembers.bankAccountName),
     bankAccountAddress: str(r, FIELDS.networkMembers.bankAccountAddress),
     iban: str(r, FIELDS.networkMembers.iban),
+    billingCompanyName: str(r, FIELDS.networkMembers.billingCompanyName),
+    billingCompanyCountry: str(r, FIELDS.networkMembers.billingCompanyCountry),
+    billingCompanyAddress: str(r, FIELDS.networkMembers.billingCompanyAddress),
   };
 }
 
@@ -996,6 +1010,9 @@ export type MemberProfileUpdate = {
   bankAccountName?: string;
   bankAccountAddress?: string;
   iban?: string;
+  billingCompanyName?: string;
+  billingCompanyCountry?: string;
+  billingCompanyAddress?: string;
 };
 
 export async function updateMemberProfile(
@@ -1003,6 +1020,22 @@ export async function updateMemberProfile(
   input: MemberProfileUpdate,
 ): Promise<MemberRecord | null> {
   const fields: Record<string, unknown> = {};
+  if (
+    input.billingCompanyName !== undefined ||
+    input.billingCompanyCountry !== undefined ||
+    input.billingCompanyAddress !== undefined
+  ) {
+    await ensureBillingCompanyFields();
+  }
+  if (input.billingCompanyName !== undefined) {
+    fields[FIELDS.networkMembers.billingCompanyName] = input.billingCompanyName;
+  }
+  if (input.billingCompanyCountry !== undefined) {
+    fields[FIELDS.networkMembers.billingCompanyCountry] = input.billingCompanyCountry;
+  }
+  if (input.billingCompanyAddress !== undefined) {
+    fields[FIELDS.networkMembers.billingCompanyAddress] = input.billingCompanyAddress;
+  }
   if (input.fullName !== undefined) fields[FIELDS.networkMembers.fullName] = input.fullName;
   if (input.introduction !== undefined) fields[FIELDS.networkMembers.introduction] = input.introduction;
   if (input.country !== undefined) fields[FIELDS.networkMembers.country] = input.country;
@@ -1193,6 +1226,53 @@ export async function ensureMemberInternalNotesField(): Promise<void> {
     if (create.ok) memberInternalNotesFieldReady = true;
   } catch (e) {
     console.error("ensureMemberInternalNotesField failed:", e);
+  }
+}
+
+// Lazily create the optional "Billing Company" text fields on the Network
+// Members table (name / country / address). Idempotent + cached; called before
+// a write that sets any of them, so the base doesn't need a manual migration.
+let billingCompanyFieldsReady = false;
+export async function ensureBillingCompanyFields(): Promise<void> {
+  if (billingCompanyFieldsReady) return;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.networkMembers);
+    if (!table) return;
+    const existing = new Set(table.fields.map((f) => f.name));
+    const wanted: Array<{ name: string; type: string }> = [
+      { name: FIELDS.networkMembers.billingCompanyName, type: "singleLineText" },
+      { name: FIELDS.networkMembers.billingCompanyCountry, type: "singleLineText" },
+      { name: FIELDS.networkMembers.billingCompanyAddress, type: "multilineText" },
+    ];
+    let allOk = true;
+    for (const f of wanted) {
+      if (existing.has(f.name)) continue;
+      const create = await fetch(
+        `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: f.name,
+            type: f.type,
+            description: "Optional billing company (legal entity that invoices HTP42).",
+          }),
+        },
+      );
+      if (!create.ok) allOk = false;
+    }
+    if (allOk) billingCompanyFieldsReady = true;
+  } catch (e) {
+    console.error("ensureBillingCompanyFields failed:", e);
   }
 }
 
@@ -1518,6 +1598,22 @@ export async function adminCreateMember(input: MemberCreateInput): Promise<Membe
   if (input.role !== undefined) fields[FIELDS.networkMembers.role] = input.role;
   if (input.personalEmail !== undefined) {
     fields[FIELDS.networkMembers.personalEmail] = input.personalEmail || null;
+  }
+  if (
+    input.billingCompanyName !== undefined ||
+    input.billingCompanyCountry !== undefined ||
+    input.billingCompanyAddress !== undefined
+  ) {
+    await ensureBillingCompanyFields();
+    if (input.billingCompanyName !== undefined) {
+      fields[FIELDS.networkMembers.billingCompanyName] = input.billingCompanyName;
+    }
+    if (input.billingCompanyCountry !== undefined) {
+      fields[FIELDS.networkMembers.billingCompanyCountry] = input.billingCompanyCountry;
+    }
+    if (input.billingCompanyAddress !== undefined) {
+      fields[FIELDS.networkMembers.billingCompanyAddress] = input.billingCompanyAddress;
+    }
   }
   if (input.dailyRate !== undefined) fields[FIELDS.networkMembers.dailyRate] = input.dailyRate;
   if (input.htp42DailyRate !== undefined) {
@@ -2186,6 +2282,22 @@ export async function adminUpdateMember(
   if (input.country !== undefined) fields[FIELDS.networkMembers.country] = input.country;
   if (input.phone !== undefined) fields[FIELDS.networkMembers.phone] = input.phone;
   if (input.legalEntity !== undefined) fields[FIELDS.networkMembers.legalEntity] = input.legalEntity;
+  if (
+    input.billingCompanyName !== undefined ||
+    input.billingCompanyCountry !== undefined ||
+    input.billingCompanyAddress !== undefined
+  ) {
+    await ensureBillingCompanyFields();
+    if (input.billingCompanyName !== undefined) {
+      fields[FIELDS.networkMembers.billingCompanyName] = input.billingCompanyName;
+    }
+    if (input.billingCompanyCountry !== undefined) {
+      fields[FIELDS.networkMembers.billingCompanyCountry] = input.billingCompanyCountry;
+    }
+    if (input.billingCompanyAddress !== undefined) {
+      fields[FIELDS.networkMembers.billingCompanyAddress] = input.billingCompanyAddress;
+    }
+  }
   if (input.title !== undefined) fields[FIELDS.networkMembers.title] = input.title;
   if (input.role !== undefined) fields[FIELDS.networkMembers.role] = input.role;
   if (input.status !== undefined) fields[FIELDS.networkMembers.status] = input.status;

@@ -56,6 +56,9 @@ type FormState = {
   country: string;
   phone: string;
   legalEntity: string;
+  billingCompanyName: string;
+  billingCompanyCountry: string;
+  billingCompanyAddress: string;
   dailyRate: string;
   htp42DailyRate: string;
   currency: string;
@@ -73,6 +76,9 @@ const EMPTY: FormState = {
   country: "",
   phone: "",
   legalEntity: "",
+  billingCompanyName: "",
+  billingCompanyCountry: "",
+  billingCompanyAddress: "",
   dailyRate: "",
   htp42DailyRate: "",
   currency: "",
@@ -91,6 +97,9 @@ function fromRecord(m: MemberAdminRecord): FormState {
     country: m.country,
     phone: m.phone,
     legalEntity: m.legalEntity,
+    billingCompanyName: m.billingCompanyName,
+    billingCompanyCountry: m.billingCompanyCountry,
+    billingCompanyAddress: m.billingCompanyAddress,
     dailyRate: m.dailyRate == null ? "" : String(m.dailyRate),
     htp42DailyRate: m.htp42DailyRate == null ? "" : String(m.htp42DailyRate),
     currency: m.currency,
@@ -466,6 +475,9 @@ export function MembersAdminClient({
         country: form.country,
         phone: form.phone,
         legalEntity: form.legalEntity,
+        billingCompanyName: form.billingCompanyName,
+        billingCompanyCountry: form.billingCompanyCountry,
+        billingCompanyAddress: form.billingCompanyAddress,
         introduction: form.introduction,
         dailyRate: form.dailyRate === "" ? null : Number(form.dailyRate),
         htp42DailyRate: form.htp42DailyRate === "" ? null : Number(form.htp42DailyRate),
@@ -787,6 +799,19 @@ export function MembersAdminClient({
                       </div>
                     ) : null}
 
+                    {m.billingCompanyName || m.billingCompanyCountry || m.billingCompanyAddress ? (
+                      <div className="mt-3 rounded-md border border-slate-200 bg-white p-2.5">
+                        <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                          Billing company
+                        </div>
+                        <dl className="mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
+                          {m.billingCompanyName ? <Field label="Company name" blur>{m.billingCompanyName}</Field> : null}
+                          {m.billingCompanyCountry ? <Field label="Country" blur>{m.billingCompanyCountry}</Field> : null}
+                          {m.billingCompanyAddress ? <Field label="Address" blur>{m.billingCompanyAddress}</Field> : null}
+                        </dl>
+                      </div>
+                    ) : null}
+
                     {m.introduction ? (
                       <div className="mt-3">
                         <dt className="text-[10px] uppercase tracking-wide text-slate-400">Introduction</dt>
@@ -1047,6 +1072,31 @@ export function MembersAdminClient({
             onChange={(v) => updateField("introduction", v)}
             rows={3}
           />
+        </div>
+        <div className="mt-4 rounded-md border border-slate-200 p-3">
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+            Billing company
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField
+              label="Company name"
+              value={form.billingCompanyName}
+              onChange={(v) => updateField("billingCompanyName", v)}
+            />
+            <FormField
+              label="Country"
+              value={form.billingCompanyCountry}
+              onChange={(v) => updateField("billingCompanyCountry", v)}
+            />
+          </div>
+          <div className="mt-3">
+            <FormTextarea
+              label="Address"
+              value={form.billingCompanyAddress}
+              onChange={(v) => updateField("billingCompanyAddress", v)}
+              rows={2}
+            />
+          </div>
         </div>
         {error ? (
           <div className="mt-3 rounded-md bg-red-50 text-red-700 p-2.5 text-xs">{error}</div>
