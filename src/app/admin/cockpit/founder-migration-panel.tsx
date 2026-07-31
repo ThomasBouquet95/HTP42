@@ -33,16 +33,47 @@ type Result = {
   errors: string[];
 };
 
+type Bucket = { count: number; eur: number };
+type Diagnosis = {
+  memberCode: string;
+  memberId: string;
+  memberName: string;
+  memberInvoices: { byStatus: Record<string, Bucket>; total: Bucket };
+  outflowPayments: { byStatus: Record<string, Bucket>; total: Bucket };
+  inflowPayments: Bucket;
+  founderEarnings: Bucket;
+};
+
 const MEMBER_CODE = "BOUPA1";
 const fmt = (n: number | null) =>
   n == null ? "—" : n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+const byStatusLine = (m: Record<string, Bucket>) =>
+  Object.entries(m)
+    .map(([k, b]) => `${k}: ${b.count} · ${fmt(b.eur)} EUR`)
+    .join("  |  ") || "none";
 
 export function FounderMigrationPanel() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+  const [diag, setDiag] = useState<Diagnosis | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  async function diagnose() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/founder-earnings/migrate?memberCode=${MEMBER_CODE}`);
+      const data = (await res.json()) as Diagnosis & { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Diagnostic failed.");
+      setDiag(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Diagnostic failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function run(apply: boolean) {
     if (apply && !window.confirm(`Move ${result?.rows.length ?? ""} payment(s) into Founder Earnings and cancel them? This changes live data.`)) {
@@ -98,8 +129,11 @@ export function FounderMigrationPanel() {
       </p>
 
       <div className="mt-3 flex flex-wrap gap-2">
+        <Button tone="secondary" size="sm" onClick={diagnose} disabled={busy}>
+          {busy ? "Working…" : "Diagnose"}
+        </Button>
         <Button tone="secondary" size="sm" onClick={() => run(false)} disabled={busy}>
-          {busy ? "Working…" : "Preview"}
+          Preview
         </Button>
         <Button
           tone="primary"
@@ -112,6 +146,38 @@ export function FounderMigrationPanel() {
       </div>
 
       {error ? <div className="mt-3 text-xs font-medium text-red-700">{error}</div> : null}
+
+      {diag ? (
+        <div className="mt-3 rounded border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700">
+          <div className="font-medium text-slate-800">
+            Where {diag.memberName || diag.memberCode}&rsquo;s money lives (read-only)
+          </div>
+          <ul className="mt-1 space-y-1">
+            <li>
+              <strong>Member Invoices:</strong> {diag.memberInvoices.total.count} rows ·{" "}
+              <strong>{fmt(diag.memberInvoices.total.eur)} EUR</strong>
+              <div className="text-slate-500">{byStatusLine(diag.memberInvoices.byStatus)}</div>
+            </li>
+            <li>
+              <strong>Outflow Payments (his):</strong> {diag.outflowPayments.total.count} rows ·{" "}
+              {fmt(diag.outflowPayments.total.eur)} EUR
+              <div className="text-slate-500">{byStatusLine(diag.outflowPayments.byStatus)}</div>
+            </li>
+            <li>
+              <strong>Inflow Payments (his):</strong> {diag.inflowPayments.count} rows ·{" "}
+              {fmt(diag.inflowPayments.eur)} EUR
+            </li>
+            <li>
+              <strong>Founder Earnings (his node today):</strong> {diag.founderEarnings.count} rows ·{" "}
+              <strong>{fmt(diag.founderEarnings.eur)} EUR</strong>
+            </li>
+          </ul>
+          <p className="mt-1 text-slate-500">
+            The cockpit only reads Payments — so his real earnings (usually Member Invoices) won&rsquo;t
+            show as his node until they&rsquo;re migrated. This tells us which source to migrate from.
+          </p>
+        </div>
+      ) : null}
 
       {result ? (
         <div className="mt-3">

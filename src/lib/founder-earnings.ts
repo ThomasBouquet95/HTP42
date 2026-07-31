@@ -19,8 +19,15 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { env } from "./env";
-import { findMemberByCode, listPayments, updatePaymentStatus } from "./airtable";
+import {
+  findMemberByCode,
+  listInvoicesForMember,
+  listPayments,
+  listProjects,
+  updatePaymentStatus,
+} from "./airtable";
 import { effectiveEur } from "./fx";
+import { toEur } from "./earnings";
 
 // Who gets the special path. Matched by email (preferred) or full name — edit
 // these to change the person, or empty both to disable the UI path entirely.
@@ -190,6 +197,87 @@ export type FounderMigrationResult = {
 };
 
 const MIG_MARKER = /\[mig-pay:(rec[A-Za-z0-9]+)\]/;
+
+// ─────────────────────────────────────────────────────────────────────────
+// READ-ONLY DIAGNOSTIC (temporary) — where does this member's money actually
+// live? The income statement only reads Payments; a member's earnings are
+// usually in Member Invoices. This reports totals across every table so we can
+// see why his cockpit node is smaller than expected. Writes nothing.
+// ─────────────────────────────────────────────────────────────────────────
+
+type Bucket = { count: number; eur: number };
+const addTo = (m: Record<string, Bucket>, key: string, eur: number) => {
+  const b = (m[key] ??= { count: 0, eur: 0 });
+  b.count += 1;
+  b.eur += eur;
+};
+const sum = (m: Record<string, Bucket>) =>
+  Object.values(m).reduce((s, b) => ({ count: s.count + b.count, eur: s.eur + b.eur }), {
+    count: 0,
+    eur: 0,
+  });
+
+export type FounderDiagnosis = {
+  memberCode: string;
+  memberId: string;
+  memberName: string;
+  memberInvoices: { byStatus: Record<string, Bucket>; total: Bucket };
+  outflowPayments: { byStatus: Record<string, Bucket>; total: Bucket };
+  inflowPayments: Bucket;
+  founderEarnings: Bucket;
+};
+
+export async function diagnoseFounderMember(memberCode: string): Promise<FounderDiagnosis> {
+  const member = await findMemberByCode(memberCode);
+  const memberId = member?.id ?? "";
+  const memberName = member?.fullName ?? memberCode;
+  const nameLc = memberName.trim().toLowerCase();
+
+  const [invoices, payments, projects, earnings] = await Promise.all([
+    memberId ? listInvoicesForMember(memberId) : Promise.resolve([]),
+    listPayments(),
+    listProjects(),
+    listFounderEarnings(),
+  ]);
+
+  const fxByProject = new Map(projects.map((p) => [p.projectCode, p.fxToEur ?? null]));
+
+  const memberInvoices: Record<string, Bucket> = {};
+  for (const inv of invoices) {
+    addTo(memberInvoices, inv.status || "(none)", toEur(inv.amount, inv.currency, fxByProject.get(inv.projectCode) ?? null));
+  }
+
+  const linkedToMember = (p: (typeof payments)[number]) =>
+    (memberId && p.memberRecordIds.includes(memberId)) ||
+    p.memberCodes.includes(memberCode) ||
+    (nameLc && p.memberCodes.some((c) => c.trim().toLowerCase() === nameLc)) ||
+    (nameLc && p.beneficiary.trim().toLowerCase() === nameLc);
+
+  const outflowPayments: Record<string, Bucket> = {};
+  const inflow: Bucket = { count: 0, eur: 0 };
+  for (const p of payments) {
+    if (!linkedToMember(p)) continue;
+    if (p.direction === "Outflow") addTo(outflowPayments, p.paymentStatus || "(none)", effectiveEur(p));
+    else if (p.direction === "Inflow") {
+      inflow.count += 1;
+      inflow.eur += effectiveEur(p);
+    }
+  }
+
+  const founderEarnings = earnings
+    .filter((e) => e.memberCode === memberCode || (e.memberName || "").trim().toLowerCase() === nameLc)
+    .reduce((s, e) => ({ count: s.count + 1, eur: s.eur + (e.amountEur ?? 0) }), { count: 0, eur: 0 });
+
+  return {
+    memberCode,
+    memberId,
+    memberName,
+    memberInvoices: { byStatus: memberInvoices, total: sum(memberInvoices) },
+    outflowPayments: { byStatus: outflowPayments, total: sum(outflowPayments) },
+    inflowPayments: inflow,
+    founderEarnings,
+  };
+}
 
 export async function migrateFounderPaymentsForMember(opts: {
   memberCode: string;

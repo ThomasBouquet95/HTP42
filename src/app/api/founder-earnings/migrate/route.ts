@@ -1,11 +1,26 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminAction } from "@/lib/auth";
-import { migrateFounderPaymentsForMember } from "@/lib/founder-earnings";
+import { diagnoseFounderMember, migrateFounderPaymentsForMember } from "@/lib/founder-earnings";
 import { zodMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Read-only diagnostic: where does this member's money live across all tables?
+export async function GET(request: Request) {
+  const session = await requireAdminAction("cockpit", "edit");
+  if (!session) return NextResponse.json({ error: "Not authorized." }, { status: 403 });
+  const memberCode = new URL(request.url).searchParams.get("memberCode")?.trim() || "BOUPA1";
+  try {
+    return NextResponse.json(await diagnoseFounderMember(memberCode));
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Diagnostic failed." },
+      { status: 500 },
+    );
+  }
+}
 
 // FOUNDER-EARNINGS (temporary) — ONE-OFF migration endpoint. Moves a founder's
 // fake "Paid" outflow payments into the Founder Earnings table and cancels
