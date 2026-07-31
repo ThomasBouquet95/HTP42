@@ -494,6 +494,7 @@ function ProjectCard({
               /* FOUNDER-EARNINGS (temporary) — record-only, no PDF/invoice/payment. */
               <FounderEarningsButton
                 projectCode={p.projectCode}
+                projectName={p.projectName}
                 currencies={currencies}
                 className="inline-flex items-center gap-1.5 rounded-md border border-brand-200 bg-brand-50 px-2.5 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-100"
               >

@@ -12,11 +12,13 @@ import { Button, FormField, FormSelect } from "@/components/form-controls";
 
 export function FounderEarningsButton({
   projectCode,
+  projectName,
   currencies,
   className,
   children,
 }: {
   projectCode: string;
+  projectName?: string;
   currencies: readonly string[];
   className?: string;
   children?: React.ReactNode;
@@ -96,9 +98,25 @@ export function FounderEarningsButton({
         }
       >
         <p className="mb-3 text-xs text-slate-500">
-          Record how much you earned on this project. No invoice to upload — this does not create
-          an invoice or a payment, it only logs the amount.
+          Record how much you earned. No invoice to upload — this does not create an invoice or a
+          payment, it only logs the amount for the cockpit.
         </p>
+
+        {/* Linked project — the earning is recorded against this project. */}
+        <div className="mb-3 flex items-center gap-2 rounded-md border border-brand-100 bg-brand-50/60 px-3 py-2">
+          <span className="text-xs font-medium text-brand-700">Project</span>
+          <span className="min-w-0 flex-1 truncate text-sm text-slate-800">
+            {projectName ? (
+              <>
+                {projectName}{" "}
+                <span className="text-xs text-slate-400">({projectCode})</span>
+              </>
+            ) : (
+              <span className="font-mono text-sm">{projectCode || "—"}</span>
+            )}
+          </span>
+        </div>
+
         <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
           <FormField label="Amount" type="number" value={amount} onChange={setAmount} required />
           <FormSelect label="Currency" value={currency} onChange={setCurrency}>
