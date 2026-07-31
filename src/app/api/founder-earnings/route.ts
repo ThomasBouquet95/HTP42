@@ -16,6 +16,12 @@ const schema = z.object({
   amount: z.number().positive(),
   currency: z.union([z.enum(CURRENCIES as [string, ...string[]]), z.literal("")]).default(""),
   comment: z.string().max(2000).default(""),
+  // Optional period the earning belongs to (YYYY-MM-DD). The Cockpit buckets by
+  // the YEAR of this date, so it lets a founder backfill past periods. Empty =
+  // today.
+  date: z
+    .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a valid date."), z.literal("")])
+    .default(""),
 });
 
 export async function POST(request: Request) {
@@ -48,6 +54,8 @@ export async function POST(request: Request) {
       currency: d.currency || "EUR",
       amountEur,
       comment: d.comment,
+      // Backdate to the chosen period so it lands in the right year; empty = now.
+      submittedAt: d.date ? new Date(d.date).toISOString() : undefined,
     });
     return NextResponse.json({ ok: true });
   } catch (e) {

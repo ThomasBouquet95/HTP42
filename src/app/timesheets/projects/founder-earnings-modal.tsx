@@ -25,6 +25,7 @@ export function FounderEarningsButton({
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<string>(currencies[0] ?? "EUR");
+  const [date, setDate] = useState("");
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +43,7 @@ export function FounderEarningsButton({
       const res = await fetch("/api/founder-earnings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectCode, amount: amt, currency, comment: comment.trim() }),
+        body: JSON.stringify({ projectCode, amount: amt, currency, comment: comment.trim(), date }),
       });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
@@ -51,6 +52,7 @@ export function FounderEarningsButton({
       setDone(true);
       setAmount("");
       setComment("");
+      setDate("");
       router.refresh();
       setTimeout(() => {
         setOpen(false);
@@ -107,6 +109,17 @@ export function FounderEarningsButton({
             ))}
           </FormSelect>
         </div>
+        <FormField
+          label="Period (optional)"
+          type="date"
+          value={date}
+          onChange={setDate}
+          className="mt-3"
+        />
+        <p className="mt-1 text-xs text-slate-400">
+          Leave empty for today. Pick a past date to record earnings for an earlier period — the
+          cockpit counts it in that date&rsquo;s year.
+        </p>
         <FormField
           label="Note (optional)"
           value={comment}
