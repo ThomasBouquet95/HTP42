@@ -3,7 +3,11 @@ import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { CURRENCIES, listProjects } from "@/lib/airtable";
 import { toEur } from "@/lib/earnings";
-import { createFounderEarning, isFounderEarningsUser } from "@/lib/founder-earnings";
+import {
+  createFounderEarning,
+  createFounderPayment,
+  isFounderEarningsUser,
+} from "@/lib/founder-earnings";
 import { zodMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -46,9 +50,10 @@ export async function POST(request: Request) {
       projects.find((p) => p.projectCode === d.projectCode)?.fxToEur ?? null;
     const amountEur = toEur(d.amount, d.currency || "EUR", fx && fx > 0 ? fx : null);
 
-    await createFounderEarning({
+    const memberName = session.fullName || session.email || "";
+    const earningId = await createFounderEarning({
       memberCode: session.memberCode,
-      memberName: session.fullName || session.email || "",
+      memberName,
       projectCode: d.projectCode,
       amount: d.amount,
       currency: d.currency || "EUR",
@@ -57,6 +62,29 @@ export async function POST(request: Request) {
       // Backdate to the chosen period so it lands in the right year; empty = now.
       submittedAt: d.date ? new Date(d.date).toISOString() : undefined,
     });
+
+    // Also create the real, instantly-Paid Outflow payment (no approval). Its
+    // marker links it to the earning; the Cockpit excludes it from the cost
+    // total so his named node isn't double-counted. Best-effort: if it fails,
+    // the earning is still saved and the admin "create payments" button can
+    // backfill it.
+    const paymentDate = (d.date || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    try {
+      if (earningId) {
+        await createFounderPayment({
+          earningId,
+          memberRecordId: session.sub,
+          memberName,
+          projectCode: d.projectCode,
+          amount: d.amount,
+          currency: d.currency || "EUR",
+          amountEur,
+          date: paymentDate,
+        });
+      }
+    } catch (e) {
+      console.error("createFounderPayment failed:", e);
+    }
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json(
