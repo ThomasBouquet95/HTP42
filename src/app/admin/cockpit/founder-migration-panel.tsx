@@ -1,24 +1,24 @@
 "use client";
 
-// FOUNDER-EARNINGS (temporary) — ONE-OFF migration panel. Lets an admin preview
-// and then move BOUPA1's fake "Paid" outflow payments into the Founder Earnings
-// table (and cancel them). Shown at the top of the Financial cockpit page.
-// Delete this file + its use in page.tsx once the migration has been run.
+// FOUNDER-EARNINGS (temporary) — ONE-OFF migration panel. Lets an admin diagnose
+// where the founder's money lives, then mirror his Member Invoices into the
+// Founder Earnings table so his Cockpit node equals his real billed earnings.
+// Shown at the top of the Financial cockpit page. Delete this file + its use in
+// page.tsx once the migration has been run.
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/form-controls";
 
 type Row = {
-  paymentId: string;
-  paymentCode: string;
+  invoiceId: string;
+  invoiceCode: string;
   date: string;
   currency: string;
   value: number | null;
   amountEur: number;
   status: string;
   projectCode: string;
-  linkedInvoices: number;
 };
 type Result = {
   apply: boolean;
@@ -27,8 +27,9 @@ type Result = {
   rows: Row[];
   totalEur: number;
   alreadyMigrated: number;
-  canceledOrRejected: number;
+  skippedStatus: number;
   noDate: number;
+  removedPaymentArtifacts: number;
   migrated: number;
   errors: string[];
 };
@@ -76,7 +77,12 @@ export function FounderMigrationPanel() {
   }
 
   async function run(apply: boolean) {
-    if (apply && !window.confirm(`Move ${result?.rows.length ?? ""} payment(s) into Founder Earnings and cancel them? This changes live data.`)) {
+    if (
+      apply &&
+      !window.confirm(
+        `Mirror ${result?.rows.length ?? ""} member invoice(s) into Founder Earnings (and remove ${result?.removedPaymentArtifacts ?? 0 ? "the old payment-based entries" : "any old payment-based entries"})? This changes live data.`,
+      )
+    ) {
       return;
     }
     setBusy(true);
@@ -103,8 +109,8 @@ export function FounderMigrationPanel() {
       <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
         <div className="flex items-center justify-between gap-3">
           <span>
-            <strong>Temporary tool:</strong> migrate {MEMBER_CODE}&rsquo;s legacy &ldquo;Paid&rdquo;
-            subcontractor payments into Founder Earnings.
+            <strong>Temporary tool:</strong> mirror {MEMBER_CODE}&rsquo;s member invoices into
+            Founder Earnings so his cockpit node matches his real earnings.
           </span>
           <Button tone="secondary" size="sm" onClick={() => setOpen(true)}>
             Open
@@ -123,9 +129,11 @@ export function FounderMigrationPanel() {
         </button>
       </div>
       <p className="mt-1 text-xs text-amber-800">
-        Preview first. Apply then moves each of his live outflow payments into a Founder Earnings
-        row (dated to its invoice date) and cancels the payment, so his figures show as his own node
-        instead of consulting cost. Idempotent &mdash; safe to re-run.
+        <strong>Diagnose</strong> shows where his money lives. <strong>Preview</strong> lists the
+        member invoices to mirror. <strong>Apply</strong> creates a Founder Earnings row per invoice
+        (dated to its submission date) and removes the earlier payment-based entries, so his node
+        equals his real billed earnings. Invoices themselves aren&rsquo;t touched. Idempotent &mdash;
+        safe to re-run.
       </p>
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -184,56 +192,46 @@ export function FounderMigrationPanel() {
           <div className="text-xs">
             {result.apply ? (
               <span className="font-medium text-emerald-700">
-                Migrated {result.migrated} of {result.rows.length} payment(s).
+                Mirrored {result.migrated} of {result.rows.length} invoice(s); removed{" "}
+                {result.removedPaymentArtifacts} old payment-based entr
+                {result.removedPaymentArtifacts === 1 ? "y" : "ies"}.
               </span>
             ) : (
               <span className="font-medium">
-                {result.rows.length} payment(s) to migrate — total{" "}
-                {fmt(result.totalEur)} EUR &rarr; &ldquo;{result.memberName}&rdquo; node.
+                {result.rows.length} invoice(s) to mirror — total {fmt(result.totalEur)} EUR &rarr;
+                &ldquo;{result.memberName}&rdquo; node.
               </span>
             )}{" "}
             <span className="text-amber-700">
-              (already migrated: {result.alreadyMigrated}, canceled/rejected:{" "}
-              {result.canceledOrRejected}
+              (already migrated: {result.alreadyMigrated}, cancelled: {result.skippedStatus}
               {result.noDate ? `, missing date: ${result.noDate}` : ""})
             </span>
           </div>
-
-          {result.rows.some((r) => r.linkedInvoices > 0) ? (
-            <div className="mt-2 rounded border border-amber-400 bg-amber-100 px-2 py-1.5 text-xs text-amber-900">
-              ⚠️ Some payments settle a <strong>Member Invoice</strong> (see the &ldquo;Inv.&rdquo;
-              column). Canceling them will make those invoices show as unpaid on {MEMBER_CODE}&rsquo;s
-              own Projects/dashboard view. If those invoices are also part of the workaround, they
-              should be cleaned up too &mdash; flag this before applying.
-            </div>
-          ) : null}
 
           {result.rows.length ? (
             <div className="mt-2 overflow-x-auto">
               <table className="min-w-full text-xs">
                 <thead className="text-amber-700">
                   <tr className="text-left">
-                    <th className="pr-3 py-1">Payment</th>
+                    <th className="pr-3 py-1">Invoice</th>
                     <th className="pr-3 py-1">Date</th>
                     <th className="pr-3 py-1">Cur</th>
                     <th className="pr-3 py-1 text-right">Value</th>
                     <th className="pr-3 py-1 text-right">EUR</th>
                     <th className="pr-3 py-1">Status</th>
                     <th className="pr-3 py-1">Project</th>
-                    <th className="pr-3 py-1">Inv.</th>
                   </tr>
                 </thead>
                 <tbody>
                   {result.rows.map((r) => (
-                    <tr key={r.paymentId} className="border-t border-amber-200">
-                      <td className="pr-3 py-1 font-mono">{r.paymentCode || r.paymentId}</td>
+                    <tr key={r.invoiceId} className="border-t border-amber-200">
+                      <td className="pr-3 py-1 font-mono">{r.invoiceCode || r.invoiceId}</td>
                       <td className="pr-3 py-1">{r.date || "(none)"}</td>
                       <td className="pr-3 py-1">{r.currency || "—"}</td>
                       <td className="pr-3 py-1 text-right">{fmt(r.value)}</td>
                       <td className="pr-3 py-1 text-right">{fmt(r.amountEur)}</td>
                       <td className="pr-3 py-1">{r.status || "—"}</td>
                       <td className="pr-3 py-1">{r.projectCode || "—"}</td>
-                      <td className="pr-3 py-1">{r.linkedInvoices || "—"}</td>
                     </tr>
                   ))}
                 </tbody>

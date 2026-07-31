@@ -72,8 +72,10 @@ export function FounderEarningsSummary({ earnings }: { earnings: FounderEarning[
                     {e.amountEur != null ? eur(e.amountEur) : "—"}
                   </td>
                   <td className="pr-3 py-1 text-slate-500">
-                    {/* Hide the internal migration marker from the founder's view. */}
-                    {(e.comment || "").replace(/\s*\[mig-pay:rec[A-Za-z0-9]+\]/g, "").trim() || "—"}
+                    {/* Hide the internal migration markers from the founder's view. */}
+                    {(e.comment || "")
+                      .replace(/\s*\[mig-(?:pay|inv):rec[A-Za-z0-9]+\]/g, "")
+                      .trim() || "—"}
                   </td>
                 </tr>
               ))}

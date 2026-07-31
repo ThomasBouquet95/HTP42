@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// ⚠️ SUPERSEDED — do not run. This migrated from OUTFLOW PAYMENTS, but Pascal's
+// real earnings live in MEMBER INVOICES. Use the in-app tool instead (Admin →
+// Financial cockpit → the amber panel → Diagnose / Preview / Apply), which is
+// invoice-based. Kept only for reference.
 // ─────────────────────────────────────────────────────────────────────────
 // FOUNDER-EARNINGS (temporary) — one-off migration for Pascal Bouquet (BOUPA1).
 //

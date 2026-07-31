@@ -19,13 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { env } from "./env";
-import {
-  findMemberByCode,
-  listInvoicesForMember,
-  listPayments,
-  listProjects,
-  updatePaymentStatus,
-} from "./airtable";
+import { findMemberByCode, listInvoicesForMember, listPayments, listProjects } from "./airtable";
 import { effectiveEur } from "./fx";
 import { toEur } from "./earnings";
 
@@ -152,51 +146,54 @@ export async function createFounderEarning(input: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// ONE-OFF MIGRATION (temporary) — fold a founder's fake "Paid" outflow payments
-// into this table.
+// ONE-OFF MIGRATION (temporary) — turn a founder's MEMBER INVOICES into his
+// Cockpit node.
 //
-// Context: the founder owns the company and never really charges it, but had
-// been creating Subcontractor OUTFLOW payments (marked Paid, just to close
-// them) so his figures showed on the Cockpit. Those are wrongly counted as
-// consulting cost. This moves each such payment into a Founder Earnings row
-// (same amount / currency / EUR, dated to the payment's Invoice Date) and
-// CANCELS the payment, so his spend is relabeled into his own node instead of
-// the shared consulting bucket. Total cost is unchanged.
+// The founder owns the company and never really charges it; his earnings live
+// as Member Invoices (what he bills), but the income statement only reads
+// Payments, so his invoices never showed as his node. This mirrors each of his
+// live member invoices into a Founder Earnings row (same amount / currency /
+// EUR via the project FX, dated to the invoice's submission date) so his node
+// equals his real billed earnings. It does NOT touch the invoices, so his own
+// dashboard is unchanged.
 //
-// Idempotent: created rows carry a [mig-pay:<paymentId>] marker; re-runs skip
-// anything already migrated (and Canceled/Rejected payments are ignored).
+// It also removes any leftover rows from the earlier (wrong) payment-based
+// migration — the [mig-pay:] entries — so the node is a single, clean source.
+//
+// Idempotent: created rows carry a [mig-inv:<invoiceId>] marker; re-runs skip
+// anything already migrated (and Cancelled invoices are ignored).
 // Remove this together with the rest of the founder-earnings feature.
 // ─────────────────────────────────────────────────────────────────────────
 
 export type FounderMigrationRow = {
-  paymentId: string;
-  paymentCode: string;
-  date: string; // Invoice Date (YYYY-MM-DD), "" when missing
+  invoiceId: string;
+  invoiceCode: string;
+  date: string; // Submission date (YYYY-MM-DD), "" when missing
   currency: string;
   value: number | null;
   amountEur: number;
   status: string;
   projectCode: string;
-  // How many Member Invoice records this fake payment settles. >0 means
-  // canceling it will make those invoices look unpaid on the founder's own
-  // Projects/dashboard view — surfaced so the operator can decide before apply.
-  linkedInvoices: number;
 };
 
 export type FounderMigrationResult = {
   apply: boolean;
   memberCode: string;
   memberName: string;
-  rows: FounderMigrationRow[]; // the payments that would be / were migrated
+  rows: FounderMigrationRow[]; // the invoices that would be / were migrated
   totalEur: number;
   alreadyMigrated: number; // skipped: already have a Founder Earnings row
-  canceledOrRejected: number; // skipped: not counted in the income statement anyway
-  noDate: number; // rows with no Invoice Date (no year on the Cockpit)
+  skippedStatus: number; // skipped: Cancelled invoices
+  noDate: number; // rows with no submission date (no year on the Cockpit)
+  removedPaymentArtifacts: number; // stale [mig-pay:] rows deleted on apply
   migrated: number; // apply only: how many were actually moved
   errors: string[];
 };
 
+// Marker of the earlier, superseded payment-based migration (cleaned up here).
 const MIG_MARKER = /\[mig-pay:(rec[A-Za-z0-9]+)\]/;
+const MIG_INV_MARKER = /\[mig-inv:(rec[A-Za-z0-9]+)\]/;
+const DEAD_INVOICE = new Set(["Cancelled", "Canceled"]);
 
 // ─────────────────────────────────────────────────────────────────────────
 // READ-ONLY DIAGNOSTIC (temporary) — where does this member's money actually
@@ -279,73 +276,59 @@ export async function diagnoseFounderMember(memberCode: string): Promise<Founder
   };
 }
 
-export async function migrateFounderPaymentsForMember(opts: {
+export async function migrateFounderInvoicesForMember(opts: {
   memberCode: string;
   apply: boolean;
 }): Promise<FounderMigrationResult> {
   const { memberCode, apply } = opts;
 
-  const [payments, existing, member] = await Promise.all([
-    listPayments(),
-    listFounderEarnings(),
-    findMemberByCode(memberCode),
-  ]);
-
-  // The Payments "Member" link resolves to the member's PRIMARY field (his
-  // name), not the code — so match by record id (robust), with name/code/
-  // beneficiary as fallbacks. Every outflow to him is the workaround: per the
-  // owner, "there should never be a payment outflow from Pascal Bouquet".
+  const member = await findMemberByCode(memberCode);
   const memberId = member?.id ?? "";
-  const memberFullName = member?.fullName ?? "";
-  const nameLc = memberFullName.trim().toLowerCase();
-  const linkedToMember = (p: (typeof payments)[number]) => {
-    if (memberId && p.memberRecordIds.includes(memberId)) return true;
-    if (p.memberCodes.includes(memberCode)) return true;
-    if (nameLc && p.memberCodes.some((c) => c.trim().toLowerCase() === nameLc)) return true;
-    if (nameLc && p.beneficiary.trim().toLowerCase() === nameLc) return true;
-    return false;
-  };
+  const memberName = member?.fullName ?? memberCode;
 
-  // Payment ids already migrated (idempotency).
-  const migratedIds = new Set<string>();
+  const [invoices, projects, existing] = await Promise.all([
+    memberId ? listInvoicesForMember(memberId) : Promise.resolve([]),
+    listProjects(),
+    listFounderEarnings(),
+  ]);
+  const fxByProject = new Map(projects.map((p) => [p.projectCode, p.fxToEur ?? null]));
+
+  // Invoices already migrated (idempotency), and any leftover payment-based
+  // rows from the earlier wrong migration (to clean up on apply).
+  const migratedInv = new Set<string>();
+  const stalePaymentEarnings: string[] = [];
   for (const e of existing) {
-    const m = e.comment.match(MIG_MARKER);
-    if (m) migratedIds.add(m[1]);
+    const mi = e.comment.match(MIG_INV_MARKER);
+    if (mi) migratedInv.add(mi[1]);
+    if (MIG_MARKER.test(e.comment)) stalePaymentEarnings.push(e.id);
   }
 
-  const dead = new Set(["Canceled", "Rejected"]);
   let alreadyMigrated = 0;
-  let canceledOrRejected = 0;
+  let skippedStatus = 0;
   let noDate = 0;
-  let memberName = memberFullName;
   const rows: FounderMigrationRow[] = [];
 
-  for (const p of payments) {
-    if (p.direction !== "Outflow") continue;
-    if (!linkedToMember(p)) continue;
-    if (migratedIds.has(p.id)) {
+  for (const inv of invoices) {
+    if (DEAD_INVOICE.has(inv.status)) {
+      skippedStatus++;
+      continue;
+    }
+    if (migratedInv.has(inv.id)) {
       alreadyMigrated++;
       continue;
     }
-    if (dead.has(p.paymentStatus)) {
-      canceledOrRejected++;
-      continue;
-    }
-    if (!memberName && p.beneficiary) memberName = p.beneficiary;
-    if (!p.invoiceDate) noDate++;
+    if (!inv.submissionDate) noDate++;
     rows.push({
-      paymentId: p.id,
-      paymentCode: p.paymentCode,
-      date: p.invoiceDate ?? "",
-      currency: p.invoiceCurrency || "",
-      value: p.invoiceValue,
-      amountEur: effectiveEur(p),
-      status: p.paymentStatus || "",
-      projectCode: p.projectCodes[0] ?? "",
-      linkedInvoices: p.memberInvoiceRecordIds.length,
+      invoiceId: inv.id,
+      invoiceCode: inv.invoiceCode,
+      date: inv.submissionDate ?? "",
+      currency: inv.currency || "",
+      value: inv.amount,
+      amountEur: toEur(inv.amount, inv.currency, fxByProject.get(inv.projectCode) ?? null),
+      status: inv.status || "",
+      projectCode: inv.projectCode,
     });
   }
-  if (!memberName) memberName = memberCode;
   rows.sort((a, b) => a.date.localeCompare(b.date));
 
   const result: FounderMigrationResult = {
@@ -355,19 +338,28 @@ export async function migrateFounderPaymentsForMember(opts: {
     rows,
     totalEur: rows.reduce((s, r) => s + (r.amountEur || 0), 0),
     alreadyMigrated,
-    canceledOrRejected,
+    skippedStatus,
     noDate,
+    removedPaymentArtifacts: 0,
     migrated: 0,
     errors: [],
   };
 
   if (!apply) return result; // preview / dry-run
 
-  // Create the earning first, then cancel the payment. If the cancel fails we
-  // report it loudly (the earning's marker stops a re-run from double-creating,
-  // so the fix is a one-line manual cancel of the flagged payment).
+  // 1. Remove leftover payment-based rows so the node is a single clean source.
+  for (const id of stalePaymentEarnings) {
+    try {
+      await deleteFounderEarning(id);
+      result.removedPaymentArtifacts++;
+    } catch (e) {
+      result.errors.push(`cleanup ${id}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // 2. Mirror each live invoice into a Founder Earnings row. Invoices are not
+  //    touched, so his own dashboard is unaffected.
   for (const r of rows) {
-    let created = false;
     try {
       await createFounderEarning({
         memberCode,
@@ -376,22 +368,20 @@ export async function migrateFounderPaymentsForMember(opts: {
         amount: r.value ?? 0,
         currency: r.currency || "EUR",
         amountEur: r.amountEur,
-        comment: `Migrated from payment ${r.paymentCode} (${r.status}). [mig-pay:${r.paymentId}]`,
+        comment: `Migrated from member invoice ${r.invoiceCode} (${r.status}). [mig-inv:${r.invoiceId}]`,
         submittedAt: r.date ? new Date(r.date).toISOString() : undefined,
       });
-      created = true;
-      await updatePaymentStatus(r.paymentId, "Canceled");
       result.migrated++;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      result.errors.push(
-        created
-          ? `${r.paymentCode} (${r.paymentId}): earning created but CANCEL failed — cancel this payment by hand to avoid double-counting. ${msg}`
-          : `${r.paymentCode}: create failed, payment left untouched. ${msg}`,
-      );
+      result.errors.push(`${r.invoiceCode}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
   return result;
+}
+
+export async function deleteFounderEarning(id: string): Promise<void> {
+  const res = await fetch(`${dataUrl()}/${id}`, { method: "DELETE", headers: authHeaders() });
+  if (!res.ok) throw new Error(`Could not delete earning ${id} (${res.status}).`);
 }
 
 export async function listFounderEarnings(): Promise<FounderEarning[]> {

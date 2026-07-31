@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminAction } from "@/lib/auth";
-import { diagnoseFounderMember, migrateFounderPaymentsForMember } from "@/lib/founder-earnings";
+import { diagnoseFounderMember, migrateFounderInvoicesForMember } from "@/lib/founder-earnings";
 import { zodMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await migrateFounderPaymentsForMember(parsed.data);
+    const result = await migrateFounderInvoicesForMember(parsed.data);
     return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json(
