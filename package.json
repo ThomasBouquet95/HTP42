@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "migrate:founder-boupa1": "node scripts/migrate-founder-earnings-boupa1.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",
