@@ -89,10 +89,10 @@ export function FounderEarningsButton({
         footer={
           <>
             <Button tone="secondary" size="sm" onClick={() => setOpen(false)} disabled={saving}>
-              Close
+              Cancel
             </Button>
             <Button tone="primary" size="sm" onClick={submit} disabled={saving || done}>
-              {saving ? "Saving…" : "Record"}
+              {saving ? "Saving…" : "Record earning"}
             </Button>
           </>
         }
