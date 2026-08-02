@@ -25,6 +25,7 @@
 import { env } from "./env";
 import {
   createPayment,
+  deletePayment,
   findMemberByCode,
   findProjectIdByCode,
   listPayments,
@@ -341,4 +342,84 @@ export async function migrateFounderEarningsToPayments(opts: {
     }
   }
   return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// EDIT / DELETE a single recorded earning (from the founder's own dashboard).
+// Each op keeps the auto-created "founder-earning" payment in sync: delete
+// removes it; edit deletes the old one and a fresh one is created by the caller.
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function getFounderEarning(id: string): Promise<FounderEarning | null> {
+  const ok = await ensureTable();
+  if (!ok) return null;
+  try {
+    const res = await fetch(`${dataUrl()}/${id}`, { headers: authHeaders(), cache: "no-store" });
+    if (!res.ok) return null;
+    const r = (await res.json()) as { id: string; fields: Record<string, unknown> };
+    const f = r.fields;
+    return {
+      id: r.id,
+      memberCode: String(f[F.memberCode] ?? ""),
+      memberName: String(f[F.memberName] ?? ""),
+      projectCode: String(f[F.projectCode] ?? ""),
+      amount: typeof f[F.amount] === "number" ? (f[F.amount] as number) : null,
+      currency: String(f[F.currency] ?? ""),
+      amountEur: typeof f[F.amountEur] === "number" ? (f[F.amountEur] as number) : null,
+      comment: String(f[F.comment] ?? ""),
+      submittedAt: String(f[F.submittedAt] ?? ""),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function updateFounderEarning(
+  id: string,
+  input: {
+    projectCode: string;
+    amount: number;
+    currency: string;
+    amountEur: number;
+    comment: string;
+    submittedAt?: string;
+  },
+): Promise<void> {
+  const fields: Record<string, unknown> = {
+    [F.projectCode]: input.projectCode,
+    [F.amount]: input.amount,
+    [F.currency]: input.currency,
+    [F.amountEur]: input.amountEur,
+    [F.comment]: input.comment,
+  };
+  if (input.submittedAt) fields[F.submittedAt] = input.submittedAt;
+  const res = await fetch(`${dataUrl()}/${id}`, {
+    method: "PATCH",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ fields, typecast: true }),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`Could not update the earning (${res.status}). ${t}`);
+  }
+}
+
+export async function deleteFounderEarning(id: string): Promise<void> {
+  const res = await fetch(`${dataUrl()}/${id}`, { method: "DELETE", headers: authHeaders() });
+  if (!res.ok) throw new Error(`Could not delete earning ${id} (${res.status}).`);
+}
+
+// Delete the auto-created Paid payment(s) linked to an earning (best-effort).
+export async function deleteFounderPaymentForEarning(earningId: string): Promise<void> {
+  const marker = founderEarningMarker(earningId);
+  const payments = await listPayments();
+  for (const p of payments) {
+    if (p.comment.includes(marker)) {
+      try {
+        await deletePayment(p.id);
+      } catch (e) {
+        console.error("deleteFounderPaymentForEarning failed:", e);
+      }
+    }
+  }
 }

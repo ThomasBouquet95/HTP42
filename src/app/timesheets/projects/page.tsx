@@ -132,7 +132,13 @@ export default async function MyProjectsPage() {
         <SubmitTimesheetButton />
       </div>
       {/* FOUNDER-EARNINGS (temporary) — the founder's own read-back of recorded earnings. */}
-      {founderMode ? <FounderEarningsSummary earnings={myFounderEarnings} /> : null}
+      {founderMode ? (
+        <FounderEarningsSummary
+          earnings={myFounderEarnings}
+          projects={projects.map((p) => ({ code: p.projectCode, name: p.projectName }))}
+          currencies={CURRENCIES}
+        />
+      ) : null}
       <ProjectsListClient
         projects={projects}
         timesheetsByProject={timesheetsByProject}
