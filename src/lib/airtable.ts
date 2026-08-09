@@ -931,6 +931,16 @@ function dateOrNull(r: AirtableRecord<FieldSet>, field: string): string | null {
   return typeof v === "string" ? v : null;
 }
 
+// Airtable date fields can come back as an ISO *datetime* (e.g.
+// "2026-06-01T00:00:00.000Z"). For date-only values (like a timesheet week's
+// start/end) that breaks plain YYYY-MM-DD range comparisons — the admin
+// date-range filter/export compares against YYYY-MM-DD bounds, so a datetime
+// would drop the "to" boundary day and make filtering unreliable. Normalise to
+// the day so comparisons and the CSV columns are clean.
+function dayOnly(v: unknown): string | null {
+  return typeof v === "string" && v ? v.slice(0, 10) : null;
+}
+
 function firstAttachment(r: AirtableRecord<FieldSet>, field: string): AttachmentRef | null {
   const v = r.get(field);
   if (!Array.isArray(v) || v.length === 0) return null;
@@ -4366,8 +4376,8 @@ function toTimesheet(r: AirtableRecord<FieldSet>, staffings: Map<string, Staffin
     staffingCode: staffing?.staffingCode ?? "",
     projectCode: staffing?.projectCode ?? "",
     projectName: staffing?.projectName ?? "",
-    startDate: (r.get(FIELDS.timesheets.startDate) as string | undefined) ?? null,
-    endDate: (r.get(FIELDS.timesheets.endDate) as string | undefined) ?? null,
+    startDate: dayOnly(r.get(FIELDS.timesheets.startDate)),
+    endDate: dayOnly(r.get(FIELDS.timesheets.endDate)),
     submissionDate: (r.get(FIELDS.timesheets.submissionDate) as string | undefined) ?? null,
     status,
     monday,
