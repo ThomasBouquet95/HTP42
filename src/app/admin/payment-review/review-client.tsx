@@ -863,7 +863,7 @@ function BundleDetail({
           <ExtractedInvoiceView data={selected.invoice.extracted} />
         ) : selected.invoice?.pdfUrl || selected.payment.invoicePdfUrl ? (
           <p className="mt-2 text-[11px] text-slate-400">
-            Key details not extracted yet — an admin can run extraction from the payments page.
+            Key details weren&rsquo;t extracted for this invoice.
           </p>
         ) : null}
       </Section>
