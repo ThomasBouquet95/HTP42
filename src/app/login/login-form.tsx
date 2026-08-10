@@ -44,10 +44,6 @@ export default function LoginForm() {
           <h1 className="mt-2 text-2xl font-bold leading-snug text-white sm:text-3xl">
             Welcome back
           </h1>
-          <p className="mt-2 text-sm text-slate-300">
-            One home for the HealthTech Partners 42 network: projects,
-            timesheets and everything in between.
-          </p>
         </div>
 
         <div className="overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-white/10">

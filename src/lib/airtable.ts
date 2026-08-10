@@ -4,6 +4,7 @@ import { env } from "./env";
 import { resolvePaymentEur } from "./fx";
 import { noteHtmlToPlain, plainTextToHtml, sanitizeNoteHtml } from "./note-html";
 import type { PagePerms, RolePermissions } from "./permissions";
+import type { ExtractedInvoice } from "./invoice-extract";
 
 type AirtableBase = ReturnType<Airtable["base"]>;
 
@@ -320,6 +321,10 @@ export const FIELDS = {
     // so the same week can't be invoiced twice without flipping the timesheet's
     // status. The timesheet stays Under review / Approved.
     coveredTimesheets: "Covered Timesheets",
+    // Smart-extracted key fields from the invoice PDF (JSON). Lazily created —
+    // see ensureMemberInvoiceExtractedField. Read-out only; never the source of
+    // truth for the amount paid.
+    extractedInfo: "Extracted Info",
   },
   tasks: {
     title: "Title",
@@ -3349,7 +3354,19 @@ export type MemberInvoiceRecord = {
   emailSent: boolean;
   emailSentAt: string | null;
   emailError: string;
+  // Smart-extracted key fields from the PDF (null until extraction runs).
+  extracted: ExtractedInvoice | null;
 };
+
+function parseExtracted(raw: string): ExtractedInvoice | null {
+  if (!raw) return null;
+  try {
+    const o = JSON.parse(raw);
+    return o && typeof o === "object" ? (o as ExtractedInvoice) : null;
+  } catch {
+    return null;
+  }
+}
 
 function invoiceFromRecord(
   r: AirtableRecord<FieldSet>,
@@ -3392,7 +3409,58 @@ function invoiceFromRecord(
     emailSent: r.get(FIELDS.memberInvoices.emailSent) === true,
     emailSentAt: (r.get(FIELDS.memberInvoices.emailSentAt) as string | undefined) ?? null,
     emailError: str(r, FIELDS.memberInvoices.emailError),
+    extracted: parseExtracted(str(r, FIELDS.memberInvoices.extractedInfo)),
   };
+}
+
+// Lazily create the "Extracted Info" long-text field on Member Invoices, so the
+// smart-extraction write has somewhere to land without a manual migration.
+let memberInvoiceExtractedFieldReady = false;
+export async function ensureMemberInvoiceExtractedField(): Promise<boolean> {
+  if (memberInvoiceExtractedFieldReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, { headers: { Authorization: `Bearer ${env.airtablePat}` }, cache: "no-store" });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.memberInvoices);
+    if (!table) return false;
+    if (table.fields.some((f) => f.name === FIELDS.memberInvoices.extractedInfo)) {
+      memberInvoiceExtractedFieldReady = true;
+      return true;
+    }
+    const create = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: FIELDS.memberInvoices.extractedInfo,
+          type: "multilineText",
+          description: "Smart-extracted key fields from the invoice PDF (JSON). Read-out only.",
+        }),
+      },
+    );
+    if (create.ok) memberInvoiceExtractedFieldReady = true;
+    return memberInvoiceExtractedFieldReady;
+  } catch (e) {
+    console.error("ensureMemberInvoiceExtractedField failed:", e);
+    return false;
+  }
+}
+
+// Persist extracted invoice fields as JSON on the invoice record.
+export async function saveMemberInvoiceExtraction(
+  invoiceId: string,
+  data: ExtractedInvoice,
+): Promise<void> {
+  const ok = await ensureMemberInvoiceExtractedField();
+  if (!ok) throw new Error("Could not prepare the Extracted Info field.");
+  await base(TABLES.memberInvoices).update([
+    { id: invoiceId, fields: { [FIELDS.memberInvoices.extractedInfo]: JSON.stringify(data) } as FieldSet },
+  ]);
 }
 
 const getProjectIndex = cache(async function getProjectIndex(): Promise<

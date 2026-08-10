@@ -140,6 +140,7 @@ export function buildReviewGroups(input: Inputs): {
             currency: invoice.currency,
             comment: invoice.comment,
             submissionDate: invoice.submissionDate,
+            extracted: invoice.extracted,
           }
         : null,
       staffing: staffing

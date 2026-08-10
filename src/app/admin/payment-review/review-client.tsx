@@ -12,6 +12,7 @@ import { Badge } from "@/components/badge";
 import { StatusBadge, type ReviewInfo } from "@/components/status-badge";
 import { Button } from "@/components/form-controls";
 import type { TimesheetStatus } from "@/lib/airtable";
+import type { ExtractedInvoice } from "@/lib/invoice-extract";
 
 export type ReviewBundle = {
   payment: {
@@ -43,6 +44,7 @@ export type ReviewBundle = {
     currency: string;
     comment: string;
     submissionDate: string | null;
+    extracted: ExtractedInvoice | null;
   } | null;
   staffing: {
     id: string;
@@ -857,6 +859,13 @@ function BundleDetail({
         ) : (
           <Empty>No invoice PDF attached to this payment or its linked invoice.</Empty>
         )}
+        {selected.invoice?.extracted ? (
+          <ExtractedInvoiceView data={selected.invoice.extracted} />
+        ) : selected.invoice?.pdfUrl || selected.payment.invoicePdfUrl ? (
+          <p className="mt-2 text-[11px] text-slate-400">
+            Key details not extracted yet — an admin can run extraction from the payments page.
+          </p>
+        ) : null}
       </Section>
 
       {/* Timesheets */}
@@ -1023,6 +1032,70 @@ function BundleDetail({
         )}
       </Section>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+// Read-out of the smart-extracted invoice fields, so an admin sees what's in
+// the PDF without opening it. Amounts stay blurred in demo mode.
+function ExtractedInvoiceView({ data }: { data: ExtractedInvoice }) {
+  const n = (v: number | null) =>
+    v == null ? "—" : v.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  const cur = data.currency || "";
+  const money = (v: number | null) => (v == null ? "—" : `${n(v)}${cur ? " " + cur : ""}`);
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-brand-700">
+          <svg viewBox="0 0 16 16" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+            <path d="M8 1.5l1.6 3.7 4 .3-3 2.6.9 3.9L8 10l-3.5 2 .9-3.9-3-2.6 4-.3z" strokeLinejoin="round" />
+          </svg>
+          Extracted
+        </span>
+        <span className="text-[10px] text-slate-400">from the PDF · verify against the amount above</span>
+      </div>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+        <Field label="Invoice no." value={data.invoiceNumber} mono />
+        <Field label="Issue date" value={data.issueDate} />
+        <Field label="Due date" value={data.dueDate} />
+        <Field label="Subtotal" value={money(data.subtotal)} blur />
+        <Field label={`Tax${data.taxRate ? ` (${data.taxRate})` : ""}`} value={money(data.taxAmount)} blur />
+        <Field label="Total" value={money(data.total)} blur />
+        <Field label="Seller" value={data.sellerName} blur />
+        <Field label="VAT ID" value={data.sellerVatId} mono />
+        <Field label="Period" value={data.periodLabel} />
+        {data.sellerIban ? <Field label="IBAN" value={data.sellerIban} mono blur /> : null}
+        {data.sellerAddress ? <Field label="Address" value={data.sellerAddress} blur /> : null}
+      </dl>
+      {data.lineItems.length > 0 ? (
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full text-[11px]">
+            <thead className="text-[9px] uppercase tracking-wide text-slate-400">
+              <tr className="text-left">
+                <th className="py-1 pr-2 font-medium">Description</th>
+                <th className="py-1 pr-2 font-medium">Qty</th>
+                <th className="py-1 pr-2 text-right font-medium">Unit</th>
+                <th className="py-1 text-right font-medium">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.lineItems.map((li, i) => (
+                <tr key={i} className="border-t border-slate-200/70">
+                  <td className="py-1 pr-2 text-slate-700 demo-blur">{li.description || "—"}</td>
+                  <td className="py-1 pr-2 text-slate-500">{li.quantity || "—"}</td>
+                  <td className="py-1 pr-2 text-right tabular-nums text-slate-500 demo-blur">{n(li.unitPrice)}</td>
+                  <td className="py-1 text-right tabular-nums text-slate-700 demo-blur">{n(li.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {data.notes ? (
+        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+          {data.notes}
+        </p>
       ) : null}
     </div>
   );

@@ -98,6 +98,7 @@ export default async function DashboardHomePage() {
         emailSent: false,
         emailSentAt: null,
         emailError: "",
+        extracted: null,
       };
     });
   }

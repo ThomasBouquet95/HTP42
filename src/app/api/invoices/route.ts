@@ -10,8 +10,10 @@ import {
   listInvoicesForMember,
   listProjects,
   markInvoiceEmail,
+  saveMemberInvoiceExtraction,
   type Currency,
 } from "@/lib/airtable";
+import { extractInvoiceFromPdfBase64 } from "@/lib/invoice-extract";
 import { env } from "@/lib/env";
 import { sendMailViaGraph } from "@/lib/email";
 import { resolveEmail } from "@/lib/email-templates-server";
@@ -210,6 +212,17 @@ export async function POST(request: Request) {
     const base64 = buf.toString("base64");
     const filename = file.name || `invoice-${invoiceId}.pdf`;
     await attachInvoicePdf(invoiceId, filename, base64);
+
+    // Smart-extract the invoice's key fields so admins can see what's inside
+    // without opening the PDF. Best-effort: a failure (no API key, slow model,
+    // odd PDF) must never block the member's submission — the admin backfill
+    // button can fill any gaps later.
+    try {
+      const data = await extractInvoiceFromPdfBase64(base64);
+      await saveMemberInvoiceExtraction(invoiceId, data);
+    } catch (e) {
+      console.error("invoice extraction on submit failed:", e);
+    }
 
     // 3) Send notification email (best-effort). The user's invoice PDF
     // always goes as an attachment. When timesheets were selected we also

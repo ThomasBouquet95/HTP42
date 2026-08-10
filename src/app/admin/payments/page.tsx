@@ -15,6 +15,7 @@ import {
   CURRENCIES,
 } from "@/lib/airtable";
 import { PaymentsTabsClient } from "./payments-tabs-client";
+import { InvoiceExtractPanel } from "./invoice-extract-panel";
 import { buildReviewGroups } from "./review-data";
 
 export const dynamic = "force-dynamic";
@@ -156,6 +157,8 @@ export default async function AdminPaymentsPage({
           title="Payments"
           subtitle={`· ${payments.length} payment${payments.length === 1 ? "" : "s"}${totalUnderReview > 0 ? ` · ${totalUnderReview} to review` : ""}`}
         />
+        {/* Temporary: backfill smart extraction for existing invoice PDFs. */}
+        {access.canEdit ? <InvoiceExtractPanel /> : null}
         <PaymentsTabsClient
           payments={payments}
           projects={projects.map((p) => ({ id: p.id, code: p.projectCode, name: p.projectName }))}
