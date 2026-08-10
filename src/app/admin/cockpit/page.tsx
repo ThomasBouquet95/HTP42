@@ -4,7 +4,6 @@ import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
 import { listClients, listPayments } from "@/lib/airtable";
 import { isFounderEarningPayment, listFounderEarnings } from "@/lib/founder-earnings"; // FOUNDER-EARNINGS (temporary)
-import { FounderPaymentsPanel } from "./founder-payments-panel"; // FOUNDER-EARNINGS (temporary)
 import { CockpitClient } from "./cockpit-client";
 
 export const dynamic = "force-dynamic";
@@ -38,8 +37,6 @@ export default async function AdminCockpitPage() {
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <AdminTabs active="cockpit" />
       <PageHeader title="Financial cockpit" />
-      {/* FOUNDER-EARNINGS (temporary) — backfill Paid payments for recorded earnings. */}
-      {access.canEdit ? <FounderPaymentsPanel /> : null}
       <CockpitClient
         payments={cockpitPayments}
         clients={clients.map((c) => ({ id: c.id, name: c.clientName || c.clientCode }))}

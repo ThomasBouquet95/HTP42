@@ -83,7 +83,14 @@ export function buildReviewGroups(input: Inputs): {
     const project = projectCode ? projectByCode.get(projectCode) : undefined;
     const projectId = project?.id ?? p.projectRecordIds[0] ?? "";
 
-    const tsRows = staffing ? (tsByStaffing.get(staffing.id) ?? []) : [];
+    // Show ONLY the weeks the member billed on this invoice (the covered
+    // timesheets they picked at submission), not every week on the staffing.
+    // Legacy invoices submitted before covered-weeks tracking have none
+    // recorded — fall back to all of the staffing's weeks so they aren't blank.
+    const allForStaffing = staffing ? (tsByStaffing.get(staffing.id) ?? []) : [];
+    const covered = new Set(invoice?.coveredTimesheetIds ?? []);
+    const tsRows =
+      covered.size > 0 ? allForStaffing.filter((t) => covered.has(t.id)) : allForStaffing;
     const timesheetsSorted = [...tsRows].sort((a, b) =>
       (a.startDate ?? "").localeCompare(b.startDate ?? ""),
     );

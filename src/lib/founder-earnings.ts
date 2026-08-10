@@ -10,10 +10,9 @@
 // Designed to be removed cleanly. To delete the whole feature:
 //   1. Delete this file.
 //   2. Delete src/app/api/founder-earnings/route.ts
-//      & src/app/api/founder-earnings/create-payments/route.ts
+//      & src/app/api/founder-earnings/[id]/route.ts
 //   3. Delete src/app/timesheets/projects/founder-earnings-modal.tsx
 //      & src/app/timesheets/projects/founder-earnings-summary.tsx
-//      & src/app/admin/cockpit/founder-payments-panel.tsx
 //   4. Remove the blocks marked "FOUNDER-EARNINGS" in:
 //        - src/app/timesheets/projects/page.tsx & projects-list-client.tsx
 //        - src/app/admin/cockpit/page.tsx & cockpit-client.tsx & income-flow.ts
@@ -26,7 +25,6 @@ import { env } from "./env";
 import {
   createPayment,
   deletePayment,
-  findMemberByCode,
   findProjectIdByCode,
   listPayments,
   type Currency,
@@ -247,101 +245,6 @@ export async function createFounderPayment(opts: {
     comment: `Founder earning (auto-paid). ${founderEarningMarker(opts.earningId)}`,
     invoiceUrl: "",
   });
-}
-
-export type FounderPaymentRow = {
-  earningId: string;
-  date: string;
-  projectCode: string;
-  currency: string;
-  amount: number | null;
-  amountEur: number | null;
-};
-
-export type FounderPaymentsResult = {
-  apply: boolean;
-  memberCode: string;
-  memberName: string;
-  rows: FounderPaymentRow[]; // earnings that need a payment
-  totalEur: number;
-  alreadyPaid: number; // earnings that already have a payment
-  created: number; // apply only
-  errors: string[];
-};
-
-// Create the instantly-Paid payments for every recorded earning that doesn't
-// already have one. Idempotent (skips earnings whose payment marker exists).
-export async function migrateFounderEarningsToPayments(opts: {
-  memberCode: string;
-  apply: boolean;
-}): Promise<FounderPaymentsResult> {
-  const { memberCode, apply } = opts;
-  const [earnings, payments, member] = await Promise.all([
-    listFounderEarnings(),
-    listPayments(),
-    findMemberByCode(memberCode),
-  ]);
-
-  const mine = earnings.filter((e) => e.memberCode === memberCode);
-  const memberRecordId = member?.id ?? "";
-  const memberName = member?.fullName || mine.find((e) => e.memberName)?.memberName || memberCode;
-
-  // Earning ids that already have a payment (via the marker).
-  const paid = new Set<string>();
-  for (const p of payments) {
-    const m = p.comment.match(FOUNDER_EARNING_RE);
-    if (m) paid.add(m[1]);
-  }
-
-  let alreadyPaid = 0;
-  const rows: FounderPaymentRow[] = [];
-  for (const e of mine) {
-    if (paid.has(e.id)) {
-      alreadyPaid++;
-      continue;
-    }
-    rows.push({
-      earningId: e.id,
-      date: (e.submittedAt || "").slice(0, 10),
-      projectCode: e.projectCode,
-      currency: e.currency,
-      amount: e.amount,
-      amountEur: e.amountEur,
-    });
-  }
-  rows.sort((a, b) => a.date.localeCompare(b.date));
-
-  const result: FounderPaymentsResult = {
-    apply,
-    memberCode,
-    memberName,
-    rows,
-    totalEur: rows.reduce((s, r) => s + (r.amountEur ?? 0), 0),
-    alreadyPaid,
-    created: 0,
-    errors: [],
-  };
-
-  if (!apply) return result;
-
-  for (const r of rows) {
-    try {
-      await createFounderPayment({
-        earningId: r.earningId,
-        memberRecordId,
-        memberName,
-        projectCode: r.projectCode,
-        amount: r.amount ?? 0,
-        currency: r.currency || "EUR",
-        amountEur: r.amountEur ?? 0,
-        date: r.date,
-      });
-      result.created++;
-    } catch (e) {
-      result.errors.push(`${r.date} ${r.projectCode}: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-  return result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
