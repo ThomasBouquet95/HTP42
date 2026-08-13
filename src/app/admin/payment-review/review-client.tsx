@@ -31,6 +31,8 @@ export type ReviewBundle = {
     comment: string;
     memberNote: string;
     reviewedBy: string;
+    reviewedAt: string | null;
+    internalNote: string;
     invoicePdfUrl: string;
     invoiceUrl: string;
   };
@@ -166,7 +168,17 @@ function reviewerInitials(name: string): string {
 // Who decided the payment. Payments are always reviewed by an HTP42 admin, so
 // this uses the "admin" (dark) treatment, mirroring the timesheet review
 // reviewer bubble.
-function PaymentReviewer({ status, by }: { status: string; by: string }) {
+function fmtStamp(iso: string): string {
+  const dt = new Date(iso);
+  if (isNaN(dt.getTime())) return iso;
+  return (
+    dt.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) +
+    ", " +
+    dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+  );
+}
+
+function PaymentReviewer({ status, by, at }: { status: string; by: string; at?: string | null }) {
   const s = status.toLowerCase();
   const verb =
     s === "paid"
@@ -183,6 +195,7 @@ function PaymentReviewer({ status, by }: { status: string; by: string }) {
       </span>
       <span className="text-[11px] text-slate-500">
         {verb} <span className="font-medium text-slate-800">{by}</span>
+        {at ? <span className="text-slate-400"> on {fmtStamp(at)}</span> : null}
         <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-600">
           Admin
         </span>
@@ -299,6 +312,7 @@ export function PaymentReviewClient({
   const [paidTargetId, setPaidTargetId] = useState<string | null>(null);
   // Note the admin is leaving for the member, carried into the paid-date step.
   const [pendingNote, setPendingNote] = useState("");
+  const [pendingInternal, setPendingInternal] = useState("");
   const [expandedTs, setExpandedTs] = useState<Set<string>>(new Set());
   // Which payment cards are expanded. Defaults (set per selected member below):
   // under-review items open, past items collapsed.
@@ -389,13 +403,19 @@ export function PaymentReviewClient({
     }
   }, [data, selectedId]);
 
-  async function setStatus(id: string, status: string, paymentDate?: string, memberNote?: string) {
+  async function setStatus(
+    id: string,
+    status: string,
+    paymentDate?: string,
+    memberNote?: string,
+    internalNote?: string,
+  ) {
     setSavingId(id);
     try {
       const res = await fetch(`/api/admin/payments/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ paymentStatus: status, paymentDate, memberNote }),
+        body: JSON.stringify({ paymentStatus: status, paymentDate, memberNote, internalNote }),
       });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
@@ -572,16 +592,17 @@ export function PaymentReviewClient({
                   // Approve = advance to "To be paid". This is the ONLY step
                   // that validates timesheets: the guard auto-approves any
                   // linked week still under review / rejected (with a popup).
-                  onApprove={(note) =>
-                    guardApproval(b, () => setStatus(b.payment.id, "To be paid", undefined, note))
+                  onApprove={(mn, inn) =>
+                    guardApproval(b, () => setStatus(b.payment.id, "To be paid", undefined, mn, inn))
                   }
                   // Mark paid never re-checks timesheets (they were validated at
                   // the approve step); it just needs the payment date.
-                  onMarkPaid={(note) => {
-                    setPendingNote(note);
+                  onMarkPaid={(mn, inn) => {
+                    setPendingNote(mn);
+                    setPendingInternal(inn);
                     setPaidTargetId(b.payment.id);
                   }}
-                  onSetStatus={(status, note) => setStatus(b.payment.id, status, undefined, note)}
+                  onSetStatus={(status, mn, inn) => setStatus(b.payment.id, status, undefined, mn, inn)}
                 />
               ))}
             </div>
@@ -592,8 +613,12 @@ export function PaymentReviewClient({
       <PaidDateModal
         open={!!paidTargetId}
         busy={savingId === paidTargetId}
-        onCancel={() => (savingId ? undefined : (setPaidTargetId(null), setPendingNote("")))}
-        onConfirm={(date) => paidTargetId && setStatus(paidTargetId, "Paid", date, pendingNote)}
+        onCancel={() =>
+          savingId ? undefined : (setPaidTargetId(null), setPendingNote(""), setPendingInternal(""))
+        }
+        onConfirm={(date) =>
+          paidTargetId && setStatus(paidTargetId, "Paid", date, pendingNote, pendingInternal)
+        }
       />
 
       <ConfirmDialog
@@ -677,9 +702,9 @@ function BundleDetail({
   onToggle: () => void;
   expandedTs: Set<string>;
   toggleTs: (id: string) => void;
-  onApprove: (note: string) => void;
-  onMarkPaid: (note: string) => void;
-  onSetStatus: (status: string, note: string) => void;
+  onApprove: (memberNote: string, internalNote: string) => void;
+  onMarkPaid: (memberNote: string, internalNote: string) => void;
+  onSetStatus: (status: string, memberNote: string, internalNote: string) => void;
 }) {
   const status = selected.payment.status || "Under Review";
   const isToPay = status === "To be paid" || status === "Scheduled";
@@ -687,15 +712,19 @@ function BundleDetail({
   const isRejected = status === "Rejected";
   const isCanceled = status === "Canceled";
   const isUnderReview = !isToPay && !isPaid && !isRejected && !isCanceled;
-  const [note, setNote] = useState(selected.payment.memberNote ?? "");
-  // Rejecting a payment must say why, flagged if Reject is clicked with no note.
-  const [reasonMissing, setReasonMissing] = useState(false);
-  function rejectPayment() {
-    if (!note.trim()) {
-      setReasonMissing(true);
+  const [memberNote, setMemberNote] = useState(selected.payment.memberNote ?? "");
+  const [internalNote, setInternalNote] = useState(selected.payment.internalNote ?? "");
+  // The internal note is compulsory unless the confidence is green ("looks
+  // consistent"), so an amber/red decision always carries a rationale.
+  const requireInternal = selected.decision.confidence !== "green";
+  const [internalMissing, setInternalMissing] = useState(false);
+  // Gate any decision on the internal-note requirement.
+  function decide(run: () => void) {
+    if (requireInternal && !internalNote.trim()) {
+      setInternalMissing(true);
       return;
     }
-    onSetStatus("Rejected", note);
+    run();
   }
   return (
     <div className={`overflow-hidden rounded-lg border bg-white ${payMeta(status).ring}`}>
@@ -745,44 +774,83 @@ function BundleDetail({
           </div>
         </div>
         {selected.payment.reviewedBy && status !== "Under Review" ? (
-          <PaymentReviewer status={status} by={selected.payment.reviewedBy} />
+          <PaymentReviewer status={status} by={selected.payment.reviewedBy} at={selected.payment.reviewedAt} />
+        ) : null}
+        {selected.payment.internalNote ? (
+          <p className="mt-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-600">
+            <span className="font-medium text-slate-500">Internal note: </span>
+            {selected.payment.internalNote}
+          </p>
         ) : null}
         {selected.payment.comment ? (
           <p className="mt-2 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-600 demo-blur">
             {selected.payment.comment}
           </p>
         ) : null}
-        <div className="mt-3 space-y-2">
-          <textarea
-            value={note}
-            onChange={(e) => {
-              setNote(e.target.value);
-              if (reasonMissing) setReasonMissing(false);
-            }}
-            rows={2}
-            placeholder="Note to the member, shown on their invoice, e.g. why it was rejected (required to reject)"
-            aria-invalid={reasonMissing}
-            className={`w-full rounded-md border px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 ${
-              reasonMissing
-                ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500"
-                : "border-slate-300 focus:border-brand-600 focus:ring-brand-600"
-            }`}
-          />
-          {reasonMissing ? (
-            <p className="text-[11px] font-medium text-rose-600">
-              Please add a reason before rejecting this payment.
-            </p>
-          ) : null}
+        <div className="mt-3 space-y-3">
+          {/* Note to member (optional) */}
+          <div>
+            <label className="mb-1 flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-slate-600">
+              Note to member
+              <span className="font-normal text-slate-400">optional, shown on their invoice</span>
+            </label>
+            <textarea
+              value={memberNote}
+              onChange={(e) => setMemberNote(e.target.value)}
+              rows={2}
+              placeholder="e.g. a message with the payment, or why it was rejected"
+              className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+            />
+          </div>
+          {/* Internal note (admin only) */}
+          <div>
+            <label className="mb-1 flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-slate-600">
+              Internal note
+              {requireInternal ? (
+                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
+                  Required
+                </span>
+              ) : (
+                <span className="font-normal text-slate-400">optional, admin only</span>
+              )}
+            </label>
+            <textarea
+              value={internalNote}
+              onChange={(e) => {
+                setInternalNote(e.target.value);
+                if (internalMissing) setInternalMissing(false);
+              }}
+              rows={2}
+              placeholder={
+                requireInternal
+                  ? "The assessment isn't green, briefly note why you're deciding this way"
+                  : "Admin-only rationale, never shown to the member"
+              }
+              aria-invalid={internalMissing}
+              className={`w-full rounded-md border px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 ${
+                internalMissing
+                  ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500"
+                  : "border-slate-300 focus:border-brand-600 focus:ring-brand-600"
+              }`}
+            />
+            {internalMissing ? (
+              <p className="mt-1 text-[11px] font-medium text-rose-600">
+                Confidence is {selected.decision.confidence === "red" ? "red" : "amber"}, so an
+                internal note is required before deciding.
+              </p>
+            ) : null}
+          </div>
+
           <div className="flex flex-wrap items-center gap-2">
             {/* Advance to "To be paid": from Under review (validates timesheets)
                 or reviving a Rejected payment. */}
             {isUnderReview ? (
-              <Button tone="primary" size="sm" disabled={saving} onClick={() => onApprove(note)}>
+              <Button tone="primary" size="sm" disabled={saving} onClick={() => decide(() => onApprove(memberNote, internalNote))}>
                 Approve → To be paid
               </Button>
             ) : null}
             {isRejected ? (
-              <Button tone="primary" size="sm" disabled={saving} onClick={() => onApprove(note)}>
+              <Button tone="primary" size="sm" disabled={saving} onClick={() => decide(() => onApprove(memberNote, internalNote))}>
                 Move to To be paid
               </Button>
             ) : null}
@@ -790,7 +858,7 @@ function BundleDetail({
               <button
                 type="button"
                 disabled={saving}
-                onClick={() => onMarkPaid(note)}
+                onClick={() => decide(() => onMarkPaid(memberNote, internalNote))}
                 className="inline-flex items-center justify-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Mark as paid
@@ -798,7 +866,7 @@ function BundleDetail({
             ) : null}
             {/* Reverse a Paid payment (correction): straight back to To be paid. */}
             {isPaid ? (
-              <Button tone="secondary" size="sm" disabled={saving} onClick={() => onSetStatus("To be paid", note)}>
+              <Button tone="secondary" size="sm" disabled={saving} onClick={() => onSetStatus("To be paid", memberNote, internalNote)}>
                 Back to To be paid
               </Button>
             ) : null}
@@ -808,13 +876,13 @@ function BundleDetail({
                 tone="secondary"
                 size="sm"
                 disabled={saving}
-                onClick={() => onSetStatus("Under Review", note)}
+                onClick={() => onSetStatus("Under Review", memberNote, internalNote)}
               >
                 Back to Under review
               </Button>
             ) : null}
             {isUnderReview || isToPay ? (
-              <Button tone="danger" size="sm" disabled={saving} onClick={rejectPayment}>
+              <Button tone="danger" size="sm" disabled={saving} onClick={() => decide(() => onSetStatus("Rejected", memberNote, internalNote))}>
                 Reject
               </Button>
             ) : null}
@@ -822,7 +890,7 @@ function BundleDetail({
               <button
                 type="button"
                 disabled={saving}
-                onClick={() => onSetStatus("Canceled", note)}
+                onClick={() => decide(() => onSetStatus("Canceled", memberNote, internalNote))}
                 className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
               >
                 Cancel payment

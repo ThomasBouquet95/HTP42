@@ -25,6 +25,9 @@ const patchSchema = z.object({
   paymentDate: z.union([z.string().trim().min(1), z.null()]).optional(),
   // Optional note the admin leaves for the member with this status change.
   memberNote: z.string().max(2000).optional(),
+  // Admin-only rationale captured with the decision (required by the UI when
+  // the confidence is amber/red). Never shown to the member.
+  internalNote: z.string().max(5000).optional(),
 });
 
 export async function PATCH(
@@ -47,20 +50,19 @@ export async function PATCH(
       { status: 400 },
     );
   }
-  // Rejecting a payment must state why — the note is shown to the member so
-  // they know what to fix (defence-in-depth alongside the review-dashboard UI).
-  if (nextStatus === "Rejected" && !parsed.data.memberNote?.trim()) {
-    return NextResponse.json(
-      { error: "Please add a reason for rejecting this payment." },
-      { status: 400 },
-    );
-  }
   try {
     // Capture the previous state BEFORE the update so we can detect the
     // Outflow → Paid transition and fire the receipt email exactly once.
     const before = await getPaymentById(id);
     const reviewer = session.fullName || session.email || "Admin";
-    await updatePaymentStatus(id, nextStatus, paymentDate, parsed.data.memberNote, reviewer);
+    await updatePaymentStatus(
+      id,
+      nextStatus,
+      paymentDate,
+      parsed.data.memberNote,
+      reviewer,
+      parsed.data.internalNote,
+    );
     if (before && becamePaid(before, nextStatus)) {
       // Re-read the record so the email body uses the saved values (the PATCH
       // only carries the status field, the rest stays as it was). Awaited so it

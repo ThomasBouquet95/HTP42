@@ -333,6 +333,8 @@ export function buildReviewGroups(input: Inputs): {
         comment: p.comment,
         memberNote: p.memberNote,
         reviewedBy: p.reviewedBy,
+        reviewedAt: p.reviewedAt,
+        internalNote: p.internalNote,
         invoicePdfUrl: p.invoicePdf?.url ?? "",
         invoiceUrl: p.invoiceUrl,
       },

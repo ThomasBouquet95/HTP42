@@ -292,8 +292,13 @@ export const FIELDS = {
     // Lazily created via meta API — see ensurePaymentMemberNoteField.
     memberNote: "Member Note",
     // The admin who last decided this payment (approved/paid/rejected).
-    // Lazily created via meta API — see ensurePaymentReviewedByField.
+    // Lazily created via meta API, see ensurePaymentReviewedByField.
     reviewedBy: "Reviewed By",
+    // ISO timestamp of that decision. Lazily created, see ensurePaymentReviewFields.
+    reviewedAt: "Reviewed At",
+    // Admin-only note captured with a decision (rationale). Never shown to the
+    // member. Lazily created, see ensurePaymentReviewFields.
+    internalNote: "Internal Note",
     invoiceUrl: "Invoice URL",
     invoicePdf: "Invoice PDF",
     // Reconciliation with Qonto: the linked bank transaction's id + a
@@ -803,8 +808,11 @@ export type PaymentRecord = {
   beneficiary: string;
   comment: string;
   memberNote: string;
-  // The admin who last decided this payment (set on status change).
+  // The admin who last decided this payment (set on status change), when, and
+  // their admin-only rationale.
   reviewedBy: string;
+  reviewedAt: string | null;
+  internalNote: string;
   invoiceUrl: string;
   invoicePdf: AttachmentRef | null;
   qontoTransactionId: string;
@@ -2880,6 +2888,8 @@ function paymentFromRecord(r: AirtableRecord<FieldSet>): PaymentRecord {
     comment: str(r, FIELDS.payments.comment),
     memberNote: str(r, FIELDS.payments.memberNote),
     reviewedBy: str(r, FIELDS.payments.reviewedBy),
+    reviewedAt: dateOrNull(r, FIELDS.payments.reviewedAt),
+    internalNote: str(r, FIELDS.payments.internalNote),
     invoiceUrl: str(r, FIELDS.payments.invoiceUrl),
     invoicePdf: firstAttachment(r, FIELDS.payments.invoicePdf),
     qontoTransactionId: str(r, FIELDS.payments.qontoTransactionId),
@@ -3140,6 +3150,7 @@ export async function updatePaymentStatus(
   paymentDate?: string | null,
   memberNote?: string,
   reviewedBy?: string,
+  internalNote?: string,
 ): Promise<void> {
   const ensured = await ensurePaymentStatusChoices();
   const fields: Record<string, unknown> = {
@@ -3165,6 +3176,16 @@ export async function updatePaymentStatus(
   if (reviewedBy !== undefined) {
     if (await ensurePaymentReviewedByField()) {
       fields[FIELDS.payments.reviewedBy] = reviewedBy || null;
+    }
+    // Record when the decision was taken (cleared if the reviewer is cleared).
+    if (await ensurePaymentReviewFields()) {
+      fields[FIELDS.payments.reviewedAt] = reviewedBy ? new Date().toISOString() : null;
+    }
+  }
+  // Admin-only rationale captured with the decision. Never shown to the member.
+  if (internalNote !== undefined) {
+    if (await ensurePaymentReviewFields()) {
+      fields[FIELDS.payments.internalNote] = internalNote || null;
     }
   }
   try {
@@ -3782,6 +3803,49 @@ async function ensurePaymentReviewedByField(): Promise<boolean> {
     return paymentReviewedByFieldReady;
   } catch (e) {
     console.error("ensurePaymentReviewedByField failed:", e);
+    return false;
+  }
+}
+
+// "Reviewed At" (decision timestamp) + "Internal Note" (admin-only rationale),
+// created lazily together. Both are set when a payment is decided.
+let paymentReviewFieldsReady = false;
+async function ensurePaymentReviewFields(): Promise<boolean> {
+  if (paymentReviewFieldsReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.payments);
+    if (!table) return false;
+    const existing = new Set(table.fields.map((f) => f.name));
+    const wanted: Array<{ name: string; type: string; description: string }> = [
+      { name: FIELDS.payments.reviewedAt, type: "singleLineText", description: "ISO timestamp of the last payment decision." },
+      { name: FIELDS.payments.internalNote, type: "multilineText", description: "Admin-only note captured with a payment decision. Never shown to the member." },
+    ];
+    let allOk = true;
+    for (const f of wanted) {
+      if (existing.has(f.name)) continue;
+      const create = await fetch(
+        `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+          body: JSON.stringify(f),
+        },
+      );
+      if (!create.ok) allOk = false;
+    }
+    if (allOk) paymentReviewFieldsReady = true;
+    return paymentReviewFieldsReady;
+  } catch (e) {
+    console.error("ensurePaymentReviewFields failed:", e);
     return false;
   }
 }

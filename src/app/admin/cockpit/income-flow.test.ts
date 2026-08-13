@@ -31,6 +31,8 @@ function pay(over: Partial<PaymentRecord>): PaymentRecord {
     comment: "",
     memberNote: "",
     reviewedBy: "",
+    reviewedAt: null,
+    internalNote: "",
     invoiceUrl: "",
     invoicePdf: null,
     qontoTransactionId: "",
