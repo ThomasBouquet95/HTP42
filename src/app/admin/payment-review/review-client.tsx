@@ -1201,24 +1201,28 @@ function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
   return (
     <section className={`border-b border-slate-100 px-4 py-3`}>
       <div className={`rounded-lg border p-3 ${meta.ring}`}>
-        {/* Verdict */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Verdict (left) + invoice amount (top-right) */}
+        <div className="flex items-start justify-between gap-3">
           <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${meta.chip}`}>
             <span aria-hidden>{meta.icon}</span> {d.headline}
           </span>
-          {d.thisPaymentHours > 0 ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">
-              This payment +{fmtH(d.thisPaymentHours)}
-              <span className="font-normal text-slate-300">· {fmtD(d.thisPaymentHours)}</span>
-            </span>
-          ) : null}
           {d.invoiceAmount != null ? (
-            <span className="text-[11px] text-slate-600 demo-blur">
-              {money(d.invoiceAmount, d.invoiceCurrency)}
-              {d.impliedDays != null ? <span className="text-slate-400"> · bills ~{d.impliedDays.toFixed(1)} d</span> : null}
-            </span>
+            <div className="shrink-0 text-right">
+              <div className="text-base font-semibold tabular-nums text-slate-900 demo-blur">
+                {money(d.invoiceAmount, d.invoiceCurrency)}
+              </div>
+              {d.impliedDays != null ? (
+                <div className="text-[11px] text-slate-500">invoice bills ~{d.impliedDays.toFixed(1)} d</div>
+              ) : null}
+            </div>
           ) : null}
         </div>
+        {d.thisPaymentHours > 0 ? (
+          <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-slate-900 px-2 py-1 text-[11px] text-white">
+            This payment adds <span className="font-semibold">+{fmtH(d.thisPaymentHours)}</span>
+            <span className="text-slate-300">({fmtD(d.thisPaymentHours)})</span>
+          </div>
+        ) : null}
 
         {/* Reasons */}
         <ul className="mt-2 space-y-0.5">
@@ -1247,8 +1251,8 @@ function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
           <div className="relative h-3 w-full overflow-hidden rounded-full bg-slate-100">
             <div className="absolute inset-0 flex">
               <div className="h-full shrink-0 bg-emerald-500" style={{ width: pct(d.paidHours) }} title={`Paid ${fmtH(d.paidHours)}`} />
-              <div className="h-full shrink-0 bg-brand-500" style={{ width: pct(d.approvedUnpaidHours) }} title={`Approved, unpaid ${fmtH(d.approvedUnpaidHours)}`} />
-              <div className="h-full shrink-0 bg-amber-400" style={{ width: pct(d.pendingHours) }} title={`Pending approval ${fmtH(d.pendingHours)}`} />
+              <div className="h-full shrink-0 bg-indigo-500" style={{ width: pct(d.approvedUnpaidHours) }} title={`To be paid ${fmtH(d.approvedUnpaidHours)}`} />
+              <div className="h-full shrink-0 bg-sky-500" style={{ width: pct(d.pendingHours) }} title={`Under review ${fmtH(d.pendingHours)}`} />
             </div>
             {allocPct != null ? (
               <div
@@ -1258,16 +1262,20 @@ function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
               />
             ) : null}
           </div>
-          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-slate-500">
-            <Legend color="bg-emerald-500" label="Paid" value={fmtH(d.paidHours)} />
-            <Legend color="bg-brand-500" label="Approved, unpaid" value={fmtH(d.approvedUnpaidHours)} />
-            <Legend color="bg-amber-400" label="Pending approval" value={fmtH(d.pendingHours)} />
-            {d.rejectedHours > 0 ? <Legend color="bg-rose-400" label="Rejected" value={fmtH(d.rejectedHours)} /> : null}
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <HourStat color="bg-emerald-500" label="Paid" value={fmtH(d.paidHours)} />
+            <HourStat color="bg-indigo-500" label="To be paid" value={fmtH(d.approvedUnpaidHours)} />
+            <HourStat color="bg-sky-500" label="Under review" value={fmtH(d.pendingHours)} />
+          </div>
+          <div className="mt-1.5 text-[10px] text-slate-500">
             {d.allocatedHours != null ? (
               <span className="inline-flex items-center gap-1">
                 <span className="inline-block h-2 w-0.5 bg-slate-800" aria-hidden /> Allocation {fmtH(d.allocatedHours)}
               </span>
-            ) : null}
+            ) : (
+              "No allocation set on the staffing"
+            )}
+            {d.rejectedHours > 0 ? <span> · Rejected {fmtH(d.rejectedHours)}</span> : null}
           </div>
         </div>
       </div>
@@ -1275,12 +1283,17 @@ function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
   );
 }
 
-function Legend({ color, label, value }: { color: string; label: string; value: string }) {
+// One hours bucket as a compact tile — colour dot + payment-status label on
+// top, the hours below — so the split is easy to scan.
+function HourStat({ color, label, value }: { color: string; label: string; value: string }) {
   return (
-    <span className="inline-flex items-center gap-1">
-      <span className={`inline-block h-2 w-2 rounded-full ${color}`} aria-hidden />
-      {label} <span className="tabular-nums font-medium text-slate-600 demo-blur">{value}</span>
-    </span>
+    <div className="rounded-md border border-slate-200 bg-white px-2 py-1.5">
+      <div className="flex items-center gap-1 text-[10px] text-slate-500">
+        <span className={`inline-block h-2 w-2 rounded-full ${color}`} aria-hidden />
+        {label}
+      </div>
+      <div className="mt-0.5 text-sm font-semibold tabular-nums text-slate-900 demo-blur">{value}</div>
+    </div>
   );
 }
 
