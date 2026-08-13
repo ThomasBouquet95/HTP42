@@ -79,6 +79,30 @@ export type ReviewBundle = {
     >;
   }>;
   project: { code: string; name: string } | null;
+  // Decision summary — the at-a-glance "should I pay this?" for the admin.
+  // All hours are in hours (÷8 = days). See computeDecision in review-data.
+  decision: {
+    allocatedHours: number | null;
+    paidHours: number;
+    approvedUnpaidHours: number;
+    pendingHours: number;
+    rejectedHours: number;
+    totalHours: number; // paid + approvedUnpaid + pending
+    thisPaymentHours: number;
+    thisPaymentWeeks: number;
+    thisPaymentUnapprovedWeeks: number;
+    thisPaymentItemised: boolean;
+    invoiceAmount: number | null;
+    invoiceCurrency: string;
+    ratePerDay: number | null;
+    rateCurrency: string;
+    impliedDays: number | null; // invoice amount ÷ rate (same currency only)
+    loggedDaysThisPayment: number;
+    daysToStaffingEnd: number | null;
+    confidence: "green" | "amber" | "red";
+    headline: string;
+    reasons: { level: "info" | "warn" | "bad"; text: string }[];
+  };
   sowContracts: Array<{
     id: string;
     type: string;
@@ -813,8 +837,12 @@ function BundleDetail({
 
       {open ? (
         <div className="divide-y divide-slate-100 border-t border-slate-100">
+      <DecisionSummary d={selected.decision} />
       {/* Invoice */}
-      <Section title="Invoice">
+      <CollapsibleSection
+        title="Invoice"
+        hint={`${selected.invoice?.code || selected.payment.invoiceReference || "PDF"}${selected.invoice?.extracted ? " · extracted" : ""}`}
+      >
         {selected.payment.invoicePdfUrl || selected.invoice?.pdfUrl ? (
           <div className="flex items-center gap-3">
             <DownloadChip
@@ -866,11 +894,12 @@ function BundleDetail({
             Key details weren&rsquo;t extracted for this invoice.
           </p>
         ) : null}
-      </Section>
+      </CollapsibleSection>
 
       {/* Timesheets */}
-      <Section
+      <CollapsibleSection
         title="Timesheets"
+        hint={`${selected.timesheets.length} wk · ${fmtH(selected.timesheets.reduce((s, t) => s + t.totalHours, 0))}`}
         action={
           <div className="flex items-center gap-3">
             <ApprovalRollup rollup={selected.timesheetApproval} />
@@ -960,10 +989,10 @@ function BundleDetail({
             </div>
           </div>
         )}
-      </Section>
+      </CollapsibleSection>
 
       {/* Staffing */}
-      <Section title="Staffing">
+      <CollapsibleSection title="Staffing" hint={selected.staffing?.code || "—"}>
         {selected.staffing ? (
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
             <Field label="Code" value={selected.staffing.code} mono />
@@ -994,10 +1023,13 @@ function BundleDetail({
         ) : (
           <Empty>This payment isn&apos;t linked to a staffing (no invoice link).</Empty>
         )}
-      </Section>
+      </CollapsibleSection>
 
       {/* Project + SOW */}
-      <Section title="Project & SOW">
+      <CollapsibleSection
+        title="Project & SOW"
+        hint={`${selected.project?.code || "—"}${selected.sowContracts.length ? ` · ${selected.sowContracts.length} SOW` : ""}`}
+      >
         {selected.project ? (
           <div className="text-xs">
             <div className="mb-2">
@@ -1030,7 +1062,7 @@ function BundleDetail({
         ) : (
           <Empty>No project associated with this payment.</Empty>
         )}
-      </Section>
+      </CollapsibleSection>
         </div>
       ) : null}
     </div>
@@ -1101,23 +1133,154 @@ function ExtractedInvoiceView({ data }: { data: ExtractedInvoice }) {
   );
 }
 
-function Section({
+// Collapsible variant — one click to reveal the detail, so an admin isn't
+// buried in four open panels. `hint` shows a one-line summary while collapsed.
+function CollapsibleSection({
   title,
+  hint,
   action,
+  defaultOpen = false,
   children,
 }: {
   title: string;
+  hint?: React.ReactNode;
   action?: React.ReactNode;
+  defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <section className="px-4 py-3">
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</h3>
-        {action}
+    <section className="px-4 py-2.5">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          <svg
+            viewBox="0 0 16 16"
+            className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            aria-hidden
+          >
+            <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            {title}
+          </span>
+          {!open && hint ? <span className="truncate text-[11px] text-slate-400">· {hint}</span> : null}
+        </button>
+        {open ? action : null}
       </div>
-      {children}
+      {open ? <div className="mt-2.5">{children}</div> : null}
     </section>
+  );
+}
+
+const fmtH = (h: number) => `${(Math.round(h * 10) / 10).toLocaleString("en-US")} h`;
+const fmtD = (h: number) => `${(Math.round((h / 8) * 10) / 10).toLocaleString("en-US")} d`;
+
+const CONF_META = {
+  green: { chip: "bg-emerald-100 text-emerald-800", ring: "border-emerald-200 bg-emerald-50", dot: "bg-emerald-500", icon: "✓" },
+  amber: { chip: "bg-amber-100 text-amber-900", ring: "border-amber-300 bg-amber-50", dot: "bg-amber-500", icon: "!" },
+  red: { chip: "bg-rose-100 text-rose-800", ring: "border-rose-300 bg-rose-50", dot: "bg-rose-500", icon: "!!" },
+} as const;
+
+// The at-a-glance "should I pay this?" panel: a confidence verdict with reasons,
+// a stacked hours ledger against the allocation, and this payment's own impact.
+function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
+  const meta = CONF_META[d.confidence];
+  const base = Math.max(d.totalHours, d.allocatedHours ?? 0, 1);
+  const pct = (h: number) => `${Math.min(100, (h / base) * 100)}%`;
+  const allocPct = d.allocatedHours != null ? Math.min(100, (d.allocatedHours / base) * 100) : null;
+  const over = d.allocatedHours != null && d.totalHours > d.allocatedHours;
+
+  return (
+    <section className={`border-b border-slate-100 px-4 py-3`}>
+      <div className={`rounded-lg border p-3 ${meta.ring}`}>
+        {/* Verdict */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${meta.chip}`}>
+            <span aria-hidden>{meta.icon}</span> {d.headline}
+          </span>
+          {d.thisPaymentHours > 0 ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">
+              This payment +{fmtH(d.thisPaymentHours)}
+              <span className="font-normal text-slate-300">· {fmtD(d.thisPaymentHours)}</span>
+            </span>
+          ) : null}
+          {d.invoiceAmount != null ? (
+            <span className="text-[11px] text-slate-600 demo-blur">
+              {money(d.invoiceAmount, d.invoiceCurrency)}
+              {d.impliedDays != null ? <span className="text-slate-400"> · bills ~{d.impliedDays.toFixed(1)} d</span> : null}
+            </span>
+          ) : null}
+        </div>
+
+        {/* Reasons */}
+        <ul className="mt-2 space-y-0.5">
+          {d.reasons.map((r, i) => (
+            <li key={i} className="flex items-start gap-1.5 text-[11px]">
+              <span
+                className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
+                  r.level === "bad" ? "bg-rose-500" : r.level === "warn" ? "bg-amber-500" : "bg-emerald-500"
+                }`}
+                aria-hidden
+              />
+              <span className={r.level === "bad" ? "font-medium text-rose-700" : "text-slate-600"}>{r.text}</span>
+            </li>
+          ))}
+        </ul>
+
+        {/* Hours ledger */}
+        <div className="mt-3">
+          <div className="mb-1 flex items-baseline justify-between text-[11px]">
+            <span className="font-medium text-slate-600">Hours logged vs allocated</span>
+            <span className={`tabular-nums ${over ? "font-semibold text-rose-700" : "text-slate-500"}`}>
+              {fmtH(d.totalHours)}
+              {d.allocatedHours != null ? ` / ${fmtH(d.allocatedHours)}` : " · no allocation"}
+            </span>
+          </div>
+          <div className="relative h-3 w-full overflow-hidden rounded-full bg-slate-100">
+            <div className="absolute inset-y-0 left-0 flex">
+              <div className="h-full bg-emerald-500" style={{ width: pct(d.paidHours) }} title={`Paid ${fmtH(d.paidHours)}`} />
+              <div className="h-full bg-brand-500" style={{ width: pct(d.approvedUnpaidHours) }} title={`Approved, unpaid ${fmtH(d.approvedUnpaidHours)}`} />
+              <div className="h-full bg-amber-400" style={{ width: pct(d.pendingHours) }} title={`Pending approval ${fmtH(d.pendingHours)}`} />
+            </div>
+            {allocPct != null ? (
+              <div
+                className="absolute inset-y-0 w-0.5 bg-slate-800"
+                style={{ left: `${allocPct}%` }}
+                title={`Allocation ${fmtH(d.allocatedHours!)}`}
+              />
+            ) : null}
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-slate-500">
+            <Legend color="bg-emerald-500" label="Paid" value={fmtH(d.paidHours)} />
+            <Legend color="bg-brand-500" label="Approved, unpaid" value={fmtH(d.approvedUnpaidHours)} />
+            <Legend color="bg-amber-400" label="Pending approval" value={fmtH(d.pendingHours)} />
+            {d.rejectedHours > 0 ? <Legend color="bg-rose-400" label="Rejected" value={fmtH(d.rejectedHours)} /> : null}
+            {d.allocatedHours != null ? (
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block h-2 w-0.5 bg-slate-800" aria-hidden /> Allocation {fmtH(d.allocatedHours)}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Legend({ color, label, value }: { color: string; label: string; value: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className={`inline-block h-2 w-2 rounded-full ${color}`} aria-hidden />
+      {label} <span className="tabular-nums font-medium text-slate-600 demo-blur">{value}</span>
+    </span>
   );
 }
 

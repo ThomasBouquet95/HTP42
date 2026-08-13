@@ -15,6 +15,161 @@ import type { MemberGroup, ReviewBundle } from "../payment-review/review-client"
 const KNOWN = new Set(["Under Review", "Scheduled", "To be paid", "Paid", "Rejected", "Canceled"]);
 const isUnderReview = (s: string) => (KNOWN.has(s) ? s === "Under Review" : true);
 
+const HOURS_PER_DAY = 8;
+export type Weeklike = { id: string; totalHours: number; status: TimesheetRecord["status"] };
+type Decision = ReviewBundle["decision"];
+const WORSE = { green: 0, amber: 1, red: 2 } as const;
+type Level = keyof typeof WORSE;
+const worst = (a: Level, b: Level): Level => (WORSE[a] >= WORSE[b] ? a : b);
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+// Days from today (UTC) until an ISO date. Positive = future, negative = past.
+function daysUntil(iso: string | null): number | null {
+  if (!iso) return null;
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const end = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.round((end - today) / 86_400_000);
+}
+
+// Build the "should I pay this?" summary: bucket every countable week on the
+// staffing into paid / approved-unpaid / pending, compare against the
+// allocation, isolate THIS payment's contribution, sanity-check the invoice
+// amount against the rate, and score a green/amber/red confidence with reasons.
+export function computeDecision(params: {
+  weeks: Weeklike[]; // all review-status weeks on the staffing
+  coveredIds: Set<string>; // weeks billed on THIS invoice ("" set = not itemised)
+  payStatusByTs: Map<string, string>;
+  daysAllocated: number | null;
+  ratePerDay: number | null;
+  rateCurrency: string;
+  endDate: string | null;
+  invoiceAmount: number | null;
+  invoiceCurrency: string;
+}): Decision {
+  const { weeks, coveredIds, payStatusByTs } = params;
+  let paidHours = 0;
+  let approvedUnpaidHours = 0;
+  let pendingHours = 0;
+  let rejectedHours = 0;
+  for (const t of weeks) {
+    const h = t.totalHours;
+    if (t.status === "Rejected") {
+      rejectedHours += h;
+      continue;
+    }
+    const ps = payStatusByTs.get(t.id) || "";
+    const isPaid = ps === "Paid" || t.status === "Paid";
+    const isApproved =
+      t.status === "Approved" ||
+      t.status === "Invoiced" ||
+      t.status === "Paid" ||
+      ps === "Paid" ||
+      ps === "To be paid" ||
+      ps === "Scheduled";
+    if (isPaid) paidHours += h;
+    else if (isApproved) approvedUnpaidHours += h;
+    else pendingHours += h; // Submitted / under review
+  }
+  const totalHours = paidHours + approvedUnpaidHours + pendingHours;
+  const allocatedHours = params.daysAllocated != null ? params.daysAllocated * HOURS_PER_DAY : null;
+
+  const itemised = coveredIds.size > 0;
+  const thisWeeks = itemised ? weeks.filter((t) => coveredIds.has(t.id)) : weeks;
+  const thisPaymentHours = thisWeeks.reduce((s, t) => s + t.totalHours, 0);
+  const thisPaymentUnapprovedWeeks = thisWeeks.filter((t) => t.status === "Submitted").length;
+  const loggedDaysThisPayment = thisPaymentHours / HOURS_PER_DAY;
+
+  const ratePerDay = params.ratePerDay;
+  const sameCcy = !!params.rateCurrency && params.rateCurrency === params.invoiceCurrency;
+  const impliedDays =
+    params.invoiceAmount != null && ratePerDay && ratePerDay > 0 && sameCcy
+      ? params.invoiceAmount / ratePerDay
+      : null;
+
+  const daysToStaffingEnd = daysUntil(params.endDate);
+
+  let level: Level = "green";
+  const reasons: Decision["reasons"] = [];
+
+  if (allocatedHours == null) {
+    level = worst(level, "amber");
+    reasons.push({ level: "warn", text: "No days allocated on the staffing — can't validate hours against a budget." });
+  } else if (totalHours > allocatedHours + 0.05) {
+    level = "red";
+    reasons.push({
+      level: "bad",
+      text: `Logged ${round1(totalHours)} h is ${round1(totalHours - allocatedHours)} h OVER the ${round1(allocatedHours)} h allocated.`,
+    });
+  } else if (totalHours >= allocatedHours * 0.9) {
+    level = worst(level, "amber");
+    reasons.push({
+      level: "warn",
+      text: `${Math.round((totalHours / allocatedHours) * 100)}% of the allocated hours are used.`,
+    });
+  }
+
+  if (impliedDays != null && impliedDays > loggedDaysThisPayment + 0.25) {
+    level = "red";
+    reasons.push({
+      level: "bad",
+      text: `Invoice bills ~${round1(impliedDays)} day(s) but only ${round1(loggedDaysThisPayment)} day(s) are logged on the covered weeks.`,
+    });
+  }
+
+  if (thisPaymentUnapprovedWeeks > 0) {
+    level = worst(level, "amber");
+    reasons.push({
+      level: "warn",
+      text: `${thisPaymentUnapprovedWeeks} week${thisPaymentUnapprovedWeeks === 1 ? "" : "s"} on this payment ${thisPaymentUnapprovedWeeks === 1 ? "isn't" : "aren't"} approved yet.`,
+    });
+  }
+
+  if (!itemised) {
+    level = worst(level, "amber");
+    reasons.push({ level: "warn", text: "This invoice didn't record which weeks it covers — figures below span the whole staffing." });
+  }
+
+  if (daysToStaffingEnd != null) {
+    if (daysToStaffingEnd < 0) {
+      level = worst(level, "amber");
+      reasons.push({ level: "warn", text: `Staffing period ended ${-daysToStaffingEnd} day${-daysToStaffingEnd === 1 ? "" : "s"} ago.` });
+    } else if (daysToStaffingEnd <= 14) {
+      level = worst(level, "amber");
+      reasons.push({ level: "warn", text: `Staffing ends in ${daysToStaffingEnd} day${daysToStaffingEnd === 1 ? "" : "s"} — near the end of the contract.` });
+    }
+  }
+
+  if (reasons.length === 0) reasons.push({ level: "info", text: "Within allocation and the covered weeks are approved." });
+  const headline =
+    level === "red" ? "Needs review before paying" : level === "amber" ? "Review recommended" : "Looks consistent";
+
+  return {
+    allocatedHours,
+    paidHours,
+    approvedUnpaidHours,
+    pendingHours,
+    rejectedHours,
+    totalHours,
+    thisPaymentHours,
+    thisPaymentWeeks: thisWeeks.length,
+    thisPaymentUnapprovedWeeks,
+    thisPaymentItemised: itemised,
+    invoiceAmount: params.invoiceAmount,
+    invoiceCurrency: params.invoiceCurrency,
+    ratePerDay,
+    rateCurrency: params.rateCurrency,
+    impliedDays,
+    loggedDaysThisPayment,
+    daysToStaffingEnd,
+    confidence: level,
+    headline,
+    reasons,
+  };
+}
+
 type Inputs = {
   payments: PaymentRecord[];
   invoices: MemberInvoiceRecord[];
@@ -57,6 +212,25 @@ export function buildReviewGroups(input: Inputs): {
     const arr = tsByStaffing.get(t.staffingRecordId) ?? [];
     arr.push(t);
     tsByStaffing.set(t.staffingRecordId, arr);
+  }
+
+  // Best payment status covering each timesheet week (across ALL live outflow
+  // payments), so the decision summary can tell paid from approved-unpaid.
+  const payRank = (s: string) =>
+    s === "Paid" ? 4 : s === "To be paid" || s === "Scheduled" ? 3 : s === "Under Review" ? 2 : 1;
+  const payStatusByTs = new Map<string, string>();
+  for (const p of payments) {
+    if (p.direction !== "Outflow") continue;
+    const st = p.paymentStatus || "";
+    if (st === "Canceled" || st === "Rejected") continue;
+    for (const invId of p.memberInvoiceRecordIds) {
+      const inv = invoiceById.get(invId);
+      if (!inv) continue;
+      for (const tid of inv.coveredTimesheetIds) {
+        const cur = payStatusByTs.get(tid);
+        if (!cur || payRank(st) > payRank(cur)) payStatusByTs.set(tid, st);
+      }
+    }
   }
 
   const contractsByProjectId = new Map<string, ContractRecord[]>();
@@ -115,6 +289,20 @@ export function buildReviewGroups(input: Inputs): {
       rejected,
       allApproved: timesheetsSorted.length > 0 && pending === 0 && rejected === 0,
     };
+
+    // Decision summary spans the whole staffing (all its weeks), with THIS
+    // payment's covered weeks isolated for the "+X" impact.
+    const decision = computeDecision({
+      weeks: allForStaffing,
+      coveredIds: covered,
+      payStatusByTs,
+      daysAllocated: staffing?.daysAllocated ?? null,
+      ratePerDay: staffing?.ratePerDay ?? null,
+      rateCurrency: staffing?.currency ?? "",
+      endDate: staffing?.endDate ?? null,
+      invoiceAmount: p.invoiceValue,
+      invoiceCurrency: p.invoiceCurrency,
+    });
 
     return {
       payment: {
@@ -187,6 +375,7 @@ export function buildReviewGroups(input: Inputs): {
         },
       })),
       project: project ? { code: project.projectCode, name: project.projectName } : null,
+      decision,
       sowContracts: sow.map((c) => ({
         id: c.id,
         type: c.contractType || c.otherDescription || c.side || "Contract",
