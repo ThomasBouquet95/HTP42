@@ -313,6 +313,7 @@ export function PaymentReviewClient({
   // Note the admin is leaving for the member, carried into the paid-date step.
   const [pendingNote, setPendingNote] = useState("");
   const [pendingInternal, setPendingInternal] = useState("");
+  const [pendingConfidence, setPendingConfidence] = useState("");
   const [expandedTs, setExpandedTs] = useState<Set<string>>(new Set());
   // Which payment cards are expanded. Defaults (set per selected member below):
   // under-review items open, past items collapsed.
@@ -409,13 +410,14 @@ export function PaymentReviewClient({
     paymentDate?: string,
     memberNote?: string,
     internalNote?: string,
+    confidence?: string,
   ) {
     setSavingId(id);
     try {
       const res = await fetch(`/api/admin/payments/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ paymentStatus: status, paymentDate, memberNote, internalNote }),
+        body: JSON.stringify({ paymentStatus: status, paymentDate, memberNote, internalNote, confidence }),
       });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
@@ -593,16 +595,21 @@ export function PaymentReviewClient({
                   // that validates timesheets: the guard auto-approves any
                   // linked week still under review / rejected (with a popup).
                   onApprove={(mn, inn) =>
-                    guardApproval(b, () => setStatus(b.payment.id, "To be paid", undefined, mn, inn))
+                    guardApproval(b, () =>
+                      setStatus(b.payment.id, "To be paid", undefined, mn, inn, b.decision.confidence),
+                    )
                   }
                   // Mark paid never re-checks timesheets (they were validated at
                   // the approve step); it just needs the payment date.
                   onMarkPaid={(mn, inn) => {
                     setPendingNote(mn);
                     setPendingInternal(inn);
+                    setPendingConfidence(b.decision.confidence);
                     setPaidTargetId(b.payment.id);
                   }}
-                  onSetStatus={(status, mn, inn) => setStatus(b.payment.id, status, undefined, mn, inn)}
+                  onSetStatus={(status, mn, inn) =>
+                    setStatus(b.payment.id, status, undefined, mn, inn, b.decision.confidence)
+                  }
                 />
               ))}
             </div>
@@ -614,10 +621,13 @@ export function PaymentReviewClient({
         open={!!paidTargetId}
         busy={savingId === paidTargetId}
         onCancel={() =>
-          savingId ? undefined : (setPaidTargetId(null), setPendingNote(""), setPendingInternal(""))
+          savingId
+            ? undefined
+            : (setPaidTargetId(null), setPendingNote(""), setPendingInternal(""), setPendingConfidence(""))
         }
         onConfirm={(date) =>
-          paidTargetId && setStatus(paidTargetId, "Paid", date, pendingNote, pendingInternal)
+          paidTargetId &&
+          setStatus(paidTargetId, "Paid", date, pendingNote, pendingInternal, pendingConfidence)
         }
       />
 

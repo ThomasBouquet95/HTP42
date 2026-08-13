@@ -9,6 +9,7 @@ import {
   listAllStaffings,
   listAllTimesheets,
   listClients,
+  listPaymentDecisions,
   listPayments,
   listProjects,
   listVendorInvoices,
@@ -49,6 +50,7 @@ export default async function AdminPaymentsPage({
     listAllTimesheets(),
     listAllContracts(),
   ]);
+  const paymentDecisions = await listPaymentDecisions();
 
   // Payments auto-created for automated (paid) vendor invoices are a linked
   // pair — deleting one deletes the other. Tell the client which ids are
@@ -198,6 +200,7 @@ export default async function AdminPaymentsPage({
           bundleById={bundleById}
           coveredByPaymentId={coveredByPaymentId}
           totalUnderReview={totalUnderReview}
+          decisions={paymentDecisions}
         />
     </main>
   );

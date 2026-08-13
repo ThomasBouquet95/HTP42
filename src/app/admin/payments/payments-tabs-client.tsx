@@ -4,9 +4,10 @@ import { useState } from "react";
 import { PaymentsClient, type CoveredEditor } from "./payments-client";
 import { PaymentReviewClient, type MemberGroup, type ReviewBundle } from "../payment-review/review-client";
 import { PaymentsByProject, PaymentsByMember } from "./payments-breakdown";
+import { DecisionLog, type DecisionRow } from "./decision-log";
 import type { Currency, PaymentRecord } from "@/lib/airtable";
 
-type Tab = "payments" | "review" | "byproject" | "bymember";
+type Tab = "payments" | "review" | "byproject" | "bymember" | "decisions";
 
 type LinkOpt = { id: string; code: string; name: string };
 type ClientOpt = { id: string; code: string; name: string; subjectToDes: "Yes" | "No" | "" };
@@ -52,6 +53,7 @@ export function PaymentsTabsClient({
   bundleById,
   coveredByPaymentId,
   totalUnderReview,
+  decisions,
 }: {
   payments: PaymentRecord[];
   projects: LinkOpt[];
@@ -67,6 +69,7 @@ export function PaymentsTabsClient({
   bundleById: Record<string, ReviewBundle>;
   coveredByPaymentId: Record<string, CoveredEditor>;
   totalUnderReview: number;
+  decisions: DecisionRow[];
 }) {
   // Landing via a payment search link should open the list, not review.
   const [tab, setTab] = useState<Tab>("payments");
@@ -102,6 +105,12 @@ export function PaymentsTabsClient({
         <TabButton active={tab === "bymember"} onClick={() => setTab("bymember")}>
           By member
         </TabButton>
+        <TabButton active={tab === "decisions"} onClick={() => setTab("decisions")}>
+          Decision logs
+          {decisions.length > 0 ? (
+            <span className="ml-1.5 text-[10px] text-slate-400">{decisions.length}</span>
+          ) : null}
+        </TabButton>
       </div>
 
       {tab === "payments" ? (
@@ -121,6 +130,8 @@ export function PaymentsTabsClient({
         />
       ) : tab === "review" ? (
         <PaymentReviewClient groups={reviewGroups} initialMemberId={reviewMemberId} />
+      ) : tab === "decisions" ? (
+        <DecisionLog decisions={decisions} />
       ) : tab === "byproject" ? (
         <PaymentsByProject
           payments={payments}

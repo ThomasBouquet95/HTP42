@@ -37,6 +37,7 @@ export const TABLES = {
   emailTemplates: "Email Templates",
   emailLog: "Email Log",
   supportTickets: "Support Tickets",
+  paymentDecisions: "Payment Decisions",
 } as const;
 
 export const FIELDS = {
@@ -250,6 +251,22 @@ export const FIELDS = {
     submittedEmail: "Submitted Email",
     page: "Page",
     submittedAt: "Submitted At",
+  },
+  // Append-only audit log of payment approval decisions (one row per status
+  // change), so every decision and its notes are preserved. Lazily created.
+  paymentDecisions: {
+    paymentCode: "Payment Code",
+    paymentId: "Payment Id",
+    memberName: "Member Name",
+    memberCode: "Member Code",
+    action: "Action",
+    amount: "Amount",
+    currency: "Currency",
+    confidence: "Confidence",
+    reviewer: "Reviewer",
+    at: "At",
+    internalNote: "Internal Note",
+    memberNote: "Member Note",
   },
   timesheetReviews: {
     entry: "Entry",
@@ -3848,6 +3865,136 @@ async function ensurePaymentReviewFields(): Promise<boolean> {
     console.error("ensurePaymentReviewFields failed:", e);
     return false;
   }
+}
+
+// ── Payment decision log (append-only audit) ──────────────────────────────
+export type PaymentDecisionRecord = {
+  id: string;
+  paymentCode: string;
+  paymentId: string;
+  memberName: string;
+  memberCode: string;
+  action: string;
+  amount: number | null;
+  currency: string;
+  confidence: string;
+  reviewer: string;
+  at: string | null;
+  internalNote: string;
+  memberNote: string;
+};
+
+let paymentDecisionsTableReady = false;
+async function ensurePaymentDecisionsTable(): Promise<boolean> {
+  if (paymentDecisionsTableReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, { headers: { Authorization: `Bearer ${env.airtablePat}` }, cache: "no-store" });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { tables: Array<{ name: string }> };
+    if (data.tables.some((t) => t.name === TABLES.paymentDecisions)) {
+      paymentDecisionsTableReady = true;
+      return true;
+    }
+    const F = FIELDS.paymentDecisions;
+    const create = await fetch(metaUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: TABLES.paymentDecisions,
+        description: "Append-only audit log of payment approval decisions and their notes.",
+        fields: [
+          { name: F.paymentCode, type: "singleLineText" },
+          { name: F.paymentId, type: "singleLineText" },
+          { name: F.memberName, type: "singleLineText" },
+          { name: F.memberCode, type: "singleLineText" },
+          { name: F.action, type: "singleLineText" },
+          { name: F.amount, type: "number", options: { precision: 2 } },
+          { name: F.currency, type: "singleLineText" },
+          { name: F.confidence, type: "singleLineText" },
+          { name: F.reviewer, type: "singleLineText" },
+          { name: F.at, type: "singleLineText" },
+          { name: F.internalNote, type: "multilineText" },
+          { name: F.memberNote, type: "multilineText" },
+        ],
+      }),
+    });
+    if (create.ok) paymentDecisionsTableReady = true;
+    else console.error("ensurePaymentDecisionsTable failed:", create.status, await create.text().catch(() => ""));
+    return paymentDecisionsTableReady;
+  } catch (e) {
+    console.error("ensurePaymentDecisionsTable error:", e);
+    return false;
+  }
+}
+
+// Append one audit row per payment decision. Best-effort: a logging failure
+// must never block the status change itself.
+export async function logPaymentDecision(input: {
+  paymentCode: string;
+  paymentId: string;
+  memberName: string;
+  memberCode: string;
+  action: string;
+  amount: number | null;
+  currency: string;
+  confidence: string;
+  reviewer: string;
+  internalNote: string;
+  memberNote: string;
+}): Promise<void> {
+  const ok = await ensurePaymentDecisionsTable();
+  if (!ok) return;
+  const F = FIELDS.paymentDecisions;
+  await base(TABLES.paymentDecisions).create(
+    [
+      {
+        fields: {
+          [F.paymentCode]: input.paymentCode,
+          [F.paymentId]: input.paymentId,
+          [F.memberName]: input.memberName,
+          [F.memberCode]: input.memberCode,
+          [F.action]: input.action,
+          [F.amount]: input.amount,
+          [F.currency]: input.currency,
+          [F.confidence]: input.confidence,
+          [F.reviewer]: input.reviewer,
+          [F.at]: new Date().toISOString(),
+          [F.internalNote]: input.internalNote,
+          [F.memberNote]: input.memberNote,
+        } as FieldSet,
+      },
+    ],
+    { typecast: true },
+  );
+}
+
+function paymentDecisionFromRecord(r: AirtableRecord<FieldSet>): PaymentDecisionRecord {
+  const F = FIELDS.paymentDecisions;
+  return {
+    id: r.id,
+    paymentCode: str(r, F.paymentCode),
+    paymentId: str(r, F.paymentId),
+    memberName: str(r, F.memberName),
+    memberCode: str(r, F.memberCode),
+    action: str(r, F.action),
+    amount: numOrNull(r, F.amount),
+    currency: str(r, F.currency),
+    confidence: str(r, F.confidence),
+    reviewer: str(r, F.reviewer),
+    at: dateOrNull(r, F.at),
+    internalNote: str(r, F.internalNote),
+    memberNote: str(r, F.memberNote),
+  };
+}
+
+export async function listPaymentDecisions(): Promise<PaymentDecisionRecord[]> {
+  const ok = await ensurePaymentDecisionsTable();
+  if (!ok) return [];
+  const records = await base(TABLES.paymentDecisions)
+    .select({ sort: [{ field: FIELDS.paymentDecisions.at, direction: "desc" }] })
+    .all();
+  return records.map(paymentDecisionFromRecord);
 }
 
 // Lazily create the three Qonto-reconciliation fields on the Payments table.

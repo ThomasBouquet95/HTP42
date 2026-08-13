@@ -6,6 +6,7 @@ import {
   CURRENCIES,
   deletePaymentWithLinkedInvoice,
   getPaymentById,
+  logPaymentDecision,
   PAYMENT_STATUSES,
   updatePayment,
   updatePaymentStatus,
@@ -15,19 +16,23 @@ import {
   type PaymentStatus,
 } from "@/lib/airtable";
 import { notifyPaymentPaid } from "@/lib/payment-notify";
+import { internalNoteRequired } from "@/lib/payment-review-rules";
 import { apiError, zodMessage } from "@/lib/errors";
 
 const patchSchema = z.object({
   paymentStatus: z
     .union([z.enum(PAYMENT_STATUSES as [string, ...string[]]), z.literal("")]),
-  // Required when marking a payment Paid — it's the day money moved and it
+  // Required when marking a payment Paid: it's the day money moved and it
   // populates the paid-receipt email.
   paymentDate: z.union([z.string().trim().min(1), z.null()]).optional(),
   // Optional note the admin leaves for the member with this status change.
   memberNote: z.string().max(2000).optional(),
-  // Admin-only rationale captured with the decision (required by the UI when
-  // the confidence is amber/red). Never shown to the member.
+  // Admin-only rationale captured with the decision (required when the
+  // confidence is amber/red). Never shown to the member.
   internalNote: z.string().max(5000).optional(),
+  // The decision's confidence assessment, sent by the review UI. Drives the
+  // internal-note requirement and is stored on the audit log.
+  confidence: z.enum(["green", "amber", "red"]).optional(),
 });
 
 export async function PATCH(
@@ -47,6 +52,14 @@ export async function PATCH(
   if (nextStatus === "Paid" && !paymentDate) {
     return NextResponse.json(
       { error: "A payment date is required to mark a payment as paid." },
+      { status: 400 },
+    );
+  }
+  // Enforce the internal-note requirement on flagged decisions server-side too,
+  // so it holds even if the UI gate is bypassed.
+  if (internalNoteRequired(nextStatus, parsed.data.confidence ?? "", parsed.data.internalNote ?? "")) {
+    return NextResponse.json(
+      { error: "An internal note is required to decide a payment flagged amber or red." },
       { status: 400 },
     );
   }
@@ -85,6 +98,25 @@ export async function PATCH(
       } catch (e) {
         console.error("Invoice-paid cascade failed:", e);
       }
+    }
+    // Append one row to the decision audit log. Best-effort so a logging hiccup
+    // never blocks the decision itself.
+    try {
+      await logPaymentDecision({
+        paymentCode: before?.paymentCode ?? "",
+        paymentId: id,
+        memberName: before?.beneficiary ?? "",
+        memberCode: before?.memberCodes[0] ?? "",
+        action: nextStatus || "",
+        amount: before?.invoiceValue ?? null,
+        currency: before?.invoiceCurrency ?? "",
+        confidence: parsed.data.confidence ?? "",
+        reviewer,
+        internalNote: parsed.data.internalNote ?? "",
+        memberNote: parsed.data.memberNote ?? "",
+      });
+    } catch (e) {
+      console.error("logPaymentDecision failed:", e);
     }
     return NextResponse.json({ ok: true });
   } catch (e) {
@@ -197,7 +229,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const { id } = await params;
   try {
     // If this payment mirrors an automated vendor invoice, deleting it also
-    // deletes the paired invoice (and vice-versa) — they're one record to the
+    // deletes the paired invoice (and vice-versa); they're one record to the
     // user, split across two tables.
     const { deletedInvoiceId } = await deletePaymentWithLinkedInvoice(id);
     return NextResponse.json({ ok: true, deletedInvoiceId });
