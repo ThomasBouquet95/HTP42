@@ -788,57 +788,76 @@ function BundleDetail({
           </p>
         ) : null}
         <div className="mt-3 space-y-3">
-          {/* Note to member (optional) */}
-          <div>
-            <label className="mb-1 flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-slate-600">
-              Note to member
-              <span className="font-normal text-slate-400">optional, shown on their invoice</span>
-            </label>
-            <textarea
-              value={memberNote}
-              onChange={(e) => setMemberNote(e.target.value)}
-              rows={2}
-              placeholder="e.g. a message with the payment, or why it was rejected"
-              className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-            />
-          </div>
-          {/* Internal note (admin only) */}
-          <div>
-            <label className="mb-1 flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-slate-600">
-              Internal note
-              {requireInternal ? (
-                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
-                  Required
-                </span>
-              ) : (
-                <span className="font-normal text-slate-400">optional, admin only</span>
-              )}
-            </label>
-            <textarea
-              value={internalNote}
-              onChange={(e) => {
-                setInternalNote(e.target.value);
-                if (internalMissing) setInternalMissing(false);
-              }}
-              rows={2}
-              placeholder={
-                requireInternal
-                  ? "The assessment isn't green, briefly note why you're deciding this way"
-                  : "Admin-only rationale, never shown to the member"
-              }
-              aria-invalid={internalMissing}
-              className={`w-full rounded-md border px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 ${
-                internalMissing
-                  ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500"
-                  : "border-slate-300 focus:border-brand-600 focus:ring-brand-600"
+          <div className="grid gap-3 sm:grid-cols-2">
+            {/* Note to member: outward-facing, sky frame. */}
+            <div className="rounded-lg border border-sky-200 bg-sky-50/50 p-2.5">
+              <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-sky-600" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                  <path d="M2 4.5h12v8H2z" strokeLinejoin="round" />
+                  <path d="M2.5 5l5.5 4 5.5-4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className="text-[11px] font-semibold text-sky-800">Note to member</span>
+                <span className="text-[10px] text-sky-600/80">optional · shown on their invoice</span>
+              </div>
+              <textarea
+                value={memberNote}
+                onChange={(e) => setMemberNote(e.target.value)}
+                rows={2}
+                placeholder="e.g. a message with the payment, or why it was rejected"
+                className="w-full rounded-md border border-sky-200 bg-white px-2.5 py-1.5 text-xs focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              />
+            </div>
+
+            {/* Internal note: private, amber frame when required else slate. */}
+            <div
+              className={`rounded-lg border p-2.5 ${
+                requireInternal ? "border-amber-300 bg-amber-50/60" : "border-slate-200 bg-slate-50"
               }`}
-            />
-            {internalMissing ? (
-              <p className="mt-1 text-[11px] font-medium text-rose-600">
-                Confidence is {selected.decision.confidence === "red" ? "red" : "amber"}, so an
-                internal note is required before deciding.
-              </p>
-            ) : null}
+            >
+              <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                <svg viewBox="0 0 16 16" className={`h-3.5 w-3.5 ${requireInternal ? "text-amber-600" : "text-slate-500"}`} fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                  <rect x="3.5" y="7" width="9" height="6" rx="1" strokeLinejoin="round" />
+                  <path d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7" strokeLinecap="round" />
+                </svg>
+                <span className={`text-[11px] font-semibold ${requireInternal ? "text-amber-900" : "text-slate-700"}`}>
+                  Internal note
+                </span>
+                {requireInternal ? (
+                  <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-900">
+                    Required
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400">optional · admin only</span>
+                )}
+              </div>
+              <textarea
+                value={internalNote}
+                onChange={(e) => {
+                  setInternalNote(e.target.value);
+                  if (internalMissing) setInternalMissing(false);
+                }}
+                rows={2}
+                placeholder={
+                  requireInternal
+                    ? "The assessment isn't green, briefly note why you're deciding this way"
+                    : "Admin-only rationale, never shown to the member"
+                }
+                aria-invalid={internalMissing}
+                className={`w-full rounded-md border bg-white px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 ${
+                  internalMissing
+                    ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500"
+                    : requireInternal
+                      ? "border-amber-300 focus:border-amber-500 focus:ring-amber-500"
+                      : "border-slate-300 focus:border-brand-600 focus:ring-brand-600"
+                }`}
+              />
+              {internalMissing ? (
+                <p className="mt-1 text-[11px] font-medium text-rose-600">
+                  Confidence is {selected.decision.confidence === "red" ? "red" : "amber"}, so an
+                  internal note is required before deciding.
+                </p>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
