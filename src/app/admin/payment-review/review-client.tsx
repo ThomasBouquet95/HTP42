@@ -83,12 +83,15 @@ export type ReviewBundle = {
   // All hours are in hours (÷8 = days). See computeDecision in review-data.
   decision: {
     allocatedHours: number | null;
+    // Hours bucketed by the status of the PAYMENT covering each week.
     paidHours: number;
-    approvedUnpaidHours: number;
-    pendingHours: number;
+    toBePaidHours: number;
+    underReviewHours: number;
+    notBilledHours: number; // logged weeks not on any live payment yet
     rejectedHours: number;
-    totalHours: number; // paid + approvedUnpaid + pending
+    totalHours: number; // paid + toBePaid + underReview + notBilled
     thisPaymentHours: number;
+    thisPaymentBucket: "Paid" | "To be paid" | "Under review";
     thisPaymentWeeks: number;
     thisPaymentUnapprovedWeeks: number;
     thisPaymentItemised: boolean;
@@ -1221,6 +1224,8 @@ function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
           <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-slate-900 px-2 py-1 text-[11px] text-white">
             This payment adds <span className="font-semibold">+{fmtH(d.thisPaymentHours)}</span>
             <span className="text-slate-300">({fmtD(d.thisPaymentHours)})</span>
+            <span className="text-slate-400">→</span>
+            <span className="font-medium">{d.thisPaymentBucket}</span>
           </div>
         ) : null}
 
@@ -1251,8 +1256,9 @@ function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
           <div className="relative h-3 w-full overflow-hidden rounded-full bg-slate-100">
             <div className="absolute inset-0 flex">
               <div className="h-full shrink-0 bg-emerald-500" style={{ width: pct(d.paidHours) }} title={`Paid ${fmtH(d.paidHours)}`} />
-              <div className="h-full shrink-0 bg-indigo-500" style={{ width: pct(d.approvedUnpaidHours) }} title={`To be paid ${fmtH(d.approvedUnpaidHours)}`} />
-              <div className="h-full shrink-0 bg-sky-500" style={{ width: pct(d.pendingHours) }} title={`Under review ${fmtH(d.pendingHours)}`} />
+              <div className="h-full shrink-0 bg-indigo-500" style={{ width: pct(d.toBePaidHours) }} title={`To be paid ${fmtH(d.toBePaidHours)}`} />
+              <div className="h-full shrink-0 bg-sky-500" style={{ width: pct(d.underReviewHours) }} title={`Under review ${fmtH(d.underReviewHours)}`} />
+              <div className="h-full shrink-0 bg-slate-300" style={{ width: pct(d.notBilledHours) }} title={`Not billed ${fmtH(d.notBilledHours)}`} />
             </div>
             {allocPct != null ? (
               <div
@@ -1263,9 +1269,27 @@ function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
             ) : null}
           </div>
           <div className="mt-2 grid grid-cols-3 gap-2">
-            <HourStat color="bg-emerald-500" label="Paid" value={fmtH(d.paidHours)} />
-            <HourStat color="bg-indigo-500" label="To be paid" value={fmtH(d.approvedUnpaidHours)} />
-            <HourStat color="bg-sky-500" label="Under review" value={fmtH(d.pendingHours)} />
+            <HourStat
+              color="bg-emerald-500"
+              label="Paid"
+              value={fmtH(d.paidHours)}
+              highlight={d.thisPaymentBucket === "Paid"}
+              sub={d.thisPaymentBucket === "Paid" && d.thisPaymentHours > 0 ? `incl. +${fmtH(d.thisPaymentHours)} this` : undefined}
+            />
+            <HourStat
+              color="bg-indigo-500"
+              label="To be paid"
+              value={fmtH(d.toBePaidHours)}
+              highlight={d.thisPaymentBucket === "To be paid"}
+              sub={d.thisPaymentBucket === "To be paid" && d.thisPaymentHours > 0 ? `incl. +${fmtH(d.thisPaymentHours)} this` : undefined}
+            />
+            <HourStat
+              color="bg-sky-500"
+              label="Under review"
+              value={fmtH(d.underReviewHours)}
+              highlight={d.thisPaymentBucket === "Under review"}
+              sub={d.thisPaymentBucket === "Under review" && d.thisPaymentHours > 0 ? `incl. +${fmtH(d.thisPaymentHours)} this` : undefined}
+            />
           </div>
           <div className="mt-1.5 text-[10px] text-slate-500">
             {d.allocatedHours != null ? (
@@ -1275,6 +1299,7 @@ function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
             ) : (
               "No allocation set on the staffing"
             )}
+            {d.notBilledHours > 0 ? <span> · Not billed {fmtH(d.notBilledHours)}</span> : null}
             {d.rejectedHours > 0 ? <span> · Rejected {fmtH(d.rejectedHours)}</span> : null}
           </div>
         </div>
@@ -1284,15 +1309,33 @@ function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
 }
 
 // One hours bucket as a compact tile — colour dot + payment-status label on
-// top, the hours below — so the split is easy to scan.
-function HourStat({ color, label, value }: { color: string; label: string; value: string }) {
+// top, the hours below. `highlight` rings the bucket THIS payment lands in, and
+// `sub` notes how much of it is this payment.
+function HourStat({
+  color,
+  label,
+  value,
+  highlight,
+  sub,
+}: {
+  color: string;
+  label: string;
+  value: string;
+  highlight?: boolean;
+  sub?: string;
+}) {
   return (
-    <div className="rounded-md border border-slate-200 bg-white px-2 py-1.5">
+    <div
+      className={`rounded-md border px-2 py-1.5 ${
+        highlight ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900/10" : "border-slate-200 bg-white"
+      }`}
+    >
       <div className="flex items-center gap-1 text-[10px] text-slate-500">
         <span className={`inline-block h-2 w-2 rounded-full ${color}`} aria-hidden />
         {label}
       </div>
       <div className="mt-0.5 text-sm font-semibold tabular-nums text-slate-900 demo-blur">{value}</div>
+      {sub ? <div className="text-[10px] font-medium text-slate-700">{sub}</div> : null}
     </div>
   );
 }

@@ -48,11 +48,16 @@ export function computeDecision(params: {
   endDate: string | null;
   invoiceAmount: number | null;
   invoiceCurrency: string;
+  paymentStatus: string; // THIS payment's own status
 }): Decision {
   const { weeks, coveredIds, payStatusByTs } = params;
+  // Bucket each countable week by the status of the payment covering it, so the
+  // split reads in payment-status terms (Paid / To be paid / Under review), not
+  // the underlying timesheet's approval state.
   let paidHours = 0;
-  let approvedUnpaidHours = 0;
-  let pendingHours = 0;
+  let toBePaidHours = 0;
+  let underReviewHours = 0;
+  let notBilledHours = 0;
   let rejectedHours = 0;
   for (const t of weeks) {
     const h = t.totalHours;
@@ -60,21 +65,21 @@ export function computeDecision(params: {
       rejectedHours += h;
       continue;
     }
-    const ps = payStatusByTs.get(t.id) || "";
-    const isPaid = ps === "Paid" || t.status === "Paid";
-    const isApproved =
-      t.status === "Approved" ||
-      t.status === "Invoiced" ||
-      t.status === "Paid" ||
-      ps === "Paid" ||
-      ps === "To be paid" ||
-      ps === "Scheduled";
-    if (isPaid) paidHours += h;
-    else if (isApproved) approvedUnpaidHours += h;
-    else pendingHours += h; // Submitted / under review
+    const ps = payStatusByTs.get(t.id) || (t.status === "Paid" ? "Paid" : "");
+    if (ps === "Paid") paidHours += h;
+    else if (ps === "To be paid" || ps === "Scheduled") toBePaidHours += h;
+    else if (ps === "Under Review") underReviewHours += h;
+    else notBilledHours += h; // logged but not on a live payment yet
   }
-  const totalHours = paidHours + approvedUnpaidHours + pendingHours;
+  const totalHours = paidHours + toBePaidHours + underReviewHours + notBilledHours;
   const allocatedHours = params.daysAllocated != null ? params.daysAllocated * HOURS_PER_DAY : null;
+
+  const thisPaymentBucket: Decision["thisPaymentBucket"] =
+    params.paymentStatus === "Paid"
+      ? "Paid"
+      : params.paymentStatus === "To be paid" || params.paymentStatus === "Scheduled"
+        ? "To be paid"
+        : "Under review";
 
   const itemised = coveredIds.size > 0;
   const thisWeeks = itemised ? weeks.filter((t) => coveredIds.has(t.id)) : weeks;
@@ -149,11 +154,13 @@ export function computeDecision(params: {
   return {
     allocatedHours,
     paidHours,
-    approvedUnpaidHours,
-    pendingHours,
+    toBePaidHours,
+    underReviewHours,
+    notBilledHours,
     rejectedHours,
     totalHours,
     thisPaymentHours,
+    thisPaymentBucket,
     thisPaymentWeeks: thisWeeks.length,
     thisPaymentUnapprovedWeeks,
     thisPaymentItemised: itemised,
@@ -302,6 +309,7 @@ export function buildReviewGroups(input: Inputs): {
       endDate: staffing?.endDate ?? null,
       invoiceAmount: p.invoiceValue,
       invoiceCurrency: p.invoiceCurrency,
+      paymentStatus: p.paymentStatus || "",
     });
 
     return {

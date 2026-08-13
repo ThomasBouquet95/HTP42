@@ -24,6 +24,7 @@ const base = {
   endDate: null,
   invoiceAmount: null,
   invoiceCurrency: "",
+  paymentStatus: "Under Review",
 };
 
 describe("computeDecision confidence", () => {
@@ -49,7 +50,7 @@ describe("computeDecision confidence", () => {
     });
     expect(d.confidence).toBe("red");
     expect(d.reasons.some((r) => /OVER/.test(r.text))).toBe(true);
-    expect(d.pendingHours).toBe(20);
+    expect(d.totalHours).toBe(60);
   });
 
   it("red when the invoice amount implies more days than are logged", () => {
@@ -91,19 +92,42 @@ describe("computeDecision confidence", () => {
     expect(d.allocatedHours).toBeNull();
   });
 
-  it("splits hours into paid / approved-unpaid / pending", () => {
+  it("buckets hours by the covering payment status", () => {
     const pay = new Map<string, string>([
       ["a", "Paid"],
       ["b", "To be paid"],
+      ["c", "Under Review"],
     ]);
     const d = computeDecision({
       ...base,
-      weeks: [wk("a", 40, "Approved"), wk("b", 40, "Approved"), wk("c", 40, "Submitted")],
+      weeks: [
+        wk("a", 40, "Approved"),
+        wk("b", 40, "Approved"),
+        wk("c", 40, "Submitted"),
+        wk("e", 8, "Approved"), // approved but on no live payment → not billed
+      ],
       payStatusByTs: pay,
       daysAllocated: 30,
     });
     expect(d.paidHours).toBe(40);
-    expect(d.approvedUnpaidHours).toBe(40);
-    expect(d.pendingHours).toBe(40);
+    expect(d.toBePaidHours).toBe(40);
+    expect(d.underReviewHours).toBe(40);
+    expect(d.notBilledHours).toBe(8);
+  });
+
+  it("routes this payment's hours to the bucket matching its own status", () => {
+    // Timesheets are Approved, but the payment is still Under Review — the hours
+    // must show under "Under review", not "To be paid".
+    const d = computeDecision({
+      ...base,
+      weeks: [wk("a", 25, "Approved")],
+      coveredIds: new Set(["a"]),
+      payStatusByTs: new Map([["a", "Under Review"]]),
+      daysAllocated: 20,
+      paymentStatus: "Under Review",
+    });
+    expect(d.thisPaymentBucket).toBe("Under review");
+    expect(d.underReviewHours).toBe(25);
+    expect(d.toBePaidHours).toBe(0);
   });
 });
