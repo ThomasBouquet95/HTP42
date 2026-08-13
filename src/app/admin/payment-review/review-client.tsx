@@ -1245,10 +1245,10 @@ function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
             </span>
           </div>
           <div className="relative h-3 w-full overflow-hidden rounded-full bg-slate-100">
-            <div className="absolute inset-y-0 left-0 flex">
-              <div className="h-full bg-emerald-500" style={{ width: pct(d.paidHours) }} title={`Paid ${fmtH(d.paidHours)}`} />
-              <div className="h-full bg-brand-500" style={{ width: pct(d.approvedUnpaidHours) }} title={`Approved, unpaid ${fmtH(d.approvedUnpaidHours)}`} />
-              <div className="h-full bg-amber-400" style={{ width: pct(d.pendingHours) }} title={`Pending approval ${fmtH(d.pendingHours)}`} />
+            <div className="absolute inset-0 flex">
+              <div className="h-full shrink-0 bg-emerald-500" style={{ width: pct(d.paidHours) }} title={`Paid ${fmtH(d.paidHours)}`} />
+              <div className="h-full shrink-0 bg-brand-500" style={{ width: pct(d.approvedUnpaidHours) }} title={`Approved, unpaid ${fmtH(d.approvedUnpaidHours)}`} />
+              <div className="h-full shrink-0 bg-amber-400" style={{ width: pct(d.pendingHours) }} title={`Pending approval ${fmtH(d.pendingHours)}`} />
             </div>
             {allocPct != null ? (
               <div
