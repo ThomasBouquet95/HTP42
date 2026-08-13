@@ -79,7 +79,7 @@ export type ReviewBundle = {
     >;
   }>;
   project: { code: string; name: string } | null;
-  // Decision summary — the at-a-glance "should I pay this?" for the admin.
+  // Decision summary: the at-a-glance "should I pay this?" for the admin.
   // All hours are in hours (÷8 = days). See computeDecision in review-data.
   decision: {
     allocatedHours: number | null;
@@ -164,7 +164,7 @@ function reviewerInitials(name: string): string {
 }
 
 // Who decided the payment. Payments are always reviewed by an HTP42 admin, so
-// this uses the "admin" (dark) treatment — mirroring the timesheet review
+// this uses the "admin" (dark) treatment, mirroring the timesheet review
 // reviewer bubble.
 function PaymentReviewer({ status, by }: { status: string; by: string }) {
   const s = status.toLowerCase();
@@ -454,7 +454,7 @@ export function PaymentReviewClient({
       ),
     );
     // A failed approval (e.g. a 403 for a scoped Project Manager) must block the
-    // payment from advancing — throw so the caller skips onProceed and toasts.
+    // payment from advancing, so throw so the caller skips onProceed and toasts.
     const failed = results.filter((r) => !r.ok).length;
     if (failed > 0) {
       throw new Error(`${failed} linked timesheet${failed === 1 ? "" : "s"} could not be approved.`);
@@ -688,7 +688,7 @@ function BundleDetail({
   const isCanceled = status === "Canceled";
   const isUnderReview = !isToPay && !isPaid && !isRejected && !isCanceled;
   const [note, setNote] = useState(selected.payment.memberNote ?? "");
-  // Rejecting a payment must say why — flagged if Reject is clicked with no note.
+  // Rejecting a payment must say why, flagged if Reject is clicked with no note.
   const [reasonMissing, setReasonMissing] = useState(false);
   function rejectPayment() {
     if (!note.trim()) {
@@ -1136,7 +1136,7 @@ function ExtractedInvoiceView({ data }: { data: ExtractedInvoice }) {
   );
 }
 
-// Collapsible variant — one click to reveal the detail, so an admin isn't
+// Collapsible variant: one click to reveal the detail, so an admin isn't
 // buried in four open panels. `hint` shows a one-line summary while collapsed.
 function CollapsibleSection({
   title,
@@ -1189,8 +1189,14 @@ const fmtD = (h: number) => `${(Math.round((h / 8) * 10) / 10).toLocaleString("e
 const CONF_META = {
   green: { chip: "bg-emerald-100 text-emerald-800", ring: "border-emerald-200 bg-emerald-50", dot: "bg-emerald-500", icon: "✓" },
   amber: { chip: "bg-amber-100 text-amber-900", ring: "border-amber-300 bg-amber-50", dot: "bg-amber-500", icon: "!" },
-  red: { chip: "bg-rose-100 text-rose-800", ring: "border-rose-300 bg-rose-50", dot: "bg-rose-500", icon: "!!" },
+  red: { chip: "bg-rose-100 text-rose-800", ring: "border-rose-300 bg-rose-50", dot: "bg-rose-500", icon: "!" },
 } as const;
+
+const BUCKET_DOT: Record<ReviewBundle["decision"]["thisPaymentBucket"], string> = {
+  Paid: "bg-emerald-500",
+  "To be paid": "bg-indigo-500",
+  "Under review": "bg-sky-500",
+};
 
 // The at-a-glance "should I pay this?" panel: a confidence verdict with reasons,
 // a stacked hours ledger against the allocation, and this payment's own impact.
@@ -1200,6 +1206,7 @@ function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
   const pct = (h: number) => `${Math.min(100, (h / base) * 100)}%`;
   const allocPct = d.allocatedHours != null ? Math.min(100, (d.allocatedHours / base) * 100) : null;
   const over = d.allocatedHours != null && d.totalHours > d.allocatedHours;
+  const billOver = d.impliedDays != null && d.impliedDays > d.loggedDaysThisPayment + 0.5;
 
   return (
     <section className={`border-b border-slate-100 px-4 py-3`}>
@@ -1215,7 +1222,9 @@ function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
                 {money(d.invoiceAmount, d.invoiceCurrency)}
               </div>
               {d.impliedDays != null ? (
-                <div className="text-[11px] text-slate-500">invoice bills ~{d.impliedDays.toFixed(1)} d</div>
+                <div className={`text-[11px] ${billOver ? "font-medium text-rose-700" : "text-slate-500"}`}>
+                  invoice bills ~{d.impliedDays.toFixed(1)} d
+                </div>
               ) : null}
             </div>
           ) : null}
@@ -1225,6 +1234,7 @@ function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
             This payment adds <span className="font-semibold">+{fmtH(d.thisPaymentHours)}</span>
             <span className="text-slate-300">({fmtD(d.thisPaymentHours)})</span>
             <span className="text-slate-400">→</span>
+            <span className={`inline-block h-1.5 w-1.5 rounded-full ${BUCKET_DOT[d.thisPaymentBucket]}`} aria-hidden />
             <span className="font-medium">{d.thisPaymentBucket}</span>
           </div>
         ) : null}
@@ -1260,6 +1270,10 @@ function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
               <div className="h-full shrink-0 bg-sky-500" style={{ width: pct(d.underReviewHours) }} title={`Under review ${fmtH(d.underReviewHours)}`} />
               <div className="h-full shrink-0 bg-slate-300" style={{ width: pct(d.notBilledHours) }} title={`Not billed ${fmtH(d.notBilledHours)}`} />
             </div>
+            {/* Tint the region past the allocation line red when over budget. */}
+            {over && allocPct != null ? (
+              <div className="absolute inset-y-0 right-0 bg-rose-500/25" style={{ left: `${allocPct}%` }} aria-hidden />
+            ) : null}
             {allocPct != null ? (
               <div
                 className="absolute inset-y-0 w-0.5 bg-slate-800"
@@ -1308,7 +1322,7 @@ function DecisionSummary({ d }: { d: ReviewBundle["decision"] }) {
   );
 }
 
-// One hours bucket as a compact tile — colour dot + payment-status label on
+// One hours bucket as a compact tile: colour dot + payment-status label on
 // top, the hours below. `highlight` rings the bucket THIS payment lands in, and
 // `sub` notes how much of it is this payment.
 function HourStat({

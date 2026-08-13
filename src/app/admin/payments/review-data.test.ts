@@ -69,6 +69,20 @@ describe("computeDecision confidence", () => {
     expect(d.reasons.some((r) => /bills ~10/.test(r.text))).toBe(true);
   });
 
+  it("does not flag a small amount overage (e.g. an expense add-on)", () => {
+    const d = computeDecision({
+      ...base,
+      weeks: [wk("a", 40, "Approved")], // 5 days logged
+      coveredIds: new Set(["a"]),
+      daysAllocated: 20,
+      ratePerDay: 500,
+      rateCurrency: "EUR",
+      invoiceAmount: 2600, // 5.2 days, just above the 5 logged
+      invoiceCurrency: "EUR",
+    });
+    expect(d.confidence).toBe("green");
+  });
+
   it("amber near the end of the staffing period", () => {
     const d = computeDecision({
       ...base,

@@ -10,7 +10,7 @@ import type {
 import type { MemberGroup, ReviewBundle } from "../payment-review/review-client";
 
 // Statuses that count as "needs review" for an outflow: the canonical
-// "Under Review", plus any blank/legacy value outside the canonical set — the
+// "Under Review", plus any blank/legacy value outside the canonical set. The
 // payments list renders those as "Under Review", so they still need triage.
 const KNOWN = new Set(["Under Review", "Scheduled", "To be paid", "Paid", "Rejected", "Canceled"]);
 const isUnderReview = (s: string) => (KNOWN.has(s) ? s === "Under Review" : true);
@@ -101,7 +101,7 @@ export function computeDecision(params: {
 
   if (allocatedHours == null) {
     level = worst(level, "amber");
-    reasons.push({ level: "warn", text: "No days allocated on the staffing — can't validate hours against a budget." });
+    reasons.push({ level: "warn", text: "No days allocated on the staffing, so hours can't be checked against a budget." });
   } else if (totalHours > allocatedHours + 0.05) {
     level = "red";
     reasons.push({
@@ -116,7 +116,11 @@ export function computeDecision(params: {
     });
   }
 
-  if (impliedDays != null && impliedDays > loggedDaysThisPayment + 0.25) {
+  if (
+    impliedDays != null &&
+    impliedDays > loggedDaysThisPayment + 0.5 &&
+    impliedDays > loggedDaysThisPayment * 1.1
+  ) {
     level = "red";
     reasons.push({
       level: "bad",
@@ -134,7 +138,7 @@ export function computeDecision(params: {
 
   if (!itemised) {
     level = worst(level, "amber");
-    reasons.push({ level: "warn", text: "This invoice didn't record which weeks it covers — figures below span the whole staffing." });
+    reasons.push({ level: "warn", text: "This invoice didn't record which weeks it covers, so the figures below span the whole staffing." });
   }
 
   if (daysToStaffingEnd != null) {
@@ -143,7 +147,7 @@ export function computeDecision(params: {
       reasons.push({ level: "warn", text: `Staffing period ended ${-daysToStaffingEnd} day${-daysToStaffingEnd === 1 ? "" : "s"} ago.` });
     } else if (daysToStaffingEnd <= 14) {
       level = worst(level, "amber");
-      reasons.push({ level: "warn", text: `Staffing ends in ${daysToStaffingEnd} day${daysToStaffingEnd === 1 ? "" : "s"} — near the end of the contract.` });
+      reasons.push({ level: "warn", text: `Staffing ends in ${daysToStaffingEnd} day${daysToStaffingEnd === 1 ? "" : "s"}, near the end of the contract.` });
     }
   }
 
@@ -267,7 +271,7 @@ export function buildReviewGroups(input: Inputs): {
     // Show ONLY the weeks the member billed on this invoice (the covered
     // timesheets they picked at submission), not every week on the staffing.
     // Legacy invoices submitted before covered-weeks tracking have none
-    // recorded — fall back to all of the staffing's weeks so they aren't blank.
+    // recorded, so fall back to all of the staffing's weeks so they aren't blank.
     const allForStaffing = staffing ? (tsByStaffing.get(staffing.id) ?? []) : [];
     const covered = new Set(invoice?.coveredTimesheetIds ?? []);
     const tsRows =
