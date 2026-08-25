@@ -7,12 +7,13 @@ import {
   decideTimesheet,
   getAdminTimesheetById,
   getStaffingById,
+  listAllTimesheets,
   recordTimesheetReview,
   updateTimesheet,
   type TimesheetStatus,
 } from "@/lib/airtable";
 import { fridayOfWeek, mondayOf } from "@/lib/dates";
-import { timesheetCommentRequired } from "@/lib/timesheet-review-rules";
+import { assessTimesheetHours, timesheetCommentRequired } from "@/lib/timesheet-review-rules";
 import { apiError, zodMessage } from "@/lib/errors";
 
 const dayCell = z.object({
@@ -42,8 +43,9 @@ const patchSchema = z
     // and/or a different week (any date snaps to that week's Monday).
     staffingRecordId: z.string().trim().min(1).optional(),
     startDate: z.string().trim().min(1).optional(),
-    // Hours assessment from the review UI (amber/red require a comment).
-    confidence: z.enum(["green", "amber", "red"]).optional(),
+    // NOTE: the review UI also sends a "confidence" hint, but the server never
+    // trusts it for the comment requirement — it recomputes the assessment from
+    // authoritative data below. Left out of the schema so it's ignored/stripped.
   })
   .refine((d) => d.action || d.status || d.days || d.staffingRecordId || d.startDate, {
     message: "Provide an action, a status, or an edit.",
@@ -130,11 +132,34 @@ export async function PATCH(
         );
       }
       // A decision on a week that is near/over the agreed hours needs a comment.
-      if (timesheetCommentRequired(d.confidence ?? "", d.comment ?? "")) {
-        return NextResponse.json(
-          { error: "A comment is required because this week is near or over the agreed hours." },
-          { status: 400 },
-        );
+      // Compute the assessment on the SERVER from authoritative data (never the
+      // client's confidence hint). Only when no comment was supplied, so the
+      // common path stays a single record read.
+      if (!d.comment?.trim() && existing.staffingRecordId) {
+        const staffing = await getStaffingById(existing.staffingRecordId);
+        const allocatedHours = staffing?.daysAllocated != null ? staffing.daysAllocated * 8 : null;
+        if (allocatedHours != null) {
+          const all = await listAllTimesheets();
+          let approvedHours = 0;
+          for (const ts of all) {
+            if (ts.id === id) continue; // exclude the week being decided
+            if (ts.staffingCode !== existing.staffingCode) continue;
+            if (ts.status === "Approved" || ts.status === "Invoiced" || ts.status === "Paid") {
+              approvedHours += ts.totalHours;
+            }
+          }
+          const server = assessTimesheetHours({
+            allocatedHours,
+            approvedHours,
+            thisHours: existing.totalHours,
+          });
+          if (timesheetCommentRequired(server.confidence, "")) {
+            return NextResponse.json(
+              { error: "A comment is required because this week is near or over the agreed hours." },
+              { status: 400 },
+            );
+          }
+        }
       }
       // Admins may decide a timesheet that is Under Review, and may OVERRIDE an
       // existing Approved/Rejected decision (e.g. a client's) — but never once
