@@ -60,11 +60,12 @@ export function TimesheetEditModal({
   if (!timesheet) return null;
 
   const total = DAYS.reduce((n, d) => n + (Number(days[d]?.hours) || 0), 0);
-  // Only the same member's staffings — moving a timesheet to another person is
-  // not a re-filing. Always include the current one so it shows even if the
-  // member code lookup is imperfect.
+  // Every staffing this individual is on (moving a timesheet to another person
+  // is not a re-filing). Shared staffings match on any of their members, and
+  // the current one is always kept so it shows even if the lookup is imperfect.
   const staffingOptions = staffings
-    .filter((s) => s.memberCode === timesheet.memberCode || s.id === timesheet.staffingRecordId)
+    .filter((s) => s.memberCodes.includes(timesheet.memberCode) || s.id === timesheet.staffingRecordId)
+    .sort((a, b) => (a.projectCode || "").localeCompare(b.projectCode || ""))
     .map((s) => ({
       value: s.id,
       label: `${s.staffingCode || s.projectCode} · ${s.projectCode}`,

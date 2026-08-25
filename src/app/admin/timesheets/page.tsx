@@ -174,7 +174,7 @@ export default async function AdminTimesheetsPage({
             staffingCode: s.staffingCode,
             projectCode: s.projectCode,
             projectName: s.projectName,
-            memberCode: s.memberCodes[0] ?? "",
+            memberCodes: s.memberCodes,
           }))}
         />
     </main>

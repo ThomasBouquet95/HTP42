@@ -83,7 +83,8 @@ export type EditStaffingOpt = {
   staffingCode: string;
   projectCode: string;
   projectName: string;
-  memberCode: string;
+  // All members on the staffing, so a shared staffing shows for each of them.
+  memberCodes: string[];
 };
 
 // Invoices tied to a timesheet: same staffing first, else same member+project
