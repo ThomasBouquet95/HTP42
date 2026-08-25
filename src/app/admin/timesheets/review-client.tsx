@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/modal";
 import { SearchInput } from "@/components/search-input";
 import { SegmentedTabs } from "@/components/filters";
 import { formatWeekRange } from "@/lib/dates";
+import { assessTimesheetHours, timesheetCommentRequired } from "@/lib/timesheet-review-rules";
 import { dayIsos } from "./timesheets-export";
 import { SowChip, type SowInfo } from "./timesheets-breakdown";
 
@@ -214,7 +215,7 @@ export function TimesheetReviewClient({
   // An admin deciding a client-reviewed timesheet overrides the client, so we
   // confirm first (any Approve/Reject on a Client-method timesheet).
   const [overwriteConfirm, setOverwriteConfirm] = useState<
-    { id: string; action: "approve" | "reject"; comment: string } | null
+    { id: string; action: "approve" | "reject"; comment: string; confidence?: string } | null
   >(null);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   useEffect(() => {
@@ -367,6 +368,19 @@ export function TimesheetReviewClient({
     return m;
   }, [rows]);
 
+  // Hours already ACCEPTED per staffing (Approved / Invoiced / Paid, excluding
+  // weeks still under review), so approving a new week can be assessed against
+  // the staffing's agreed hours.
+  const approvedByStaffing = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of rows) {
+      if (!["Approved", "Invoiced", "Paid"].includes(t.status)) continue;
+      if (!t.staffingCode) continue;
+      m.set(t.staffingCode, (m.get(t.staffingCode) ?? 0) + t.totalHours);
+    }
+    return m;
+  }, [rows]);
+
   // Projects the selected member has timesheets on (via their staffings), with
   // the count still under review — the actionable ones lead the selector.
   const memberProjects = useMemo(() => {
@@ -400,7 +414,7 @@ export function TimesheetReviewClient({
   const underReviewClient = (selected?.underReview ?? []).filter((t) => t.reviewMethod === "Client");
   const underReviewAdmin = (selected?.underReview ?? []).filter((t) => t.reviewMethod !== "Client");
 
-  async function decide(id: string, action: "approve" | "reject", comment: string) {
+  async function decide(id: string, action: "approve" | "reject", comment: string, confidence?: string) {
     const previous = rows.find((r) => r.id === id)?.status;
     if (!previous) return;
     const next = action === "approve" ? "Approved" : "Rejected";
@@ -410,7 +424,7 @@ export function TimesheetReviewClient({
       const res = await fetch(`/api/admin/timesheets/${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action, comment: comment.trim() || undefined }),
+        body: JSON.stringify({ action, comment: comment.trim() || undefined, confidence }),
       });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
@@ -428,13 +442,13 @@ export function TimesheetReviewClient({
 
   // Any admin decision on a Client-reviewed timesheet overrides the client, so
   // it goes through a confirmation first; admin-reviewed ones decide directly.
-  function requestDecide(id: string, action: "approve" | "reject", comment: string) {
+  function requestDecide(id: string, action: "approve" | "reject", comment: string, confidence?: string) {
     const t = rows.find((r) => r.id === id);
     if (t && t.reviewMethod === "Client") {
-      setOverwriteConfirm({ id, action, comment });
+      setOverwriteConfirm({ id, action, comment, confidence });
       return;
     }
-    decide(id, action, comment);
+    decide(id, action, comment, confidence);
   }
 
   if (groups.length === 0) {
@@ -573,6 +587,7 @@ export function TimesheetReviewClient({
             onEdit={onEdit}
             sowByStaffing={sowByStaffing}
             usedByStaffing={usedByStaffing}
+            approvedByStaffing={approvedByStaffing}
             resolveReviewer={resolveReviewer}
           />
         </div>
@@ -607,7 +622,7 @@ export function TimesheetReviewClient({
         onConfirm={() => {
           const c = overwriteConfirm;
           setOverwriteConfirm(null);
-          if (c) decide(c.id, c.action, c.comment);
+          if (c) decide(c.id, c.action, c.comment, c.confidence);
         }}
       />
     </div>
@@ -718,15 +733,17 @@ function ProjectGroups({
   onEdit,
   sowByStaffing,
   usedByStaffing,
+  approvedByStaffing,
   resolveReviewer,
 }: {
   items: AdminTimesheetRecord[];
   empty: string;
   savingId: string | null;
-  onDecide: (id: string, action: "approve" | "reject", comment: string) => void;
+  onDecide: (id: string, action: "approve" | "reject", comment: string, confidence?: string) => void;
   onEdit?: (t: AdminTimesheetRecord) => void;
   sowByStaffing?: Record<string, SowInfo>;
   usedByStaffing?: Map<string, number>;
+  approvedByStaffing?: Map<string, number>;
   resolveReviewer: (reviewedBy: string, method: string) => ReviewerInfo | null;
 }) {
   const groups = useMemo(() => {
@@ -793,9 +810,23 @@ function ProjectGroups({
               </div>
             </div>
             <div className="space-y-3">
-              {g.sheets.map((t) => (
-                <ReviewCard key={t.id} t={t} saving={savingId === t.id} onDecide={onDecide} onEdit={onEdit} resolveReviewer={resolveReviewer} />
-              ))}
+              {g.sheets.map((t) => {
+                const sowT = sowByStaffing?.[t.staffingCode];
+                const allocatedHours = sowT?.daysAllocated != null ? sowT.daysAllocated * 8 : null;
+                const approvedHours = approvedByStaffing?.get(t.staffingCode) ?? 0;
+                return (
+                  <ReviewCard
+                    key={t.id}
+                    t={t}
+                    saving={savingId === t.id}
+                    onDecide={onDecide}
+                    onEdit={onEdit}
+                    resolveReviewer={resolveReviewer}
+                    allocatedHours={allocatedHours}
+                    approvedHours={approvedHours}
+                  />
+                );
+              })}
             </div>
           </div>
         );
@@ -825,12 +856,16 @@ function ReviewCard({
   onDecide,
   onEdit,
   resolveReviewer,
+  allocatedHours = null,
+  approvedHours = 0,
 }: {
   t: AdminTimesheetRecord;
   saving: boolean;
-  onDecide: (id: string, action: "approve" | "reject", comment: string) => void;
+  onDecide: (id: string, action: "approve" | "reject", comment: string, confidence?: string) => void;
   onEdit?: (t: AdminTimesheetRecord) => void;
   resolveReviewer: (reviewedBy: string, method: string) => ReviewerInfo | null;
+  allocatedHours?: number | null;
+  approvedHours?: number;
 }) {
   const decided = t.status === "Approved" || t.status === "Rejected";
   // Under review AND configured for client review → the client decides by email;
@@ -845,6 +880,12 @@ function ReviewCard({
   const [overriding, setOverriding] = useState(false);
   const dates = dayIsos(t.startDate);
   const showActions = (t.status === "Submitted" && !clientPending) || overriding;
+
+  // Hours assessment: how approving THIS week sits against the staffing's agreed
+  // hours. Amber near the cap, red over it — with a compulsory comment then.
+  const assessment = assessTimesheetHours({ allocatedHours, approvedHours, thisHours: t.totalHours });
+  const requireComment = assessment.confidence !== "green";
+  const commentMissing = reasonMissing;
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
@@ -938,6 +979,30 @@ function ReviewCard({
                 </button>
               </div>
             ) : null}
+            {assessment.confidence !== "green" ? (
+              <div
+                className={`flex items-start gap-1.5 rounded-md border px-2 py-1 text-[11px] ${
+                  assessment.confidence === "red"
+                    ? "border-rose-300 bg-rose-50 text-rose-800"
+                    : "border-amber-300 bg-amber-50 text-amber-900"
+                }`}
+              >
+                <span
+                  className={`mt-px inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white ${
+                    assessment.confidence === "red" ? "bg-rose-500" : "bg-amber-500"
+                  }`}
+                  aria-hidden
+                >
+                  !
+                </span>
+                <span>
+                  <span className="font-semibold">
+                    {assessment.confidence === "red" ? "Over agreed hours." : "Near agreed hours."}
+                  </span>{" "}
+                  {assessment.reason} A comment is required.
+                </span>
+              </div>
+            ) : null}
             <div className="flex items-center gap-2">
               <input
                 type="text"
@@ -946,10 +1011,10 @@ function ReviewCard({
                   setComment(e.target.value);
                   if (reasonMissing) setReasonMissing(false);
                 }}
-                placeholder="Comment (required to reject)"
-                aria-invalid={reasonMissing}
+                placeholder={requireComment ? "Comment required (hours near/over agreed)" : "Comment (required to reject)"}
+                aria-invalid={commentMissing}
                 className={`h-8 min-w-0 flex-1 rounded-md border px-2.5 text-xs focus:outline-none focus:ring-1 ${
-                  reasonMissing
+                  commentMissing
                     ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500"
                     : "border-slate-300 focus:border-brand-600 focus:ring-brand-600"
                 }`}
@@ -958,7 +1023,13 @@ function ReviewCard({
                 tone="primary"
                 size="sm"
                 disabled={saving || t.status === "Approved"}
-                onClick={() => onDecide(t.id, "approve", comment)}
+                onClick={() => {
+                  if (timesheetCommentRequired(assessment.confidence, comment)) {
+                    setReasonMissing(true);
+                    return;
+                  }
+                  onDecide(t.id, "approve", comment, assessment.confidence);
+                }}
               >
                 Approve
               </Button>
@@ -971,15 +1042,17 @@ function ReviewCard({
                     setReasonMissing(true);
                     return;
                   }
-                  onDecide(t.id, "reject", comment);
+                  onDecide(t.id, "reject", comment, assessment.confidence);
                 }}
               >
                 Reject
               </Button>
             </div>
-            {reasonMissing ? (
+            {commentMissing ? (
               <p className="text-[11px] font-medium text-rose-600">
-                Please add a reason before rejecting.
+                {requireComment
+                  ? "A comment is required because this is near or over the agreed hours."
+                  : "Please add a reason before rejecting."}
               </p>
             ) : null}
           </div>

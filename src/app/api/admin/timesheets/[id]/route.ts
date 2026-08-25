@@ -12,6 +12,7 @@ import {
   type TimesheetStatus,
 } from "@/lib/airtable";
 import { fridayOfWeek, mondayOf } from "@/lib/dates";
+import { timesheetCommentRequired } from "@/lib/timesheet-review-rules";
 import { apiError, zodMessage } from "@/lib/errors";
 
 const dayCell = z.object({
@@ -41,6 +42,8 @@ const patchSchema = z
     // and/or a different week (any date snaps to that week's Monday).
     staffingRecordId: z.string().trim().min(1).optional(),
     startDate: z.string().trim().min(1).optional(),
+    // Hours assessment from the review UI (amber/red require a comment).
+    confidence: z.enum(["green", "amber", "red"]).optional(),
   })
   .refine((d) => d.action || d.status || d.days || d.staffingRecordId || d.startDate, {
     message: "Provide an action, a status, or an edit.",
@@ -123,6 +126,13 @@ export async function PATCH(
       if (decision === "Rejected" && !d.comment?.trim()) {
         return NextResponse.json(
           { error: "Please add a reason for rejecting this timesheet." },
+          { status: 400 },
+        );
+      }
+      // A decision on a week that is near/over the agreed hours needs a comment.
+      if (timesheetCommentRequired(d.confidence ?? "", d.comment ?? "")) {
+        return NextResponse.json(
+          { error: "A comment is required because this week is near or over the agreed hours." },
           { status: 400 },
         );
       }
