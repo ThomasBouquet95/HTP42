@@ -69,7 +69,6 @@ export function TimesheetEditModal({
     .map((s) => ({
       value: s.id,
       label: s.staffingCode || s.projectCode,
-      hint: s.projectName || s.projectCode,
     }));
 
   function setDay(d: string, patch: Partial<DayForm>) {
