@@ -44,17 +44,19 @@ describe("buildProjectProfitability", () => {
     expect(row.reasons.join(" ")).toMatch(/No contract value/);
   });
 
-  it("tracks billings and excludes canceled/rejected payments", () => {
+  it("revenue to date includes expected (unpaid) invoices; received counts paid only", () => {
     const [row] = buildProjectProfitability(
       [project("P1", 100_000)],
       [
-        pay("P1", "Inflow", 50_000),
+        pay("P1", "Inflow", 30_000, "Paid"),
+        pay("P1", "Inflow", 20_000, "To be paid"), // expected
         pay("P1", "Outflow", 20_000),
-        pay("P1", "Outflow", 9_999, "Canceled"),
-        pay("P1", "Inflow", 5_000, "Rejected"),
+        pay("P1", "Outflow", 9_999, "Canceled"), // excluded
+        pay("P1", "Inflow", 5_000, "Rejected"), // excluded
       ],
     );
-    expect(row.billedEur).toBe(50_000);
+    expect(row.revenueToDateEur).toBe(50_000); // 30k paid + 20k expected
+    expect(row.receivedEur).toBe(30_000);
     expect(row.costEur).toBe(20_000);
   });
 

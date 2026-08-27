@@ -130,10 +130,10 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
             <tr>
               <th className="px-3 py-2 text-left font-medium">Project</th>
               <th className="px-3 py-2 text-right font-medium">Contract</th>
+              <th className="px-3 py-2 text-right font-medium">Revenue to date</th>
               <th className="px-3 py-2 text-right font-medium">Cost to date</th>
               <th className="px-3 py-2 text-right font-medium">Margin left</th>
               <th className="px-3 py-2 text-left font-medium">Consumed</th>
-              <th className="px-3 py-2 text-right font-medium">Billed</th>
             </tr>
           </thead>
           <tbody>
@@ -162,6 +162,15 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
                     ) : null}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">{eur(r.contractEur)}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">
+                    {eur(r.revenueToDateEur)}
+                    {r.revenueToDateEur > 0 ? (
+                      <div className="text-[10px] font-normal text-slate-400">
+                        {eur(r.receivedEur)} received
+                        {r.revenueToDateEur - r.receivedEur > 0.5 ? ` · ${eur(r.revenueToDateEur - r.receivedEur)} expected` : ""}
+                      </div>
+                    ) : null}
+                  </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">{eur(r.costEur)}</td>
                   <td className={`whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums demo-blur ${r.marginLeftEur != null && r.marginLeftEur < 0 ? "text-rose-700" : "text-slate-900"}`}>
                     {eur(r.marginLeftEur)}
@@ -169,7 +178,6 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
                   <td className="px-3 py-2">
                     <ConsumedBar pct={r.consumedPct} flag={r.flag} />
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">{eur(r.billedEur)}</td>
                 </tr>
               );
             })}
@@ -183,8 +191,9 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
       </div>
 
       <p className="text-[11px] text-slate-400">
-        Margin left = contract value minus costs incurred to date. Costs are tracked as they arise
-        (no forecasting). Flag:{" "}
+        Revenue to date = all client invoices raised so far, including expected (issued but not yet
+        paid). Margin left = contract value minus costs incurred to date. Costs are tracked as they
+        arise (no forecasting). Flag:{" "}
         <span className="font-medium text-rose-700">At risk</span> = costs over the contract value,{" "}
         <span className="font-medium text-amber-700">Watch</span> = costs at 85%+ of it (or no
         contract value), <span className="font-medium text-emerald-700">Healthy</span> otherwise.
