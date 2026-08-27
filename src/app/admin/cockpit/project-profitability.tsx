@@ -23,6 +23,25 @@ function ConsumedBar({ pct, flag }: { pct: number | null; flag: ProfitFlag }) {
   );
 }
 
+// Project status → colour, so "is it running?" reads at a glance. In Progress
+// is green (running), On Hold amber (paused), planned/finished are muted.
+const STATUS_META: Record<string, string> = {
+  "In Progress": "border-emerald-200 bg-emerald-50 text-emerald-700",
+  Planned: "border-sky-200 bg-sky-50 text-sky-700",
+  "Not Started": "border-slate-200 bg-slate-100 text-slate-500",
+  "On Hold": "border-amber-200 bg-amber-50 text-amber-800",
+  Completed: "border-slate-200 bg-slate-100 text-slate-500",
+};
+function StatusPill({ status }: { status: string }) {
+  if (!status) return <span className="text-[10px] text-slate-300">—</span>;
+  const cls = STATUS_META[status] ?? "border-slate-200 bg-slate-50 text-slate-600";
+  return (
+    <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
+      {status}
+    </span>
+  );
+}
+
 const FLAG_META: Record<ProfitFlag, { label: string; bar: string; chip: string; dot: string }> = {
   red: { label: "At risk", bar: "border-l-rose-500", chip: "bg-rose-100 text-rose-800", dot: "bg-rose-500" },
   amber: { label: "Watch", bar: "border-l-amber-500", chip: "bg-amber-100 text-amber-900", dot: "bg-amber-500" },
@@ -129,6 +148,7 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-3 py-2 text-left font-medium">Project</th>
+              <th className="px-3 py-2 text-left font-medium">Status</th>
               <th className="px-3 py-2 text-right font-medium">Contract</th>
               <th className="px-3 py-2 text-right font-medium">Revenue to date</th>
               <th className="px-3 py-2 text-right font-medium">Cost to date</th>
@@ -152,7 +172,6 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
                     </div>
                     <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400">
                       <span className="font-mono">{r.code}</span>
-                      {r.status ? <span>· {r.status}</span> : null}
                       <span className={`rounded-full px-1.5 py-0.5 font-semibold ${meta.chip}`}>{meta.label}</span>
                     </div>
                     {r.reasons.length ? (
@@ -161,6 +180,7 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
                       </div>
                     ) : null}
                   </td>
+                  <td className="whitespace-nowrap px-3 py-2"><StatusPill status={r.status} /></td>
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">{eur(r.contractEur)}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">
                     {eur(r.revenueToDateEur)}
@@ -183,7 +203,7 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
             })}
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-slate-400">No projects match your filters.</td>
+                <td colSpan={7} className="px-3 py-8 text-center text-slate-400">No projects match your filters.</td>
               </tr>
             ) : null}
           </tbody>
