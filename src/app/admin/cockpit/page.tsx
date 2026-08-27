@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
-import { listAllStaffings, listClients, listPayments, listProjects } from "@/lib/airtable";
+import { listClients, listPayments, listProjects } from "@/lib/airtable";
 import { effectiveEur } from "@/lib/fx";
 import { isFounderEarningPayment, listFounderEarnings } from "@/lib/founder-earnings"; // FOUNDER-EARNINGS (temporary)
 import { buildProjectProfitability } from "./profitability";
@@ -14,29 +14,22 @@ export default async function AdminCockpitPage() {
   const access = await requireAdminPage("cockpit");
   if (!access) redirect("/admin");
 
-  const [payments, clients, founderEarnings, projects, staffings] = await Promise.all([
+  const [payments, clients, founderEarnings, projects] = await Promise.all([
     listPayments(),
     listClients(),
     listFounderEarnings(), // FOUNDER-EARNINGS (temporary)
     listProjects(),
-    listAllStaffings(),
   ]);
 
-  // Per-project actual + projected profitability for the second sub-tab. Uses
-  // the full payment set (a founder's cost still counts against its project).
+  // Per-project profitability for the second sub-tab: contract value vs actual
+  // costs as they arise (no forecasting). Uses the full payment set (a founder's
+  // cost still counts against its project).
   const profitability = buildProjectProfitability(
     projects.map((p) => ({
       projectCode: p.projectCode,
       projectName: p.projectName,
       status: p.status || "",
       totalAmountEur: p.totalAmountEur,
-    })),
-    staffings.map((s) => ({
-      projectCode: s.projectCode,
-      daysAllocated: s.daysAllocated,
-      ratePerDay: s.ratePerDay,
-      fxToEur: s.fxToEur,
-      totalAmountEur: s.totalAmountEur,
     })),
     payments.map((p) => ({
       projectCodes: p.projectCodes,

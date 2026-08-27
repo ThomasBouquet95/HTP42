@@ -5,7 +5,23 @@ import type { ProjectProfit, ProfitFlag } from "./profitability";
 
 const eur = (v: number | null) =>
   v == null ? "—" : v.toLocaleString("en-US", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
-const pct = (m: number | null) => (m == null ? "—" : `${Math.round(m * 100)}%`);
+
+// Cost-consumed-of-contract meter, coloured by the project's flag.
+function ConsumedBar({ pct, flag }: { pct: number | null; flag: ProfitFlag }) {
+  if (pct == null) return <span className="text-[10px] text-slate-400">no contract</span>;
+  const p = Math.round(pct * 100);
+  const color = flag === "red" ? "bg-rose-500" : flag === "amber" ? "bg-amber-500" : "bg-emerald-500";
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-slate-200">
+        <div className={`h-full ${color}`} style={{ width: `${Math.min(100, Math.max(p, 3))}%` }} />
+      </div>
+      <span className={`tabular-nums text-[10px] ${flag === "red" ? "font-semibold text-rose-700" : "text-slate-500"}`}>
+        {p}%
+      </span>
+    </div>
+  );
+}
 
 const FLAG_META: Record<ProfitFlag, { label: string; bar: string; chip: string; dot: string }> = {
   red: { label: "At risk", bar: "border-l-rose-500", chip: "bg-rose-100 text-rose-800", dot: "bg-rose-500" },
@@ -40,13 +56,13 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
   const counts = useMemo(() => {
     let red = 0;
     let amber = 0;
-    let projectedProfit = 0;
+    let marginLeft = 0;
     for (const r of rows) {
       if (r.flag === "red") red += 1;
       else if (r.flag === "amber") amber += 1;
-      if (r.projectedProfitEur != null) projectedProfit += r.projectedProfitEur;
+      if (r.marginLeftEur != null) marginLeft += r.marginLeftEur;
     }
-    return { red, amber, projectedProfit };
+    return { red, amber, marginLeft };
   }, [rows]);
 
   const isFiltered = query !== "" || status !== "all" || flag !== "all";
@@ -56,7 +72,7 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
       <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
         <div className="text-sm font-medium text-slate-800">No project financials yet</div>
         <p className="mt-1 text-xs text-slate-500">
-          Projects appear here once they have a contract value, a staffing, or a payment.
+          Projects appear here once they have a contract value or a payment.
         </p>
       </div>
     );
@@ -67,15 +83,15 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
       {/* Headline */}
       <div className="grid gap-3 sm:grid-cols-3">
         <Tile
-          label="Projected profit (all projects)"
-          value={eur(counts.projectedProfit)}
-          tone={counts.projectedProfit < 0 ? "red" : "slate"}
+          label="Margin left (all projects)"
+          value={eur(counts.marginLeft)}
+          tone={counts.marginLeft < 0 ? "red" : "slate"}
         />
         <button onClick={() => setFlag(flag === "red" ? "all" : "red")} className="text-left">
-          <Tile label="At risk (negative projected)" value={String(counts.red)} tone="red" active={flag === "red"} />
+          <Tile label="At risk (costs over contract)" value={String(counts.red)} tone="red" active={flag === "red"} />
         </button>
         <button onClick={() => setFlag(flag === "amber" ? "all" : "amber")} className="text-left">
-          <Tile label="Watch (thin / no contract)" value={String(counts.amber)} tone="amber" active={flag === "amber"} />
+          <Tile label="Watch (approaching negative)" value={String(counts.amber)} tone="amber" active={flag === "amber"} />
         </button>
       </div>
 
@@ -114,13 +130,10 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
             <tr>
               <th className="px-3 py-2 text-left font-medium">Project</th>
               <th className="px-3 py-2 text-right font-medium">Contract</th>
-              <th className="px-3 py-2 text-right font-medium">Proj. cost</th>
-              <th className="px-3 py-2 text-right font-medium">Proj. profit</th>
-              <th className="px-3 py-2 text-right font-medium">Margin</th>
-              <th className="px-2 py-2 text-center font-medium">·</th>
-              <th className="px-3 py-2 text-right font-medium">Billed</th>
               <th className="px-3 py-2 text-right font-medium">Cost to date</th>
-              <th className="px-3 py-2 text-right font-medium">Actual profit</th>
+              <th className="px-3 py-2 text-right font-medium">Margin left</th>
+              <th className="px-3 py-2 text-left font-medium">Consumed</th>
+              <th className="px-3 py-2 text-right font-medium">Billed</th>
             </tr>
           </thead>
           <tbody>
@@ -149,25 +162,20 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
                     ) : null}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">{eur(r.contractEur)}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">{eur(r.projectedCostEur)}</td>
-                  <td className={`whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums demo-blur ${r.projectedProfitEur != null && r.projectedProfitEur < 0 ? "text-rose-700" : "text-slate-900"}`}>
-                    {eur(r.projectedProfitEur)}
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">{eur(r.costEur)}</td>
+                  <td className={`whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums demo-blur ${r.marginLeftEur != null && r.marginLeftEur < 0 ? "text-rose-700" : "text-slate-900"}`}>
+                    {eur(r.marginLeftEur)}
                   </td>
-                  <td className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${r.projectedMargin != null && r.projectedMargin < 0 ? "text-rose-700" : r.projectedMargin != null && r.projectedMargin < 0.15 ? "text-amber-700" : "text-slate-600"}`}>
-                    {pct(r.projectedMargin)}
+                  <td className="px-3 py-2">
+                    <ConsumedBar pct={r.consumedPct} flag={r.flag} />
                   </td>
-                  <td className="px-2 py-2 text-center text-slate-200">·</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">{eur(r.actualRevenueEur)}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">{eur(r.actualCostEur)}</td>
-                  <td className={`whitespace-nowrap px-3 py-2 text-right tabular-nums demo-blur ${r.actualProfitEur < 0 ? "text-rose-700" : "text-slate-700"}`}>
-                    {eur(r.actualProfitEur)}
-                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">{eur(r.billedEur)}</td>
                 </tr>
               );
             })}
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-slate-400">No projects match your filters.</td>
+                <td colSpan={6} className="px-3 py-8 text-center text-slate-400">No projects match your filters.</td>
               </tr>
             ) : null}
           </tbody>
@@ -175,11 +183,11 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
       </div>
 
       <p className="text-[11px] text-slate-400">
-        Projected = contract value minus committed consulting cost (days allocated x rate). Actual =
-        client billings minus costs incurred to date. Flag is on the projected margin:{" "}
-        <span className="font-medium text-rose-700">At risk</span> = negative,{" "}
-        <span className="font-medium text-amber-700">Watch</span> = under 15% or no contract value,{" "}
-        <span className="font-medium text-emerald-700">Healthy</span> otherwise.
+        Margin left = contract value minus costs incurred to date. Costs are tracked as they arise
+        (no forecasting). Flag:{" "}
+        <span className="font-medium text-rose-700">At risk</span> = costs over the contract value,{" "}
+        <span className="font-medium text-amber-700">Watch</span> = costs at 85%+ of it (or no
+        contract value), <span className="font-medium text-emerald-700">Healthy</span> otherwise.
       </p>
     </div>
   );
