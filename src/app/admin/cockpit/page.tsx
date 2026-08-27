@@ -3,7 +3,7 @@ import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
 import { listClients, listPayments, listProjects } from "@/lib/airtable";
-import { effectiveEur } from "@/lib/fx";
+import { effectiveEur, effectiveProjectEur } from "@/lib/fx";
 import { isFounderEarningPayment, listFounderEarnings } from "@/lib/founder-earnings"; // FOUNDER-EARNINGS (temporary)
 import { buildProjectProfitability } from "./profitability";
 import { CockpitClient } from "./cockpit-client";
@@ -30,7 +30,8 @@ export default async function AdminCockpitPage() {
       projectCode: p.projectCode,
       projectName: p.projectName,
       status: p.status || "",
-      totalAmountEur: p.totalAmountEur,
+      // Contract value = the project's Commercials (Total amount), in EUR.
+      totalAmountEur: effectiveProjectEur(p),
     })),
     payments.map((p) => ({
       projectRecordIds: p.projectRecordIds,

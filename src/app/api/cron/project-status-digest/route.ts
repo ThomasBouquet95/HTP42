@@ -4,7 +4,7 @@ import { requireAdminSession } from "@/lib/auth";
 import { cronSecretMatches } from "@/lib/cron-auth";
 import { apiError } from "@/lib/errors";
 import { listPayments, listProjects } from "@/lib/airtable";
-import { effectiveEur } from "@/lib/fx";
+import { effectiveEur, effectiveProjectEur } from "@/lib/fx";
 import { buildProjectProfitability } from "@/app/admin/cockpit/profitability";
 import {
   buildDigestModel,
@@ -83,7 +83,7 @@ async function run() {
       projectCode: p.projectCode,
       projectName: p.projectName,
       status: p.status || "",
-      totalAmountEur: p.totalAmountEur,
+      totalAmountEur: effectiveProjectEur(p),
     })),
     payments.map((p) => ({
       projectRecordIds: p.projectRecordIds,

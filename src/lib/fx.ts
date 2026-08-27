@@ -33,6 +33,22 @@ export function resolvePaymentEur({ currency, value, fx }: EurInputs): {
   return { fxRateToEur: rate, invoiceValueEur: value * rate };
 }
 
+// The EUR contract value of a project ("Commercials" = Total amount): the
+// stored Total Amount EUR when present, otherwise derived from the amount +
+// currency + FX the same way payments are, so a project whose EUR field was
+// never computed still shows its contract instead of reading as "no contract".
+// Returns null only when there is no amount at all.
+export function effectiveProjectEur(p: {
+  totalAmountEur: number | null;
+  totalAmount: number | null;
+  currency: string;
+  fxToEur: number | null;
+}): number | null {
+  if (p.totalAmountEur != null) return p.totalAmountEur;
+  const { invoiceValueEur } = resolvePaymentEur({ currency: p.currency, value: p.totalAmount, fx: p.fxToEur });
+  return invoiceValueEur;
+}
+
 // The EUR amount a payment contributes to charts/totals: the stored value when
 // present, otherwise derived the same way we would store it, so rows saved
 // before the write-time normalization still count instead of vanishing.
