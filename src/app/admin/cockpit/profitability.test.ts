@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { buildProjectProfitability } from "./profitability";
 
+// The join key is the Airtable record id. We use the code as the id in tests
+// for readability; the point is that payments reference the same id.
 const project = (code: string, totalAmountEur: number | null, status = "In Progress") => ({
+  id: code,
   projectCode: code,
   projectName: `${code} name`,
   status,
   totalAmountEur,
 });
-const pay = (projectCode: string, direction: "Inflow" | "Outflow", eur: number, paymentStatus = "Paid") => ({
-  projectCodes: [projectCode],
+const pay = (projectId: string, direction: "Inflow" | "Outflow", eur: number, paymentStatus = "Paid") => ({
+  projectRecordIds: [projectId],
   direction,
   invoiceValueEur: eur,
   paymentStatus,
@@ -50,14 +53,27 @@ describe("buildProjectProfitability", () => {
       [
         pay("P1", "Inflow", 30_000, "Paid"),
         pay("P1", "Inflow", 20_000, "To be paid"), // expected
-        pay("P1", "Outflow", 20_000),
+        pay("P1", "Outflow", 20_000, "Paid"),
+        pay("P1", "Outflow", 12_000, "To be paid"), // committed, not yet paid
         pay("P1", "Outflow", 9_999, "Canceled"), // excluded
         pay("P1", "Inflow", 5_000, "Rejected"), // excluded
       ],
     );
     expect(row.revenueToDateEur).toBe(50_000); // 30k paid + 20k expected
     expect(row.receivedEur).toBe(30_000);
-    expect(row.costEur).toBe(20_000);
+    expect(row.costEur).toBe(32_000); // 20k paid + 12k committed
+    expect(row.costPaidEur).toBe(20_000);
+  });
+
+  it("joins payments to projects by record id, not by display name", () => {
+    // The project's code differs from its record id; the payment references the
+    // record id. Matching on the code (the old behaviour) would yield 0 revenue.
+    const rows = buildProjectProfitability(
+      [{ id: "recABC", projectCode: "HEALTH-01", projectName: "Health engagement", status: "In Progress", totalAmountEur: 100_000 }],
+      [{ projectRecordIds: ["recABC"], direction: "Inflow", invoiceValueEur: 40_000, paymentStatus: "Paid" }],
+    );
+    expect(rows[0].revenueToDateEur).toBe(40_000);
+    expect(rows[0].receivedEur).toBe(40_000);
   });
 
   it("drops projects with no financial signal and sorts risk-first", () => {

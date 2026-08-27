@@ -16,8 +16,9 @@ export type ProjectProfit = {
   status: string;
   contractEur: number | null; // revenue (the deal value)
   revenueToDateEur: number; // all client invoices to date (received + expected)
-  receivedEur: number; // the paid portion of revenue to date
-  costEur: number; // costs incurred to date
+  receivedEur: number; // the paid (executed) portion of revenue to date
+  costEur: number; // costs incurred to date (executed + committed)
+  costPaidEur: number; // the paid (executed) portion of cost to date
   marginLeftEur: number | null; // contract − cost
   consumedPct: number | null; // cost / contract
   flag: ProfitFlag;
@@ -25,13 +26,17 @@ export type ProjectProfit = {
 };
 
 type ProjectLike = {
+  id: string; // Airtable record id — the join key
   projectCode: string;
   projectName: string;
   status: string;
   totalAmountEur: number | null;
 };
 type PaymentLike = {
-  projectCodes: string[];
+  // Record ids of the linked project(s). We join on the record id, not the
+  // display value: a payment's project link resolves to the project's PRIMARY
+  // field (its name), which would never match a project's code.
+  projectRecordIds: string[];
   direction: string;
   invoiceValueEur: number | null;
   paymentStatus: string;
@@ -50,19 +55,21 @@ export function buildProjectProfitability(
 ): ProjectProfit[] {
   const revenueByProject = new Map<string, number>(); // all inflows (incl. expected)
   const receivedByProject = new Map<string, number>(); // paid inflows only
-  const costByProject = new Map<string, number>();
+  const costByProject = new Map<string, number>(); // all outflows (incl. committed)
+  const costPaidByProject = new Map<string, number>(); // paid outflows only
   for (const p of payments) {
     if (p.paymentStatus === "Canceled" || p.paymentStatus === "Rejected") continue;
     const eur = p.invoiceValueEur ?? 0;
     if (eur <= 0) continue;
     // A payment usually maps to one project; if it lists several, attribute to each.
-    for (const code of p.projectCodes) {
-      if (!code) continue;
+    for (const id of p.projectRecordIds) {
+      if (!id) continue;
       if (p.direction === "Inflow") {
-        revenueByProject.set(code, (revenueByProject.get(code) ?? 0) + eur);
-        if (p.paymentStatus === "Paid") receivedByProject.set(code, (receivedByProject.get(code) ?? 0) + eur);
+        revenueByProject.set(id, (revenueByProject.get(id) ?? 0) + eur);
+        if (p.paymentStatus === "Paid") receivedByProject.set(id, (receivedByProject.get(id) ?? 0) + eur);
       } else if (p.direction === "Outflow") {
-        costByProject.set(code, (costByProject.get(code) ?? 0) + eur);
+        costByProject.set(id, (costByProject.get(id) ?? 0) + eur);
+        if (p.paymentStatus === "Paid") costPaidByProject.set(id, (costPaidByProject.get(id) ?? 0) + eur);
       }
     }
   }
@@ -70,9 +77,10 @@ export function buildProjectProfitability(
   const rows: ProjectProfit[] = [];
   for (const pr of projects) {
     const contractEur = pr.totalAmountEur;
-    const revenueToDateEur = round2(revenueByProject.get(pr.projectCode) ?? 0);
-    const receivedEur = round2(receivedByProject.get(pr.projectCode) ?? 0);
-    const costEur = round2(costByProject.get(pr.projectCode) ?? 0);
+    const revenueToDateEur = round2(revenueByProject.get(pr.id) ?? 0);
+    const receivedEur = round2(receivedByProject.get(pr.id) ?? 0);
+    const costEur = round2(costByProject.get(pr.id) ?? 0);
+    const costPaidEur = round2(costPaidByProject.get(pr.id) ?? 0);
 
     // Skip projects with no financial signal at all — they'd be noise.
     if ((contractEur == null || contractEur === 0) && revenueToDateEur === 0 && costEur === 0) continue;
@@ -108,6 +116,7 @@ export function buildProjectProfitability(
       revenueToDateEur,
       receivedEur,
       costEur,
+      costPaidEur,
       marginLeftEur,
       consumedPct,
       flag,

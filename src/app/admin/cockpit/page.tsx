@@ -26,13 +26,14 @@ export default async function AdminCockpitPage() {
   // cost still counts against its project).
   const profitability = buildProjectProfitability(
     projects.map((p) => ({
+      id: p.id,
       projectCode: p.projectCode,
       projectName: p.projectName,
       status: p.status || "",
       totalAmountEur: p.totalAmountEur,
     })),
     payments.map((p) => ({
-      projectCodes: p.projectCodes,
+      projectRecordIds: p.projectRecordIds,
       direction: p.direction,
       invoiceValueEur: effectiveEur(p),
       paymentStatus: p.paymentStatus || "",

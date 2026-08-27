@@ -23,6 +23,44 @@ function ConsumedBar({ pct, flag }: { pct: number | null; flag: ProfitFlag }) {
   );
 }
 
+// Horizontal amount bar used in the Revenue / Cost columns. The executed
+// portion (money actually received or paid) is a solid fill; the expected /
+// committed portion (invoiced or approved but not yet settled) is hatched.
+// Both columns share one scale (`max`) so rows and the two columns compare
+// directly, like the cockpit bar chart.
+function AmountBar({
+  executed,
+  expected,
+  max,
+  tone,
+}: {
+  executed: number;
+  expected: number;
+  max: number;
+  tone: "revenue" | "cost";
+}) {
+  const total = executed + expected;
+  if (max <= 0 || total <= 0) return null;
+  const solid = tone === "revenue" ? "#059669" : "#64748b"; // emerald-600 / slate-500
+  const ePct = Math.max((executed / max) * 100, executed > 0 ? 1.5 : 0);
+  const xPct = Math.max((expected / max) * 100, expected > 0 ? 1.5 : 0);
+  // Diagonal hatch for the not-yet-settled portion, same hue as the solid fill.
+  const hatch = `repeating-linear-gradient(45deg, ${solid} 0 2px, transparent 2px 5px)`;
+  const eur0 = (v: number) => `€${Math.round(v).toLocaleString("en-US")}`;
+  return (
+    <div
+      className="mt-1 flex h-1.5 w-full overflow-hidden rounded-full bg-slate-100"
+      title={`${eur0(executed)} ${tone === "revenue" ? "received" : "paid"}${expected > 0.5 ? ` · ${eur0(expected)} ${tone === "revenue" ? "expected" : "committed"}` : ""}`}
+    >
+      <div className="h-full shrink-0" style={{ width: `${ePct}%`, backgroundColor: solid }} />
+      <div
+        className="h-full shrink-0"
+        style={{ width: `${xPct}%`, backgroundImage: hatch, backgroundColor: tone === "revenue" ? "#d1fae5" : "#e2e8f0" }}
+      />
+    </div>
+  );
+}
+
 // Project status → colour, so "is it running?" reads at a glance. In Progress
 // is green (running), On Hold amber (paused), planned/finished are muted.
 const STATUS_META: Record<string, string> = {
@@ -82,6 +120,14 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
       if (r.marginLeftEur != null) marginLeft += r.marginLeftEur;
     }
     return { red, amber, marginLeft };
+  }, [rows]);
+
+  // Shared scale for the Revenue / Cost bars: the largest of either amount
+  // across ALL rows, so bar lengths are comparable everywhere.
+  const barMax = useMemo(() => {
+    let m = 0;
+    for (const r of rows) m = Math.max(m, r.revenueToDateEur, r.costEur);
+    return m;
   }, [rows]);
 
   const isFiltered = query !== "" || status !== "all" || flag !== "all";
@@ -183,15 +229,23 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
                   <td className="whitespace-nowrap px-3 py-2"><StatusPill status={r.status} /></td>
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">{eur(r.contractEur)}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">
-                    {eur(r.revenueToDateEur)}
-                    {r.revenueToDateEur > 0 ? (
-                      <div className="text-[10px] font-normal text-slate-400">
-                        {eur(r.receivedEur)} received
-                        {r.revenueToDateEur - r.receivedEur > 0.5 ? ` · ${eur(r.revenueToDateEur - r.receivedEur)} expected` : ""}
-                      </div>
-                    ) : null}
+                    <div>{eur(r.revenueToDateEur)}</div>
+                    <AmountBar
+                      executed={r.receivedEur}
+                      expected={Math.max(r.revenueToDateEur - r.receivedEur, 0)}
+                      max={barMax}
+                      tone="revenue"
+                    />
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">{eur(r.costEur)}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">
+                    <div>{eur(r.costEur)}</div>
+                    <AmountBar
+                      executed={r.costPaidEur}
+                      expected={Math.max(r.costEur - r.costPaidEur, 0)}
+                      max={barMax}
+                      tone="cost"
+                    />
+                  </td>
                   <td className={`whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums demo-blur ${r.marginLeftEur != null && r.marginLeftEur < 0 ? "text-rose-700" : "text-slate-900"}`}>
                     {eur(r.marginLeftEur)}
                   </td>
@@ -210,6 +264,19 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
         </table>
       </div>
 
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2 w-4 rounded-sm" style={{ backgroundColor: "#059669" }} />
+          Received / paid (executed)
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            className="inline-block h-2 w-4 rounded-sm"
+            style={{ backgroundImage: "repeating-linear-gradient(45deg, #059669 0 2px, transparent 2px 5px)", backgroundColor: "#d1fae5" }}
+          />
+          Expected / committed (not yet settled)
+        </span>
+      </div>
       <p className="text-[11px] text-slate-400">
         Revenue to date = all client invoices raised so far, including expected (issued but not yet
         paid). Margin left = contract value minus costs incurred to date. Costs are tracked as they
