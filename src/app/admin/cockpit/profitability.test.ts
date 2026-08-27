@@ -19,10 +19,14 @@ const pay = (projectId: string, direction: "Inflow" | "Outflow", eur: number, pa
 
 describe("buildProjectProfitability", () => {
   it("green while costs are comfortably under the contract", () => {
-    const [row] = buildProjectProfitability([project("P1", 100_000)], [pay("P1", "Outflow", 40_000)]);
+    const [row] = buildProjectProfitability(
+      [project("P1", 100_000)],
+      [pay("P1", "Inflow", 80_000, "Paid"), pay("P1", "Outflow", 40_000)],
+    );
     expect(row.flag).toBe("green");
     expect(row.costEur).toBe(40_000);
-    expect(row.marginLeftEur).toBe(60_000);
+    // Margin left = revenue to date (80k) − cost to date (40k).
+    expect(row.marginLeftEur).toBe(40_000);
     expect(row.consumedPct).toBeCloseTo(0.4, 5);
   });
 
@@ -35,14 +39,17 @@ describe("buildProjectProfitability", () => {
   it("red when costs exceed the contract value", () => {
     const [row] = buildProjectProfitability([project("P1", 100_000)], [pay("P1", "Outflow", 120_000)]);
     expect(row.flag).toBe("red");
-    expect(row.marginLeftEur).toBe(-20_000);
+    // No revenue billed yet, so margin left = 0 − cost (120k).
+    expect(row.marginLeftEur).toBe(-120_000);
     expect(row.reasons[0]).toMatch(/exceed the contract value/);
   });
 
   it("amber when there is no contract value to track against", () => {
     const [row] = buildProjectProfitability([project("P1", null)], [pay("P1", "Outflow", 30_000)]);
     expect(row.flag).toBe("amber");
-    expect(row.marginLeftEur).toBeNull();
+    // Margin left is still revenue − cost (0 − 30k); only the contract-based
+    // consumed % is null when there's no contract.
+    expect(row.marginLeftEur).toBe(-30_000);
     expect(row.consumedPct).toBeNull();
     expect(row.reasons.join(" ")).toMatch(/No contract value/);
   });

@@ -3,9 +3,8 @@
 //
 // No forecasting: we track ACTUAL cost as it arises against the project's
 // contract value (revenue), and flag projects whose costs are eating the
-// contract — approaching, or already past, negative.
-//   Margin left = contract value − cost incurred to date (Outflow payments).
-//   Billed      = client billings to date (Inflow payments), for context.
+// contract, approaching or already past negative.
+//   Margin left = revenue to date (Inflow, incl. expected) − cost to date (Outflow).
 // The flag is driven by how much of the contract the costs have consumed.
 
 export type ProfitFlag = "green" | "amber" | "red";
@@ -19,7 +18,7 @@ export type ProjectProfit = {
   receivedEur: number; // the paid (executed) portion of revenue to date
   costEur: number; // costs incurred to date (executed + committed)
   costPaidEur: number; // the paid (executed) portion of cost to date
-  marginLeftEur: number | null; // contract − cost
+  marginLeftEur: number; // revenue to date − cost to date
   consumedPct: number | null; // cost / contract
   flag: ProfitFlag;
   reasons: string[];
@@ -85,15 +84,19 @@ export function buildProjectProfitability(
     // Skip projects with no financial signal at all — they'd be noise.
     if ((contractEur == null || contractEur === 0) && revenueToDateEur === 0 && costEur === 0) continue;
 
-    const marginLeftEur = contractEur != null ? round2(contractEur - costEur) : null;
+    // Margin left is the actual booked position: revenue to date minus cost to
+    // date (not against the contract). The flag still watches cost against the
+    // contract, so a project can be green here while still showing thin margin
+    // if little revenue has been billed yet.
+    const marginLeftEur = round2(revenueToDateEur - costEur);
     const consumedPct = contractEur != null && contractEur > 0 ? costEur / contractEur : null;
 
     const reasons: string[] = [];
     let flag: ProfitFlag;
     if (contractEur == null || contractEur <= 0) {
       flag = "amber";
-      reasons.push("No contract value set, so cost can't be tracked against revenue.");
-      if (costEur > 0) reasons.push(`Costs of ${fmtEur(costEur)} incurred with no revenue recorded.`);
+      reasons.push("No contract value set, so cost can't be tracked against it.");
+      if (costEur > 0) reasons.push(`Costs of ${fmtEur(costEur)} incurred with no contract value recorded.`);
     } else if (costEur > contractEur) {
       flag = "red";
       reasons.push(
@@ -102,7 +105,7 @@ export function buildProjectProfitability(
     } else if (consumedPct! >= WATCH_CONSUMED) {
       flag = "amber";
       reasons.push(
-        `Costs are ${Math.round(consumedPct! * 100)}% of the contract value — only ${fmtEur(marginLeftEur!)} margin left.`,
+        `Costs are ${Math.round(consumedPct! * 100)}% of the contract value, ${fmtEur(contractEur - costEur)} before it's used up.`,
       );
     } else {
       flag = "green";

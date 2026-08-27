@@ -41,7 +41,7 @@ function AmountBar({
 }) {
   const total = executed + expected;
   if (max <= 0 || total <= 0) return null;
-  const solid = tone === "revenue" ? "#059669" : "#64748b"; // emerald-600 / slate-500
+  const solid = tone === "revenue" ? "#059669" : "#dc2626"; // emerald-600 / red-600
   const ePct = Math.max((executed / max) * 100, executed > 0 ? 1.5 : 0);
   const xPct = Math.max((expected / max) * 100, expected > 0 ? 1.5 : 0);
   // Diagonal hatch for the not-yet-settled portion, same hue as the solid fill.
@@ -55,7 +55,7 @@ function AmountBar({
       <div className="h-full shrink-0" style={{ width: `${ePct}%`, backgroundColor: solid }} />
       <div
         className="h-full shrink-0"
-        style={{ width: `${xPct}%`, backgroundImage: hatch, backgroundColor: tone === "revenue" ? "#d1fae5" : "#e2e8f0" }}
+        style={{ width: `${xPct}%`, backgroundImage: hatch, backgroundColor: tone === "revenue" ? "#d1fae5" : "#fee2e2" }}
       />
     </div>
   );
@@ -195,7 +195,6 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
             <tr>
               <th className="px-3 py-2 text-left font-medium">Project</th>
               <th className="px-3 py-2 text-left font-medium">Status</th>
-              <th className="px-3 py-2 text-right font-medium">Contract</th>
               <th className="px-3 py-2 text-right font-medium">Revenue to date</th>
               <th className="px-3 py-2 text-right font-medium">Cost to date</th>
               <th className="px-3 py-2 text-right font-medium">Margin left</th>
@@ -227,7 +226,6 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
                     ) : null}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2"><StatusPill status={r.status} /></td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">{eur(r.contractEur)}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600 demo-blur">
                     <div>{eur(r.revenueToDateEur)}</div>
                     <AmountBar
@@ -257,7 +255,7 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
             })}
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-slate-400">No projects match your filters.</td>
+                <td colSpan={6} className="px-3 py-8 text-center text-slate-400">No projects match your filters.</td>
               </tr>
             ) : null}
           </tbody>
@@ -267,20 +265,29 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2 w-4 rounded-sm" style={{ backgroundColor: "#059669" }} />
-          Received / paid (executed)
+          Revenue (green)
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2 w-4 rounded-sm" style={{ backgroundColor: "#dc2626" }} />
+          Cost (red)
+        </span>
+        <span className="mx-1 text-slate-300">|</span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2 w-4 rounded-sm" style={{ backgroundColor: "#64748b" }} />
+          Solid = received / paid (executed)
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span
             className="inline-block h-2 w-4 rounded-sm"
-            style={{ backgroundImage: "repeating-linear-gradient(45deg, #059669 0 2px, transparent 2px 5px)", backgroundColor: "#d1fae5" }}
+            style={{ backgroundImage: "repeating-linear-gradient(45deg, #64748b 0 2px, transparent 2px 5px)", backgroundColor: "#e2e8f0" }}
           />
-          Expected / committed (not yet settled)
+          Hatched = expected / committed (not yet settled)
         </span>
       </div>
       <p className="text-[11px] text-slate-400">
         Revenue to date = all client invoices raised so far, including expected (issued but not yet
-        paid). Margin left = contract value minus costs incurred to date. Costs are tracked as they
-        arise (no forecasting). Flag:{" "}
+        paid). Margin left = revenue to date minus cost to date. Costs are tracked as they arise (no
+        forecasting). Flag:{" "}
         <span className="font-medium text-rose-700">At risk</span> = costs over the contract value,{" "}
         <span className="font-medium text-amber-700">Watch</span> = costs at 85%+ of it (or no
         contract value), <span className="font-medium text-emerald-700">Healthy</span> otherwise.
