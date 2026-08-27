@@ -78,10 +78,14 @@ function TemplateCard({
   const [open, setOpen] = useState(false);
   // Pre-fill the routing fields with the *effective* values so the admin sees
   // the real sender / recipients (e.g. invoices@…) rather than a blank box.
+  // A fixed template's default recipients: its own defaultTo list if it ships
+  // one (e.g. the project-status digest goes to the founders), else the finance
+  // inbox. Shown pre-filled so an admin edits a real list, not a blank box.
+  const fixedToDefault = def.defaultTo?.length ? def.defaultTo.join(", ") : defaults.financeInbox;
   const init = {
     subject: override?.subject || def.defaultSubject,
     body: override?.body || def.defaultBody,
-    to: override?.to || (def.toMode === "fixed" ? defaults.financeInbox : ""),
+    to: override?.to || (def.toMode === "fixed" ? fixedToDefault : ""),
     cc: override?.cc || def.defaultCc.join(", "),
     from: override?.from || defaults.sender,
   };
@@ -107,7 +111,7 @@ function TemplateCard({
 
   const defaultCcLabel = def.defaultCc.length ? def.defaultCc.join(", ") : "none";
   const toDefaultLabel =
-    def.toMode === "fixed" ? defaults.financeInbox || "finance inbox" : def.dynamicRecipient || "per record";
+    def.toMode === "fixed" ? fixedToDefault || "finance inbox" : def.dynamicRecipient || "per record";
 
   async function post(action: "save" | "reset") {
     setBusy(true);
@@ -125,7 +129,7 @@ function TemplateCard({
         if (action === "reset") {
           setSubject(def.defaultSubject);
           setBody(def.defaultBody);
-          setTo(def.toMode === "fixed" ? defaults.financeInbox : "");
+          setTo(def.toMode === "fixed" ? fixedToDefault : "");
           setCc(def.defaultCc.join(", "));
           setFrom(defaults.sender);
         }

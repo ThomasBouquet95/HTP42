@@ -2,6 +2,7 @@
   "crons": [
     { "path": "/api/admin/payments/backfill-eur", "schedule": "0 3 * * *" },
     { "path": "/api/admin/vendor-invoices/import", "schedule": "0 5 * * *" },
-    { "path": "/api/cron/auto-approve-timesheets", "schedule": "0 4 * * *" }
+    { "path": "/api/cron/auto-approve-timesheets", "schedule": "0 4 * * *" },
+    { "path": "/api/cron/project-status-digest", "schedule": "0 13 * * *" }
   ]
 }

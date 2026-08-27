@@ -40,7 +40,11 @@ export async function resolveEmail(key: string, vars: EmailVars): Promise<Resolv
   const cc = override?.cc?.trim() ? parseAddressList(override.cc) : def.defaultCc;
   let to: string[] = [];
   if (def.toMode === "fixed") {
-    to = override?.to?.trim() ? parseAddressList(override.to) : [env.invoiceRecipient];
+    to = override?.to?.trim()
+      ? parseAddressList(override.to)
+      : def.defaultTo && def.defaultTo.length
+        ? def.defaultTo
+        : [env.invoiceRecipient];
   } else {
     // Dynamic recipient: the caller sets `to`. An override To can still force a
     // fixed address if an admin really wants to redirect it.
