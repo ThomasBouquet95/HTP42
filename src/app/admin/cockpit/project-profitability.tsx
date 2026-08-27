@@ -97,10 +97,12 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-const FLAG_META: Record<ProfitFlag, { label: string; border: string; chip: string; dot: string; text: string }> = {
-  red: { label: "At risk", border: "border-l-rose-500", chip: "bg-rose-100 text-rose-800", dot: "bg-rose-500", text: "text-rose-700" },
-  amber: { label: "Watch", border: "border-l-amber-500", chip: "bg-amber-100 text-amber-900", dot: "bg-amber-500", text: "text-amber-700" },
-  green: { label: "Healthy", border: "border-l-emerald-400", chip: "bg-emerald-100 text-emerald-800", dot: "bg-emerald-500", text: "text-emerald-700" },
+const FLAG_META: Record<ProfitFlag, { label: string; row: string; chip: string; dot: string; text: string }> = {
+  // At-risk / watch rows carry a soft background tint so they stand out when
+  // scanning the list; healthy rows stay white.
+  red: { label: "At risk", row: "bg-rose-50 hover:bg-rose-100/70", chip: "bg-rose-100 text-rose-800", dot: "bg-rose-500", text: "text-rose-700" },
+  amber: { label: "Watch", row: "bg-amber-50 hover:bg-amber-100/60", chip: "bg-amber-100 text-amber-900", dot: "bg-amber-500", text: "text-amber-700" },
+  green: { label: "Healthy", row: "hover:bg-slate-50/70", chip: "bg-emerald-100 text-emerald-800", dot: "bg-emerald-500", text: "text-emerald-700" },
 };
 
 export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
@@ -266,7 +268,7 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
             return (
               <div
                 key={r.code}
-                className={`flex flex-col gap-3 border-l-4 px-4 py-3 hover:bg-slate-50/60 md:flex-row md:items-center ${meta.border}`}
+                className={`flex flex-col gap-3 px-4 py-3 transition-colors md:flex-row md:items-center ${meta.row}`}
               >
                 {/* Identity */}
                 <div className="md:w-64 lg:w-72 shrink-0">
