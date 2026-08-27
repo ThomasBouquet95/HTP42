@@ -15,17 +15,23 @@ import {
 import { SegmentedTabs } from "@/components/filters";
 import { buildIncomeFlow } from "./income-flow";
 import { IncomeSankey } from "./income-sankey";
+import { ProjectProfitability } from "./project-profitability";
+import type { ProjectProfit } from "./profitability";
 
 export function CockpitClient({
   payments,
   clients,
   founderCosts = [],
+  profitability = [],
 }: {
   payments: PaymentRecord[];
   clients: { id: string; name: string }[];
   // FOUNDER-EARNINGS (temporary) — non-payment cost rows (name + year + EUR).
   founderCosts?: { label: string; year: string; amountEur: number }[];
+  // Per-project actual + projected profitability for the second sub-tab.
+  profitability?: ProjectProfit[];
 }) {
+  const [view, setView] = useState<"income" | "profit">("income");
   const [scope, setScope] = useState<ChartScope>("all");
   const [year, setYear] = useState<string>("all");
 
@@ -81,6 +87,19 @@ export function CockpitClient({
 
   return (
     <div className="space-y-4">
+      <SegmentedTabs
+        value={view}
+        onChange={setView}
+        ariaLabel="Cockpit view"
+        options={[
+          { value: "income", label: "Income statement" },
+          { value: "profit", label: "Project profitability" },
+        ]}
+      />
+      {view === "profit" ? (
+        <ProjectProfitability rows={profitability} />
+      ) : (
+      <>
       {/* KPI cards */}
       <div className="grid gap-3 sm:grid-cols-3">
         <StatCard
@@ -151,6 +170,8 @@ export function CockpitClient({
       <ChartCard title="By payment status (EUR)">
         <StatusBreakdown inflow={breakdown.inflow} outflow={breakdown.outflow} />
       </ChartCard>
+      </>
+      )}
     </div>
   );
 }
