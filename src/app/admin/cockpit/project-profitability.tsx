@@ -97,12 +97,15 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-const FLAG_META: Record<ProfitFlag, { label: string; row: string; chip: string; dot: string; text: string }> = {
-  // At-risk / watch rows carry a soft background tint so they stand out when
-  // scanning the list; healthy rows stay white.
-  red: { label: "At risk", row: "bg-rose-50 hover:bg-rose-100/70", chip: "bg-rose-100 text-rose-800", dot: "bg-rose-500", text: "text-rose-700" },
-  amber: { label: "Watch", row: "bg-amber-50 hover:bg-amber-100/60", chip: "bg-amber-100 text-amber-900", dot: "bg-amber-500", text: "text-amber-700" },
-  green: { label: "Healthy", row: "hover:bg-slate-50/70", chip: "bg-emerald-100 text-emerald-800", dot: "bg-emerald-500", text: "text-emerald-700" },
+const FLAG_META: Record<
+  ProfitFlag,
+  { label: string; row: string; sticker: string; dot: string; text: string }
+> = {
+  // At-risk / watch rows carry a very light background tint (so text stays
+  // crisp) and a bold "sticker" badge that carries the signal at a glance.
+  red: { label: "At risk", row: "bg-rose-50/40 hover:bg-rose-50", sticker: "bg-rose-600 text-white shadow-sm", dot: "bg-rose-500", text: "text-rose-700" },
+  amber: { label: "Watch", row: "bg-amber-50/40 hover:bg-amber-50", sticker: "bg-amber-500 text-white shadow-sm", dot: "bg-amber-500", text: "text-amber-700" },
+  green: { label: "Healthy", row: "hover:bg-slate-50/70", sticker: "bg-emerald-100 text-emerald-800", dot: "bg-emerald-500", text: "text-emerald-700" },
 };
 
 export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
@@ -279,7 +282,9 @@ export function ProjectProfitability({ rows }: { rows: ProjectProfit[] }) {
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
                     <span className="font-mono text-[10px] text-slate-400">{r.code}</span>
                     <StatusPill status={r.status} />
-                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${meta.chip}`}>{meta.label}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${meta.sticker}`}>
+                      {meta.label}
+                    </span>
                   </div>
                   {r.reasons.length ? (
                     <div className={`mt-1 text-[10px] ${r.flag === "green" ? "text-slate-400" : meta.text}`}>
