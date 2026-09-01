@@ -10,6 +10,7 @@ import {
   listInvoicesForMember,
   listProjects,
   markInvoiceEmail,
+  patchPaymentInvoiceMeta,
   saveMemberInvoiceExtraction,
   type Currency,
 } from "@/lib/airtable";
@@ -169,8 +170,11 @@ export async function POST(request: Request) {
   const paymentCurrency: Currency | "" = (["EUR", "USD", "CHF"].includes(currency)
     ? (currency as Currency)
     : "") as Currency | "";
+  // Kept so we can backfill the payment's reference + due date from the PDF
+  // once it's extracted below.
+  let paymentId: string | null = null;
   try {
-    await createPayment({
+    paymentId = await createPayment({
       direction: "Outflow",
       type: "Subcontractor",
       projectRecordIds: [project.id],
@@ -220,6 +224,14 @@ export async function POST(request: Request) {
     try {
       const data = await extractInvoiceFromPdfBase64(base64);
       await saveMemberInvoiceExtraction(invoiceId, data);
+      // Copy the two fields finance needs on the payment itself: the invoice
+      // reference and the due date. Only write what was actually read (an
+      // empty extraction leaves the payment's blanks as-is).
+      if (paymentId) {
+        const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(data.dueDate) ? data.dueDate : undefined;
+        const invoiceReference = data.invoiceNumber?.trim() || undefined;
+        await patchPaymentInvoiceMeta(paymentId, { dueDate, invoiceReference });
+      }
     } catch (e) {
       console.error("invoice extraction on submit failed:", e);
     }

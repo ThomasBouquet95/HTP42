@@ -3293,6 +3293,22 @@ export async function updatePayment(recordId: string, input: PaymentInput): Prom
   );
 }
 
+// Targeted patch of just the invoice reference / due date on a payment, without
+// touching any other field (unlike updatePayment, which rewrites the whole
+// record). Used to backfill a payment from its invoice's auto-extracted fields.
+// Only the values passed are written, so an empty extraction never blanks
+// anything already set.
+export async function patchPaymentInvoiceMeta(
+  recordId: string,
+  patch: { dueDate?: string | null; invoiceReference?: string },
+): Promise<void> {
+  const fields: Record<string, unknown> = {};
+  if (patch.dueDate) fields[FIELDS.payments.dueDate] = patch.dueDate;
+  if (patch.invoiceReference) fields[FIELDS.payments.invoiceReference] = patch.invoiceReference;
+  if (Object.keys(fields).length === 0) return;
+  await base(TABLES.payments).update([{ id: recordId, fields: fields as FieldSet }]);
+}
+
 // Resolve staffing + project for a write, and make sure the Staffing field
 // exists before we try to write it. If the field can't be created (meta API
 // hiccup), drop the staffing from the write so the payment still saves.
