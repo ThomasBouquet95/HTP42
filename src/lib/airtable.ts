@@ -5593,11 +5593,14 @@ async function writeStaffing(
   fields: Record<string, unknown>,
 ): Promise<string> {
   const run = async (f: Record<string, unknown>): Promise<string> => {
+    // typecast so Airtable auto-adds a new single-select choice (e.g. the
+    // "Project Manager" project role) on write instead of rejecting it with
+    // "Insufficient permissions to create new select option".
     if (recordId) {
-      await base(TABLES.projectStaffing).update([{ id: recordId, fields: f as FieldSet }]);
+      await base(TABLES.projectStaffing).update([{ id: recordId, fields: f as FieldSet }], { typecast: true });
       return recordId;
     }
-    const [created] = await base(TABLES.projectStaffing).create([{ fields: f as FieldSet }]);
+    const [created] = await base(TABLES.projectStaffing).create([{ fields: f as FieldSet }], { typecast: true });
     return created.id;
   };
   try {
