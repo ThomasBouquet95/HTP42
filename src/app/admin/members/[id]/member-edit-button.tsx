@@ -5,7 +5,15 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
-import type { Currency, MemberRole, MemberStatus } from "@/lib/airtable";
+import type { Currency, MemberRole, MemberStatus, YesNo } from "@/lib/airtable";
+
+// The four tooling / access provisioning flags, in display order.
+const TOOLING_FIELDS = [
+  { key: "htp42Email", label: "HTP42 email" },
+  { key: "officeLicense", label: "Office license" },
+  { key: "notionLicense", label: "Notion license" },
+  { key: "claudeLicense", label: "Claude license" },
+] as const;
 
 type Editable = {
   id: string;
@@ -23,6 +31,10 @@ type Editable = {
   htp42DailyRate: number | null;
   currency: Currency | "";
   introduction: string;
+  htp42Email: YesNo;
+  officeLicense: YesNo;
+  notionLicense: YesNo;
+  claudeLicense: YesNo;
 };
 
 // Admin edit affordance on a member's page: opens a modal with the editable
@@ -85,6 +97,10 @@ export function MemberEditButton({
     htp42DailyRate: member.htp42DailyRate == null ? "" : String(member.htp42DailyRate),
     currency: member.currency,
     introduction: member.introduction,
+    htp42Email: member.htp42Email,
+    officeLicense: member.officeLicense,
+    notionLicense: member.notionLicense,
+    claudeLicense: member.claudeLicense,
   }));
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
@@ -112,6 +128,10 @@ export function MemberEditButton({
           htp42DailyRate: form.htp42DailyRate === "" ? null : Number(form.htp42DailyRate),
           currency: form.currency,
           introduction: form.introduction,
+          htp42Email: form.htp42Email,
+          officeLicense: form.officeLicense,
+          notionLicense: form.notionLicense,
+          claudeLicense: form.claudeLicense,
         }),
       });
       if (!res.ok) {
@@ -237,6 +257,23 @@ export function MemberEditButton({
                 <option key={c} value={c}>{c}</option>
               ))}
             </FormSelect>
+          </div>
+        </Section>
+
+        <Section title="Tooling & access">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {TOOLING_FIELDS.map((t) => (
+              <FormSelect
+                key={t.key}
+                label={t.label}
+                value={form[t.key]}
+                onChange={(v) => set(t.key, v as YesNo)}
+              >
+                <option value="">—</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </FormSelect>
+            ))}
           </div>
         </Section>
 

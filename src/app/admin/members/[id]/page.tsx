@@ -195,6 +195,10 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
               htp42DailyRate: member.htp42DailyRate,
               currency: member.currency,
               introduction: member.introduction,
+              htp42Email: member.htp42Email,
+              officeLicense: member.officeLicense,
+              notionLicense: member.notionLicense,
+              claudeLicense: member.claudeLicense,
             }}
             roles={MEMBER_ROLES}
             statuses={MEMBER_STATUSES}
@@ -284,6 +288,15 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
                 Not set. Add it from Edit if the member hasn&rsquo;t filled it in.
               </p>
             )}
+          </Card>
+
+          <Card title="Tooling & access">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
+              <ToolingStat label="HTP42 email" value={member.htp42Email} />
+              <ToolingStat label="Office license" value={member.officeLicense} />
+              <ToolingStat label="Notion license" value={member.notionLicense} />
+              <ToolingStat label="Claude license" value={member.claudeLicense} />
+            </dl>
           </Card>
 
           <Card title="App connection">
@@ -458,6 +471,26 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="text-xs text-slate-500">{children}</p>;
+}
+
+// A tooling / access flag as a label + Yes/No pill (blank shows "not set").
+function ToolingStat({ label, value }: { label: string; value: "Yes" | "No" | "" }) {
+  const pill =
+    value === "Yes"
+      ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+      : value === "No"
+        ? "bg-slate-100 text-slate-500 ring-slate-200"
+        : "bg-white text-slate-400 ring-slate-200";
+  return (
+    <div>
+      <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+      <dd className="mt-0.5">
+        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${pill}`}>
+          {value || "Not set"}
+        </span>
+      </dd>
+    </div>
+  );
 }
 
 // Server-safe read-only star display (0–5, half steps). Kept inline so this

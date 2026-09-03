@@ -72,6 +72,14 @@ export const FIELDS = {
     billingCompanyName: "Billing Company Name",
     billingCompanyCountry: "Billing Company Country",
     billingCompanyAddress: "Billing Company Address",
+    // Tooling / access provisioning, IT & HR only. Each is a Yes/No
+    // multipleSelects in Airtable. Admin-only: surfaced on the admin member
+    // screen, never on a member-facing read. Lazily created via the meta API,
+    // see ensureMemberToolingFields.
+    htp42Email: "HTP42 Email",
+    officeLicense: "Office License",
+    notionLicense: "Notion License",
+    claudeLicense: "Claude License",
     // Admin/HR-only note. NEVER exposed to the member — lives on
     // MemberAdminRecord only (not MemberRecord), so member-facing reads
     // (getMemberById / profile / member directory) can't carry it. Lazily
@@ -720,10 +728,19 @@ export type MemberRecord = {
   billingCompanyAddress: string;
 };
 
+// A Yes/No provisioning flag stored as a multi-select ("" = not set).
+export type YesNo = "Yes" | "No" | "";
+export const YES_NO_OPTIONS: YesNo[] = ["Yes", "No"];
+
 export type MemberAdminRecord = MemberRecord & {
   dailyRate: number | null;
   htp42DailyRate: number | null;
   currency: Currency | "";
+  // Tooling / access provisioning (admin-only). See ensureMemberToolingFields.
+  htp42Email: YesNo;
+  officeLicense: YesNo;
+  notionLicense: YesNo;
+  claudeLicense: YesNo;
   // Admin/HR-only free-text note. Deliberately NOT on MemberRecord so it
   // never reaches a member-facing serializer. Kept for back-compat; the UI
   // now uses `internalNotes` (a list of rich notes).
@@ -1146,12 +1163,30 @@ export async function clearMemberAttachment(
 // Admin: Network Members
 // ---------------------------------------------------------------------------
 
+// Read the first choice of a single/multiple-select field as a plain string.
+function firstSelect(r: AirtableRecord<FieldSet>, field: string): string {
+  const v = r.get(field);
+  if (Array.isArray(v)) {
+    const first = v[0];
+    if (typeof first === "string") return first;
+    if (first && typeof first === "object" && "name" in first && typeof (first as { name: unknown }).name === "string") {
+      return (first as { name: string }).name;
+    }
+    return "";
+  }
+  return typeof v === "string" ? v : "";
+}
+
 function memberAdminFromRecord(r: AirtableRecord<FieldSet>): MemberAdminRecord {
   return {
     ...memberFromRecord(r),
     dailyRate: numOrNull(r, FIELDS.networkMembers.dailyRate),
     htp42DailyRate: numOrNull(r, FIELDS.networkMembers.htp42DailyRate),
     currency: str(r, FIELDS.networkMembers.currency) as Currency | "",
+    htp42Email: firstSelect(r, FIELDS.networkMembers.htp42Email) as YesNo,
+    officeLicense: firstSelect(r, FIELDS.networkMembers.officeLicense) as YesNo,
+    notionLicense: firstSelect(r, FIELDS.networkMembers.notionLicense) as YesNo,
+    claudeLicense: firstSelect(r, FIELDS.networkMembers.claudeLicense) as YesNo,
     internalNote: str(r, FIELDS.networkMembers.internalNote),
     internalNotes: parseMemberNotes(
       str(r, FIELDS.networkMembers.internalNotes),
@@ -1603,6 +1638,74 @@ export async function recordHeartbeat(
   await bumpMemberActivityDay(memberRecordId, false);
 }
 
+// Lazily create the four Yes/No tooling multi-selects on Network Members if a
+// base doesn't have them yet. Idempotent; in the live base they already exist,
+// so this just confirms and no-ops.
+let memberToolingFieldsReady = false;
+async function ensureMemberToolingFields(): Promise<void> {
+  if (memberToolingFieldsReady) return;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.networkMembers);
+    if (!table) return;
+    const existing = new Set(table.fields.map((f) => f.name));
+    const wanted = [
+      FIELDS.networkMembers.htp42Email,
+      FIELDS.networkMembers.officeLicense,
+      FIELDS.networkMembers.notionLicense,
+      FIELDS.networkMembers.claudeLicense,
+    ];
+    let allOk = true;
+    for (const name of wanted) {
+      if (existing.has(name)) continue;
+      const create = await fetch(
+        `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name,
+            type: "multipleSelects",
+            options: { choices: YES_NO_OPTIONS.map((c) => ({ name: c })) },
+            description: "Tooling / access provisioning (IT & HR).",
+          }),
+        },
+      );
+      if (!create.ok) allOk = false;
+    }
+    if (allOk) memberToolingFieldsReady = true;
+  } catch (e) {
+    console.error("ensureMemberToolingFields failed:", e);
+  }
+}
+
+// Add the tooling flags to a write payload (as multi-select arrays: "" clears).
+// Ensures the fields exist first, but only when at least one is being written.
+async function applyMemberToolingFields(
+  fields: Record<string, unknown>,
+  input: { htp42Email?: YesNo; officeLicense?: YesNo; notionLicense?: YesNo; claudeLicense?: YesNo },
+): Promise<void> {
+  const entries: [YesNo | undefined, string][] = [
+    [input.htp42Email, FIELDS.networkMembers.htp42Email],
+    [input.officeLicense, FIELDS.networkMembers.officeLicense],
+    [input.notionLicense, FIELDS.networkMembers.notionLicense],
+    [input.claudeLicense, FIELDS.networkMembers.claudeLicense],
+  ];
+  if (!entries.some(([v]) => v !== undefined)) return;
+  await ensureMemberToolingFields();
+  for (const [v, name] of entries) {
+    if (v !== undefined) fields[name] = v === "" ? [] : [v];
+  }
+}
+
 export type MemberAdminUpdate = MemberProfileUpdate & {
   memberCode?: string;
   email?: string;
@@ -1612,6 +1715,10 @@ export type MemberAdminUpdate = MemberProfileUpdate & {
   dailyRate?: number | null;
   htp42DailyRate?: number | null;
   currency?: Currency | "";
+  htp42Email?: YesNo;
+  officeLicense?: YesNo;
+  notionLicense?: YesNo;
+  claudeLicense?: YesNo;
   internalNote?: string;
   internalNotes?: MemberNote[];
 };
@@ -1662,6 +1769,7 @@ export async function adminCreateMember(input: MemberCreateInput): Promise<Membe
   if (input.currency !== undefined && input.currency !== "") {
     fields[FIELDS.networkMembers.currency] = input.currency;
   }
+  await applyMemberToolingFields(fields, input);
   const [created] = await base(TABLES.networkMembers).create(
     [{ fields: fields as FieldSet }],
     // typecast lets Airtable auto-add a new Role single-select choice on write.
@@ -2348,6 +2456,7 @@ export async function adminUpdateMember(
   if (input.currency !== undefined) {
     fields[FIELDS.networkMembers.currency] = input.currency === "" ? null : input.currency;
   }
+  await applyMemberToolingFields(fields, input);
   if (input.internalNote !== undefined) {
     await ensureMemberInternalNoteField();
     fields[FIELDS.networkMembers.internalNote] = input.internalNote || null;

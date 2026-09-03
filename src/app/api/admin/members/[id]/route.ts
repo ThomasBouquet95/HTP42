@@ -41,6 +41,8 @@ export async function PATCH(
 }
 
 const nullableNumber = z.union([z.number(), z.null()]).optional();
+// Yes/No provisioning flag ("" clears it).
+const yesNo = z.union([z.enum(["Yes", "No"]), z.literal("")]).optional();
 
 const schema = z.object({
   memberCode: z.string().trim().min(1).max(40).optional(),
@@ -62,6 +64,11 @@ const schema = z.object({
   dailyRate: nullableNumber,
   htp42DailyRate: nullableNumber,
   currency: z.union([z.enum(CURRENCIES as [string, ...string[]]), z.literal("")]).optional(),
+  // Tooling / access provisioning (admin-only Yes/No flags).
+  htp42Email: yesNo,
+  officeLicense: yesNo,
+  notionLicense: yesNo,
+  claudeLicense: yesNo,
   // Admin/HR-only note — never surfaced to the member.
   internalNote: z.string().max(5000).optional(),
   // Admin/HR-only rich notes (bold/italic/underline), sanitised server-side.
@@ -129,6 +136,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       dailyRate: d.dailyRate,
       htp42DailyRate: d.htp42DailyRate,
       currency: d.currency as Currency | "" | undefined,
+      htp42Email: d.htp42Email,
+      officeLicense: d.officeLicense,
+      notionLicense: d.notionLicense,
+      claudeLicense: d.claudeLicense,
       internalNote: d.internalNote,
       internalNotes: d.internalNotes?.map((n) => ({
         id: n.id,
