@@ -34,7 +34,7 @@ export const ADMIN_PAGES: { key: string; label: string; category: string; href: 
   // The role manager itself is a governed page. Access to it (view) = who can
   // open Settings; edit = who can change permissions.
   { key: "settings", label: "Roles & access", category: "Admin", href: "/admin/roles" },
-  { key: "documentation", label: "Documentation", category: "Tech", href: "/admin/docs" },
+  { key: "documentation", label: "Documentation", category: "Admin", href: "/admin/docs" },
   { key: "emails", label: "Emails", category: "Tech", href: "/admin/emails" },
   { key: "crons", label: "Cron jobs", category: "Tech", href: "/admin/crons" },
 ];
