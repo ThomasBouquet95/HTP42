@@ -54,6 +54,7 @@ const BUSINESS_SECTIONS = [
   "Projects, clients & opportunities",
   "Contracts & legal",
   "Automated emails",
+  "Scheduled jobs",
 ];
 
 const TECHNICAL_SECTIONS = [
@@ -203,7 +204,7 @@ function BusinessProcesses() {
             },
             {
               term: "Associate Partner / Network Operations",
-              def: "Configurable admin roles: default to full access except the Admin group (Roles & access, Emails), which must be granted explicitly.",
+              def: "Configurable admin roles: default to full access except Roles & access (Admin) and Emails (Tech), which must be granted explicitly.",
             },
             {
               term: "Project Manager",
@@ -412,6 +413,12 @@ function BusinessProcesses() {
               invoice (so they can&apos;t be billed twice), attaches the PDF, optionally builds a
               week-by-week summary PDF, and emails Finance. The timesheets keep their own status.
             </>,
+            <>
+              The PDF is <strong>smart-extracted</strong> (via Claude) and the two fields finance
+              needs, the <strong>invoice reference</strong> and the <strong>due date</strong>, are
+              copied onto the payment automatically, so a reviewer sees them without opening the PDF.
+              Best-effort: a failed extraction never blocks the submission.
+            </>,
           ]}
         />
         <Rule>
@@ -569,7 +576,7 @@ function BusinessProcesses() {
 
       <Section title="Automated emails" intro="Every email the portal sends: who gets it, when, under what conditions, and what it says.">
         <p>
-          All the emails below are sent via Microsoft Graph. In <Term>Admin → Emails</Term> an admin
+          All the emails below are sent via Microsoft Graph. In <Term>Tech → Emails</Term> an admin
           can edit each email&apos;s <strong>sender (From), recipients (To / CC), subject and
           body</strong>. Every change is saved to the database and applies to the next send, not
           just the preview. Each email lists its placeholders and shows a live preview. Some
@@ -617,6 +624,12 @@ function BusinessProcesses() {
               "Direction, type, counterparty, reference, amount, status, uploader; PDF attached",
             ],
             [
+              "Daily project status digest",
+              "The founders, plus anyone added to the To / CC in Tech → Emails",
+              "Automatically once a day (scheduled job, 13:00 UTC)",
+              "Projects grouped Running / Planned / Completed with a Claude-written summary leading on anything at risk; links to the cockpit",
+            ],
+            [
               "Email pipeline test",
               "Address the admin enters, else Finance inbox",
               "An admin runs the test button in Finance → Invoices",
@@ -629,6 +642,46 @@ function BusinessProcesses() {
           is logged but never rolls back the underlying record or PDF. Where a send result matters
           (member invoices, client review) the outcome is recorded on the record or in the audit
           trail.
+        </Rule>
+      </Section>
+
+      <Section title="Scheduled jobs" intro="Automation that runs on a timer, not on a click.">
+        <p>
+          A handful of jobs run automatically on a schedule (Vercel Cron, evaluated in{" "}
+          <strong>UTC</strong>). Each is a protected endpoint an admin can also trigger on demand.
+          The live schedule and next run time for every job is shown under{" "}
+          <Term>Tech → Cron jobs</Term> (read-only, sourced from{" "}
+          <Term>vercel.json</Term>).
+        </p>
+        <Table
+          head={["Job", "When", "What it does"]}
+          rows={[
+            [
+              "Backfill payment EUR values",
+              "Daily",
+              "Fills the EUR value on any payment missing one, so cockpit totals never drop a row.",
+            ],
+            [
+              "Import vendor invoices",
+              "Daily",
+              "Files paid supplier / IT invoices from the finance mailbox as Paid Outflow payments.",
+            ],
+            [
+              "Auto-approve stale client reviews",
+              "Daily",
+              "Approves client-review timesheets left unactioned past the 7-day window, so billing isn't stuck.",
+            ],
+            [
+              "Daily project status digest",
+              "Daily, 13:00 UTC",
+              "Emails the founders the Running / Planned / Completed portfolio snapshot (see Automated emails).",
+            ],
+          ]}
+        />
+        <Rule>
+          Each cron route is authorised by a <Term>CRON_SECRET</Term> bearer token, so only Vercel
+          (or a signed-in admin) can run it. Changing a schedule is a code change to{" "}
+          <Term>vercel.json</Term>.
         </Rule>
       </Section>
     </div>
@@ -745,7 +798,7 @@ function TechnicalImplementation() {
               <strong>Microsoft Graph</strong> sends all email (invoice submissions, client-review
               links, payment receipts, surveys, upload notices) from the configured mailbox through a
               single dispatcher. Each email&apos;s subject + body come from a central catalog whose
-              defaults can be overridden per email in <Term>Admin → Emails</Term> (stored in Airtable,
+              defaults can be overridden per email in <Term>Tech → Emails</Term> (stored in Airtable,
               interpolated with runtime placeholders at send time).
             </>,
             <>
@@ -788,7 +841,7 @@ function TechnicalImplementation() {
             </>,
             <>
               Every automated email is logged (sender, recipients, subject, attachments and the
-              send outcome) and shown under <Term>Admin → Emails → Sent log</Term>.
+              send outcome) and shown under <Term>Tech → Emails → Sent log</Term>.
             </>,
             <>
               App sign-ins are logged so the Network / HR → App activity view shows who used the

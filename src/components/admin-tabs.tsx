@@ -28,7 +28,8 @@ type PageKey =
   | "documents"
   | "settings"
   | "documentation"
-  | "emails";
+  | "emails"
+  | "crons";
 
 type Page = { key: PageKey; href: string; label: string; hidden?: boolean };
 type Category = { key: string; label: string; pages: Page[] };
@@ -92,10 +93,15 @@ const CATEGORIES: Category[] = [
   {
     key: "admin",
     label: "Admin",
+    pages: [{ key: "settings", href: "/admin/roles", label: "Roles & access" }],
+  },
+  {
+    key: "tech",
+    label: "Tech",
     pages: [
-      { key: "settings", href: "/admin/roles", label: "Roles & access" },
       { key: "documentation", href: "/admin/docs", label: "Documentation" },
       { key: "emails", href: "/admin/emails", label: "Emails" },
+      { key: "crons", href: "/admin/crons", label: "Cron jobs" },
     ],
   },
 ];
