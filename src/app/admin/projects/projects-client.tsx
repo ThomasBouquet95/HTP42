@@ -79,9 +79,11 @@ function emptyForm(defaultYear: number): FormState {
     objective: "",
     startDate: `${defaultYear}-01-01`,
     endDate: "",
-    currency: "",
+    // Default a new project's commercials to EUR at par. Picking another
+    // currency auto-fills its FX to EUR (see updateCurrency).
+    currency: "EUR",
     totalAmount: "",
-    fxToEur: "",
+    fxToEur: "1.00",
     status: "",
     paymentSchedule: [],
     purchaseOrder: "",
