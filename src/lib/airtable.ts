@@ -8602,6 +8602,34 @@ export async function vendorInvoiceMessageIds(): Promise<Set<string>> {
   }
 }
 
+// Content identity of a vendor invoice (vendor + invoice number), case- and
+// space-insensitive. Used to skip re-importing the same invoice when the same
+// PDF arrives twice (duplicated in one email, or re-sent in another).
+export function vendorInvoiceIdentityKey(vendor: string, invoiceNumber: string): string {
+  return `${vendor.trim().toLowerCase()}|${invoiceNumber.trim().toLowerCase()}`;
+}
+
+// Identity keys of every existing vendor invoice that carries an invoice number.
+export async function vendorInvoiceIdentityKeys(): Promise<Set<string>> {
+  try {
+    const ok = await ensureVendorInvoicesSchema();
+    if (!ok) return new Set();
+    const records = await base(TABLES.vendorInvoices)
+      .select({ fields: [FIELDS.vendorInvoices.vendor, FIELDS.vendorInvoices.invoiceNumber] })
+      .all();
+    const keys = new Set<string>();
+    for (const r of records) {
+      const num = str(r, FIELDS.vendorInvoices.invoiceNumber);
+      if (!num) continue;
+      keys.add(vendorInvoiceIdentityKey(str(r, FIELDS.vendorInvoices.vendor), num));
+    }
+    return keys;
+  } catch (e) {
+    console.error("vendorInvoiceIdentityKeys failed:", e);
+    return new Set();
+  }
+}
+
 export type VendorInvoiceInput = {
   vendor: string;
   invoiceNumber: string;

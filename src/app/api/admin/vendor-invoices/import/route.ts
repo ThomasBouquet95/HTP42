@@ -8,6 +8,8 @@ import {
   createVendorInvoice,
   ensureVendorInvoicesSchema,
   getPaymentById,
+  vendorInvoiceIdentityKey,
+  vendorInvoiceIdentityKeys,
   vendorInvoiceMessageIds,
   type Currency,
   type PaymentInput,
@@ -31,9 +33,10 @@ export const maxDuration = 300;
 // glances at the auto-extracted vendor/amount before trusting it.
 
 const EXTRACT_SYSTEM = [
-  "You extract header fields from a paid vendor / IT invoice PDF for record-keeping.",
+  "You extract header fields from a single PDF attachment that MIGHT be a paid vendor / IT invoice.",
   "Return STRICTLY valid JSON, no Markdown fences, matching:",
   "{",
+  '  "isInvoice": boolean — true ONLY if this document is actually an invoice, bill or receipt asking for or confirming a payment. false for anything else (cover letter, quote, statement, contract, terms, delivery note, marketing, logo).',
   '  "vendor": string — the company that issued the invoice (the payee). Empty if unclear.',
   '  "invoiceNumber": string — the invoice / reference number. Empty if none.',
   '  "invoiceDate": string — invoice date as ISO yyyy-mm-dd. Empty if unclear.',
@@ -44,6 +47,7 @@ const EXTRACT_SYSTEM = [
 ].join("\n");
 
 type Extracted = {
+  isInvoice: boolean;
   vendor: string;
   invoiceNumber: string;
   invoiceDate: string;
@@ -52,8 +56,10 @@ type Extracted = {
 };
 
 async function extractFields(base64: string): Promise<Extracted> {
-  const empty: Extracted = { vendor: "", invoiceNumber: "", invoiceDate: "", amount: null, currency: "" };
-  if (!env.anthropicApiKey) return empty;
+  // Default to treating it as an invoice when we can't ask the model (no API
+  // key, or an error): a human then reviews it, rather than silently dropping.
+  const fallback: Extracted = { isInvoice: true, vendor: "", invoiceNumber: "", invoiceDate: "", amount: null, currency: "" };
+  if (!env.anthropicApiKey) return fallback;
   try {
     const client = new Anthropic({ apiKey: env.anthropicApiKey });
     const response = await client.messages.create({
@@ -83,6 +89,9 @@ async function extractFields(base64: string): Promise<Extracted> {
     const s = (k: string) => (typeof parsed[k] === "string" ? (parsed[k] as string).trim() : "");
     const amt = parsed.amount;
     return {
+      // Default true when the flag is missing, so a real invoice is never
+      // dropped on a malformed response.
+      isInvoice: typeof parsed.isInvoice === "boolean" ? parsed.isInvoice : true,
       vendor: s("vendor"),
       invoiceNumber: s("invoiceNumber"),
       invoiceDate: s("invoiceDate"),
@@ -91,7 +100,7 @@ async function extractFields(base64: string): Promise<Extracted> {
     };
   } catch (e) {
     console.error("vendor invoice extract failed:", e);
-    return empty;
+    return fallback;
   }
 }
 
@@ -139,64 +148,104 @@ async function run() {
     return NextResponse.json({ imported: 0, skipped: 0, error: mail.error }, { status: 200 });
   }
 
+  // Dedup on two axes: the per-attachment key (so a re-run never re-imports the
+  // same file) and the invoice identity (vendor + number, so the same invoice
+  // arriving twice isn't imported twice). `seen` may hold legacy per-email keys
+  // (the old one-invoice-per-email import stored the raw messageId).
   const seen = await vendorInvoiceMessageIds();
-  const fresh = mail.invoices.filter((m: MailInvoice) => !seen.has(m.messageId));
+  const identities = await vendorInvoiceIdentityKeys();
 
   let imported = 0;
+  let attachments = 0;
+  let skippedSeen = 0;
+  let skippedDuplicate = 0;
+  let skippedNotInvoice = 0;
   const errors: string[] = [];
-  for (const m of fresh) {
-    try {
-      // Extract from the first PDF; attach every PDF to the record.
-      const fields = await extractFields(m.pdfs[0].base64);
-      const currency = fields.currency || "EUR";
-      // These invoices are always already paid. When we have an amount we can
-      // create the matching "Paid" outflow payment and mark the invoice Paid;
-      // if the amount didn't come through, flag it for a quick human review
-      // (no payment yet — it's created when the amount is filled in on save).
-      const hasAmount = fields.amount != null;
-      const input: VendorInvoiceInput = {
-        vendor: fields.vendor,
-        invoiceNumber: fields.invoiceNumber,
-        invoiceDate: fields.invoiceDate,
-        amount: fields.amount,
-        currency,
-        projectCode: env.automatedInvoiceProjectCode,
-        status: hasAmount ? "Paid" : "Needs Review",
-        messageId: m.messageId,
-        emailSubject: m.subject,
-        emailFrom: m.from,
-        receivedAt: m.receivedDateTime,
-        notes: "",
-      };
-      const id = await createVendorInvoice(input);
-      for (const pdf of m.pdfs) {
+
+  // Each email can carry several invoices — open every PDF one by one.
+  for (const m of mail.invoices) {
+    for (let idx = 0; idx < m.pdfs.length; idx++) {
+      attachments += 1;
+      const pdf = m.pdfs[idx];
+      const attachmentKey = `${m.messageId}#${idx}`;
+      // Already imported? New composite key, or (for the first attachment) the
+      // legacy per-email key an earlier import version stored.
+      if (seen.has(attachmentKey) || (idx === 0 && seen.has(m.messageId))) {
+        skippedSeen += 1;
+        continue;
+      }
+      try {
+        const fields = await extractFields(pdf.base64);
+        // Trust the model's isInvoice, but never drop a file that clearly has
+        // invoice content (an amount plus a vendor or number).
+        const looksLikeInvoice =
+          fields.isInvoice || (fields.amount != null && (fields.vendor !== "" || fields.invoiceNumber !== ""));
+        if (!looksLikeInvoice) {
+          skippedNotInvoice += 1;
+          continue;
+        }
+        // Content-level dedup: same vendor + invoice number already on file
+        // (from a previous run or an earlier attachment this run).
+        const identity = fields.invoiceNumber
+          ? vendorInvoiceIdentityKey(fields.vendor, fields.invoiceNumber)
+          : "";
+        if (identity && identities.has(identity)) {
+          skippedDuplicate += 1;
+          continue;
+        }
+
+        const currency = fields.currency || "EUR";
+        // These invoices are always already paid. With an amount we create the
+        // matching "Paid" outflow payment and mark the invoice Paid; without
+        // one we flag it "Needs Review" (no payment until the amount is filled).
+        const hasAmount = fields.amount != null;
+        const input: VendorInvoiceInput = {
+          vendor: fields.vendor,
+          invoiceNumber: fields.invoiceNumber,
+          invoiceDate: fields.invoiceDate,
+          amount: fields.amount,
+          currency,
+          projectCode: env.automatedInvoiceProjectCode,
+          status: hasAmount ? "Paid" : "Needs Review",
+          messageId: attachmentKey,
+          emailSubject: m.subject,
+          emailFrom: m.from,
+          receivedAt: m.receivedDateTime,
+          notes: m.pdfs.length > 1 ? `Attachment ${idx + 1} of ${m.pdfs.length} in this email.` : "",
+        };
+        const id = await createVendorInvoice(input);
+        // One record = one invoice PDF (not every attachment on the email).
         await attachVendorInvoicePdf(id, pdf.filename, pdf.base64);
+        if (hasAmount) {
+          const paymentId = await createPaymentForVendorInvoice(id, buildPaidPayment(fields, currency, m));
+          await attachPaymentPdf(paymentId, pdf.filename, pdf.base64).catch(() => {});
+          // Already Paid — send the same paid-recap an admin would on marking Paid.
+          const created = await getPaymentById(paymentId).catch(() => null);
+          if (created) await notifyPaymentPaid(created);
+        }
+        // Guard against a second identical attachment later in this same run.
+        if (identity) identities.add(identity);
+        imported += 1;
+      } catch (e) {
+        errors.push(e instanceof Error ? e.message : String(e));
       }
-      if (hasAmount) {
-        const paymentId = await createPaymentForVendorInvoice(id, buildPaidPayment(fields, currency, m));
-        // Attach the same invoice PDF to the payment so it carries the document.
-        await attachPaymentPdf(paymentId, m.pdfs[0].filename, m.pdfs[0].base64).catch(() => {});
-        // The payment is already Paid — send the same paid-recap (To invoices
-        // inbox, CC Fulll + Qonto) an admin would trigger by marking it Paid.
-        const created = await getPaymentById(paymentId).catch(() => null);
-        if (created) await notifyPaymentPaid(created);
-      }
-      imported += 1;
-    } catch (e) {
-      errors.push(e instanceof Error ? e.message : String(e));
     }
   }
 
   console.log(
-    `[cron] vendor-invoices/import: done — imported ${imported}, scanned ${mail.scanned}, withPdf ${mail.invoices.length}`,
+    `[cron] vendor-invoices/import: done — imported ${imported}, attachments ${attachments}, ` +
+      `skippedSeen ${skippedSeen}, duplicate ${skippedDuplicate}, notInvoice ${skippedNotInvoice}, scanned ${mail.scanned}`,
   );
   return NextResponse.json({
     imported,
-    skipped: mail.invoices.length - fresh.length,
     // Diagnostics so the admin can tell "mailbox empty" from "no PDFs found".
+    attachments,
+    skippedSeen,
+    skippedDuplicate,
+    skippedNotInvoice,
     messagesScanned: mail.scanned,
     withAttachments: mail.withAttachments,
-    withPdf: mail.invoices.length,
+    emailsWithPdf: mail.invoices.length,
     attachmentsSeen: mail.attachmentsSeen,
     errors,
   });

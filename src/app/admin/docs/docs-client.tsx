@@ -506,12 +506,18 @@ function BusinessProcesses() {
           items={[
             <>
               The importer scans the configured mailbox (newest first) via Microsoft Graph and pulls
-              the PDF attachments. It <strong>de-duplicates</strong> on the message id, so re-running
-              never creates a payment twice.
+              every PDF attachment. An email can carry <strong>several invoices</strong>: each PDF is
+              opened <strong>one by one</strong> and imported as its own invoice + payment.
             </>,
             <>
-              For each new invoice, Claude extracts the header fields (vendor, invoice number, date,
-              amount, currency) from the PDF for record-keeping.
+              For each attachment, Claude first checks it is <strong>actually an invoice</strong>
+              (cover letters, quotes and terms are skipped), then extracts the header fields (vendor,
+              invoice number, date, amount, currency).
+            </>,
+            <>
+              It <strong>de-duplicates</strong> two ways so re-running never creates a payment twice:
+              per attachment (message id + attachment), and by invoice identity (vendor + invoice
+              number), so the same invoice arriving twice is only imported once.
             </>,
             <>
               These invoices are <strong>already paid</strong>, so when an amount was extracted the
