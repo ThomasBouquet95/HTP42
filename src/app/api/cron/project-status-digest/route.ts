@@ -10,7 +10,7 @@ import {
   buildDigestModel,
   digestHeadline,
   digestPromptData,
-  renderDigestHtmlFallback,
+  renderDigestSections,
   type DigestModel,
 } from "@/lib/project-status-digest";
 import { resolveEmail } from "@/lib/email-templates-server";
@@ -25,19 +25,19 @@ export const runtime = "nodejs";
 // /admin/emails). Sends every day; the send is logged like any other email.
 
 const SYSTEM_PROMPT = [
-  "You write a daily project-status digest for the HTP42 consulting network's founders.",
+  "You write ONLY the opening executive summary of a daily project-status digest for the HTP42",
+  "consulting network's founders. The full per-project list is rendered separately by the system,",
+  "so do NOT list or enumerate every project.",
   "You receive JSON: projects grouped into running / planned / completed / other, each with",
   "contract value, revenue to date (incl. expected), cost to date, margin left, a health flag",
   "(red = costs over contract, amber = approaching it or no contract, green = healthy) and a concern.",
   "",
-  "Write a concise HTML fragment (no <html>/<head>/<body>, no markdown, no code fences). Structure:",
-  "1. A 2-3 sentence executive summary: portfolio health in one glance, then the projects that need",
-  "   attention (red first, then amber) named explicitly with the specific number that matters.",
-  "2. Three sections in this order with an <h3> each: Running, Planned, Completed. One line per",
-  "   project: name, then the essential figures only where they add signal. Omit a section if empty.",
+  "Write a concise HTML fragment: 2-4 sentences, no headings, no lists, no markdown, no code fences,",
+  "no <html>/<head>/<body>. Give portfolio health in one glance, then the projects that need",
+  "attention (red first, then amber) named explicitly with the one number that matters for each.",
   "Be sharp and factual. No filler, no pleasantries, no restating the instructions. Amounts in EUR,",
-  "rounded to whole euros. Lead with what is wrong or at risk; do not bury it. If nothing is at risk,",
-  "say so in one clause. Keep the whole thing skimmable in under a minute.",
+  "rounded to whole euros. Lead with what is wrong or at risk. If nothing is at risk, say so in one",
+  "clause.",
 ].join("\n");
 
 // Ask Claude for the prose summary. Returns null on any failure so the caller
@@ -107,9 +107,12 @@ async function run() {
   );
   const headline = digestHeadline(model);
 
-  const summaryHtml = (await summarize(model)) ?? renderDigestHtmlFallback(model);
-  // Plain-text version for the summary block, derived from the fallback markup.
-  const summaryText = renderDigestHtmlFallback(model).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  // Claude writes only the executive summary (prose); the per-project list is
+  // rendered deterministically so every project consistently shows its flag.
+  const exec = await summarize(model);
+  const execHtml = exec ?? `<p style="margin:0 0 12px">Portfolio snapshot for ${date}. ${digestHeadline(model)}.</p>`;
+  const summaryHtml = `${execHtml}\n${renderDigestSections(model)}`;
+  const summaryText = summaryHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
   const { name, subject, textBody, htmlBody, to, cc, from } = await resolveEmail("project_status_digest", {
     date,

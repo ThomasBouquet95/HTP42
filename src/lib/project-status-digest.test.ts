@@ -3,7 +3,7 @@ import {
   buildDigestModel,
   categorizeProjectStatus,
   digestHeadline,
-  renderDigestHtmlFallback,
+  renderDigestSections,
 } from "./project-status-digest";
 import type { ProjectProfit } from "@/app/admin/cockpit/profitability";
 
@@ -89,9 +89,31 @@ describe("renderDigestHtmlFallback", () => {
       [profit("R1")],
       "d",
     );
-    const html = renderDigestHtmlFallback(m);
+    const html = renderDigestSections(m);
     expect(html).toContain("Running (1)");
     expect(html).toContain("A &amp; B &lt;x&gt;");
     expect(html).not.toContain("Planned"); // empty group omitted
+  });
+
+  it("gives every project a flag marker (green ones no longer dropped)", () => {
+    const m = buildDigestModel(
+      [
+        { projectCode: "G1", projectName: "Green one", status: "In Progress" },
+        { projectCode: "R1", projectName: "Red one", status: "In Progress" },
+        { projectCode: "A1", projectName: "Amber one", status: "In Progress" },
+      ],
+      [
+        profit("G1", { flag: "green" }),
+        profit("R1", { flag: "red", contractEur: 100_000, costEur: 120_000 }),
+        profit("A1", { flag: "amber", contractEur: null }),
+      ],
+      "d",
+    );
+    const html = renderDigestSections(m);
+    // One marker per project, always including the green one.
+    expect((html.match(/🟢/g) || []).length).toBe(1);
+    expect((html.match(/🔴/g) || []).length).toBe(1);
+    expect((html.match(/🟡/g) || []).length).toBe(1);
+    expect(html).toContain("20,000 over contract");
   });
 });

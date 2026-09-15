@@ -138,31 +138,47 @@ export function digestPromptData(model: DigestModel): string {
   );
 }
 
-// Deterministic HTML used when Claude is unavailable, so a digest always sends.
-export function renderDigestHtmlFallback(model: DigestModel): string {
+// A flag marker present on EVERY project line. The AI summary used to add these
+// unevenly (green sometimes missing); rendering the list in code guarantees each
+// project shows its colour.
+function flagMarker(flag: ProfitFlag | null): string {
+  return flag === "red" ? "🔴" : flag === "amber" ? "🟡" : flag === "green" ? "🟢" : "⚪";
+}
+
+// The essential figures for one project line: contract, revenue/cost when
+// present, and either the over-contract amount (red) or the margin left.
+function projectFigures(p: DigestProject): string {
+  const parts: string[] = [];
+  parts.push(p.contractEur != null ? `Contract ${eur0(p.contractEur)}` : "No contract");
+  if ((p.revenueToDateEur ?? 0) > 0) parts.push(`Revenue ${eur0(p.revenueToDateEur)}`);
+  if ((p.costEur ?? 0) > 0) parts.push(`Costs ${eur0(p.costEur)}`);
+  if (p.flag === "red" && p.contractEur != null && p.costEur != null && p.costEur > p.contractEur) {
+    parts.push(`${eur0(p.costEur - p.contractEur)} over contract`);
+  } else if (p.marginLeftEur != null && (p.contractEur != null || (p.costEur ?? 0) > 0)) {
+    parts.push(`Margin left ${eur0(p.marginLeftEur)}`);
+  }
+  return parts.join(" | ");
+}
+
+// Deterministic Running / Planned / Completed sections. Rendered in code (not by
+// the AI) so every project consistently carries its flag marker and figures.
+// Also used as the whole body if the AI executive summary can't be produced.
+export function renderDigestSections(model: DigestModel): string {
   const esc = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const dot = (flag: ProfitFlag | null) => {
-    const color = flag === "red" ? "#e11d48" : flag === "amber" ? "#d97706" : flag === "green" ? "#059669" : "#94a3b8";
-    return `<span style="display:inline-block;width:8px;height:8px;border-radius:9999px;background:${color};margin-right:6px"></span>`;
-  };
-  const row = (p: DigestProject) => {
-    const fin =
-      p.contractEur != null || p.costEur != null
-        ? ` <span style="color:#64748b">(${eur0(p.revenueToDateEur)} rev · ${eur0(p.costEur)} cost · ${eur0(p.marginLeftEur)} left)</span>`
-        : "";
-    const concern = p.headlineReason ? `<div style="color:#b91c1c;font-size:12px;margin:2px 0 0 14px">${esc(p.headlineReason)}</div>` : "";
-    return `<li style="margin:0 0 6px">${dot(p.flag)}<strong>${esc(p.name)}</strong> <span style="color:#94a3b8">${esc(p.code)} · ${esc(p.status)}</span>${fin}${concern}</li>`;
-  };
+  const row = (p: DigestProject) =>
+    `<li style="margin:0 0 6px">${flagMarker(p.flag)} <strong>${esc(p.name)}</strong> ` +
+    `<span style="color:#94a3b8">${esc(p.code)}</span> — ` +
+    `<span style="color:#475569">${esc(projectFigures(p))}</span></li>`;
   const section = (title: string, items: DigestProject[]) => {
     if (!items.length) return "";
-    return `<h3 style="margin:16px 0 6px;font-size:14px">${title} (${items.length})</h3><ul style="margin:0;padding-left:18px">${items.map(row).join("")}</ul>`;
+    return `<h3 style="margin:16px 0 6px;font-size:14px">${title} (${items.length})</h3><ul style="margin:0;padding-left:18px;list-style:none">${items.map(row).join("")}</ul>`;
   };
   return [
     section("Running", model.groups.running),
     section("Planned", model.groups.planned),
     section("Completed", model.groups.completed),
-    section("Uncategorised", model.groups.other),
+    section("Other", model.groups.other),
   ]
     .filter(Boolean)
     .join("\n");
