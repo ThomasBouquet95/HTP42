@@ -43,6 +43,13 @@ export const CRON_META: Record<string, CronMeta> = {
     category: "Reporting",
     manualTrigger: true,
   },
+  "/api/cron/payment-reminders": {
+    title: "Weekly payments due digest",
+    description:
+      "Emails the founders the outstanding client payments (money in) and payments owed to network members (money out), colour-coded by how overdue each is (red > 1 week, orange < 1 week, green upcoming). Recipients are editable in Tech -> Emails.",
+    category: "Reporting",
+    manualTrigger: true,
+  },
 };
 
 const FALLBACK_META: CronMeta = {

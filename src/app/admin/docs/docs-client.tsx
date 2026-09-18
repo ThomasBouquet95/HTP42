@@ -636,6 +636,12 @@ function BusinessProcesses() {
               "Projects grouped Running / Planned / Completed with a Claude-written summary leading on anything at risk; links to the cockpit",
             ],
             [
+              "Weekly payments due digest",
+              "The founders, plus anyone added to the To / CC in Tech → Emails",
+              "Automatically once a week (scheduled job, Monday 07:00 UTC)",
+              "Outstanding client payments (in) and payments owed to members (out), colour-coded by how overdue each is (red > 1 week, orange < 1 week, green upcoming)",
+            ],
+            [
               "Email pipeline test",
               "Address the admin enters, else Finance inbox",
               "An admin runs the test button in Finance → Invoices",
@@ -681,6 +687,11 @@ function BusinessProcesses() {
               "Daily project status digest",
               "Daily, 13:00 UTC",
               "Emails the founders the Running / Planned / Completed portfolio snapshot (see Automated emails).",
+            ],
+            [
+              "Weekly payments due digest",
+              "Monday, 07:00 UTC",
+              "Emails the founders outstanding client payments (in) and payments owed to members (out), colour-coded by urgency.",
             ],
           ]}
         />
