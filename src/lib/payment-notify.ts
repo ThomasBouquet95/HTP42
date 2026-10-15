@@ -1,7 +1,7 @@
 import { sendMailViaGraph } from "./email";
 import { resolveEmail } from "./email-templates-server";
 import { env } from "./env";
-import { listClients, listProjects, type PaymentRecord } from "./airtable";
+import { getInvoiceById, listClients, listProjects, type PaymentRecord } from "./airtable";
 import { assertSafeFetchUrl } from "./net-guard";
 
 // The recipients (finance inbox + the Fulll/Qonto bookkeeping CCs) and sender
@@ -49,24 +49,45 @@ async function sendPaymentPaidEmail(p: PaymentRecord): Promise<{ ok: boolean; er
       : "A payment has just been marked paid in the HTP42 portal.";
 
   // Attach the invoice PDF — prefer the uploaded Airtable attachment (trusted
-  // host, may redirect to signed storage), else the free-text invoice URL. The
-  // latter is user-controlled, so it goes through an SSRF guard and does not
-  // follow redirects. Failures here shouldn't block the email.
-  const uploadedUrl = p.invoicePdf?.url || "";
-  const userUrl = p.invoiceUrl || "";
-  const pdfSource = uploadedUrl || userUrl;
-  const sourceIsUserProvided = !uploadedUrl && !!userUrl;
-  let attachment:
-    | { filename: string; contentType: string; base64: string }
-    | null = null;
-  let pdfFailure: string | null = null;
-  if (pdfSource) {
-    const fetched = await fetchInvoicePdf(pdfSource, label, sourceIsUserProvided);
-    if (fetched.ok) attachment = fetched.attachment;
-    else pdfFailure = fetched.error;
-  } else {
-    pdfFailure = "No invoice PDF or URL on the payment.";
+  // host, may redirect to signed storage), else the free-text invoice URL (SSRF
+  // guarded, no redirects). Member-submitted invoices keep the PDF on the linked
+  // MEMBER INVOICE record (not the payment), so fall back to that when the
+  // payment itself carries no PDF. Failures here shouldn't block the email.
+  type PdfSource = { url: string; userProvided: boolean; label: string };
+  const sources: PdfSource[] = [];
+  if (p.invoicePdf?.url) {
+    sources.push({ url: p.invoicePdf.url, userProvided: false, label });
+  } else if (p.invoiceUrl) {
+    sources.push({ url: p.invoiceUrl, userProvided: true, label });
   }
+  if (sources.length === 0 && p.memberInvoiceRecordIds.length > 0) {
+    try {
+      const invoices = await Promise.all(
+        p.memberInvoiceRecordIds.map((iid) => getInvoiceById(iid).catch(() => null)),
+      );
+      for (const inv of invoices) {
+        if (inv?.pdf?.url) {
+          sources.push({ url: inv.pdf.url, userProvided: false, label: inv.invoiceCode || label });
+        }
+      }
+    } catch (e) {
+      console.error("Could not load linked member invoice PDF for payment email:", e);
+    }
+  }
+
+  const attachments: { filename: string; contentType: string; base64: string }[] = [];
+  const pdfFailures: string[] = [];
+  for (const s of sources) {
+    const fetched = await fetchInvoicePdf(s.url, s.label, s.userProvided);
+    if (fetched.ok) attachments.push(fetched.attachment);
+    else pdfFailures.push(fetched.error);
+  }
+  const pdfFailure: string | null =
+    attachments.length > 0
+      ? null
+      : sources.length === 0
+        ? "No invoice PDF or URL on the payment or its linked invoice."
+        : pdfFailures[0] || "Invoice PDF could not be fetched.";
 
   const amountLine =
     p.invoiceValue != null
@@ -128,7 +149,7 @@ async function sendPaymentPaidEmail(p: PaymentRecord): Promise<{ ok: boolean; er
     subject,
     textBody,
     htmlBody,
-    attachments: attachment ? [attachment] : [],
+    attachments,
     logLabel: name,
   });
   if (!result.ok) {
