@@ -35,18 +35,36 @@ async function sendPaymentPaidEmail(p: PaymentRecord): Promise<{ ok: boolean; er
     p.paymentCode ||
     p.projectCodes.join(", ") ||
     p.id;
-  const heading =
+  // The recap doubles as the "resend invoice" email, which can fire for a
+  // payment that is NOT yet paid. So the wording follows the actual status: only
+  // a truly Paid payment says "paid"; otherwise it reads as an invoice copy and
+  // names the current status, never falsely announcing a payment.
+  const isPaid = p.paymentStatus === "Paid";
+  const statusLabel = (p.paymentStatus || "pending").toLowerCase();
+  const kind =
     p.direction === "Inflow"
+      ? "inbound (client) payment"
+      : p.direction === "Outflow"
+      ? "outbound payment"
+      : "payment";
+  const heading = isPaid
+    ? p.direction === "Inflow"
       ? "Inflow received"
       : p.direction === "Outflow"
       ? "Outflow paid"
-      : "Payment recorded";
-  const introText =
-    p.direction === "Inflow"
+      : "Payment recorded"
+    : p.direction === "Inflow"
+    ? "Inflow invoice"
+    : p.direction === "Outflow"
+    ? "Outflow invoice"
+    : "Invoice";
+  const introText = isPaid
+    ? p.direction === "Inflow"
       ? "An inflow (client payment) has just been marked received in the HTP42 portal."
       : p.direction === "Outflow"
       ? "An outflow payment has just been marked paid in the HTP42 portal."
-      : "A payment has just been marked paid in the HTP42 portal.";
+      : "A payment has just been marked paid in the HTP42 portal."
+    : `The invoice for this ${kind} is attached. It is currently ${statusLabel} in the HTP42 portal (not yet paid).`;
 
   // Attach the invoice PDF — prefer the uploaded Airtable attachment (trusted
   // host, may redirect to signed storage), else the free-text invoice URL (SSRF
