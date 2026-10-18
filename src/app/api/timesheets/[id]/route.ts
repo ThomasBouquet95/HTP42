@@ -63,7 +63,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       );
     }
 
-    const duplicate = await existsTimesheetForWeek(session.sub, staffing.id, input.startDate, id);
+    const duplicate = await existsTimesheetForWeek(session.memberCode, staffing.id, input.startDate, id);
     if (duplicate) {
       return NextResponse.json(
         { error: "A timesheet already exists for this staffing and week." },

@@ -81,3 +81,19 @@ describe("client-review token", () => {
     expect(set.size).toBe(200);
   });
 });
+
+import { timesheetBlocksWeek } from "@/lib/airtable";
+
+describe("timesheetBlocksWeek (duplicate-week guard)", () => {
+  it("blocks a new week when a live timesheet already exists", () => {
+    for (const s of ["Draft", "Submitted", "Approved", "Rejected", "Invoiced", "Paid", ""]) {
+      expect(timesheetBlocksWeek(s)).toBe(true);
+    }
+  });
+
+  it("does not block when the existing timesheet is voided", () => {
+    expect(timesheetBlocksWeek("Cancelled")).toBe(false);
+    expect(timesheetBlocksWeek("Deleted")).toBe(false);
+    expect(timesheetBlocksWeek(" Deleted ")).toBe(false); // trimmed
+  });
+});

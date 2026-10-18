@@ -47,7 +47,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const duplicate = await existsTimesheetForWeek(session.sub, staffing.id, input.startDate);
+    const duplicate = await existsTimesheetForWeek(session.memberCode, staffing.id, input.startDate);
     if (duplicate) {
       return NextResponse.json(
         { error: "A timesheet already exists for this staffing and week." },

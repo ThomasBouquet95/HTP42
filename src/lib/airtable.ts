@@ -4873,22 +4873,34 @@ function weekOverlapsRangeBetween(monday: string, start: string | null, end: str
   return true;
 }
 
+// A week+staffing is "already entered" if a live timesheet exists for it.
+// Cancelled / Deleted timesheets are voided, so they free the week to be
+// re-entered and must NOT block a new submission.
+const VOIDED_TIMESHEET_STATUSES = new Set<string>(["Cancelled", "Deleted"]);
+export function timesheetBlocksWeek(status: string): boolean {
+  return !VOIDED_TIMESHEET_STATUSES.has(status.trim());
+}
+
 export async function existsTimesheetForWeek(
-  memberRecordId: string,
+  memberCode: string,
   staffingRecordId: string,
   startDateIso: string,
   excludeRecordId?: string,
 ): Promise<boolean> {
+  // Match by member CODE (ARRAYJOIN of the Member Code link resolves to the
+  // code, not the record id) and compare the Start Date as a plain day (a bare
+  // `=` against a date field is unreliable across time zones).
   const records = await base(TABLES.timesheets)
     .select({
-      filterByFormula: `AND(FIND("${escape(memberRecordId)}", ARRAYJOIN(ARRAYCOMPACT({${FIELDS.timesheets.memberCode}}))), {${FIELDS.timesheets.startDate}} = "${escape(startDateIso)}")`,
+      filterByFormula: `AND(FIND("${escape(memberCode)}", ARRAYJOIN({${FIELDS.timesheets.memberCode}})), DATETIME_FORMAT({${FIELDS.timesheets.startDate}}, 'YYYY-MM-DD') = "${escape(startDateIso)}")`,
     })
     .all();
   return records.some((r) => {
     if (excludeRecordId && r.id === excludeRecordId) return false;
     const staffingField = r.get(FIELDS.timesheets.projectStaffing);
     const ids = Array.isArray(staffingField) ? (staffingField as string[]) : [];
-    return ids.includes(staffingRecordId);
+    if (!ids.includes(staffingRecordId)) return false;
+    return timesheetBlocksWeek(str(r, FIELDS.timesheets.status));
   });
 }
 
