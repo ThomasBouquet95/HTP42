@@ -69,7 +69,6 @@ export async function POST(
   // effort: an email failure mustn't unwind the successful upload.
   const counterparty =
     existing.clientNames.filter(Boolean).join(", ") ||
-    existing.memberCodes.join(", ") ||
     existing.signatory1.company ||
     existing.signatory1.name ||
     "";

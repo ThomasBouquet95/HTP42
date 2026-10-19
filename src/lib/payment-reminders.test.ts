@@ -111,4 +111,17 @@ describe("renderRemindersSections", () => {
     );
     expect(remindersHeadline(m)).toMatch(/Incoming: €1,000 across 1 \(1 overdue/);
   });
+
+  it("never duplicates the reference when it stands in for a missing name", () => {
+    // No resolved client/member name: the reference becomes the label and must
+    // appear exactly once (and never a record id, which the route resolves away).
+    const m = buildPaymentReminders(
+      [pay({ direction: "Inflow", clientLabel: "", reference: "F-260720USD", amountEur: 1000 })],
+      TODAY,
+      "d",
+    );
+    expect(m.client.items[0].label).toBe("F-260720USD");
+    const html = renderRemindersSections(m);
+    expect((html.match(/F-260720USD/g) || []).length).toBe(1);
+  });
 });

@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requireAdminSession } from "@/lib/auth";
 import { cronSecretMatches } from "@/lib/cron-auth";
 import { apiError } from "@/lib/errors";
-import { listPayments } from "@/lib/airtable";
+import { listAllMembers, listClients, listPayments } from "@/lib/airtable";
 import { effectiveEur } from "@/lib/fx";
 import {
   buildPaymentReminders,
@@ -72,7 +72,16 @@ async function summarize(model: PaymentRemindersModel): Promise<string | null> {
 
 async function run() {
   console.log("[cron] payment-reminders: start");
-  const payments = await listPayments();
+  // Resolve client / member NAMES from record ids: a payment's linked fields
+  // read back as record ids, so a label must come from the entity, never from
+  // the link field itself (which would print "rec…").
+  const [payments, clients, members] = await Promise.all([
+    listPayments(),
+    listClients(),
+    listAllMembers(),
+  ]);
+  const clientNameById = new Map(clients.map((c) => [c.id, c.clientName || c.clientCode]));
+  const memberNameById = new Map(members.map((m) => [m.id, m.fullName || m.memberCode]));
 
   const now = new Date();
   const todayIso = now.toISOString().slice(0, 10);
@@ -91,8 +100,11 @@ async function run() {
       dueDate: p.dueDate,
       amountEur: effectiveEur(p),
       reference: p.invoiceReference || "",
-      clientLabel: p.clientCodes[0] || p.beneficiary || "",
-      memberLabel: p.beneficiary || p.memberCodes[0] || "",
+      // Names resolved from the linked record; fall back to the free-text
+      // beneficiary, then to nothing (the reference is shown separately). Never
+      // the link field, which would surface a raw record id.
+      clientLabel: clientNameById.get(p.clientRecordIds[0]) || p.beneficiary || "",
+      memberLabel: memberNameById.get(p.memberRecordIds[0]) || p.beneficiary || "",
       // An outflow owed to a network member (not a vendor / expense).
       isMember: p.direction === "Outflow" && p.memberRecordIds.length > 0,
     })),

@@ -103,7 +103,7 @@ export async function GET(request: Request) {
     mismatches.push({
       paymentCode: p.paymentCode || p.id,
       direction: p.direction || "—",
-      beneficiary: p.beneficiary || p.memberCodes.join(", ") || "—",
+      beneficiary: p.beneficiary || "—",
       invoiceCode: inv.invoiceCode || inv.id,
       invoiceMember: inv.memberName || inv.memberCode || "—",
       staffingHave: p.staffingRecordIds.map(codeOfStaffing).join(", ") || "(none)",

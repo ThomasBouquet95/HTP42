@@ -170,7 +170,7 @@ export function renderRemindersSections(model: PaymentRemindersModel): string {
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const row = (it: ReminderItem) =>
     `<li style="margin:0 0 6px">${marker(it.urgency)} <strong>${esc(it.label)}</strong>` +
-    (it.reference ? ` <span style="color:#94a3b8">${esc(it.reference)}</span>` : "") +
+    (it.reference && it.reference !== it.label ? ` <span style="color:#94a3b8">${esc(it.reference)}</span>` : "") +
     ` — <span style="color:#475569">${esc(itemFigures(it))}</span></li>`;
   const section = (title: string, g: ReminderGroup) => {
     const head = `<h3 style="margin:16px 0 6px;font-size:14px">${title} (${g.items.length} · ${eur0(g.totalEur)})</h3>`;

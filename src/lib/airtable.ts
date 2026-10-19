@@ -6838,12 +6838,14 @@ export async function listAllDocuments(): Promise<DocumentRecord[]> {
   for (const c of contracts) {
     if (!c.pdf?.url) continue;
     const typeLabel = c.contractType || c.otherDescription || c.side || "Contract";
-    const parties = [...c.clientNames, ...c.clientCodes, ...c.memberCodes].filter(Boolean);
+    // Displayed parties: resolved names only. clientCodes / memberCodes are
+    // record ids (they stay in `keywords` for search, but must not be shown).
+    const parties = [...c.clientNames].filter(Boolean);
     docs.push({
       id: `Contract:${c.id}`,
       kind: "Contract",
       title: typeLabel,
-      subtitle: [c.side, parties.join(", "), c.projectCodes.join(", ")]
+      subtitle: [c.side, parties.join(", "), c.projectCode]
         .filter(Boolean)
         .join(" · "),
       date: c.signatureDate || c.expiryDate || null,

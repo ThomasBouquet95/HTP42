@@ -33,7 +33,6 @@ async function sendPaymentPaidEmail(p: PaymentRecord): Promise<{ ok: boolean; er
     p.invoiceReference ||
     p.beneficiary ||
     p.paymentCode ||
-    p.projectCodes.join(", ") ||
     p.id;
   // The recap doubles as the "resend invoice" email, which can fire for a
   // payment that is NOT yet paid. So the wording follows the actual status: only
@@ -112,9 +111,10 @@ async function sendPaymentPaidEmail(p: PaymentRecord): Promise<{ ok: boolean; er
       ? `${p.invoiceValue.toLocaleString("en-US")} ${p.invoiceCurrency || ""}`.trim()
       : "—";
 
-  // Resolve project/client to a readable "Code — Name" via record IDs.
-  let projectLabel = p.projectCodes.join(", ");
-  let clientLabel = p.clientCodes.join(", ");
+  // Resolve project/client to a readable name via record IDs. Defaults are
+  // blank (shown as "—"), never the linked *Codes, which are record ids.
+  let projectLabel = "";
+  let clientLabel = "";
   try {
     const [projects, clients] = await Promise.all([listProjects(), listClients()]);
     const projById = new Map(projects.map((pr) => [pr.id, pr]));

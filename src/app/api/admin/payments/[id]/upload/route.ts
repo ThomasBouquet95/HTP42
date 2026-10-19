@@ -66,10 +66,9 @@ export async function POST(
   // Notify the finance inbox — same destination as contract + member-
   // invoice notifications. Best-effort: an email failure mustn't unwind
   // the successful upload.
-  const counterparty =
-    existing.direction === "Inflow"
-      ? existing.clientCodes.join(", ")
-      : existing.memberCodes.join(", ") || existing.beneficiary || "";
+  // Prefer the free-text beneficiary, then the invoice reference. Never the
+  // linked *Codes, which read back as record ids.
+  const counterparty = existing.beneficiary || existing.invoiceReference || "—";
   const amount =
     existing.invoiceValue == null
       ? "n/a"
