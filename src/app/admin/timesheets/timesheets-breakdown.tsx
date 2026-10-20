@@ -9,7 +9,7 @@ import { SearchSelect } from "@/components/search-select";
 import { TIMESHEET_STATUSES } from "@/lib/airtable";
 import { timesheetStatusLabel } from "@/components/status-badge";
 import type { AdminTimesheetRecord } from "@/lib/airtable";
-import { dayIsos, downloadTimesheetsCsv, hoursInRange } from "./timesheets-export";
+import { downloadTimesheetsCsv } from "./timesheets-export";
 
 export type SowInfo = { reference: string; status: string; daysAllocated: number | null; url: string };
 type SowMap = Record<string, SowInfo>;
@@ -166,10 +166,11 @@ function GroupedTimesheets({
         } else if (!status.includes(t.status)) {
           return false;
         }
-        // Date range = calendar range counted day by day: keep any week that
-        // has hours inside [from, to] (a week straddling the boundary counts
-        // only its in-range days, below).
-        if ((from || to) && hoursInRange(t, from, to) <= 0) return false;
+        // Friday cutoff: a whole week is attributed to the month of its end
+        // date (Friday), so a week straddling two months counts in the later
+        // one. The date filter therefore compares the week's END date.
+        if (from && (t.endDate ?? "") < from) return false;
+        if (to && (t.endDate ?? "") > to) return false;
         return true;
       }),
     [timesheets, picked, pickMatches, status, from, to],
@@ -190,7 +191,7 @@ function GroupedTimesheets({
       const key = groupKey(t);
       const g =
         m.get(key) ?? { key, name: groupName(t), hours: 0, staffingCode: t.staffingCode, sheets: [] };
-      g.hours += hoursInRange(t, from, to);
+      g.hours += t.totalHours;
       if (!g.staffingCode) g.staffingCode = t.staffingCode;
       g.sheets.push(t);
       m.set(key, g);
@@ -199,7 +200,7 @@ function GroupedTimesheets({
       g.sheets.sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
     }
     return [...m.values()].sort((a, b) => b.hours - a.hours);
-  }, [rows, groupKey, groupName, from, to]);
+  }, [rows, groupKey, groupName]);
 
   // Master-detail selection: which group is shown on the right. Keep it valid
   // as the picked project/member or filters change.
@@ -210,12 +211,12 @@ function GroupedTimesheets({
   }, [groups, selectedKey]);
   const selected = groups.find((g) => g.key === selectedKey) ?? groups[0] ?? null;
 
-  const totalHours = rows.reduce((s, t) => s + hoursInRange(t, from, to), 0);
+  const totalHours = rows.reduce((s, t) => s + t.totalHours, 0);
   const statusSplit = useMemo(() => {
     const m = new Map<string, number>();
-    for (const t of rows) m.set(t.status, (m.get(t.status) ?? 0) + hoursInRange(t, from, to));
+    for (const t of rows) m.set(t.status, (m.get(t.status) ?? 0) + t.totalHours);
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
-  }, [rows, from, to]);
+  }, [rows]);
 
   const statusOptions = useMemo(
     // Friendly labels (Submitted → "Under Review") so the option matches the
@@ -356,7 +357,7 @@ function GroupedTimesheets({
                 </div>
                 <ul className="overflow-hidden rounded-lg border border-slate-200 bg-white">
                   {selected.sheets.map((t) => (
-                    <WeekRow key={t.id} sheet={t} onEdit={onEdit} from={from} to={to} />
+                    <WeekRow key={t.id} sheet={t} onEdit={onEdit} />
                   ))}
                 </ul>
               </div>
@@ -411,21 +412,11 @@ export function SowChip({ sow }: { sow?: SowInfo }) {
 function WeekRow({
   sheet,
   onEdit,
-  from,
-  to,
 }: {
   sheet: AdminTimesheetRecord;
   onEdit?: (t: AdminTimesheetRecord) => void;
-  from: string;
-  to: string;
 }) {
   const [open, setOpen] = useState(false);
-  // In-range portion: with a date range, a boundary week shows only its in-range
-  // hours + days, so the detail always sums to the group total above.
-  const ranged = !!(from || to);
-  const inRange = (iso: string) => (!from || iso >= from) && (!to || iso <= to);
-  const sheetHours = hoursInRange(sheet, from, to);
-  const dayDates = dayIsos(sheet.startDate);
   return (
     <li className="border-t border-slate-100 first:border-t-0">
       <div className="flex w-full items-center gap-2 px-2.5 py-1.5 text-[11px] hover:bg-slate-50">
@@ -439,12 +430,7 @@ function WeekRow({
           <WeekChip startIso={sheet.startDate} endIso={sheet.endDate} />
           <StatusPill status={sheet.status} />
         </button>
-        <span className="tabular-nums text-slate-600">
-          {sheetHours.toFixed(2)} h
-          {ranged && sheetHours !== sheet.totalHours ? (
-            <span className="ml-1 text-[10px] text-slate-400">of {sheet.totalHours.toFixed(2)}</span>
-          ) : null}
-        </span>
+        <span className="tabular-nums text-slate-600">{sheet.totalHours.toFixed(2)} h</span>
         {onEdit ? (
           <button
             type="button"
@@ -464,14 +450,10 @@ function WeekRow({
           {DAY_KEYS.map((d) => {
             const day = sheet[d];
             if (!day || (!day.hours && !day.task)) return null;
-            const outOfRange = ranged && dayDates[d] ? !inRange(dayDates[d]) : false;
             return (
-              <div key={d} className={`flex gap-2 ${outOfRange ? "opacity-40" : ""}`}>
+              <div key={d} className="flex gap-2">
                 <span className="w-8 shrink-0 text-slate-400">{DAY_LABELS[d]}</span>
-                <span className="tabular-nums text-slate-600">
-                  {day.hours ? day.hours.toFixed(2) : "0"}h
-                  {outOfRange ? <span className="ml-1 text-[10px] text-slate-400">(outside range)</span> : null}
-                </span>
+                <span className="tabular-nums text-slate-600">{day.hours ? day.hours.toFixed(2) : "0"}h</span>
                 {day.task ? <span className="truncate text-slate-500 demo-blur">{day.task}</span> : null}
               </div>
             );

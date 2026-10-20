@@ -25,30 +25,6 @@ export function dayIsos(startIso: string | null): Record<(typeof DAY_KEYS)[numbe
   return out;
 }
 
-type DayHours = { startDate: string | null; totalHours: number } & Record<
-  (typeof DAY_KEYS)[number],
-  { hours: number }
->;
-
-// Hours that fall within [from, to] (inclusive, ISO yyyy-mm-dd), counting each
-// weekday by its actual calendar date. A week straddling two months therefore
-// contributes only its in-range days — so a calendar-month report is exact and
-// a boundary day is never dropped or double-counted. An empty bound is
-// open-ended; with both empty the full week total is returned unchanged.
-export function hoursInRange(t: DayHours, from: string, to: string): number {
-  if (!from && !to) return t.totalHours;
-  const isos = dayIsos(t.startDate);
-  let sum = 0;
-  for (const k of DAY_KEYS) {
-    const iso = isos[k];
-    if (!iso) continue;
-    if (from && iso < from) continue;
-    if (to && iso > to) continue;
-    sum += t[k].hours || 0;
-  }
-  return sum;
-}
-
 export function toCsvRows(rows: AdminTimesheetRecord[]): string[][] {
   // Status omitted on purpose — exports are shared outside finance and
   // shouldn't leak the Submitted / Invoiced / Paid billing lifecycle.
