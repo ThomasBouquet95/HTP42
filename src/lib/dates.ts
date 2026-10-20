@@ -96,3 +96,57 @@ export function weekOverlapsRange(
 export function isMonday(iso: string): boolean {
   return parseIsoDate(iso).getUTCDay() === 1;
 }
+
+// Month-attribution rule: a whole week is counted in the month of its FRIDAY
+// (end date). A "split week" straddles two months — its Monday and Friday fall
+// in different months — so it counts in the later (following) month.
+export function isSplitWeek(startIso: string | null, endIso: string | null): boolean {
+  if (!startIso || !endIso) return false;
+  const a = parseIsoDate(startIso);
+  const b = parseIsoDate(endIso);
+  return a.getUTCMonth() !== b.getUTCMonth() || a.getUTCFullYear() !== b.getUTCFullYear();
+}
+
+// The month a week is counted in, as a label (the Friday's month).
+export function countedMonthLabel(endIso: string | null): string {
+  if (!endIso) return "";
+  return parseIsoDate(endIso).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+// The last week that still counts in a given month: the week whose Friday is the
+// month's last Friday. Weeks after it roll into the next month.
+export function lastCountedWeekOfMonth(year: number, month: number): { monday: string; friday: string } {
+  const d = new Date(Date.UTC(year, month + 1, 0)); // last day of the month
+  while (d.getUTCDay() !== 5) d.setUTCDate(d.getUTCDate() - 1); // step back to Friday
+  const friday = toIsoDate(d);
+  const mon = new Date(d);
+  mon.setUTCDate(mon.getUTCDate() - 4);
+  return { monday: toIsoDate(mon), friday };
+}
+
+export type MonthCutoff = {
+  monthLabel: string;
+  monday: string;
+  friday: string;
+};
+
+// The cutoff week for `count` months starting at the month of `fromIso`.
+export function upcomingMonthCutoffs(fromIso: string, count: number): MonthCutoff[] {
+  const base = parseIsoDate(fromIso);
+  const out: MonthCutoff[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const dt = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + i, 1));
+    const { monday, friday } = lastCountedWeekOfMonth(dt.getUTCFullYear(), dt.getUTCMonth());
+    out.push({
+      monthLabel: dt.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }),
+      monday,
+      friday,
+    });
+  }
+  return out;
+}
+

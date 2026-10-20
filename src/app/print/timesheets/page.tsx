@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { listAllTimesheets, type AdminTimesheetRecord } from "@/lib/airtable";
+import { countedMonthLabel, isSplitWeek } from "@/lib/dates";
 import { PrintTrigger } from "./print-trigger";
 import { PRINT_CSS } from "@/lib/print-styles";
 
@@ -177,6 +178,11 @@ export default async function TimesheetsPrintPage({
                     </div>
                     <div className="ts-week">
                       {weekRange(t)} · <strong>{t.totalHours.toFixed(2)} h</strong>
+                      {isSplitWeek(t.startDate, t.endDate) ? (
+                        <span style={{ marginLeft: 6, color: "#b45309", fontWeight: 600 }}>
+                          → counts in {countedMonthLabel(t.endDate)}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                   <table className="ts-table">

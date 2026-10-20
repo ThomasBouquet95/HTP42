@@ -1,7 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
-import { formatWeekRange, parseIsoDate, toIsoDate } from "@/lib/dates";
+import { countedMonthLabel, formatWeekRange, isSplitWeek, parseIsoDate, toIsoDate } from "@/lib/dates";
 
 type Props = {
   startIso: string | null;
@@ -40,24 +40,38 @@ export function WeekChip({ startIso, endIso, variant = "chip", className }: Prop
   if (!startIso || !endIso) {
     return <span className={className ?? "text-slate-400"}>—</span>;
   }
-  // Every week chip looks the same — no special highlight for the current
-  // week — so the column reads consistently.
+  // A split week (Monday and Friday in different months) is counted in the
+  // month of its Friday. Flag it in amber with a short "→ Month" marker so the
+  // user knows it rolls into the following month.
+  const split = isSplitWeek(startIso, endIso);
+  const splitMonth = split ? countedMonthLabel(endIso) : "";
+  const splitShort = split
+    ? parseIsoDate(endIso).toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })
+    : "";
   const labelCls =
     variant === "plain"
-      ? `text-slate-700 ${className ?? ""}`
-      : `inline-flex items-center rounded-md bg-brand-50 px-2 py-0.5 text-brand-700 ring-1 ring-brand-100 ${className ?? ""}`;
+      ? `${split ? "text-amber-700 font-medium" : "text-slate-700"} ${className ?? ""}`
+      : split
+        ? `inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-amber-800 ring-1 ring-amber-200 ${className ?? ""}`
+        : `inline-flex items-center rounded-md bg-brand-50 px-2 py-0.5 text-brand-700 ring-1 ring-brand-100 ${className ?? ""}`;
   return (
     <>
       <span
         ref={triggerRef}
-        className={`relative inline-flex ${labelCls}`}
+        className={`relative inline-flex items-center gap-1 ${labelCls}`}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         tabIndex={0}
+        title={split ? `This week straddles two months, so it counts in ${splitMonth}.` : undefined}
       >
         {formatWeekRange(startIso, endIso)}
+        {split ? (
+          <span className="rounded bg-amber-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
+            → {splitShort}
+          </span>
+        ) : null}
       </span>
       {open ? (
         <div

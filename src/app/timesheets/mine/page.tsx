@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getTimesheetsForMember } from "@/lib/airtable";
+import { todayIso } from "@/lib/dates";
 import { TimesheetsTabs } from "@/components/timesheets-tabs";
 import { SubmitTimesheetButton } from "@/components/submit-timesheet-modal";
+import { MonthCutoffs } from "@/components/month-cutoffs";
 import { MineViews } from "./views";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +21,9 @@ export default async function MyTimesheetsPage() {
       <div className="mb-4 flex items-center justify-between gap-3">
         <h1 className="text-base sm:text-lg font-semibold">Timesheets</h1>
         <SubmitTimesheetButton />
+      </div>
+      <div className="mb-4">
+        <MonthCutoffs fromIso={todayIso()} />
       </div>
       <MineViews
         timesheets={timesheets}
