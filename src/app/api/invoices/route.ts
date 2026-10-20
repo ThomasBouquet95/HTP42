@@ -310,8 +310,6 @@ export async function POST(request: Request) {
           {
             memberName: session.fullName || session.email || session.memberCode,
             memberCode: session.memberCode,
-            amount,
-            currency,
             comment,
             staffingCode: staffing.staffingCode,
             projectCode: project.projectCode,

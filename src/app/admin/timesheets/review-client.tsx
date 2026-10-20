@@ -212,6 +212,7 @@ export function TimesheetReviewClient({
     "reviewAdmin" | "reviewClient" | "approved" | "rejected"
   >("reviewAdmin");
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
   // An admin deciding a client-reviewed timesheet overrides the client, so we
   // confirm first (any Approve/Reject on a Client-method timesheet).
   const [overwriteConfirm, setOverwriteConfirm] = useState<
@@ -440,6 +441,27 @@ export function TimesheetReviewClient({
     }
   }
 
+  // Resend (or first-time send) the client review request for a week that is
+  // awaiting the client — e.g. submitted before client-review emailing existed.
+  async function resendReview(id: string) {
+    setResendingId(id);
+    try {
+      const res = await fetch(`/api/admin/timesheets/${encodeURIComponent(id)}/resend-review`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? `Send failed (HTTP ${res.status})`);
+      }
+      setToast({ kind: "ok", msg: "Review request sent to the client" });
+      router.refresh();
+    } catch (e) {
+      setToast({ kind: "error", msg: e instanceof Error ? e.message : "Send failed" });
+    } finally {
+      setResendingId(null);
+    }
+  }
+
   // Any admin decision on a Client-reviewed timesheet overrides the client, so
   // it goes through a confirmation first; admin-reviewed ones decide directly.
   function requestDecide(id: string, action: "approve" | "reject", comment: string, confidence?: string) {
@@ -585,6 +607,8 @@ export function TimesheetReviewClient({
             savingId={savingId}
             onDecide={requestDecide}
             onEdit={onEdit}
+            onResend={resendReview}
+            resendingId={resendingId}
             sowByStaffing={sowByStaffing}
             usedByStaffing={usedByStaffing}
             approvedByStaffing={approvedByStaffing}
@@ -731,6 +755,8 @@ function ProjectGroups({
   savingId,
   onDecide,
   onEdit,
+  onResend,
+  resendingId,
   sowByStaffing,
   usedByStaffing,
   approvedByStaffing,
@@ -741,6 +767,8 @@ function ProjectGroups({
   savingId: string | null;
   onDecide: (id: string, action: "approve" | "reject", comment: string, confidence?: string) => void;
   onEdit?: (t: AdminTimesheetRecord) => void;
+  onResend?: (id: string) => void;
+  resendingId?: string | null;
   sowByStaffing?: Record<string, SowInfo>;
   usedByStaffing?: Map<string, number>;
   approvedByStaffing?: Map<string, number>;
@@ -821,6 +849,8 @@ function ProjectGroups({
                     saving={savingId === t.id}
                     onDecide={onDecide}
                     onEdit={onEdit}
+                    onResend={onResend}
+                    resending={resendingId === t.id}
                     resolveReviewer={resolveReviewer}
                     allocatedHours={allocatedHours}
                     approvedHours={approvedHours}
@@ -855,6 +885,8 @@ function ReviewCard({
   saving,
   onDecide,
   onEdit,
+  onResend,
+  resending = false,
   resolveReviewer,
   allocatedHours = null,
   approvedHours = 0,
@@ -863,6 +895,8 @@ function ReviewCard({
   saving: boolean;
   onDecide: (id: string, action: "approve" | "reject", comment: string, confidence?: string) => void;
   onEdit?: (t: AdminTimesheetRecord) => void;
+  onResend?: (id: string) => void;
+  resending?: boolean;
   resolveReviewer: (reviewedBy: string, method: string) => ReviewerInfo | null;
   allocatedHours?: number | null;
   approvedHours?: number;
@@ -921,6 +955,17 @@ function ReviewCard({
         <span className="text-sm font-semibold tabular-nums text-slate-900">
           {t.totalHours.toFixed(1)} h
         </span>
+        {clientPending && onResend ? (
+          <button
+            type="button"
+            onClick={() => onResend(t.id)}
+            disabled={resending}
+            title="Send the Approve / Reject email to the client reviewer again"
+            className="inline-flex shrink-0 items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+          >
+            {resending ? "Sending…" : "Resend request"}
+          </button>
+        ) : null}
         {onEdit ? (
           <button
             type="button"

@@ -48,8 +48,11 @@ export type PdfTimesheet = Pick<
 export type TimesheetPdfMeta = {
   memberName: string;
   memberCode: string;
-  amount: number | null;
-  currency: string;
+  // Invoice amount / currency are intentionally no longer rendered (this PDF is
+  // forwarded to the client and must not reveal the consultant's price). Kept
+  // optional for callers that still pass them; they are ignored.
+  amount?: number | null;
+  currency?: string;
   comment: string;
   staffingCode: string;
   projectCode: string;
@@ -105,16 +108,8 @@ export function generateTimesheetSummaryPdf(
       { width: META_WIDTH },
     );
     doc.text(`Staffing: ${meta.staffingCode || "—"}`, LEFT, doc.y, { width: META_WIDTH });
-    if (meta.amount != null) {
-      doc.text(
-        `Invoice amount: ${meta.amount.toLocaleString("en-US", {
-          maximumFractionDigits: 2,
-        })} ${meta.currency}`,
-        LEFT,
-        doc.y,
-        { width: META_WIDTH },
-      );
-    }
+    // Deliberately NOT printed: the invoice amount. This summary is forwarded to
+    // the client, who must never see what the consultant bills HTP42 (our margin).
     if (meta.comment) {
       doc.text(`Comment: ${truncate(meta.comment, 220)}`, LEFT, doc.y, { width: META_WIDTH });
     }

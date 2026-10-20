@@ -25,7 +25,7 @@ describe("isClientReviewStale", () => {
   it("is NOT stale before the auto-approve window", () => {
     expect(isClientReviewStale(requestedDaysAgo(0), NOW)).toBe(false);
     expect(isClientReviewStale(requestedDaysAgo(3), NOW)).toBe(false);
-    expect(isClientReviewStale(requestedDaysAgo(6), NOW)).toBe(false);
+    expect(isClientReviewStale(requestedDaysAgo(CLIENT_REVIEW_AUTO_APPROVE_DAYS - 1), NOW)).toBe(false);
   });
 
   it("becomes stale exactly at the threshold and after", () => {
@@ -46,7 +46,7 @@ describe("isClientReviewStale", () => {
   });
 
   it("falls back to token expiry for legacy rows without reviewRequestedAt", () => {
-    expect(isClientReviewStale(legacyExpiryDaysAgo(6), NOW)).toBe(false);
+    expect(isClientReviewStale(legacyExpiryDaysAgo(CLIENT_REVIEW_AUTO_APPROVE_DAYS - 1), NOW)).toBe(false);
     expect(isClientReviewStale(legacyExpiryDaysAgo(8), NOW)).toBe(true);
   });
 

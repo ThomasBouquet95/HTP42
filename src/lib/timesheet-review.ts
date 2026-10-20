@@ -2,6 +2,7 @@ import {
   decideTimesheet,
   generateReviewToken,
   getAdminTimesheetById,
+  getMemberById,
   getStaffingById,
   getTimesheetById,
   listPendingClientReviews,
@@ -17,7 +18,7 @@ export const REVIEW_TOKEN_TTL_DAYS = 14;
 // went out if the client hasn't approved or rejected it. Must be < the token
 // TTL so the token is still derivable when we sweep (and it's cleared on
 // approval, so the emailed link stops working).
-export const CLIENT_REVIEW_AUTO_APPROVE_DAYS = 7;
+export const CLIENT_REVIEW_AUTO_APPROVE_DAYS = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function parseMs(iso: string | null | undefined): number | null {
@@ -126,8 +127,32 @@ export async function initiateReviewOnSubmit(params: {
   }
 }
 
-// Mint a single-use token and email the staffing's client reviewer Approve /
-// Reject links for one timesheet, logging the request to the audit trail.
+// Resend (or send for the first time) the client review request for a single
+// timesheet. Used by the admin "Resend review request" action — e.g. for weeks
+// submitted before client-review emailing existed, or when the client lost the
+// mail. Re-anchors the auto-approve window (setTimesheetReviewToken stamps a
+// fresh reviewRequestedAt), so the countdown restarts from this send.
+export async function resendClientReview(
+  timesheetId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const ts = await getAdminTimesheetById(timesheetId);
+  if (!ts) return { ok: false, error: "Timesheet not found." };
+  if (ts.status !== "Submitted") {
+    return { ok: false, error: "Only a week that is still under review can have its request resent." };
+  }
+  const staffing = ts.staffingRecordId ? await getStaffingById(ts.staffingRecordId) : null;
+  if (!staffing || staffing.reviewMethod !== "Client") {
+    return { ok: false, error: "This week is not on a client-review staffing." };
+  }
+  if (!staffing.reviewerEmail) {
+    return { ok: false, error: "No client reviewer email is set on this staffing." };
+  }
+  const member = ts.memberRecordId ? await getMemberById(ts.memberRecordId) : null;
+  const memberName = member?.fullName || member?.memberCode || ts.staffingCode;
+  return dispatchClientReview(ts, staffing, memberName);
+}
+
+
 // Returns whether the email actually went out.
 async function dispatchClientReview(
   ts: TimesheetRecord,
