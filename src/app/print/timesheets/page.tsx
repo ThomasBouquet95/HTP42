@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "@/lib/auth";
 import { listAllTimesheets, type AdminTimesheetRecord } from "@/lib/airtable";
+import { hoursInRange } from "@/app/admin/timesheets/timesheets-export";
 import { PrintTrigger } from "./print-trigger";
 import { PRINT_CSS } from "@/lib/print-styles";
 
@@ -53,8 +54,10 @@ export default async function TimesheetsPrintPage({
       if (member.length && !member.includes(t.memberCode)) return false;
       if (project.length && !project.includes(t.projectCode)) return false;
       if (staffing.length && !staffing.includes(t.staffingRecordId)) return false;
-      if (from && (t.startDate ?? "") < from) return false;
-      if (to && (t.startDate ?? "") > to) return false;
+      // Date range = calendar range, counted day by day: keep any week with
+      // hours inside [from, to] (a boundary week contributes only its in-range
+      // days in the totals below).
+      if ((from || to) && hoursInRange(t, from, to) <= 0) return false;
       return true;
     })
     .sort(
@@ -64,7 +67,9 @@ export default async function TimesheetsPrintPage({
         (a.startDate ?? "").localeCompare(b.startDate ?? ""),
     );
 
-  const total = rows.reduce((s, t) => s + t.totalHours, 0);
+  const total = rows.reduce((s, t) => s + hoursInRange(t, from, to), 0);
+  const ranged = !!(from || to);
+  const inRange = (iso: string) => (!from || iso >= from) && (!to || iso <= to);
   const members = new Set(rows.map((t) => t.memberCode)).size;
   const generatedAt = new Date().toLocaleString("en-US", { timeZone: "UTC" }) + " UTC";
 
@@ -163,6 +168,7 @@ export default async function TimesheetsPrintPage({
           <section>
             {rows.map((t) => {
               const start = t.startDate;
+              const sheetHours = hoursInRange(t, from, to);
               return (
                 <article key={t.id} className="timesheet">
                   <div className="ts-head">
@@ -174,7 +180,11 @@ export default async function TimesheetsPrintPage({
                       </span>
                     </div>
                     <div className="ts-week">
-                      {weekRange(t)} · <strong>{t.totalHours.toFixed(2)} h</strong>
+                      {weekRange(t)} ·{" "}
+                      <strong>{sheetHours.toFixed(2)} h</strong>
+                      {ranged && sheetHours !== t.totalHours ? (
+                        <span className="muted"> of {t.totalHours.toFixed(2)} in range</span>
+                      ) : null}
                     </div>
                   </div>
                   <table className="ts-table">
@@ -188,11 +198,13 @@ export default async function TimesheetsPrintPage({
                     <tbody>
                       {DAY_KEYS.map((k, i) => {
                         const dayIso = start ? addDaysIso(start, i) : null;
+                        const outOfRange = ranged && dayIso ? !inRange(dayIso) : false;
                         return (
-                          <tr key={k}>
+                          <tr key={k} className={outOfRange ? "muted" : undefined}>
                             <td className="nowrap">
                               {DAY_LABELS[k]}
                               {dayIso ? <span className="muted" style={{ marginLeft: 6 }}>{shortDayDate(dayIso)}</span> : null}
+                              {outOfRange ? <span className="muted" style={{ marginLeft: 6 }}>(outside range)</span> : null}
                             </td>
                             <td className="num">{t[k].hours ? t[k].hours.toFixed(2) : "—"}</td>
                             <td style={{ whiteSpace: "pre-line" }}>
@@ -202,8 +214,8 @@ export default async function TimesheetsPrintPage({
                         );
                       })}
                       <tr className="total-row">
-                        <td>Total</td>
-                        <td className="num">{t.totalHours.toFixed(2)}</td>
+                        <td>Total{ranged && sheetHours !== t.totalHours ? " (in range)" : ""}</td>
+                        <td className="num">{sheetHours.toFixed(2)}</td>
                         <td />
                       </tr>
                     </tbody>

@@ -5,6 +5,7 @@ import {
   getMemberById,
   getStaffingById,
   getTimesheetById,
+  listAllTimesheets,
   listPendingClientReviews,
   recordTimesheetReview,
   setTimesheetReviewToken,
@@ -150,6 +151,33 @@ export async function resendClientReview(
   const member = ts.memberRecordId ? await getMemberById(ts.memberRecordId) : null;
   const memberName = member?.fullName || member?.memberCode || ts.staffingCode;
   return dispatchClientReview(ts, staffing, memberName);
+}
+
+// Month-end nudge: re-send the client review request for every week still
+// awaiting the client, so reviewers get a fresh working link before invoicing.
+// Re-dispatching re-anchors the auto-approve window, which (run a few days
+// before month end) lands the auto-approval around month end as a backstop.
+// Skips weeks that aren't on a client-review staffing or lack a reviewer email.
+export async function remindPendingClientReviews(): Promise<{
+  reminded: number;
+  skipped: number;
+  errors: string[];
+}> {
+  const all = await listAllTimesheets();
+  const submitted = all.filter((t) => t.status === "Submitted");
+  let reminded = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+  for (const t of submitted) {
+    try {
+      const res = await resendClientReview(t.id);
+      if (res.ok) reminded += 1;
+      else skipped += 1;
+    } catch (e) {
+      errors.push(`${t.id}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return { reminded, skipped, errors };
 }
 
 

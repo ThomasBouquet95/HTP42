@@ -32,7 +32,14 @@ export const CRON_META: Record<string, CronMeta> = {
   "/api/cron/auto-approve-timesheets": {
     title: "Auto-approve stale client reviews",
     description:
-      "Approves client-review timesheets the client never acted on within the review window (7 days), so billing isn't stuck waiting on an unresponsive reviewer.",
+      "Approves client-review timesheets the client never acted on within the review window (5 days), so billing isn't stuck waiting on an unresponsive reviewer.",
+    category: "Timesheets",
+    manualTrigger: true,
+  },
+  "/api/cron/timesheet-review-reminders": {
+    title: "Month-end client review reminders",
+    description:
+      "A few days before month end (the 25th), re-sends the Approve / Reject email to client reviewers for every week still awaiting them, so timesheets get validated before invoicing.",
     category: "Timesheets",
     manualTrigger: true,
   },

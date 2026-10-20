@@ -681,7 +681,12 @@ function BusinessProcesses() {
             [
               "Auto-approve stale client reviews",
               "Daily",
-              "Approves client-review timesheets left unactioned past the 7-day window, so billing isn't stuck.",
+              "Approves client-review timesheets left unactioned past the 5-day window, so billing isn't stuck.",
+            ],
+            [
+              "Month-end client review reminders",
+              "Monthly (25th)",
+              "Re-sends the Approve / Reject email to client reviewers for weeks still awaiting them, so timesheets are validated before invoicing.",
             ],
             [
               "Daily project status digest",
