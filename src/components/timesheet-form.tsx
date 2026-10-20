@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { StaffingRecord, TimesheetRecord } from "@/lib/airtable";
-import { formatWeekRange, fridayOfWeek, mondayOf, thisMondayIso } from "@/lib/dates";
+import { countedMonthLabel, formatWeekRange, fridayOfWeek, isSplitWeek, mondayOf, thisMondayIso } from "@/lib/dates";
 import { WeekPicker } from "@/components/week-picker";
 import { Button } from "@/components/form-controls";
 
@@ -290,6 +290,15 @@ export function TimesheetForm({
           <span className="block text-[11px] text-slate-500 mt-1">
             {formatWeekRange(weekMonday, weekFriday)}
           </span>
+          {isSplitWeek(weekMonday, weekFriday) ? (
+            <p className="mt-1 flex items-start gap-1.5 rounded-md bg-rose-50 px-2 py-1.5 text-[11px] text-rose-700 ring-1 ring-rose-200">
+              <span aria-hidden>⚠</span>
+              <span>
+                This week spans two months, so it will be counted in{" "}
+                <strong>{countedMonthLabel(weekFriday)}</strong> (the month of its Friday).
+              </span>
+            </p>
+          ) : null}
         </div>
         <label className="block min-w-0">
           <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">Project Staffing</span>
