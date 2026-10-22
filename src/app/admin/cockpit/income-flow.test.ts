@@ -27,6 +27,7 @@ function pay(over: Partial<PaymentRecord>): PaymentRecord {
     paymentStatus: "Paid",
     paymentDate: null,
     dueDate: null,
+    sentToClientDate: null,
     beneficiary: "",
     comment: "",
     memberNote: "",

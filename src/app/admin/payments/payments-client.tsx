@@ -96,6 +96,7 @@ type Filters = {
   dueTo: string;
   paymentFrom: string;
   paymentTo: string;
+  notSentOnly: boolean;
   search: string;
 };
 
@@ -112,6 +113,7 @@ const DEFAULT_FILTERS: Filters = {
   dueTo: "",
   paymentFrom: "",
   paymentTo: "",
+  notSentOnly: false,
   search: "",
 };
 
@@ -166,6 +168,17 @@ function statusLabel(status: string, direction: "" | "Inflow" | "Outflow"): stri
   return status;
 }
 
+// A client invoice produced (has an invoice date) but not yet marked sent to the
+// client, and still outstanding — i.e. it may have slipped through un-sent.
+function isNotSentToClient(p: PaymentRecord): boolean {
+  return (
+    p.direction === "Inflow" &&
+    !!p.invoiceDate &&
+    !p.sentToClientDate &&
+    !["Paid", "Rejected", "Canceled", "Cancelled"].includes(p.paymentStatus)
+  );
+}
+
 const PAYMENT_TYPES = ["Client Invoice", "Subcontractor", "Expense", "Other"] as const;
 
 // Which types belong to which direction. Drives the dynamic Type picker so
@@ -210,6 +223,7 @@ type FormState = {
   paymentStatus: string;
   paymentDate: string;
   dueDate: string;
+  sentToClientDate: string;
   beneficiary: string;
   comment: string;
   invoiceUrl: string;
@@ -232,6 +246,7 @@ const EMPTY_FORM: FormState = {
   paymentStatus: "Scheduled",
   paymentDate: "",
   dueDate: "",
+  sentToClientDate: "",
   beneficiary: "",
   comment: "",
   invoiceUrl: "",
@@ -255,6 +270,7 @@ function fromRecord(p: PaymentRecord): FormState {
     paymentStatus: effectiveStatus(p.paymentStatus),
     paymentDate: p.paymentDate ?? "",
     dueDate: p.dueDate ?? "",
+    sentToClientDate: p.sentToClientDate ?? "",
     beneficiary: p.beneficiary,
     comment: p.comment,
     invoiceUrl: p.invoiceUrl,
@@ -533,6 +549,7 @@ export function PaymentsClient({
       if (filters.des.length && !filters.des.includes(desForPayment(p))) return false;
       if (filters.reconciled === "linked" && !p.qontoTransactionId) return false;
       if (filters.reconciled === "unlinked" && p.qontoTransactionId) return false;
+      if (filters.notSentOnly && !isNotSentToClient(p)) return false;
       // Date range filters apply only once the user has picked BOTH ends —
       // a half-set range previously hid every payment outside the partial bound.
       if (filters.dueFrom && filters.dueTo) {
@@ -886,6 +903,7 @@ export function PaymentsClient({
         paymentStatus: form.paymentStatus,
         paymentDate: form.paymentDate || null,
         dueDate: form.dueDate || null,
+        sentToClientDate: form.sentToClientDate || null,
         beneficiary: form.beneficiary,
         comment: form.comment,
         invoiceUrl: form.invoiceUrl.trim(),
@@ -1141,6 +1159,23 @@ export function PaymentsClient({
               ]}
             />
           ) : null}
+          {/* Quick filter: client invoices produced but not yet sent. Inflow-only. */}
+          {filters.direction !== "Outflow" ? (
+            <button
+              type="button"
+              onClick={() => update("notSentOnly", !filters.notSentOnly)}
+              aria-pressed={filters.notSentOnly}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                filters.notSentOnly
+                  ? "border-rose-300 bg-rose-600 text-white"
+                  : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+              }`}
+              title="Show only client invoices that are produced but not yet marked sent"
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${filters.notSentOnly ? "bg-white" : "bg-rose-500"}`} />
+              Not sent to client
+            </button>
+          ) : null}
           <FilterDateRange
             label="Due date"
             from={filters.dueFrom}
@@ -1260,6 +1295,9 @@ export function PaymentsClient({
                     : memberLabel(p) || p.beneficiary || "—";
                 const status = effectiveStatus(p.paymentStatus);
                 const tint = paymentRowTint(status);
+                // A client invoice that was produced (has an invoice date) but
+                // not yet marked sent to the client — easy to miss.
+                const notSentToClient = isNotSentToClient(p);
                 const open = expandedRows.has(p.id);
                 return (
                   <Fragment key={p.id}>
@@ -1289,7 +1327,19 @@ export function PaymentsClient({
                     <td className="px-2 py-1.5 font-mono text-xs hidden lg:table-cell">
                       {projectLabel(p) || "—"}
                     </td>
-                    <td className="px-2 py-1.5 demo-blur">{counterparty}</td>
+                    <td className="px-2 py-1.5 demo-blur">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span>{counterparty}</span>
+                        {notSentToClient ? (
+                          <span
+                            title="This client invoice has been produced but not yet marked as sent to the client."
+                            className="shrink-0 rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-rose-700"
+                          >
+                            Not sent
+                          </span>
+                        ) : null}
+                      </span>
+                    </td>
                     <td className="px-2 py-1.5 hidden lg:table-cell text-slate-700 demo-blur">
                       <div className="flex items-center gap-1">
                         <span>{p.invoiceReference || <span className="text-slate-300">—</span>}</span>
@@ -1769,6 +1819,14 @@ export function PaymentsClient({
               onChange={(v) => updateField("dueDate", v)}
               placeholder="Pick a date"
             />
+            {form.direction === "Inflow" ? (
+              <DateField
+                label="Sent to client"
+                value={form.sentToClientDate}
+                onChange={(v) => updateField("sentToClientDate", v)}
+                placeholder="Not sent yet"
+              />
+            ) : null}
             {form.paymentStatus === "Paid" ? (
               <DateField
                 label={form.direction === "Inflow" ? "Receipt date" : "Payment date"}
@@ -2217,6 +2275,12 @@ function PaymentDetails({
         <PField label="Invoice ref" value={p.invoiceReference} />
         <PField label="Invoice date" value={p.invoiceDate ?? ""} />
         <PField label="Due date" value={p.dueDate ?? ""} />
+        {p.direction === "Inflow" ? (
+          <PField
+            label="Sent to client"
+            value={p.sentToClientDate ?? (isNotSentToClient(p) ? "Not sent yet" : "—")}
+          />
+        ) : null}
         <PField label="Payment date" value={p.paymentStatus === "Paid" ? p.paymentDate ?? "" : ""} />
         <PField label="Payment terms" value={p.paymentTerms} />
         <PField label="Amount" value={money(p.invoiceValue, p.invoiceCurrency)} blur />

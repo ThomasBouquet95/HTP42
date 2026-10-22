@@ -310,6 +310,12 @@ export const FIELDS = {
     paymentStatus: "Payment Status",
     paymentDate: "Payment Date",
     dueDate: "Due Date",
+    // For outgoing (client) invoices: the day the invoice was actually sent to
+    // the client. Often the same day it's produced (invoiceDate), but not always
+    // — e.g. Pierre Fabre via iSupplier is deposited later. Blank here on a
+    // client invoice = produced but not yet transmitted. Lazily created via the
+    // meta API, see ensurePaymentSentToClientField.
+    sentToClientDate: "Sent to Client Date",
     beneficiary: "Beneficiary",
     comment: "Comment",
     // A note the admin leaves for the MEMBER when changing the payment status
@@ -839,6 +845,9 @@ export type PaymentRecord = {
   paymentStatus: PaymentStatus | "";
   paymentDate: string | null;
   dueDate: string | null;
+  // Outgoing (client) invoices: when it was sent to the client (null = produced
+  // but not yet transmitted). Meaningless for outflows.
+  sentToClientDate: string | null;
   beneficiary: string;
   comment: string;
   memberNote: string;
@@ -3010,6 +3019,7 @@ function paymentFromRecord(r: AirtableRecord<FieldSet>): PaymentRecord {
     paymentStatus: str(r, FIELDS.payments.paymentStatus) as PaymentStatus | "",
     paymentDate: dateOrNull(r, FIELDS.payments.paymentDate),
     dueDate: dateOrNull(r, FIELDS.payments.dueDate),
+    sentToClientDate: dateOrNull(r, FIELDS.payments.sentToClientDate),
     beneficiary: str(r, FIELDS.payments.beneficiary),
     comment: str(r, FIELDS.payments.comment),
     memberNote: str(r, FIELDS.payments.memberNote),
@@ -3071,6 +3081,9 @@ export type PaymentInput = {
   paymentStatus: PaymentStatus | "";
   paymentDate: string | null;
   dueDate: string | null;
+  // Optional (outgoing/client invoices only). Undefined = leave as-is; "" or
+  // null clears it. See ensurePaymentSentToClientField.
+  sentToClientDate?: string | null;
   beneficiary: string;
   comment: string;
   invoiceUrl: string;
@@ -3112,6 +3125,11 @@ function paymentFields(input: PaymentInput): Record<string, unknown> {
     // accept it when the payment has been executed (Paid). Otherwise clear.
     [FIELDS.payments.paymentDate]: input.paymentStatus === "Paid" ? input.paymentDate : null,
     [FIELDS.payments.dueDate]: input.dueDate,
+    // Only touch "Sent to Client Date" when the caller provided it (undefined =
+    // leave as-is). Empty string clears it.
+    ...(input.sentToClientDate !== undefined
+      ? { [FIELDS.payments.sentToClientDate]: input.sentToClientDate || null }
+      : {}),
     [FIELDS.payments.beneficiary]: input.beneficiary,
     [FIELDS.payments.comment]: input.comment,
     // Empty string clears the URL field; Airtable accepts "" for url fields.
@@ -3427,7 +3445,54 @@ async function prepPaymentWrite(input: PaymentInput): Promise<PaymentInput> {
     const ok = await ensurePaymentStaffingField();
     if (!ok) return { ...resolved, staffingRecordIds: undefined };
   }
+  // Make sure the lazily-created "Sent to Client Date" field exists before a
+  // write tries to set it. Dropped from the write if it can't be created, so a
+  // meta hiccup never blocks the save.
+  if (resolved.sentToClientDate !== undefined) {
+    const ok = await ensurePaymentSentToClientField();
+    if (!ok) return { ...resolved, sentToClientDate: undefined };
+  }
   return resolved;
+}
+
+let paymentSentToClientFieldReady = false;
+async function ensurePaymentSentToClientField(): Promise<boolean> {
+  if (paymentSentToClientFieldReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.payments);
+    if (!table) return false;
+    if (table.fields.some((f) => f.name === FIELDS.payments.sentToClientDate)) {
+      paymentSentToClientFieldReady = true;
+      return true;
+    }
+    const create = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: FIELDS.payments.sentToClientDate,
+          type: "date",
+          options: { dateFormat: { name: "iso", format: "YYYY-MM-DD" } },
+          description: "For a client invoice: the day it was sent to the client (blank = not yet transmitted).",
+        }),
+      },
+    );
+    if (create.ok) paymentSentToClientFieldReady = true;
+    return paymentSentToClientFieldReady;
+  } catch (e) {
+    console.error("ensurePaymentSentToClientField failed:", e);
+    return false;
+  }
 }
 
 export async function deletePayment(recordId: string): Promise<void> {
