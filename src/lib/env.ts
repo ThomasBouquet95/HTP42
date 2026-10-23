@@ -60,16 +60,15 @@ export const env = {
     return process.env.SLACK_BOT_TOKEN ?? "";
   },
   // Which Slack channel each summary posts to (channel name like "#finance" or a
-  // channel ID). Overridable per deployment; sensible defaults map to the HTP42
-  // channels. Blank disables that one post.
+  // channel ID). Overridable per deployment; defaults match the HTP42 channels.
   get slackChannels() {
     return {
-      // Daily project-status digest — margins/profitability, so a private channel.
-      projectDigest: process.env.SLACK_CHANNEL_PROJECT_DIGEST ?? "#partners",
-      // Weekly payments-due digest — cash in / owed to members.
-      paymentsDigest: process.env.SLACK_CHANNEL_PAYMENTS_DIGEST ?? "#finance",
-      // Month-end client-review reminder recap (internal heads-up).
-      timesheetReminders: process.env.SLACK_CHANNEL_TIMESHEET_REMINDERS ?? "#timesheets",
+      // Daily project profitability.
+      finance: process.env.SLACK_CHANNEL_FINANCE ?? "#finance",
+      // Daily payments recap + issues.
+      payments: process.env.SLACK_CHANNEL_PAYMENTS ?? "#payments",
+      // Daily timesheet backlog + the month-end review-reminder recap.
+      timesheets: process.env.SLACK_CHANNEL_TIMESHEETS ?? "#timesheets",
     };
   },
   // Shared mailbox that receives automated / paid vendor invoices. The nightly

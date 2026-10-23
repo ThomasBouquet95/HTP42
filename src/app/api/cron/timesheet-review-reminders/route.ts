@@ -24,7 +24,7 @@ async function run() {
   // Internal heads-up so the team knows the month-end nudge went out.
   if (result.reminded > 0) {
     await postToSlack(
-      env.slackChannels.timesheetReminders,
+      env.slackChannels.timesheets,
       `*⏰ Month-end timesheet reminders sent* — re-sent the Approve/Reject request to clients for ${result.reminded} week${result.reminded === 1 ? "" : "s"} still awaiting review before invoicing.`,
     );
   }

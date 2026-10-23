@@ -46,14 +46,21 @@ export const CRON_META: Record<string, CronMeta> = {
   "/api/cron/project-status-digest": {
     title: "Daily project status digest",
     description:
-      "Emails the founders a portfolio snapshot categorising every project as Running / Planned / Completed, with a Claude-written summary leading on anything at risk. Recipients are editable in Tech -> Emails. Also posted to Slack (#partners).",
+      "Emails the founders a portfolio snapshot categorising every project as Running / Planned / Completed, with a Claude-written summary leading on anything at risk. Recipients are editable in Tech -> Emails.",
     category: "Reporting",
     manualTrigger: true,
   },
   "/api/cron/payment-reminders": {
     title: "Weekly payments due digest",
     description:
-      "Emails the founders the outstanding client payments (money in) and payments owed to network members (money out), colour-coded by how overdue each is (red > 1 week, orange < 1 week, green upcoming). Recipients are editable in Tech -> Emails. Also posted to Slack (#finance).",
+      "Emails the founders the outstanding client payments (money in) and payments owed to network members (money out), colour-coded by how overdue each is (red > 1 week, orange < 1 week, green upcoming). Recipients are editable in Tech -> Emails.",
+    category: "Reporting",
+    manualTrigger: true,
+  },
+  "/api/cron/daily-slack-digest": {
+    title: "Daily Slack ops summaries",
+    description:
+      "Posts three short summaries to Slack every weekday morning: project profitability to #finance, outstanding payments + un-sent invoices to #payments, and the timesheet review backlog (stuck / never-sent client reviews, today's decisions) to #timesheets. Needs SLACK_BOT_TOKEN.",
     category: "Reporting",
     manualTrigger: true,
   },
