@@ -3,6 +3,7 @@ import { requireAdminPage } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
 import { listCronJobs, humanizeCron, nextRunUtc, type CronJob } from "@/lib/cron-catalog";
+import { SlackTestButton } from "./slack-test-button";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,8 @@ export default async function AdminCronsPage() {
         <code className="rounded bg-white px-1 py-0.5 font-mono text-[11px] text-slate-700">CRON_SECRET</code>{" "}
         bearer token. This page is a read-only view, editing a schedule is a code change.
       </div>
+
+      <SlackTestButton />
 
       <div className="grid gap-3 sm:grid-cols-2">
         {jobs.map(({ job, next }) => (
