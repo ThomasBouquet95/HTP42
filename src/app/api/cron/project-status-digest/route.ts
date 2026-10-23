@@ -14,6 +14,7 @@ import {
   type DigestModel,
 } from "@/lib/project-status-digest";
 import { resolveEmail } from "@/lib/email-templates-server";
+import { postToSlack, htmlToSlackText } from "@/lib/slack";
 import { sendMailViaGraph } from "@/lib/email";
 import { env } from "@/lib/env";
 
@@ -113,6 +114,17 @@ async function run() {
   const execHtml = exec ?? `<p style="margin:0 0 12px">Portfolio snapshot for ${date}. ${digestHeadline(model)}.</p>`;
   const summaryHtml = `${execHtml}\n${renderDigestSections(model)}`;
   const summaryText = summaryHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+  // Post the sharp summary to Slack too (best-effort, independent of email).
+  const slackText = [
+    `*📊 Project status — ${date}*`,
+    headline,
+    "",
+    htmlToSlackText(execHtml),
+    "",
+    `Full detail: ${env.appUrl}/admin/cockpit`,
+  ].join("\n");
+  await postToSlack(env.slackChannels.projectDigest, slackText);
 
   const { name, subject, textBody, htmlBody, to, cc, from } = await resolveEmail("project_status_digest", {
     date,

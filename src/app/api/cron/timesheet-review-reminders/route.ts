@@ -3,6 +3,8 @@ import { requireAdminSession } from "@/lib/auth";
 import { cronSecretMatches } from "@/lib/cron-auth";
 import { apiError } from "@/lib/errors";
 import { remindPendingClientReviews } from "@/lib/timesheet-review";
+import { postToSlack } from "@/lib/slack";
+import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -19,6 +21,13 @@ async function run() {
     `[cron] timesheet-review-reminders: done — reminded ${result.reminded}, skipped ${result.skipped}` +
       (result.errors.length ? `, errors ${result.errors.length}` : ""),
   );
+  // Internal heads-up so the team knows the month-end nudge went out.
+  if (result.reminded > 0) {
+    await postToSlack(
+      env.slackChannels.timesheetReminders,
+      `*⏰ Month-end timesheet reminders sent* — re-sent the Approve/Reject request to clients for ${result.reminded} week${result.reminded === 1 ? "" : "s"} still awaiting review before invoicing.`,
+    );
+  }
   return NextResponse.json(result);
 }
 

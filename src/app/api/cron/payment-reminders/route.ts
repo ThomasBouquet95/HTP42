@@ -13,6 +13,7 @@ import {
   type PaymentRemindersModel,
 } from "@/lib/payment-reminders";
 import { resolveEmail } from "@/lib/email-templates-server";
+import { postToSlack, htmlToSlackText } from "@/lib/slack";
 import { sendMailViaGraph } from "@/lib/email";
 import { env } from "@/lib/env";
 
@@ -119,6 +120,17 @@ async function run() {
     exec ?? `<p style="margin:0 0 12px">Payments due, ${displayDate}. ${headline}.</p>`;
   const summaryHtml = `${execHtml}\n${renderRemindersSections(model)}`;
   const summaryText = summaryHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+  // Post to Slack too (best-effort, independent of email).
+  const slackText = [
+    `*💶 Payments due — ${displayDate}*`,
+    headline,
+    "",
+    htmlToSlackText(execHtml),
+    "",
+    `Full detail: ${env.appUrl}/admin/payments`,
+  ].join("\n");
+  await postToSlack(env.slackChannels.paymentsDigest, slackText);
 
   const { name, subject, textBody, htmlBody, to, cc, from } = await resolveEmail("payment_reminders_weekly", {
     date: displayDate,

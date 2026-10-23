@@ -53,6 +53,25 @@ export const env = {
   get anthropicApiKey() {
     return process.env.ANTHROPIC_API_KEY ?? "";
   },
+  // Slack bot token (xoxb-…) used to post the scheduled summaries into Slack in
+  // addition to email. Optional: if absent, Slack posting is silently skipped.
+  // The bot must be invited to each target channel (especially private ones).
+  get slackBotToken() {
+    return process.env.SLACK_BOT_TOKEN ?? "";
+  },
+  // Which Slack channel each summary posts to (channel name like "#finance" or a
+  // channel ID). Overridable per deployment; sensible defaults map to the HTP42
+  // channels. Blank disables that one post.
+  get slackChannels() {
+    return {
+      // Daily project-status digest — margins/profitability, so a private channel.
+      projectDigest: process.env.SLACK_CHANNEL_PROJECT_DIGEST ?? "#partners",
+      // Weekly payments-due digest — cash in / owed to members.
+      paymentsDigest: process.env.SLACK_CHANNEL_PAYMENTS_DIGEST ?? "#finance",
+      // Month-end client-review reminder recap (internal heads-up).
+      timesheetReminders: process.env.SLACK_CHANNEL_TIMESHEET_REMINDERS ?? "#timesheets",
+    };
+  },
   // Shared mailbox that receives automated / paid vendor invoices. The nightly
   // importer reads PDF attachments from here via Microsoft Graph (the Azure
   // app needs Mail.Read application permission granted for this mailbox).
