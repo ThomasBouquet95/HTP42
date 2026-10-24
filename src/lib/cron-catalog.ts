@@ -67,7 +67,7 @@ export const CRON_META: Record<string, CronMeta> = {
   "/api/cron/life-science-signals": {
     title: "Life-science signals (web intelligence)",
     description:
-      "A curated daily feed: Claude searches the web for high-value pharma × clinical × data × AI developments and posts only the most relevant, actionable items (1–3 typical, 0 is fine) to #life-science-signals. Needs ANTHROPIC_API_KEY (web search) + SLACK_BOT_TOKEN.",
+      "A curated daily feed: Claude searches the web for high-value pharma × clinical × data × AI developments and posts only the most relevant, actionable items (1–3 typical, 0 is fine) to #life-science-signals. Reads the channel's last few days first so it never covers the same story twice. Needs ANTHROPIC_API_KEY (web search) + SLACK_BOT_TOKEN (with channels:history for the dedup).",
     category: "Reporting",
     manualTrigger: true,
   },

@@ -37,6 +37,90 @@ export async function postToSlack(
   }
 }
 
+type SlackListResponse = {
+  ok?: boolean;
+  error?: string;
+  channels?: { id?: string; name?: string }[];
+  response_metadata?: { next_cursor?: string };
+};
+
+type SlackHistoryResponse = {
+  ok?: boolean;
+  error?: string;
+  messages?: { text?: string }[];
+};
+
+// Resolve a channel reference (name like "#finance" or a raw ID like "C0123ABCD")
+// to its channel ID, which conversations.history requires. Returns the input
+// unchanged if it already looks like an ID, or null if it can't be resolved.
+// Best-effort: needs the channels:read / groups:read scope; returns null without
+// it rather than throwing (so callers degrade gracefully).
+export async function resolveChannelId(channel: string): Promise<string | null> {
+  const token = env.slackBotToken;
+  if (!token || !channel) return null;
+  // Already an ID (Slack channel IDs start with C/G/D).
+  if (/^[CGD][A-Z0-9]{6,}$/.test(channel)) return channel;
+  const wanted = channel.replace(/^#/, "").trim().toLowerCase();
+  if (!wanted) return null;
+  try {
+    let cursor = "";
+    for (let page = 0; page < 10; page++) {
+      const url = new URL("https://slack.com/api/conversations.list");
+      url.searchParams.set("types", "public_channel,private_channel");
+      url.searchParams.set("limit", "1000");
+      url.searchParams.set("exclude_archived", "true");
+      if (cursor) url.searchParams.set("cursor", cursor);
+      const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+      const data = (await res.json().catch(() => ({}))) as SlackListResponse;
+      if (!data.ok) {
+        console.error(`[slack] conversations.list failed: ${data.error ?? "unknown"}`);
+        return null;
+      }
+      const hit = (data.channels ?? []).find((c) => c.name?.toLowerCase() === wanted);
+      if (hit?.id) return hit.id;
+      cursor = data.response_metadata?.next_cursor ?? "";
+      if (!cursor) break;
+    }
+  } catch (e) {
+    console.error("[slack] resolveChannelId error:", e);
+  }
+  return null;
+}
+
+// Read the recent message texts from a channel (newest first), limited to the
+// last `days` and at most `limit` messages. Used to avoid re-posting the same
+// story. Best-effort: needs the channels:history / groups:history scope; returns
+// [] without it (so dedup is simply skipped, posting still works).
+export async function fetchRecentChannelTexts(
+  channel: string,
+  days = 7,
+  limit = 100,
+): Promise<string[]> {
+  const token = env.slackBotToken;
+  if (!token || !channel) return [];
+  try {
+    const id = await resolveChannelId(channel);
+    if (!id) return [];
+    const oldest = ((Date.now() - days * 86_400_000) / 1000).toFixed(6);
+    const url = new URL("https://slack.com/api/conversations.history");
+    url.searchParams.set("channel", id);
+    url.searchParams.set("limit", String(limit));
+    url.searchParams.set("oldest", oldest);
+    const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+    const data = (await res.json().catch(() => ({}))) as SlackHistoryResponse;
+    if (!data.ok) {
+      console.error(`[slack] conversations.history failed: ${data.error ?? "unknown"}`);
+      return [];
+    }
+    return (data.messages ?? [])
+      .map((m) => (typeof m.text === "string" ? m.text : ""))
+      .filter((t) => t.length > 0);
+  } catch (e) {
+    console.error("[slack] fetchRecentChannelTexts error:", e);
+    return [];
+  }
+}
+
 // Strip the simple HTML our digests build into plain text suitable for a Slack
 // message (Slack's mrkdwn doesn't render HTML). Collapses whitespace.
 export function htmlToSlackText(html: string): string {

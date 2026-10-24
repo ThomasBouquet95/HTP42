@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/auth";
 import { cronSecretMatches } from "@/lib/cron-auth";
 import { apiError } from "@/lib/errors";
-import { fetchSignals, normalizeUrl, renderSignalSlack } from "@/lib/signals";
-import { postToSlack } from "@/lib/slack";
+import { extractPostedContext, fetchSignals, normalizeUrl, renderSignalSlack } from "@/lib/signals";
+import { fetchRecentChannelTexts, postToSlack } from "@/lib/slack";
 import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
@@ -11,6 +11,8 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const MAX_PER_DAY = 6; // sanity cap; the model self-limits to the genuinely relevant
+const RECENT_DAYS = 5; // how far back to read the channel to avoid repeats
+const RECENT_LIMIT = 80; // cap on messages read back (newest first)
 
 // Curated daily pharma/clinical/data/AI intelligence feed → #life-science-signals.
 // Claude searches the web and selects only high-value items; we post one Slack
@@ -34,17 +36,41 @@ async function run() {
     timeZone: "Europe/Paris",
   }).format(new Date());
 
-  const items = await fetchSignals(today);
+  // Read the channel's recent history so we don't cover the same story twice.
+  // Best-effort: needs the channels:history scope on the bot; if absent this is
+  // just [] and we fall back to in-batch dedup only (nothing breaks).
+  const recentTexts = await fetchRecentChannelTexts(
+    env.slackChannels.lifeScienceSignals,
+    RECENT_DAYS,
+    RECENT_LIMIT,
+  );
+  const { headlines: recentHeadlines, urlKeys: recentUrlKeys } = extractPostedContext(recentTexts);
+  console.log(
+    `[cron] life-science-signals: ${recentTexts.length} recent messages read, ` +
+      `${recentUrlKeys.size} known URLs, ${recentHeadlines.length} known headlines`,
+  );
 
-  // De-duplicate within the batch by source URL and cap for safety.
+  // Pass the known headlines to the model so it avoids the same stories upfront.
+  const items = await fetchSignals(today, recentHeadlines);
+
+  // De-duplicate: skip anything already posted recently, dedup within the batch
+  // by source URL, and cap for safety.
   const seen = new Set<string>();
   const toPost = [];
+  let skippedKnown = 0;
   for (const it of items) {
     const key = normalizeUrl(it.sourceUrl);
+    if (recentUrlKeys.has(key)) {
+      skippedKnown += 1;
+      continue;
+    }
     if (seen.has(key)) continue;
     seen.add(key);
     toPost.push(it);
     if (toPost.length >= MAX_PER_DAY) break;
+  }
+  if (skippedKnown > 0) {
+    console.log(`[cron] life-science-signals: skipped ${skippedKnown} already-posted item(s)`);
   }
 
   let posted = 0;
@@ -54,7 +80,13 @@ async function run() {
   }
 
   console.log(`[cron] life-science-signals: done — found ${items.length}, posted ${posted}`);
-  return NextResponse.json({ ok: true, found: items.length, posted });
+  return NextResponse.json({
+    ok: true,
+    found: items.length,
+    posted,
+    skippedAlreadyPosted: skippedKnown,
+    recentMessagesRead: recentTexts.length,
+  });
 }
 
 // Daily Vercel cron. Protected by CRON_SECRET; an admin can also trigger it.

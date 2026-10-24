@@ -4,6 +4,7 @@ import { AdminTabs } from "@/components/admin-tabs";
 import { PageHeader } from "@/components/page-header";
 import { listCronJobs, humanizeCron, nextRunUtc, type CronJob } from "@/lib/cron-catalog";
 import { SlackTestButton } from "./slack-test-button";
+import { SignalsTestButton } from "./signals-test-button";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,7 @@ export default async function AdminCronsPage() {
       </div>
 
       <SlackTestButton />
+      <SignalsTestButton />
 
       <div className="grid gap-3 sm:grid-cols-2">
         {jobs.map(({ job, next }) => (

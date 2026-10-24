@@ -78,6 +78,36 @@ export function normalizeUrl(u: string): string {
   }
 }
 
+// Pull the posted headlines and source-URL keys out of recent Slack messages so
+// we can avoid re-posting the same story. Our own posts render as
+// `*Headline*\n...\n🔗 https://...`, and Slack wraps links as <https://...> or
+// <https://...|label>, so we scan every URL in the text, not just the 🔗 line.
+export function extractPostedContext(texts: string[]): {
+  headlines: string[];
+  urlKeys: Set<string>;
+} {
+  const headlines: string[] = [];
+  const urlKeys = new Set<string>();
+  for (const raw of texts) {
+    const text = typeof raw === "string" ? raw : "";
+    if (!text) continue;
+    // First non-empty line, stripped of mrkdwn bold, is our headline.
+    const firstLine = text
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l.length > 0);
+    if (firstLine) {
+      const headline = firstLine.replace(/\*/g, "").trim();
+      if (headline && !/^🔗/.test(headline)) headlines.push(headline);
+    }
+    // Any URL, whether bare or inside Slack's <...> / <...|label> wrapping.
+    for (const m of text.matchAll(/https?:\/\/[^\s|>]+/g)) {
+      urlKeys.add(normalizeUrl(m[0]));
+    }
+  }
+  return { headlines, urlKeys };
+}
+
 function normalizeItem(o: unknown): SignalItem | null {
   if (!o || typeof o !== "object") return null;
   const rec = o as Record<string, unknown>;
@@ -109,9 +139,18 @@ function parseItems(text: string): SignalItem[] {
 // exact SDK type name.
 const WEB_SEARCH_TOOL = { type: "web_search_20250305", name: "web_search", max_uses: 10 };
 
-export async function fetchSignals(today: string): Promise<SignalItem[]> {
+export async function fetchSignals(
+  today: string,
+  recentHeadlines: string[] = [],
+): Promise<SignalItem[]> {
   if (!env.anthropicApiKey) return [];
   const client = new Anthropic({ apiKey: env.anthropicApiKey });
+  const avoidBlock =
+    recentHeadlines.length > 0
+      ? `\n\nAlready posted in this channel over the last few days — do NOT repeat these, ` +
+        `nor the same underlying event under a different headline:\n- ` +
+        recentHeadlines.slice(0, 60).join("\n- ")
+      : "";
   const response = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 4096,
@@ -123,7 +162,8 @@ export async function fetchSignals(today: string): Promise<SignalItem[]> {
         content:
           `Today is ${today}. Search the web for developments from roughly the last 24–48 hours ` +
           `and return the curated items as a JSON array exactly per your instructions. ` +
-          `If nothing clears the bar, return [].`,
+          `If nothing clears the bar, return [].` +
+          avoidBlock,
       },
     ],
   });
