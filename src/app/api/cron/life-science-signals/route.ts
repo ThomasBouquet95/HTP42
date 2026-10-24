@@ -10,7 +10,10 @@ export const runtime = "nodejs";
 // Web search + curation can take a while; give it headroom.
 export const maxDuration = 300;
 
-const MAX_PER_DAY = 6; // sanity cap; the model self-limits to the genuinely relevant
+// One post per news item (4 items -> 4 posts). This is only a high safety ceiling
+// so a bug or bad response can't flood the channel; the model self-limits to the
+// genuinely relevant (typically 1-3), so this cap is almost never reached.
+const MAX_PER_DAY = 12;
 const RECENT_DAYS = 5; // how far back to read the channel to avoid repeats
 const RECENT_LIMIT = 80; // cap on messages read back (newest first)
 
