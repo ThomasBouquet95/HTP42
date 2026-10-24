@@ -69,6 +69,8 @@ export const env = {
       payments: process.env.SLACK_CHANNEL_PAYMENTS ?? "#payments",
       // Daily timesheet backlog + the month-end review-reminder recap.
       timesheets: process.env.SLACK_CHANNEL_TIMESHEETS ?? "#timesheets",
+      // Curated daily pharma/clinical/data/AI intelligence feed.
+      lifeScienceSignals: process.env.SLACK_CHANNEL_LIFE_SCIENCE_SIGNALS ?? "#life-science-signals",
     };
   },
   // Shared mailbox that receives automated / paid vendor invoices. The nightly
