@@ -56,12 +56,19 @@ const SYSTEM_PROMPT = [
   "Before including an item, verify it is: relevant, new, actionable, credible, and strong enough that you would still",
   "send it if only one story could be posted today. If not, reject it.",
   "",
+  "WRITING STYLE — write like a sharp colleague dropping a quick note in Slack, not a press release or an analyst report:",
+  "- Keep every field SHORT. Each of whatHappened, whyItMatters and watch should be roughly 10–20 words. One sentence each.",
+  "- Plain, direct language. Say who did what. Cut jargon, buzzwords and hedging ('signals that', 'underscores', 'is poised to').",
+  "- Prefer concrete nouns and active verbs. If a term isn't needed to make the point, drop it.",
+  "- Sound human and natural, like you're explaining it to a smart teammate in one breath — not stiff or corporate.",
+  "- headline: concise and specific, no marketing spin.",
+  "",
   "OUTPUT: return ONLY a JSON array (possibly empty []). No prose, no markdown, no code fences. Each element:",
   "{",
   '  "headline": string — concise, specific, non-promotional,',
-  '  "whatHappened": string — 1–2 concise factual sentences,',
-  '  "whyItMatters": string — 1 sentence on the implication for pharma Data/AI/Clinical leaders,',
-  '  "watch": string | null — optional caveat if vendor-reported, early-stage or uncertain,',
+  '  "whatHappened": string — one short sentence, ~10–20 words, who did what,',
+  '  "whyItMatters": string — one short sentence, ~10–20 words, the practical implication,',
+  '  "watch": string | null — optional, ~10–15 words, a caveat if vendor-reported / early / uncertain,',
   '  "sourceUrl": string — the direct article/announcement URL (the strongest source),',
   '  "sourceName": string — e.g. "Reuters", "FDA", "Nature"',
   "}",
@@ -176,12 +183,9 @@ export async function fetchSignals(
 }
 
 export function renderSignalSlack(it: SignalItem): string {
-  const lines = [
-    `*${it.headline}*`,
-    `*What happened:* ${it.whatHappened}`,
-    `*Why it matters:* ${it.whyItMatters}`,
-  ];
-  if (it.watch && it.watch.trim()) lines.push(`*Watch:* ${it.watch.trim()}`);
+  const lines = [`*${it.headline}*`, `• *What happened:* ${it.whatHappened}`];
+  lines.push(`• *Why it matters:* ${it.whyItMatters}`);
+  if (it.watch && it.watch.trim()) lines.push(`• *Watch:* ${it.watch.trim()}`);
   lines.push(`🔗 ${it.sourceUrl}`);
   return lines.join("\n");
 }
