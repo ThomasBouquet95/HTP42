@@ -60,7 +60,7 @@ export const CRON_META: Record<string, CronMeta> = {
   "/api/cron/daily-slack-digest": {
     title: "Daily Slack ops summaries",
     description:
-      "Posts three short summaries to Slack every weekday morning: project profitability to #finance, outstanding payments + un-sent invoices to #payments, and the timesheet review backlog (stuck / never-sent client reviews, today's decisions) to #timesheets. Needs SLACK_BOT_TOKEN.",
+      "Posts three short summaries to Slack every morning: project profitability to #finance, outstanding payments + un-sent invoices to #payments, and the timesheet review backlog (stuck / never-sent client reviews, today's decisions) to #timesheets. Needs SLACK_BOT_TOKEN.",
     category: "Reporting",
     manualTrigger: true,
   },

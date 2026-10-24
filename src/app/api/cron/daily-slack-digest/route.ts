@@ -17,7 +17,7 @@ import { env } from "@/lib/env";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-// Daily Slack ops summaries (weekday mornings), one post per channel:
+// Daily Slack ops summaries (every morning), one post per channel:
 //   #finance    — project profitability (flagged projects + totals)
 //   #payments   — outstanding in/out, overdue, status counts, un-sent invoices
 //   #timesheets — review backlog, stuck/never-sent client reviews, today's decisions
@@ -107,7 +107,7 @@ async function run() {
   return NextResponse.json({ ok: posts.some((p) => p.ok), result });
 }
 
-// Weekday Vercel cron (07:00 UTC). Protected by CRON_SECRET; an admin can also
+// Daily Vercel cron (07:00 UTC). Protected by CRON_SECRET; an admin can also
 // trigger it manually.
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
