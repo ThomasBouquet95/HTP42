@@ -231,6 +231,23 @@ export function IncomeSankey({ flow }: { flow: IncomeFlow }) {
     style: { cursor: "pointer" as const },
   });
 
+  const hasDetail = (key: string) => (flow.details[key]?.length ?? 0) > 0;
+
+  // The drill-down for the pinned node (click = pin + break down). Null when
+  // nothing is pinned or the pinned node has no further split.
+  const drill = (() => {
+    if (!pinned) return null;
+    const items = flow.details[pinned];
+    if (!items || items.length === 0) return null;
+    const c = clientNodes.find((n) => n.key === pinned);
+    if (c) return { label: c.label, total: c.value, color: c.color, kind: "revenue by project", items };
+    const r = rightNodes.find((n) => n.key === pinned);
+    if (r && !r.tone) {
+      return { label: r.label, total: Math.abs(r.value), color: r.color, kind: "cost by payee", items };
+    }
+    return null;
+  })();
+
   // Trunk edges are tiled continuously in node order; the side ends sit at each
   // node's own (gapped) vertical position, so the ribbons fan.
   let leftEdge = trunkTop;
@@ -343,6 +360,7 @@ export function IncomeSankey({ flow }: { flow: IncomeFlow }) {
                 <rect x={leftX} y={n.y} width={NODE_W} height={Math.max(1, n.h)} rx={3} fill={n.color} />
                 <text x={leftX - 10} y={showValue ? mid - 3 : mid + 3.5} textAnchor="end" fontSize="12" fontWeight="600" fill="#334155">
                   {truncate(n.label, 22)}
+                  {hasDetail(n.key) ? <tspan fill="#94a3b8"> ›</tspan> : null}
                 </text>
                 {showValue ? (
                   <text x={leftX - 10} y={mid + 12} textAnchor="end" fontSize="11" fill="#64748b" className="tabular-nums">
@@ -370,6 +388,7 @@ export function IncomeSankey({ flow }: { flow: IncomeFlow }) {
                   fill={labelColor}
                 >
                   {truncate(n.label, 30)}
+                  {hasDetail(n.key) ? <tspan fill="#94a3b8"> ›</tspan> : null}
                 </text>
                 {showValue ? (
                   <text
@@ -388,6 +407,46 @@ export function IncomeSankey({ flow }: { flow: IncomeFlow }) {
           })}
         </svg>
       </div>
+
+      {/* Drill-down: the pinned node's breakdown. */}
+      {drill ? (
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-800">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: drill.color }} />
+              {drill.label}
+              <span className="font-normal text-slate-400">· {drill.kind}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPinned(null)}
+              className="rounded px-1.5 py-0.5 text-[11px] font-medium text-slate-500 hover:bg-slate-200/70"
+            >
+              Close ✕
+            </button>
+          </div>
+          <ul className="mt-2 space-y-1">
+            {drill.items.map((it) => {
+              const p = drill.total > 0 ? Math.round((Math.abs(it.value) / drill.total) * 100) : 0;
+              return (
+                <li key={it.key} className="flex items-center gap-2 text-xs">
+                  <span className="w-10 shrink-0 text-right tabular-nums text-slate-400">{p}%</span>
+                  <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200">
+                    <span
+                      className="block h-full rounded-full"
+                      style={{ width: `${Math.max(2, p)}%`, backgroundColor: drill.color, opacity: 0.55 }}
+                    />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-slate-600" title={it.label}>
+                    {it.label}
+                  </span>
+                  <span className="shrink-0 tabular-nums font-medium text-slate-800">{eur(it.value)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
 
       {/* Floating tooltip (follows the cursor, clamped inside the card) */}
       {tipInfo && tip ? (
@@ -419,7 +478,8 @@ export function IncomeSankey({ flow }: { flow: IncomeFlow }) {
       ) : null}
 
       <p className="mt-1 px-1 text-[11px] text-slate-400">
-        Hover a client, cost or the trunk to highlight its flow; click to pin. Net {net >= 0 ? "profit" : "loss"}{" "}
+        Hover to highlight a flow; click a node marked <span className="text-slate-500">›</span> to break it down
+        (clients by project, costs by payee). Net {net >= 0 ? "profit" : "loss"}{" "}
         margin:{" "}
         <span className={net >= 0 ? "text-green-700" : "text-red-700"}>
           {revenue > 0 ? `${marginPct}%` : "—"}

@@ -57,6 +57,7 @@ export default async function AdminCockpitPage() {
         payments={networkPayments}
         ownWorkPayments={ownWorkPayments}
         clients={clients.map((c) => ({ id: c.id, name: c.clientName || c.clientCode }))}
+        projects={networkProjects.map((p) => ({ id: p.id, label: p.projectName || p.projectCode }))}
         profitability={profitability}
       />
     </main>

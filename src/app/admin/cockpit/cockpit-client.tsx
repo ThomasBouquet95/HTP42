@@ -25,6 +25,7 @@ export function CockpitClient({
   payments,
   ownWorkPayments = [],
   clients,
+  projects = [],
   profitability = [],
 }: {
   payments: PaymentRecord[];
@@ -32,6 +33,8 @@ export function CockpitClient({
   // every network figure below and summarised in a separate banner.
   ownWorkPayments?: PaymentRecord[];
   clients: { id: string; name: string }[];
+  // Project id -> label, for the income-statement drill-down (revenue by project).
+  projects?: { id: string; label: string }[];
   // Per-project actual + projected profitability for the second sub-tab.
   profitability?: ProjectProfit[];
 }) {
@@ -42,6 +45,10 @@ export function CockpitClient({
   const clientNameById = useMemo(
     () => new Map(clients.map((c) => [c.id, c.name])),
     [clients],
+  );
+  const projectLabelById = useMemo(
+    () => new Map(projects.map((p) => [p.id, p.label])),
+    [projects],
   );
 
   // Distinct years present (by invoice date), newest first, for the selector.
@@ -87,8 +94,8 @@ export function CockpitClient({
   const totals = useMemo(() => buildTotals(scopedPayments), [scopedPayments]);
   const monthly = useMemo(() => buildMonthly(scopedPayments, scope), [scopedPayments, scope]);
   const incomeFlow = useMemo(
-    () => buildIncomeFlow(scopedPayments, clientNameById, scope),
-    [scopedPayments, clientNameById, scope],
+    () => buildIncomeFlow(scopedPayments, clientNameById, scope, [], projectLabelById),
+    [scopedPayments, clientNameById, scope, projectLabelById],
   );
   const breakdown = useMemo(
     () => buildStatusBreakdown(scopedPayments, scope),

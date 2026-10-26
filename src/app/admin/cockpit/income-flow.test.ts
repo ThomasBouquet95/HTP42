@@ -126,6 +126,38 @@ describe("buildIncomeFlow", () => {
     expect(sum).toBe(flow.revenue);
   });
 
+  it("splits a client's revenue by project and a cost bucket by payee", () => {
+    const projectLabels = new Map([
+      ["p1", "Alpha"],
+      ["p2", "Beta"],
+    ]);
+    const payments = [
+      pay({ id: "a", direction: "Inflow", clientRecordIds: ["c1"], projectRecordIds: ["p1"], invoiceValueEur: 100 }),
+      pay({ id: "b", direction: "Inflow", clientRecordIds: ["c1"], projectRecordIds: ["p2"], invoiceValueEur: 60 }),
+      pay({ id: "d", direction: "Outflow", type: "Subcontractor", beneficiary: "Jane", invoiceValueEur: 40 }),
+      pay({ id: "e", direction: "Outflow", type: "Subcontractor", beneficiary: "Omar", invoiceValueEur: 20 }),
+    ];
+    const flow = buildIncomeFlow(payments, names, "all", [], projectLabels);
+    // Acme Corp -> by project
+    expect(flow.details["Acme Corp"].map((i) => [i.label, i.value])).toEqual([
+      ["Alpha", 100],
+      ["Beta", 60],
+    ]);
+    // consulting cost -> by payee
+    expect(flow.details["consulting"].map((i) => [i.label, i.value])).toEqual([
+      ["Jane", 40],
+      ["Omar", 20],
+    ]);
+  });
+
+  it("does not add a drill-down for a single-project client", () => {
+    const payments = [
+      pay({ id: "a", direction: "Inflow", clientRecordIds: ["c1"], projectRecordIds: ["p1"], invoiceValueEur: 100 }),
+    ];
+    const flow = buildIncomeFlow(payments, names, "all", [], new Map([["p1", "Alpha"]]));
+    expect(flow.details["Acme Corp"]).toBeUndefined();
+  });
+
   it("reports a negative net when costs exceed revenue", () => {
     const payments = [
       pay({ id: "a", direction: "Inflow", clientRecordIds: ["c1"], invoiceValueEur: 50 }),
