@@ -50,7 +50,12 @@ const fmtEur = (n: number) => `€${Math.round(n).toLocaleString("en-US")}`;
 
 export function buildProjectProfitability(
   projects: ProjectLike[],
+  // Network payments only: the founder's own pay (his tagged earning payments)
+  // must already be removed, so it doesn't count as a network cost.
   payments: PaymentLike[],
+  // The founder's own billable revenue per project record id, netted out of that
+  // project's revenue (the cost side is handled by excluding it from `payments`).
+  ownRevenueByProjectId: Map<string, number> = new Map(),
 ): ProjectProfit[] {
   const revenueByProject = new Map<string, number>(); // all inflows (incl. expected)
   const receivedByProject = new Map<string, number>(); // paid inflows only
@@ -76,8 +81,11 @@ export function buildProjectProfitability(
   const rows: ProjectProfit[] = [];
   for (const pr of projects) {
     const contractEur = pr.totalAmountEur;
-    const revenueToDateEur = round2(revenueByProject.get(pr.id) ?? 0);
-    const receivedEur = round2(receivedByProject.get(pr.id) ?? 0);
+    // Net the founder's own billable slice out of this project's revenue (floored
+    // at 0); cap received so it never exceeds the netted revenue.
+    const ownSlice = ownRevenueByProjectId.get(pr.id) ?? 0;
+    const revenueToDateEur = round2(Math.max(0, (revenueByProject.get(pr.id) ?? 0) - ownSlice));
+    const receivedEur = round2(Math.min(receivedByProject.get(pr.id) ?? 0, revenueToDateEur));
     const costEur = round2(costByProject.get(pr.id) ?? 0);
     const costPaidEur = round2(costPaidByProject.get(pr.id) ?? 0);
 

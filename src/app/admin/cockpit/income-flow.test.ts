@@ -88,20 +88,27 @@ describe("buildIncomeFlow", () => {
     expect(buildIncomeFlow(payments, names, "executed").revenue).toBe(100);
   });
 
-  // FOUNDER-EARNINGS (temporary) — extra (non-payment) cost nodes.
-  it("appends extra cost nodes and folds them into totalCosts + net", () => {
-    const payments = [
-      pay({ id: "a", direction: "Inflow", clientRecordIds: ["c1"], invoiceValueEur: 1000 }),
-      pay({ id: "b", direction: "Outflow", type: "Subcontractor", invoiceValueEur: 200 }),
-    ];
-    const flow = buildIncomeFlow(payments, names, "all", [
-      { key: "founder:Pascal", label: "Pascal Bouquet", value: 300 },
-      { key: "founder:Zero", label: "Zero", value: 0 }, // dropped (<= 0)
+  it("nets the founder's own billable revenue out per project, client + total", () => {
+    const projectLabels = new Map([
+      ["p1", "Alpha"],
+      ["p2", "Beta"],
     ]);
-    expect(flow.costs.map((c) => c.label)).toContain("Pascal Bouquet");
-    expect(flow.costs.some((c) => c.label === "Zero")).toBe(false);
-    expect(flow.totalCosts).toBe(500);
-    expect(flow.net).toBe(500);
+    const payments = [
+      // Acme: Alpha gets 1000 of client revenue, Pascal billed 300 of his own.
+      pay({ id: "a", direction: "Inflow", clientRecordIds: ["c1"], projectRecordIds: ["p1"], invoiceValueEur: 1000 }),
+      pay({ id: "b", direction: "Inflow", clientRecordIds: ["c1"], projectRecordIds: ["p2"], invoiceValueEur: 500 }),
+      pay({ id: "d", direction: "Outflow", type: "Subcontractor", invoiceValueEur: 400 }),
+    ];
+    const own = new Map([["p1", 300]]); // his slice on Alpha
+    const flow = buildIncomeFlow(payments, names, "all", projectLabels, own);
+    expect(flow.revenue).toBe(1200); // 1500 gross - 300 his slice
+    expect(flow.clients.find((c) => c.label === "Acme Corp")?.value).toBe(1200);
+    // Alpha's drill-down value is netted; Beta untouched.
+    expect(flow.details["Acme Corp"].map((i) => [i.label, i.value])).toEqual([
+      ["Alpha", 700],
+      ["Beta", 500],
+    ]);
+    expect(flow.net).toBe(800); // 1200 revenue - 400 cost
   });
 
   it("falls back to beneficiary then Unattributed for inflows without a client", () => {
@@ -137,7 +144,7 @@ describe("buildIncomeFlow", () => {
       pay({ id: "d", direction: "Outflow", type: "Subcontractor", beneficiary: "Jane", invoiceValueEur: 40 }),
       pay({ id: "e", direction: "Outflow", type: "Subcontractor", beneficiary: "Omar", invoiceValueEur: 20 }),
     ];
-    const flow = buildIncomeFlow(payments, names, "all", [], projectLabels);
+    const flow = buildIncomeFlow(payments, names, "all", projectLabels);
     // Acme Corp -> by project
     expect(flow.details["Acme Corp"].map((i) => [i.label, i.value])).toEqual([
       ["Alpha", 100],
@@ -154,7 +161,7 @@ describe("buildIncomeFlow", () => {
     const payments = [
       pay({ id: "a", direction: "Inflow", clientRecordIds: ["c1"], projectRecordIds: ["p1"], invoiceValueEur: 100 }),
     ];
-    const flow = buildIncomeFlow(payments, names, "all", [], new Map([["p1", "Alpha"]]));
+    const flow = buildIncomeFlow(payments, names, "all", new Map([["p1", "Alpha"]]));
     expect(flow.details["Acme Corp"]).toBeUndefined();
   });
 

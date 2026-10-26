@@ -209,44 +209,49 @@ export function isFounderEarningPayment(comment: string): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// NETWORK vs OWN-WORK SPLIT
+// NETWORK vs OWN-WORK SPLIT  ("his slice only, both sides")
 //
-// HTP42 is Pascal Bouquet's company: he places external consultants (the
-// "network") AND runs his own consulting engagements through the structure.
-// For TRUE network profitability we strip his own work out of the cockpit and
-// the profitability digests — both the client revenue it brings in and his own
-// cost. A project counts as his OWN engagement once he has recorded at least
-// one earning against it, so the Founder Earnings table is the single source of
-// truth for "this is Pascal's own work". Everything else is network.
+// HTP42 is Pascal Bouquet's company: external consultants (the "network")
+// deliver most projects, and Pascal also bills some of his OWN time on them.
+// His projects are therefore mixed, so we must NOT exclude whole projects —
+// that would hide the consultants' cost and revenue. Instead we strip only his
+// personal slice:
+//   - his tagged founder-earning payments are his own pay  -> removed from
+//     network COST (they don't appear in `networkPayments`), and
+//   - the same amounts are his own billable REVENUE -> returned per project
+//     record id so each project's revenue can be netted down by his slice.
+// Everything else (consultants' cost + the client revenue they drive, even on a
+// project Pascal also bills to) stays in the network figures.
 // ─────────────────────────────────────────────────────────────────────────
 
-// The project codes + Airtable record ids that are the founder's own
-// engagements, derived from his recorded earnings. Pure + side-effect free.
-export function ownWorkProjectSets(
-  earnings: { projectCode: string }[],
-  projects: { id: string; projectCode: string }[],
-): { codes: Set<string>; recordIds: Set<string> } {
-  const codes = new Set<string>();
-  for (const e of earnings) {
-    const code = (e.projectCode || "").trim();
-    if (code) codes.add(code);
+export function splitNetworkFromOwnWork<T extends { comment: string; projectRecordIds: string[] }>(
+  payments: T[],
+  // Extracts a payment's EUR value (callers pass effectiveEur).
+  eurOf: (p: T) => number,
+): {
+  networkPayments: T[];
+  ownPayments: T[];
+  // His own billable revenue per project record id, to net out of its revenue.
+  ownRevenueByProjectId: Map<string, number>;
+  ownTotalEur: number;
+} {
+  const networkPayments: T[] = [];
+  const ownPayments: T[] = [];
+  const ownRevenueByProjectId = new Map<string, number>();
+  let ownTotalEur = 0;
+  for (const p of payments) {
+    if (!isFounderEarningPayment(p.comment)) {
+      networkPayments.push(p);
+      continue;
+    }
+    ownPayments.push(p);
+    const eur = eurOf(p);
+    ownTotalEur += eur;
+    for (const id of p.projectRecordIds) {
+      ownRevenueByProjectId.set(id, (ownRevenueByProjectId.get(id) ?? 0) + eur);
+    }
   }
-  const recordIds = new Set<string>();
-  for (const p of projects) {
-    if (p.projectCode && codes.has(p.projectCode)) recordIds.add(p.id);
-  }
-  return { codes, recordIds };
-}
-
-// A payment is part of the founder's own work when it's one of his tagged
-// auto-paid earning payments, or it's linked to one of his own-work projects
-// (client revenue on his engagements, or any cost booked against them).
-export function isOwnWorkPayment(
-  p: { comment: string; projectRecordIds: string[] },
-  ownRecordIds: Set<string>,
-): boolean {
-  if (isFounderEarningPayment(p.comment)) return true;
-  return p.projectRecordIds.some((id) => ownRecordIds.has(id));
+  return { networkPayments, ownPayments, ownRevenueByProjectId, ownTotalEur };
 }
 
 // Create the instantly-Paid Outflow payment for one earning. Returns the new

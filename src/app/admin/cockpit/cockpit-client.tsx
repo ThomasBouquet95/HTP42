@@ -23,15 +23,16 @@ const eur = (v: number) => `€${Math.round(v).toLocaleString("en-US")}`;
 
 export function CockpitClient({
   payments,
-  ownWorkPayments = [],
+  ownPayments = [],
   clients,
   projects = [],
   profitability = [],
 }: {
   payments: PaymentRecord[];
-  // The founder's own-work payments (client revenue + his cost), excluded from
-  // every network figure below and summarised in a separate banner.
-  ownWorkPayments?: PaymentRecord[];
+  // The founder's own pay (his tagged earning payments). Already removed from
+  // `payments` (cost side); here it nets his billable revenue out of the income
+  // statement and is summarised in a banner.
+  ownPayments?: PaymentRecord[];
   clients: { id: string; name: string }[];
   // Project id -> label, for the income-statement drill-down (revenue by project).
   projects?: { id: string; label: string }[];
@@ -69,33 +70,33 @@ export function CockpitClient({
     return payments.filter((p) => (p.invoiceDate ?? "").slice(0, 4) === year);
   }, [payments, year]);
 
-  // Own work (Pascal Bouquet) — a year-scoped revenue / cost / net summary of the
-  // engagements excluded from the network figures below, so nothing is hidden
-  // silently. Canceled / Rejected drop out, like everywhere else.
+  // Pascal's own pay, year-scoped: his billable revenue to net out of the income
+  // statement (by project), plus a total for the banner. Canceled / Rejected drop
+  // out, like everywhere else.
   const ownWork = useMemo(() => {
     const scoped =
       year === "all"
-        ? ownWorkPayments
-        : ownWorkPayments.filter((p) => (p.invoiceDate ?? "").slice(0, 4) === year);
-    let revenue = 0;
-    let cost = 0;
+        ? ownPayments
+        : ownPayments.filter((p) => (p.invoiceDate ?? "").slice(0, 4) === year);
+    const byProjectId = new Map<string, number>();
     const projs = new Set<string>();
+    let total = 0;
     for (const p of scoped) {
       if (p.paymentStatus === "Canceled" || p.paymentStatus === "Rejected") continue;
       const e = effectiveEur(p);
       if (e <= 0) continue;
-      if (p.direction === "Inflow") revenue += e;
-      else if (p.direction === "Outflow") cost += e;
+      total += e;
       for (const c of p.projectCodes) projs.add(c);
+      for (const id of p.projectRecordIds) byProjectId.set(id, (byProjectId.get(id) ?? 0) + e);
     }
-    return { revenue, cost, net: revenue - cost, projectCount: projs.size };
-  }, [ownWorkPayments, year]);
+    return { total, projectCount: projs.size, byProjectId };
+  }, [ownPayments, year]);
 
   const totals = useMemo(() => buildTotals(scopedPayments), [scopedPayments]);
   const monthly = useMemo(() => buildMonthly(scopedPayments, scope), [scopedPayments, scope]);
   const incomeFlow = useMemo(
-    () => buildIncomeFlow(scopedPayments, clientNameById, scope, [], projectLabelById),
-    [scopedPayments, clientNameById, scope, projectLabelById],
+    () => buildIncomeFlow(scopedPayments, clientNameById, scope, projectLabelById, ownWork.byProjectId),
+    [scopedPayments, clientNameById, scope, projectLabelById, ownWork.byProjectId],
   );
   const breakdown = useMemo(
     () => buildStatusBreakdown(scopedPayments, scope),
@@ -113,31 +114,20 @@ export function CockpitClient({
           { value: "profit", label: "Project profitability" },
         ]}
       />
-      {ownWorkPayments.length > 0 ? (
+      {ownWork.total > 0 ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
             <div className="text-xs font-medium text-slate-600">
-              Own work (Pascal Bouquet){" "}
+              Pascal Bouquet — own billable work{" "}
               <span className="font-normal text-slate-400">
-                — excluded from the network figures below
+                netted out of the network figures below (removed from both revenue and cost)
                 {ownWork.projectCount > 0
                   ? ` · ${ownWork.projectCount} project${ownWork.projectCount === 1 ? "" : "s"}`
                   : ""}
               </span>
             </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums text-slate-500">
-              <span>
-                Revenue <b className="font-semibold text-slate-700">{eur(ownWork.revenue)}</b>
-              </span>
-              <span>
-                Cost <b className="font-semibold text-slate-700">{eur(ownWork.cost)}</b>
-              </span>
-              <span>
-                Net{" "}
-                <b className={`font-semibold ${ownWork.net >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
-                  {eur(ownWork.net)}
-                </b>
-              </span>
+            <div className="text-xs tabular-nums text-slate-500">
+              <b className="font-semibold text-slate-700">{eur(ownWork.total)}</b> excluded
             </div>
           </div>
         </div>

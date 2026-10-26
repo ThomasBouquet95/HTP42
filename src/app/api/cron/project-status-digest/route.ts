@@ -5,7 +5,7 @@ import { cronSecretMatches } from "@/lib/cron-auth";
 import { apiError } from "@/lib/errors";
 import { listPayments, listProjects } from "@/lib/airtable";
 import { effectiveEur, effectiveProjectEur } from "@/lib/fx";
-import { isOwnWorkPayment, listFounderEarnings, ownWorkProjectSets } from "@/lib/founder-earnings";
+import { splitNetworkFromOwnWork } from "@/lib/founder-earnings";
 import { buildProjectProfitability } from "@/app/admin/cockpit/profitability";
 import {
   buildDigestModel,
@@ -76,20 +76,17 @@ async function summarize(model: DigestModel): Promise<string | null> {
 
 async function run() {
   console.log("[cron] project-status-digest: start");
-  const [projects, payments, founderEarnings] = await Promise.all([
-    listProjects(),
-    listPayments(),
-    listFounderEarnings(),
-  ]);
+  const [projects, payments] = await Promise.all([listProjects(), listPayments()]);
 
-  // Network only: strip the founder's own consulting engagements (client revenue
-  // and his cost) so the digest reports the network's profitability.
-  const own = ownWorkProjectSets(founderEarnings, projects);
-  const networkProjects = projects.filter((p) => !own.codes.has(p.projectCode));
-  const networkPayments = payments.filter((p) => !isOwnWorkPayment(p, own.recordIds));
+  // Network profitability: remove Pascal's own pay from cost and net his billable
+  // revenue out of each project ("his slice only"), keeping the consultants' work.
+  const { networkPayments, ownRevenueByProjectId, ownTotalEur } = splitNetworkFromOwnWork(
+    payments,
+    (p) => effectiveEur(p),
+  );
 
   const profit = buildProjectProfitability(
-    networkProjects.map((p) => ({
+    projects.map((p) => ({
       id: p.id,
       projectCode: p.projectCode,
       projectName: p.projectName,
@@ -102,6 +99,7 @@ async function run() {
       invoiceValueEur: effectiveEur(p),
       paymentStatus: p.paymentStatus || "",
     })),
+    ownRevenueByProjectId,
   );
 
   const date = new Intl.DateTimeFormat("en-GB", {
@@ -112,7 +110,7 @@ async function run() {
   }).format(new Date());
 
   const model = buildDigestModel(
-    networkProjects.map((p) => ({ projectCode: p.projectCode, projectName: p.projectName, status: p.status || "" })),
+    projects.map((p) => ({ projectCode: p.projectCode, projectName: p.projectName, status: p.status || "" })),
     profit,
     date,
   );
@@ -123,8 +121,8 @@ async function run() {
   const exec = await summarize(model);
   const execHtml = exec ?? `<p style="margin:0 0 12px">Portfolio snapshot for ${date}. ${digestHeadline(model)}.</p>`;
   const ownNote =
-    own.codes.size > 0
-      ? `<p style="margin:12px 0 0;color:#64748b;font-size:12px">Network only — Pascal Bouquet's own engagements (${own.codes.size} project${own.codes.size === 1 ? "" : "s"}) are excluded.</p>`
+    ownTotalEur > 0
+      ? `<p style="margin:12px 0 0;color:#64748b;font-size:12px">Network figures only — Pascal Bouquet's own billable work (€${Math.round(ownTotalEur).toLocaleString("en-US")}) is netted out of revenue and cost.</p>`
       : "";
   const summaryHtml = `${execHtml}\n${renderDigestSections(model)}${ownNote}`;
   const summaryText = summaryHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();

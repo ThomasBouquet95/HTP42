@@ -4,7 +4,7 @@ import { cronSecretMatches } from "@/lib/cron-auth";
 import { apiError } from "@/lib/errors";
 import { listAllTimesheets, listPayments, listProjects } from "@/lib/airtable";
 import { effectiveEur, effectiveProjectEur } from "@/lib/fx";
-import { isOwnWorkPayment, listFounderEarnings, ownWorkProjectSets } from "@/lib/founder-earnings";
+import { splitNetworkFromOwnWork } from "@/lib/founder-earnings";
 import { buildProjectProfitability } from "@/app/admin/cockpit/profitability";
 import {
   buildPaymentsSlack,
@@ -30,20 +30,19 @@ async function run() {
     return NextResponse.json({ ok: false, reason: "slack not configured" });
   }
 
-  const [projects, payments, timesheets, founderEarnings] = await Promise.all([
+  const [projects, payments, timesheets] = await Promise.all([
     listProjects(),
     listPayments(),
     listAllTimesheets(),
-    listFounderEarnings(),
   ]);
 
-  // #finance profitability is network only: the founder's own engagements
-  // (client revenue + his cost) are stripped out. The #payments and #timesheets
-  // recaps below stay full-scope — his client invoices still need chasing, and
-  // his auto-paid earnings never show as an outstanding payment anyway.
-  const own = ownWorkProjectSets(founderEarnings, projects);
-  const networkProjects = projects.filter((p) => !own.codes.has(p.projectCode));
-  const networkPayments = payments.filter((p) => !isOwnWorkPayment(p, own.recordIds));
+  // #finance profitability is network only: remove Pascal's own pay from cost and
+  // net his billable revenue out of each project ("his slice only"), keeping the
+  // consultants' work. The #payments and #timesheets recaps below stay full-scope.
+  const { networkPayments, ownRevenueByProjectId, ownTotalEur } = splitNetworkFromOwnWork(
+    payments,
+    (p) => effectiveEur(p),
+  );
 
   const now = new Date();
   const todayIso = now.toISOString().slice(0, 10);
@@ -56,7 +55,7 @@ async function run() {
 
   // #finance — profitability (network only)
   const profit = buildProjectProfitability(
-    networkProjects.map((p) => ({
+    projects.map((p) => ({
       id: p.id,
       projectCode: p.projectCode,
       projectName: p.projectName,
@@ -69,10 +68,11 @@ async function run() {
       invoiceValueEur: effectiveEur(p),
       paymentStatus: p.paymentStatus || "",
     })),
+    ownRevenueByProjectId,
   );
   const ownNote =
-    own.codes.size > 0
-      ? `\n_Network only — Pascal Bouquet's own engagements (${own.codes.size} project${own.codes.size === 1 ? "" : "s"}) excluded._`
+    ownTotalEur > 0
+      ? `\n_Network only — Pascal Bouquet's own billable work (€${Math.round(ownTotalEur).toLocaleString("en-US")}) netted out._`
       : "";
   const financeText = buildProfitabilitySlack(profit, date, `${env.appUrl}/admin/cockpit`) + ownNote;
 

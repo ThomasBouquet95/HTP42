@@ -3,8 +3,7 @@ import {
   founderEarningMarker,
   isFounderEarningPayment,
   isFounderEarningsUser,
-  isOwnWorkPayment,
-  ownWorkProjectSets,
+  splitNetworkFromOwnWork,
 } from "./founder-earnings";
 
 // The founder path is deliberately limited to one person (Pascal Bouquet /
@@ -45,59 +44,38 @@ describe("founder-earning payment marker — cockpit double-count guard", () => 
   });
 });
 
-describe("ownWorkProjectSets — projects he recorded earnings against", () => {
-  const projects = [
-    { id: "recP1", projectCode: "OWN-1" },
-    { id: "recP2", projectCode: "NET-1" },
-    { id: "recP3", projectCode: "OWN-2" },
-  ];
+describe("splitNetworkFromOwnWork — his slice only, both sides", () => {
+  type P = { comment: string; projectRecordIds: string[]; eur: number };
+  const eurOf = (p: P) => p.eur;
 
-  it("collects the codes + record ids of projects with any earning", () => {
-    const { codes, recordIds } = ownWorkProjectSets(
-      [{ projectCode: "OWN-1" }, { projectCode: "OWN-1" }, { projectCode: "OWN-2" }],
-      projects,
-    );
-    expect([...codes].sort()).toEqual(["OWN-1", "OWN-2"]);
-    expect([...recordIds].sort()).toEqual(["recP1", "recP3"]);
+  it("removes his tagged pay from the network set and maps his revenue per project", () => {
+    const payments: P[] = [
+      // His own pay on two projects (mixed in with consultant work).
+      { comment: `Founder earning (auto-paid). ${founderEarningMarker("recE1")}`, projectRecordIds: ["recP1"], eur: 300 },
+      { comment: `Founder earning (auto-paid). ${founderEarningMarker("recE2")}`, projectRecordIds: ["recP1"], eur: 100 },
+      { comment: `Founder earning (auto-paid). ${founderEarningMarker("recE3")}`, projectRecordIds: ["recP2"], eur: 50 },
+      // Consultant cost on his project — stays in the network.
+      { comment: "Subcontractor INV-7", projectRecordIds: ["recP1"], eur: 900 },
+      // Client revenue — stays in the network.
+      { comment: "", projectRecordIds: ["recP1"], eur: 2000 },
+    ];
+    const { networkPayments, ownPayments, ownRevenueByProjectId, ownTotalEur } =
+      splitNetworkFromOwnWork(payments, eurOf);
+
+    expect(ownPayments).toHaveLength(3);
+    expect(networkPayments.map((p) => p.eur).sort((a, b) => a - b)).toEqual([900, 2000]);
+    expect(ownRevenueByProjectId.get("recP1")).toBe(400); // 300 + 100
+    expect(ownRevenueByProjectId.get("recP2")).toBe(50);
+    expect(ownTotalEur).toBe(450);
   });
 
-  it("ignores blank project codes and codes with no matching project", () => {
-    const { codes, recordIds } = ownWorkProjectSets(
-      [{ projectCode: "" }, { projectCode: "GHOST" }],
-      projects,
-    );
-    expect([...codes]).toEqual(["GHOST"]);
-    expect(recordIds.size).toBe(0);
-  });
-
-  it("is empty when there are no earnings", () => {
-    const { codes, recordIds } = ownWorkProjectSets([], projects);
-    expect(codes.size).toBe(0);
-    expect(recordIds.size).toBe(0);
-  });
-});
-
-describe("isOwnWorkPayment — split a payment into own-work vs network", () => {
-  const ownIds = new Set(["recP1", "recP3"]);
-
-  it("flags payments linked to an own-work project (revenue or cost)", () => {
-    expect(isOwnWorkPayment({ comment: "", projectRecordIds: ["recP1"] }, ownIds)).toBe(true);
-    expect(isOwnWorkPayment({ comment: "", projectRecordIds: ["recP2", "recP3"] }, ownIds)).toBe(true);
-  });
-
-  it("flags tagged founder-earning payments even without a project link", () => {
-    expect(
-      isOwnWorkPayment(
-        { comment: `Founder earning (auto-paid). ${founderEarningMarker("recXYZ")}`, projectRecordIds: [] },
-        ownIds,
-      ),
-    ).toBe(true);
-  });
-
-  it("leaves network payments alone", () => {
-    expect(isOwnWorkPayment({ comment: "Subcontractor INV-9", projectRecordIds: ["recP2"] }, ownIds)).toBe(
-      false,
-    );
-    expect(isOwnWorkPayment({ comment: "", projectRecordIds: [] }, ownIds)).toBe(false);
+  it("is a no-op when there are no founder-earning payments", () => {
+    const payments: P[] = [{ comment: "Subcontractor", projectRecordIds: ["recP1"], eur: 10 }];
+    const { networkPayments, ownPayments, ownRevenueByProjectId, ownTotalEur } =
+      splitNetworkFromOwnWork(payments, eurOf);
+    expect(networkPayments).toHaveLength(1);
+    expect(ownPayments).toHaveLength(0);
+    expect(ownRevenueByProjectId.size).toBe(0);
+    expect(ownTotalEur).toBe(0);
   });
 });

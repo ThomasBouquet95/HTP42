@@ -58,7 +58,7 @@ function liveRows(payments: PaymentRecord[], scope: ChartScope): PaymentRecord[]
   });
 }
 
-// Accumulate value into a nested label -> sum map (the drill-down buckets).
+// Accumulate value into a nested key -> sum map (the cost drill-down buckets).
 function addSplit(outer: Map<string, Map<string, number>>, outerKey: string, label: string, value: number) {
   let inner = outer.get(outerKey);
   if (!inner) {
@@ -72,34 +72,42 @@ function addSplit(outer: Map<string, Map<string, number>>, outerKey: string, lab
 // stays readable; the remainder folds into a single "Other" row.
 function toSortedItems(m: Map<string, number> | undefined, max = 12): FlowItem[] {
   if (!m) return [];
-  const items = [...m.entries()]
-    .map(([label, value]) => ({ key: label, label, value }))
-    .sort((a, b) => b.value - a.value);
-  if (items.length <= max) return items;
-  const head = items.slice(0, max - 1);
-  const tail = items.slice(max - 1);
+  return capItems(
+    [...m.entries()].map(([label, value]) => ({ key: label, label, value })),
+    max,
+  );
+}
+
+// Sort a FlowItem[] desc and fold the long tail into one "Other" row.
+function capItems(items: FlowItem[], max = 12): FlowItem[] {
+  const sorted = [...items].sort((a, b) => b.value - a.value);
+  if (sorted.length <= max) return sorted;
+  const head = sorted.slice(0, max - 1);
+  const tail = sorted.slice(max - 1);
   const tailVal = tail.reduce((s, c) => s + c.value, 0);
   return [...head, { key: "__other__", label: `Other (${tail.length})`, value: tailVal }];
 }
 
 export function buildIncomeFlow(
+  // Network payments only: the founder's own pay (his tagged earning payments)
+  // must already be removed so it isn't counted as a cost.
   payments: PaymentRecord[],
   clientNameById: Map<string, string>,
   scope: ChartScope,
-  // FOUNDER-EARNINGS (temporary) — extra cost nodes not backed by a payment
-  // (e.g. a founder's recorded earnings). Appended after the payment-derived
-  // cost buckets. Remove this param to drop the feature.
-  extraCosts: FlowItem[] = [],
-  // Project record id -> display label, used to split a client's revenue by
-  // project in the drill-down. Optional: without it, revenue falls back to the
-  // invoice reference / beneficiary.
+  // Project record id -> display label, for the revenue-by-project drill-down.
   projectLabelById: Map<string, string> = new Map(),
+  // The founder's own billable revenue per project record id, netted out of that
+  // project's revenue (and its client's bucket + the gross total). The cost side
+  // is handled by excluding his pay from `payments`.
+  ownRevenueByProjectId: Map<string, number> = new Map(),
 ): IncomeFlow {
   const rows = liveRows(payments, scope);
 
-  // --- Revenue by client (inflows) ---
+  // --- Revenue by client (inflows) --- grouped client -> projectKey -> cell, so
+  // the founder's slice can be netted at the project level (and roll up cleanly
+  // to the client bucket + the gross total).
   const byClient = new Map<string, number>();
-  const clientByProject = new Map<string, Map<string, number>>(); // client -> project -> sum
+  const clientByProject = new Map<string, Map<string, { label: string; value: number }>>();
   let revenue = 0;
   for (const p of rows) {
     if (p.direction !== "Inflow") continue;
@@ -111,14 +119,34 @@ export function buildIncomeFlow(
       p.beneficiary ||
       "Unattributed";
     byClient.set(name, (byClient.get(name) ?? 0) + eur);
-    const projLabel =
-      p.projectRecordIds.map((id) => projectLabelById.get(id)).find(Boolean) ||
-      p.invoiceReference ||
-      "Unattributed";
-    addSplit(clientByProject, name, projLabel, eur);
+    const projId = p.projectRecordIds.find((id) => id) ?? "";
+    const projKey = projId || (p.invoiceReference ? `ref:${p.invoiceReference}` : "__unattributed__");
+    const projLabel = (projId && projectLabelById.get(projId)) || p.invoiceReference || "Unattributed";
+    let inner = clientByProject.get(name);
+    if (!inner) {
+      inner = new Map();
+      clientByProject.set(name, inner);
+    }
+    const cell = inner.get(projKey) ?? { label: projLabel, value: 0 };
+    cell.value += eur;
+    inner.set(projKey, cell);
+  }
+
+  // Net the founder's own billable revenue out, per project — from the project
+  // cell, its client bucket, and the gross total, so everything stays consistent.
+  for (const [clientName, inner] of clientByProject) {
+    for (const [projKey, cell] of inner) {
+      const slice = ownRevenueByProjectId.get(projKey) ?? 0;
+      if (slice <= 0) continue;
+      const cut = Math.min(slice, cell.value);
+      cell.value -= cut;
+      byClient.set(clientName, (byClient.get(clientName) ?? 0) - cut);
+      revenue -= cut;
+    }
   }
 
   let clients: FlowItem[] = [...byClient.entries()]
+    .filter(([, value]) => value > 0)
     .map(([label, value]) => ({ key: label, label, value }))
     .sort((a, b) => b.value - a.value);
   const tailClients: FlowItem[] = [];
@@ -156,8 +184,6 @@ export function buildIncomeFlow(
     label: byCat.get(k)!.label,
     value: byCat.get(k)!.value,
   }));
-  // FOUNDER-EARNINGS (temporary) — append any non-payment cost nodes.
-  for (const c of extraCosts) if (c.value > 0) costs.push(c);
   const totalCosts = costs.reduce((s, c) => s + c.value, 0);
 
   // --- Drill-down details, keyed by node key ---
@@ -165,10 +191,15 @@ export function buildIncomeFlow(
   for (const c of clients) {
     if (c.key === "__other_clients__") {
       details[c.key] = tailClients;
-    } else {
-      const split = toSortedItems(clientByProject.get(c.label));
-      if (split.length > 1) details[c.key] = split; // 1 project = nothing to split
+      continue;
     }
+    const inner = clientByProject.get(c.label);
+    if (!inner) continue;
+    const items = [...inner.values()]
+      .filter((v) => v.value > 0)
+      .map((v) => ({ key: v.label, label: v.label, value: v.value }));
+    const split = capItems(items);
+    if (split.length > 1) details[c.key] = split; // 1 project = nothing to split
   }
   for (const k of COST_ORDER) {
     if (!byCat.has(k)) continue;
