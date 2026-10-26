@@ -6,12 +6,18 @@ import {
   getTimesheetsForMember,
   listInvoicesForMember,
   listMyProjects,
+  listPayments,
   listProjects,
   type InvoiceStatus,
   type MemberInvoiceRecord,
   type MyProjectRecord,
 } from "@/lib/airtable";
-import { isFounderEarningsUser, listFounderEarnings } from "@/lib/founder-earnings"; // FOUNDER-EARNINGS (temporary)
+import { effectiveEur } from "@/lib/fx";
+import {
+  isFounderEarningsUser,
+  listFounderEarnings,
+  ownWorkProjectSets,
+} from "@/lib/founder-earnings";
 import { thisMondayIso } from "@/lib/dates";
 import { rollupEarnings } from "@/lib/earnings";
 import { StatusPill } from "@/components/badge";
@@ -67,40 +73,58 @@ export default async function DashboardHomePage() {
     })
     .slice(0, 3);
 
-  // FOUNDER-EARNINGS (temporary) — the founder's member invoices are cancelled
-  // (he never really charges the company); his figures live in the Founder
-  // Earnings table. Drive his dashboard from there instead, preserving the
-  // paid/pending status captured on each row at migration time.
+  // FOUNDER-EARNINGS — the founder's own-work revenue. He never charges the
+  // company, so his dashboard isn't driven by member invoices. Instead it reads
+  // the client invoices (Inflow payments) booked on HIS own-work projects — the
+  // ones he has recorded an earning against — so his revenue updates
+  // automatically as those client payments are recorded (Paid = received,
+  // anything else = expected).
   let earningsInvoices: MemberInvoiceRecord[] = invoices;
   if (isFounderEarningsUser(session)) {
-    const fe = (await listFounderEarnings()).filter((e) => e.memberCode === session.memberCode);
-    earningsInvoices = fe.map((e) => {
-      const m = e.comment.match(/member invoice .+? \(([^)]+)\)/);
-      const status: InvoiceStatus = m?.[1] === "To be paid" ? "To be paid" : "Paid";
-      return {
-        id: e.id,
-        invoiceCode: "",
-        memberRecordId: session.sub,
-        memberCode: e.memberCode,
-        memberName: e.memberName,
-        staffingRecordId: "",
-        staffingCode: "",
-        projectRecordId: "",
-        projectCode: e.projectCode,
-        projectName: e.projectCode,
-        pdf: null,
-        submissionDate: (e.submittedAt || "").slice(0, 10) || null,
-        amount: e.amountEur,
-        currency: "EUR",
-        status,
-        comment: "",
-        coveredTimesheetIds: [],
-        emailSent: false,
-        emailSentAt: null,
-        emailError: "",
-        extracted: null,
-      };
-    });
+    const [founderEarnings, allPayments] = await Promise.all([
+      listFounderEarnings(),
+      listPayments(),
+    ]);
+    const own = ownWorkProjectSets(founderEarnings, allProjects);
+    const projById = new Map(allProjects.map((p) => [p.id, p]));
+    earningsInvoices = allPayments
+      .filter(
+        (p) =>
+          p.direction === "Inflow" &&
+          p.paymentStatus !== "Canceled" &&
+          p.paymentStatus !== "Rejected" &&
+          p.projectRecordIds.some((id) => own.recordIds.has(id)),
+      )
+      .map((p) => {
+        const proj = p.projectRecordIds.map((id) => projById.get(id)).find(Boolean);
+        const status: InvoiceStatus = p.paymentStatus === "Paid" ? "Paid" : "To be paid";
+        const when = (p.invoiceDate || p.paymentDate || p.dueDate || "").slice(0, 10) || null;
+        return {
+          id: p.id,
+          invoiceCode: "",
+          memberRecordId: session.sub,
+          memberCode: session.memberCode,
+          memberName: session.fullName ?? "",
+          staffingRecordId: "",
+          staffingCode: "",
+          projectRecordId: proj?.id ?? "",
+          projectCode: proj?.projectCode ?? "",
+          projectName: proj?.projectName ?? proj?.projectCode ?? "",
+          pdf: null,
+          submissionDate: when,
+          // Already EUR (effectiveEur handles any FX); currency EUR keeps the
+          // rollup from applying a second conversion.
+          amount: effectiveEur(p),
+          currency: "EUR",
+          status,
+          comment: "",
+          coveredTimesheetIds: [],
+          emailSent: false,
+          emailSentAt: null,
+          emailError: "",
+          extracted: null,
+        };
+      });
   }
 
   // Earnings rollup, EUR-converted via each invoice's project FX rate.

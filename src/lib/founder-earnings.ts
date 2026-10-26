@@ -208,6 +208,47 @@ export function isFounderEarningPayment(comment: string): boolean {
   return FOUNDER_EARNING_RE.test(comment);
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// NETWORK vs OWN-WORK SPLIT
+//
+// HTP42 is Pascal Bouquet's company: he places external consultants (the
+// "network") AND runs his own consulting engagements through the structure.
+// For TRUE network profitability we strip his own work out of the cockpit and
+// the profitability digests — both the client revenue it brings in and his own
+// cost. A project counts as his OWN engagement once he has recorded at least
+// one earning against it, so the Founder Earnings table is the single source of
+// truth for "this is Pascal's own work". Everything else is network.
+// ─────────────────────────────────────────────────────────────────────────
+
+// The project codes + Airtable record ids that are the founder's own
+// engagements, derived from his recorded earnings. Pure + side-effect free.
+export function ownWorkProjectSets(
+  earnings: { projectCode: string }[],
+  projects: { id: string; projectCode: string }[],
+): { codes: Set<string>; recordIds: Set<string> } {
+  const codes = new Set<string>();
+  for (const e of earnings) {
+    const code = (e.projectCode || "").trim();
+    if (code) codes.add(code);
+  }
+  const recordIds = new Set<string>();
+  for (const p of projects) {
+    if (p.projectCode && codes.has(p.projectCode)) recordIds.add(p.id);
+  }
+  return { codes, recordIds };
+}
+
+// A payment is part of the founder's own work when it's one of his tagged
+// auto-paid earning payments, or it's linked to one of his own-work projects
+// (client revenue on his engagements, or any cost booked against them).
+export function isOwnWorkPayment(
+  p: { comment: string; projectRecordIds: string[] },
+  ownRecordIds: Set<string>,
+): boolean {
+  if (isFounderEarningPayment(p.comment)) return true;
+  return p.projectRecordIds.some((id) => ownRecordIds.has(id));
+}
+
 // Create the instantly-Paid Outflow payment for one earning. Returns the new
 // payment id. Best-effort project link (skipped if the code doesn't resolve).
 export async function createFounderPayment(opts: {

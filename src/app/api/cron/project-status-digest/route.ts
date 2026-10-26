@@ -5,6 +5,7 @@ import { cronSecretMatches } from "@/lib/cron-auth";
 import { apiError } from "@/lib/errors";
 import { listPayments, listProjects } from "@/lib/airtable";
 import { effectiveEur, effectiveProjectEur } from "@/lib/fx";
+import { isOwnWorkPayment, listFounderEarnings, ownWorkProjectSets } from "@/lib/founder-earnings";
 import { buildProjectProfitability } from "@/app/admin/cockpit/profitability";
 import {
   buildDigestModel,
@@ -75,17 +76,27 @@ async function summarize(model: DigestModel): Promise<string | null> {
 
 async function run() {
   console.log("[cron] project-status-digest: start");
-  const [projects, payments] = await Promise.all([listProjects(), listPayments()]);
+  const [projects, payments, founderEarnings] = await Promise.all([
+    listProjects(),
+    listPayments(),
+    listFounderEarnings(),
+  ]);
+
+  // Network only: strip the founder's own consulting engagements (client revenue
+  // and his cost) so the digest reports the network's profitability.
+  const own = ownWorkProjectSets(founderEarnings, projects);
+  const networkProjects = projects.filter((p) => !own.codes.has(p.projectCode));
+  const networkPayments = payments.filter((p) => !isOwnWorkPayment(p, own.recordIds));
 
   const profit = buildProjectProfitability(
-    projects.map((p) => ({
+    networkProjects.map((p) => ({
       id: p.id,
       projectCode: p.projectCode,
       projectName: p.projectName,
       status: p.status || "",
       totalAmountEur: effectiveProjectEur(p),
     })),
-    payments.map((p) => ({
+    networkPayments.map((p) => ({
       projectRecordIds: p.projectRecordIds,
       direction: p.direction,
       invoiceValueEur: effectiveEur(p),
@@ -101,7 +112,7 @@ async function run() {
   }).format(new Date());
 
   const model = buildDigestModel(
-    projects.map((p) => ({ projectCode: p.projectCode, projectName: p.projectName, status: p.status || "" })),
+    networkProjects.map((p) => ({ projectCode: p.projectCode, projectName: p.projectName, status: p.status || "" })),
     profit,
     date,
   );
@@ -111,7 +122,11 @@ async function run() {
   // rendered deterministically so every project consistently shows its flag.
   const exec = await summarize(model);
   const execHtml = exec ?? `<p style="margin:0 0 12px">Portfolio snapshot for ${date}. ${digestHeadline(model)}.</p>`;
-  const summaryHtml = `${execHtml}\n${renderDigestSections(model)}`;
+  const ownNote =
+    own.codes.size > 0
+      ? `<p style="margin:12px 0 0;color:#64748b;font-size:12px">Network only — Pascal Bouquet's own engagements (${own.codes.size} project${own.codes.size === 1 ? "" : "s"}) are excluded.</p>`
+      : "";
+  const summaryHtml = `${execHtml}\n${renderDigestSections(model)}${ownNote}`;
   const summaryText = summaryHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
   const { name, subject, textBody, htmlBody, to, cc, from } = await resolveEmail("project_status_digest", {

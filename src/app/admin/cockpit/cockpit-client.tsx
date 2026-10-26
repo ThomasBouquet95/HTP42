@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { PaymentRecord } from "@/lib/airtable";
+import { effectiveEur } from "@/lib/fx";
 import {
   buildMonthly,
   buildStatusBreakdown,
@@ -18,16 +19,19 @@ import { IncomeSankey } from "./income-sankey";
 import { ProjectProfitability } from "./project-profitability";
 import type { ProjectProfit } from "./profitability";
 
+const eur = (v: number) => `€${Math.round(v).toLocaleString("en-US")}`;
+
 export function CockpitClient({
   payments,
+  ownWorkPayments = [],
   clients,
-  founderCosts = [],
   profitability = [],
 }: {
   payments: PaymentRecord[];
+  // The founder's own-work payments (client revenue + his cost), excluded from
+  // every network figure below and summarised in a separate banner.
+  ownWorkPayments?: PaymentRecord[];
   clients: { id: string; name: string }[];
-  // FOUNDER-EARNINGS (temporary) — non-payment cost rows (name + year + EUR).
-  founderCosts?: { label: string; year: string; amountEur: number }[];
   // Per-project actual + projected profitability for the second sub-tab.
   profitability?: ProjectProfit[];
 }) {
@@ -58,27 +62,33 @@ export function CockpitClient({
     return payments.filter((p) => (p.invoiceDate ?? "").slice(0, 4) === year);
   }, [payments, year]);
 
-  // FOUNDER-EARNINGS (temporary) — year-scope + sum per person into extra cost
-  // nodes for the income statement. Independent of the paid/all scope (there is
-  // no payment behind these).
-  const founderExtraCosts = useMemo(() => {
-    const byName = new Map<string, number>();
-    for (const e of founderCosts) {
-      if (year !== "all" && e.year !== year) continue;
-      byName.set(e.label, (byName.get(e.label) ?? 0) + e.amountEur);
+  // Own work (Pascal Bouquet) — a year-scoped revenue / cost / net summary of the
+  // engagements excluded from the network figures below, so nothing is hidden
+  // silently. Canceled / Rejected drop out, like everywhere else.
+  const ownWork = useMemo(() => {
+    const scoped =
+      year === "all"
+        ? ownWorkPayments
+        : ownWorkPayments.filter((p) => (p.invoiceDate ?? "").slice(0, 4) === year);
+    let revenue = 0;
+    let cost = 0;
+    const projs = new Set<string>();
+    for (const p of scoped) {
+      if (p.paymentStatus === "Canceled" || p.paymentStatus === "Rejected") continue;
+      const e = effectiveEur(p);
+      if (e <= 0) continue;
+      if (p.direction === "Inflow") revenue += e;
+      else if (p.direction === "Outflow") cost += e;
+      for (const c of p.projectCodes) projs.add(c);
     }
-    return [...byName.entries()].map(([label, value]) => ({
-      key: `founder:${label}`,
-      label,
-      value,
-    }));
-  }, [founderCosts, year]);
+    return { revenue, cost, net: revenue - cost, projectCount: projs.size };
+  }, [ownWorkPayments, year]);
 
   const totals = useMemo(() => buildTotals(scopedPayments), [scopedPayments]);
   const monthly = useMemo(() => buildMonthly(scopedPayments, scope), [scopedPayments, scope]);
   const incomeFlow = useMemo(
-    () => buildIncomeFlow(scopedPayments, clientNameById, scope, founderExtraCosts),
-    [scopedPayments, clientNameById, scope, founderExtraCosts],
+    () => buildIncomeFlow(scopedPayments, clientNameById, scope),
+    [scopedPayments, clientNameById, scope],
   );
   const breakdown = useMemo(
     () => buildStatusBreakdown(scopedPayments, scope),
@@ -96,6 +106,35 @@ export function CockpitClient({
           { value: "profit", label: "Project profitability" },
         ]}
       />
+      {ownWorkPayments.length > 0 ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
+            <div className="text-xs font-medium text-slate-600">
+              Own work (Pascal Bouquet){" "}
+              <span className="font-normal text-slate-400">
+                — excluded from the network figures below
+                {ownWork.projectCount > 0
+                  ? ` · ${ownWork.projectCount} project${ownWork.projectCount === 1 ? "" : "s"}`
+                  : ""}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums text-slate-500">
+              <span>
+                Revenue <b className="font-semibold text-slate-700">{eur(ownWork.revenue)}</b>
+              </span>
+              <span>
+                Cost <b className="font-semibold text-slate-700">{eur(ownWork.cost)}</b>
+              </span>
+              <span>
+                Net{" "}
+                <b className={`font-semibold ${ownWork.net >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                  {eur(ownWork.net)}
+                </b>
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {view === "profit" ? (
         <ProjectProfitability rows={profitability} />
       ) : (
