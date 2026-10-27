@@ -78,11 +78,9 @@ describe("buildMonthlyClose", () => {
     const r = model.rows[0];
     expect(r.submittedHours).toBe(40);
     expect(r.validatedHours).toBe(40);
-    expect(r.steps.submitted).toBe("done");
-    expect(r.steps.validated).toBe("done");
-    expect(r.steps.memberInvoice).toBe("done");
-    expect(r.steps.clientInvoiceSent).toBe("done");
-    expect(r.steps.collected).toBe("done");
+    expect(r.stages.timesheets).toMatchObject({ tone: "green", label: "Approved" });
+    expect(r.stages.clientPay).toMatchObject({ tone: "green", label: "Paid" });
+    expect(r.stages.expertPay).toMatchObject({ tone: "green", label: "Paid" });
     expect(r.clientInvoicedEur).toBe(10000);
     expect(r.memberInvoiceEur).toBe(6000);
     expect(r.projectMarginEur).toBe(4000);
@@ -102,7 +100,7 @@ describe("buildMonthlyClose", () => {
     });
     const r = model.rows[0];
     expect(r.staffedNoHours).toBe(true);
-    expect(r.steps.submitted).toBe("pending");
+    expect(r.stages.timesheets).toMatchObject({ tone: "grey", label: "Not received" });
     expect(model.totals.staffedNoHours).toBe(1);
   });
 
@@ -121,7 +119,7 @@ describe("buildMonthlyClose", () => {
     expect(model.rows[0].staffedNoHours).toBe(true);
   });
 
-  it("marks steps late once past their target after month end", () => {
+  it("marks a stage late once past its target after month end", () => {
     // today is 2026-11-15, ~15 days after Oct close — submitted target is J+2.
     const model = buildMonthlyClose({
       ...base,
@@ -133,7 +131,7 @@ describe("buildMonthlyClose", () => {
       invoices: [],
       payments: [],
     });
-    expect(model.rows[0].lateSteps).toContain("submitted");
+    expect(model.rows[0].stages.timesheets.late).toBe(true);
     expect(model.totals.lateRows).toBe(1);
   });
 });

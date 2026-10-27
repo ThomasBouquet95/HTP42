@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { SegmentedTabs } from "@/components/filters";
 import { DatePopover, MonthPopover } from "@/components/date-picker";
 import { UI, moneyToneClass } from "@/lib/ui";
-import type { ClosingModel, ClosingRow, StepState } from "@/lib/closing";
+import type { ClosingModel, ClosingRow, Stage, StageTone } from "@/lib/closing";
 import type { MonthStatus } from "@/lib/closing-store";
 
 const eur = (v: number | null | undefined) =>
@@ -136,20 +136,23 @@ function TipRow({ left, right }: { left: ReactNode; right?: ReactNode }) {
   );
 }
 
-type StepKey = keyof ClosingRow["steps"];
-function stepDetail(r: ClosingRow, step: StepKey): ReactNode {
-  const late = r.lateSteps.includes(step);
+type StageKey = keyof ClosingRow["stages"];
+
+// Rich per-stage detail shown in the (interactive) HoverCard, with an admin
+// deep-link that pre-filters the target page.
+function stageDetail(r: ClosingRow, stage: StageKey): ReactNode {
+  const st = r.stages[stage];
   const Head = ({ title }: { title: string }) => (
     <div className="mb-1 font-semibold">
-      {title}
-      {late ? <span className="ml-1 text-rose-300">· overdue</span> : null}
+      {title} <span className="font-normal text-white/60">· {st.label}</span>
+      {st.late ? <span className="text-rose-300"> · overdue</span> : null}
     </div>
   );
 
-  if (step === "submitted" || step === "validated") {
+  if (stage === "timesheets") {
     return (
       <div>
-        <Head title={step === "submitted" ? "Timesheets submitted" : "Timesheets validated"} />
+        <Head title="Timesheets" />
         {r.timesheetsDetail.length ? (
           <ul className="space-y-0.5">
             {r.timesheetsDetail.map((t, i) => (
@@ -161,117 +164,86 @@ function stepDetail(r: ClosingRow, step: StepKey): ReactNode {
         ) : (
           <div className="text-white/70">No timesheet logged by {r.memberName} this month.</div>
         )}
-        <DetailLink href="/admin/timesheets" label="Open timesheets" />
+        <DetailLink href={`/admin/timesheets?member=${encodeURIComponent(r.memberCode)}`} label="Open timesheets" />
       </div>
     );
   }
 
-  if (step === "memberInvoice") {
+  if (stage === "clientPay") {
+    const states = r.clientInvoiceStates.length
+      ? r.clientInvoiceStates.map(paymentStatusPlain).join(", ")
+      : "not invoiced";
     return (
       <div>
-        <Head title="Member invoice" />
-        <div className="text-white/80">
-          {r.memberInvoiceStatus
-            ? `Received${r.memberInvoiceStatus === "paid" ? " · paid" : " · awaiting payment"}${
-                r.memberInvoiceEur ? ` · ${eur(r.memberInvoiceEur)}` : ""
-              }`
-            : `No invoice received yet from ${r.memberName}.`}
-        </div>
-        <DetailLink href="/admin/payments" label="Open payments" />
-      </div>
-    );
-  }
-
-  if (step === "clientInvoiceSent" || step === "collected") {
-    const states = r.clientInvoiceStates.length ? r.clientInvoiceStates.map(paymentStatusPlain).join(", ") : "none yet";
-    return (
-      <div>
-        <Head title={step === "collected" ? "Cash collected (project)" : "Client invoice (project)"} />
+        <Head title="Client payment" />
         <TipRow left="Invoiced" right={eur(r.clientInvoicedEur)} />
         <TipRow left="Sent to client" right={eur(r.clientSentEur)} />
         <TipRow left="Collected" right={eur(r.clientCollectedEur)} />
         <div className="mt-1 text-white/70">Status: {states}.</div>
-        <DetailLink href="/admin/payments" label="Open payments" />
+        <div className="text-white/50">Project level — a client invoice may cover the whole project.</div>
+        <DetailLink href={`/admin/payments?search=${encodeURIComponent(r.projectCode)}`} label="Open client payments" />
       </div>
     );
   }
 
-  // memberPaid
+  // expertPay
   return (
     <div>
-      <Head title="Member invoice paid" />
+      <Head title="Expert payment" />
       <div className="text-white/80">
         {r.memberInvoiceStatus === "paid"
-          ? "Paid to the member."
+          ? `Paid${r.memberInvoiceEur ? ` · ${eur(r.memberInvoiceEur)}` : ""}.`
           : r.memberInvoiceStatus
-            ? "Not paid yet — invoice received, awaiting payment."
-            : "No member invoice received yet."}
+            ? `Invoice received${r.memberInvoiceEur ? ` · ${eur(r.memberInvoiceEur)}` : ""} — ${st.label.toLowerCase()}.`
+            : `No invoice received yet from ${r.memberName}.`}
       </div>
-      <DetailLink href="/admin/payments" label="Open payments" />
+      <DetailLink href={`/admin/payments?search=${encodeURIComponent(r.memberCode)}`} label="Open member payments" />
     </div>
   );
 }
 
-// ---- Pipeline step chip ----------------------------------------------------
-const STEP_DESC = {
-  submitted: "Timesheets submitted for the month",
-  validated: "Timesheets validated (approved by the reviewer)",
-  memberInvoice: "Invoice received from the network member",
-  clientInvoiceSent: "Client invoice issued & sent to the client (project level)",
-  collected: "Client invoice collected — paid or matched in Qonto (project level)",
-  memberPaid: "The network member's invoice has been paid",
-} as const;
+// ---- Stage pill ------------------------------------------------------------
+const TONE: Record<StageTone, string> = {
+  grey: "bg-slate-100 text-slate-500 ring-slate-200",
+  amber: "bg-amber-100 text-amber-800 ring-amber-200",
+  red: "bg-rose-100 text-rose-700 ring-rose-200",
+  blue: "bg-sky-100 text-sky-700 ring-sky-200",
+  green: "bg-emerald-100 text-emerald-700 ring-emerald-200",
+};
+const STAGE_HEADER: Record<StageKey, string> = {
+  timesheets:
+    "Timesheets entered by the member and approved by the reviewer. Grey = not received, amber = under review, red = rejected, green = approved.",
+  clientPay:
+    "The client invoice for this project this month (money in). Grey = not invoiced, blue = invoiced / awaiting, amber = under review, green = collected.",
+  expertPay:
+    "The expert's (network member's) invoice and our payment of it (money out). Grey = awaiting invoice, blue = received / accepted, amber = under review, green = paid, red = rejected.",
+};
 
-function CheckSvg() {
+function StagePill({ stage }: { stage: Stage }) {
   return (
-    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden>
-      <path d="M5 12.5l4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function DashSvg() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden>
-      <path d="M6 12h12" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function StepBadge({ state, late }: { state: StepState; late?: boolean }) {
-  if (state === "na") return <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-200" />;
-  const ring = late ? "ring-2 ring-rose-300 ring-offset-1" : "";
-  if (state === "done")
-    return (
-      <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white ${ring}`}>
-        <CheckSvg />
-      </span>
-    );
-  if (state === "partial")
-    return (
-      <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-400 text-white ${ring}`}>
-        <DashSvg />
-      </span>
-    );
-  return (
-    <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 bg-white ${ring}`}>
-      <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${TONE[stage.tone]}`}
+    >
+      {stage.late ? <span className="h-1.5 w-1.5 rounded-full bg-rose-500" /> : null}
+      {stage.label}
     </span>
   );
 }
 
-function StepCell({ r, step, leftBorder }: { r: ClosingRow; step: StepKey; leftBorder?: boolean }) {
-  const state = r.steps[step];
-  const late = r.lateSteps.includes(step);
+function StageCell({ r, stage, leftBorder }: { r: ClosingRow; stage: StageKey; leftBorder?: boolean }) {
   return (
     <td className={`px-3 py-2.5 text-center ${leftBorder ? "border-l border-slate-100" : ""}`}>
-      <HoverCard content={stepDetail(r, step)}>
+      <HoverCard content={stageDetail(r, stage)}>
         <span className="inline-flex cursor-help align-middle">
-          <StepBadge state={state} late={late} />
+          <StagePill stage={r.stages[stage]} />
         </span>
       </HoverCard>
     </td>
   );
 }
+
+const rowLate = (r: ClosingRow) =>
+  r.stages.timesheets.late || r.stages.clientPay.late || r.stages.expertPay.late;
 
 export function ClosingClient({
   model,
@@ -410,7 +382,7 @@ function MemberTable({ model, month }: { model: ClosingModel; month: string }) {
                 Hours
               </HeaderTip>
             </th>
-            <th colSpan={6} className="border-b border-l border-slate-200 px-2 py-1.5 text-center text-slate-500">
+            <th colSpan={3} className="border-b border-l border-slate-200 px-2 py-1.5 text-center text-slate-500">
               Billing pipeline
             </th>
             <th colSpan={3} className="border-b border-l border-slate-200 px-2 py-1.5 text-center text-slate-500">
@@ -423,12 +395,9 @@ function MemberTable({ model, month }: { model: ClosingModel; month: string }) {
           </tr>
           {/* Column row */}
           <tr className="bg-slate-50 text-[11px] font-medium text-slate-500 [&>th]:border-b [&>th]:border-slate-200 [&>th]:py-1.5">
-            <th className="border-l border-slate-200 px-3 text-center"><HeaderTip label={STEP_DESC.submitted}>Subm.</HeaderTip></th>
-            <th className="px-3 text-center"><HeaderTip label={STEP_DESC.validated}>Valid.</HeaderTip></th>
-            <th className="px-3 text-center"><HeaderTip label={STEP_DESC.memberInvoice}>Mbr inv</HeaderTip></th>
-            <th className="px-3 text-center"><HeaderTip label={STEP_DESC.clientInvoiceSent}>Cli sent</HeaderTip></th>
-            <th className="px-3 text-center"><HeaderTip label={STEP_DESC.collected}>Cashed</HeaderTip></th>
-            <th className="px-3 text-center"><HeaderTip label={STEP_DESC.memberPaid}>Mbr paid</HeaderTip></th>
+            <th className="border-l border-slate-200 px-3 text-center"><HeaderTip label={STAGE_HEADER.timesheets}>Timesheets</HeaderTip></th>
+            <th className="px-3 text-center"><HeaderTip label={STAGE_HEADER.clientPay}>Client payment</HeaderTip></th>
+            <th className="px-3 text-center"><HeaderTip label={STAGE_HEADER.expertPay}>Expert payment</HeaderTip></th>
             <th className="border-l border-slate-200 px-2 text-right"><HeaderTip label="Client invoiced on this project this month (project level, EUR).">Client</HeaderTip></th>
             <th className="px-2 text-right"><HeaderTip label="EUR amount of this member's invoice for the month.">Member</HeaderTip></th>
             <th className="px-2 text-right"><HeaderTip label="HTP42 margin on the project this month: client invoiced − member invoices (project level).">Margin</HeaderTip></th>
@@ -447,7 +416,7 @@ function MemberTable({ model, month }: { model: ClosingModel; month: string }) {
 function MemberRow({ r, month, zebra }: { r: ClosingRow; month: string; zebra: boolean }) {
   const tint = r.staffedNoHours
     ? "bg-amber-50/50"
-    : r.lateSteps.length > 0
+    : rowLate(r)
       ? "bg-rose-50/40"
       : zebra
         ? "bg-slate-50/40"
@@ -471,27 +440,15 @@ function MemberRow({ r, month, zebra }: { r: ClosingRow; month: string; zebra: b
         ) : null}
       </td>
       <td className="px-2 py-2.5 text-right tabular-nums text-slate-600">
-        <HoverCard content={stepDetail(r, "submitted")}>
+        <HoverCard content={stageDetail(r, "timesheets")}>
           <span className="cursor-help">
-            {r.submittedHours > 0 ? (
-              <>
-                {r.submittedHours}h
-                {r.validatedHours < r.submittedHours ? (
-                  <span className="text-amber-600"> ({r.validatedHours}✓)</span>
-                ) : null}
-              </>
-            ) : (
-              <span className="text-slate-300">—</span>
-            )}
+            {r.submittedHours > 0 ? `${r.submittedHours}h` : <span className="text-slate-300">—</span>}
           </span>
         </HoverCard>
       </td>
-      <StepCell r={r} step="submitted" leftBorder />
-      <StepCell r={r} step="validated" />
-      <StepCell r={r} step="memberInvoice" />
-      <StepCell r={r} step="clientInvoiceSent" />
-      <StepCell r={r} step="collected" />
-      <StepCell r={r} step="memberPaid" />
+      <StageCell r={r} stage="timesheets" leftBorder />
+      <StageCell r={r} stage="clientPay" />
+      <StageCell r={r} stage="expertPay" />
       <td className="border-l border-slate-100 px-2 py-2.5 text-right tabular-nums demo-blur" style={{ color: r.clientInvoicedEur > 0 ? UI.revenue : undefined }}>
         <span className={r.clientInvoicedEur > 0 ? "" : "text-slate-300"}>{eur(r.clientInvoicedEur)}</span>
       </td>
@@ -645,8 +602,8 @@ function ClientView({ model }: { model: ClosingModel }) {
                       <span className="h-1.5 w-1.5 cursor-help rounded-full bg-amber-500" />
                     </Tip>
                   ) : null}
-                  {r.lateSteps.length > 0 ? (
-                    <Tip label={`Overdue: ${r.lateSteps.join(", ")}`} wide>
+                  {rowLate(r) ? (
+                    <Tip label="A pipeline stage is overdue for this line." wide>
                       <span className="h-1.5 w-1.5 cursor-help rounded-full bg-rose-500" />
                     </Tip>
                   ) : null}
@@ -702,12 +659,23 @@ function Mini({ label, value, tone }: { label: string; value: string; tone: stri
   );
 }
 function Legend() {
+  const items: { tone: StageTone; label: string }[] = [
+    { tone: "grey", label: "not started" },
+    { tone: "blue", label: "invoiced / awaiting" },
+    { tone: "amber", label: "under review" },
+    { tone: "green", label: "done / paid" },
+    { tone: "red", label: "rejected" },
+  ];
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-400">
-      <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> done</span>
-      <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-amber-400" /> partial</span>
-      <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full border border-slate-300 bg-white" /> pending</span>
-      <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-full ring-2 ring-rose-300" /> overdue</span>
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-400">
+      {items.map((i) => (
+        <span key={i.tone} className={`inline-flex items-center rounded-full px-1.5 py-0.5 ring-1 ${TONE[i.tone]}`}>
+          {i.label}
+        </span>
+      ))}
+      <span className="inline-flex items-center gap-1">
+        <span className="h-1.5 w-1.5 rounded-full bg-rose-500" /> overdue
+      </span>
     </div>
   );
 }
@@ -777,13 +745,15 @@ function Caveats() {
           invoices). Timesheet hours count in the month of the week's <b>Friday</b> (the cutoff).
         </p>
         <p>
-          <b>Cli sent / Cashed</b> and <b>Margin</b> are tracked at <b>project</b> level (a client
-          invoice usually bundles a project, not one member), shown per line for context and rolled up
-          in the By client view. <b>Cashed</b> = payment marked Paid or matched to a Qonto transaction.
+          The pipeline has three stages: <b>Timesheets</b> (entered &amp; approved), <b>Client
+          payment</b> (invoice to the client — money in), and <b>Expert payment</b> (the member's
+          invoice to us — money out). Each is one coloured status; hover it for the breakdown and a
+          link into the right admin page. Client payment and <b>Margin</b> are project-level (a client
+          invoice usually bundles a project, not one member).
         </p>
         <p>
-          <b>Overdue</b> (red ring) uses default targets after month end: submitted J+2, validated J+4,
-          client invoice J+5, member invoice J+7. <b>SOW</b> shows ⚠ when the staffing's SOW looks
+          A red dot on a status means it is <b>overdue</b> against the close targets (timesheets J+4,
+          client invoice J+5, expert invoice J+7). <b>SOW</b> shows ⚠ when the staffing's SOW looks
           expired or missing for the month.
         </p>
         <p className="text-slate-400">

@@ -21,7 +21,10 @@ import type {
 } from "./airtable";
 import { DEFAULT_FX_TO_EUR } from "./fx";
 
-export type StepState = "done" | "partial" | "pending" | "na";
+// A pipeline stage renders as one coloured status pill. Tone drives the colour,
+// label is the short status word.
+export type StageTone = "grey" | "amber" | "red" | "blue" | "green";
+export type Stage = { tone: StageTone; label: string; late: boolean };
 
 // Editable per-line tracking (stored in the Monthly Close table).
 export type ClosingTracking = {
@@ -66,18 +69,13 @@ export type ClosingRow = {
   sowStatus: string;
   sowValidForMonth: boolean | null; // null = unknown (no dates)
 
-  // --- Pipeline states (for the status chips) ---
-  steps: {
-    submitted: StepState;
-    validated: StepState;
-    memberInvoice: StepState;
-    clientInvoiceSent: StepState;
-    collected: StepState;
-    memberPaid: StepState;
+  // --- Billing pipeline: three stages, each a single coloured status ---
+  //   timesheets -> client payment (money in) -> expert payment (money out)
+  stages: {
+    timesheets: Stage;
+    clientPay: Stage;
+    expertPay: Stage;
   };
-
-  // Steps whose target date has passed but aren't done yet.
-  lateSteps: string[];
 
   // Editable.
   comment: string;
@@ -130,6 +128,48 @@ export const PO_LOW_THRESHOLD = 0.85;
 
 const CLOSED_PAYMENT = new Set(["Paid", "Rejected", "Canceled", "Cancelled"]);
 const ACTIVE_HOURS_STATUSES = new Set(["Submitted", "Approved", "Invoiced", "Paid"]);
+
+// ---- Stage status computation (colours a single pill per stage) ------------
+function timesheetStage(
+  detail: { status: string }[],
+  hasStaffing: boolean,
+  sinceEnd: number,
+): Stage {
+  if (detail.length === 0) {
+    return { tone: "grey", label: "Not received", late: hasStaffing && sinceEnd > CLOSE_TARGETS.submitted };
+  }
+  const statuses = detail.map((d) => d.status);
+  if (statuses.some((s) => s === "Rejected"))
+    return { tone: "red", label: "Rejected", late: sinceEnd > CLOSE_TARGETS.validated };
+  if (statuses.every((s) => s === "Approved" || s === "Invoiced" || s === "Paid"))
+    return { tone: "green", label: "Approved", late: false };
+  return { tone: "amber", label: "Under review", late: sinceEnd > CLOSE_TARGETS.validated };
+}
+
+// Client side (money in): invoiced -> under review -> paid.
+function clientStage(invoiced: number, collected: number, states: string[], sinceEnd: number): Stage {
+  if (invoiced <= 0)
+    return { tone: "grey", label: "Not invoiced", late: sinceEnd > CLOSE_TARGETS.clientInvoiceSent };
+  if (states.includes("Rejected")) return { tone: "red", label: "Rejected", late: false };
+  if (collected >= invoiced) return { tone: "green", label: "Paid", late: false };
+  if (states.includes("Under Review"))
+    return { tone: "amber", label: "Under review", late: sinceEnd > CLOSE_TARGETS.collected };
+  if (collected > 0) return { tone: "amber", label: "Part-paid", late: sinceEnd > CLOSE_TARGETS.collected };
+  return { tone: "blue", label: "Invoiced", late: sinceEnd > CLOSE_TARGETS.collected }; // invoiced, not received
+}
+
+// Expert side (money out): invoice received -> accepted -> paid.
+function expertStage(hasInvoice: boolean, isPaid: boolean, outflowStatus: string, sinceEnd: number): Stage {
+  if (!hasInvoice)
+    return { tone: "grey", label: "Awaiting invoice", late: sinceEnd > CLOSE_TARGETS.memberInvoice };
+  if (isPaid) return { tone: "green", label: "Paid", late: false };
+  if (outflowStatus === "Rejected") return { tone: "red", label: "Rejected", late: false };
+  if (outflowStatus === "Under Review")
+    return { tone: "amber", label: "Under review", late: sinceEnd > CLOSE_TARGETS.memberPaid };
+  if (outflowStatus === "To be paid" || outflowStatus === "Scheduled")
+    return { tone: "blue", label: "Accepted", late: sinceEnd > CLOSE_TARGETS.memberPaid };
+  return { tone: "blue", label: "Invoiced", late: sinceEnd > CLOSE_TARGETS.memberPaid }; // received, unprocessed
+}
 
 function monthOf(iso: string | null | undefined): string {
   return iso ? iso.slice(0, 7) : "";
@@ -253,15 +293,20 @@ export function buildMonthlyClose(input: {
   // --- Member invoices tied to the month (by covered timesheet work-month, else
   // submission month). Also note whether the invoice has been paid. ---
   const paidInvoiceIds = new Set<string>();
+  // The outflow payment status per member invoice (Under Review / To be paid /
+  // Scheduled / Paid / Rejected), for the expert-payment stage.
+  const invoiceOutflowStatus = new Map<string, string>();
   for (const p of input.payments) {
     if (p.direction !== "Outflow") continue;
-    if (p.paymentStatus !== "Paid") continue;
-    for (const id of p.memberInvoiceRecordIds) paidInvoiceIds.add(id);
+    for (const id of p.memberInvoiceRecordIds) {
+      if (p.paymentStatus === "Paid") paidInvoiceIds.add(id);
+      if (p.paymentStatus) invoiceOutflowStatus.set(id, p.paymentStatus);
+    }
   }
   // Work-month of a covered timesheet, to map an invoice to the month it bills.
   const tsMonthById = new Map<string, string>();
   for (const t of input.timesheets) tsMonthById.set(t.id, monthOf(t.endDate || t.startDate));
-  type InvInfo = { status: ClosingRow["memberInvoiceStatus"]; eur: number | null };
+  type InvInfo = { status: ClosingRow["memberInvoiceStatus"]; eur: number | null; outflowStatus: string };
   const invByKey = new Map<string, InvInfo>();
   const invByProject = new Map<string, number>(); // project -> member-invoiced EUR this month
   for (const inv of input.invoices) {
@@ -275,11 +320,13 @@ export function buildMonthlyClose(input: {
     // and paid. "Paid" is set either on the invoice or via a Paid outflow.
     const status: ClosingRow["memberInvoiceStatus"] =
       paidInvoiceIds.has(inv.id) || (inv.status || "") === "Paid" ? "paid" : "received";
+    const outflowStatus = invoiceOutflowStatus.get(inv.id) || "";
     const prev = invByKey.get(key);
     // Keep the most-advanced status + sum amounts if several.
     invByKey.set(key, {
       status: rankInvoice(status) >= rankInvoice(prev?.status ?? "") ? status : prev!.status,
       eur: (prev?.eur ?? 0) + (eur ?? 0) || eur,
+      outflowStatus: prev?.outflowStatus || outflowStatus,
     });
     if (eur) invByProject.set(inv.projectCode, (invByProject.get(inv.projectCode) ?? 0) + eur);
   }
@@ -345,34 +392,11 @@ export function buildMonthlyClose(input: {
     const staffedNoHours = !!staffing && ts.submittedHours === 0;
     const sowValidForMonth = staffing ? sowValid(staffing, monthStart, monthEnd) : null;
 
-    const steps: ClosingRow["steps"] = {
-      submitted: ts.submittedHours > 0 ? "done" : staffing ? "pending" : "na",
-      validated:
-        ts.submittedHours === 0
-          ? staffing
-            ? "pending"
-            : "na"
-          : ts.validatedHours >= ts.submittedHours
-            ? "done"
-            : ts.validatedHours > 0
-              ? "partial"
-              : "pending",
-      memberInvoice: inv ? "done" : "pending",
-      clientInvoiceSent: client.sent > 0 ? "done" : client.invoiced > 0 ? "partial" : "pending",
-      collected: client.collected > 0 ? (client.collected >= client.invoiced ? "done" : "partial") : "pending",
-      memberPaid: inv?.status === "paid" ? "done" : inv ? "pending" : "na",
+    const stages: ClosingRow["stages"] = {
+      timesheets: timesheetStage(ts.detail, !!staffing, sinceEnd),
+      clientPay: clientStage(client.invoiced, client.collected, [...client.states], sinceEnd),
+      expertPay: expertStage(!!inv, inv?.status === "paid", inv?.outflowStatus ?? "", sinceEnd),
     };
-
-    const lateSteps: string[] = [];
-    const lateIf = (done: boolean, targetDays: number, label: string) => {
-      if (!done && sinceEnd > targetDays) lateSteps.push(label);
-    };
-    lateIf(steps.submitted === "done" || steps.submitted === "na", CLOSE_TARGETS.submitted, "submitted");
-    lateIf(steps.validated === "done" || steps.validated === "na", CLOSE_TARGETS.validated, "validated");
-    lateIf(steps.memberInvoice === "done", CLOSE_TARGETS.memberInvoice, "memberInvoice");
-    lateIf(steps.clientInvoiceSent === "done", CLOSE_TARGETS.clientInvoiceSent, "clientInvoiceSent");
-    lateIf(steps.collected === "done", CLOSE_TARGETS.collected, "collected");
-    lateIf(steps.memberPaid === "done" || steps.memberPaid === "na", CLOSE_TARGETS.memberPaid, "memberPaid");
 
     const projectMarginEur =
       client.invoiced > 0 || memberInvoicedProject > 0 ? client.invoiced - memberInvoicedProject : null;
@@ -400,8 +424,7 @@ export function buildMonthlyClose(input: {
       projectMarginEur: projectMarginEur == null ? null : round0(projectMarginEur),
       sowStatus: staffing?.sowStatus || "",
       sowValidForMonth,
-      steps,
-      lateSteps,
+      stages,
       comment: track?.comment ?? "",
       lastReminderDate: track?.lastReminderDate ?? null,
     };
@@ -469,7 +492,8 @@ export function buildMonthlyClose(input: {
     memberInvoicedEur: round0(rows.reduce((s, r) => s + (r.memberInvoiceEur ?? 0), 0)),
     marginEur: round0(clients.reduce((s, c) => s + c.marginEur, 0)),
     staffedNoHours: rows.filter((r) => r.staffedNoHours).length,
-    lateRows: rows.filter((r) => r.lateSteps.length > 0).length,
+    lateRows: rows.filter((r) => r.stages.timesheets.late || r.stages.clientPay.late || r.stages.expertPay.late)
+      .length,
   };
 
   return { month, rows, clients, totals };
