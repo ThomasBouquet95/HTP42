@@ -12,11 +12,6 @@ const eur = (v: number | null | undefined) =>
   v == null ? "—" : `€${Math.round(v).toLocaleString("en-US")}`;
 const href = (m: string) => `/admin/closing?month=${m}`;
 
-function shiftMonth(month: string, delta: number): string {
-  const [y, m] = month.split("-").map((n) => parseInt(n, 10));
-  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
 function monthLabel(month: string): string {
   const [y, m] = month.split("-").map((n) => parseInt(n, 10));
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-GB", {
@@ -138,19 +133,13 @@ export function ClosingClient({
     <div className="space-y-4">
       {/* Control bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-          <Link
-            href={href(shiftMonth(month, -1))}
-            aria-label="Previous month"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
-          >
-            ←
-          </Link>
+        <label className="flex items-center gap-2 text-xs text-slate-500">
+          <span className="uppercase tracking-wide">Month</span>
           <select
-            value={availableMonths.includes(month) ? month : "__cur__"}
+            value={availableMonths.includes(month) ? month : "__other__"}
             onChange={(e) => router.push(href(e.target.value))}
             aria-label="Select month"
-            className="min-w-[10rem] cursor-pointer rounded-md border-0 bg-transparent px-2 py-1 text-center text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
           >
             {!availableMonths.includes(month) ? (
               <option value={month}>{monthLabel(month)}</option>
@@ -162,22 +151,7 @@ export function ClosingClient({
               </option>
             ))}
           </select>
-          <Link
-            href={href(shiftMonth(month, 1))}
-            aria-label="Next month"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
-          >
-            →
-          </Link>
-          {month !== currentMonth ? (
-            <Link
-              href={href(currentMonth)}
-              className="ml-1 rounded-md px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50"
-            >
-              Today
-            </Link>
-          ) : null}
-        </div>
+        </label>
         <MonthStatusEditor month={month} initial={monthStatus} />
       </div>
 
