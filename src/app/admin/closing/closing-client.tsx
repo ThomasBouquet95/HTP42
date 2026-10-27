@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -64,13 +64,155 @@ function HeaderTip({ label, children }: { label: ReactNode; children: ReactNode 
   );
 }
 
+// An INTERACTIVE hover card (unlike Tip it has pointer-events, stays open while
+// the cursor is inside it, and so can hold clickable links). Portal + fixed
+// position so it's never clipped by the scrolling table.
+function HoverCard({ content, children }: { content: ReactNode; children: ReactNode }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const open = () => {
+    if (timer.current) clearTimeout(timer.current);
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({ x: r.left + r.width / 2, y: r.top });
+  };
+  const close = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setPos(null), 140);
+  };
+  return (
+    <span ref={ref} className="relative inline-flex" onMouseEnter={open} onMouseLeave={close}>
+      {children}
+      {pos && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              onMouseEnter={open}
+              onMouseLeave={close}
+              style={{ position: "fixed", left: pos.x, top: pos.y - 10, transform: "translate(-50%, -100%)" }}
+              className="z-50 w-64 rounded-lg bg-slate-900 p-2.5 text-left text-[11px] leading-snug text-white shadow-xl ring-1 ring-black/5"
+            >
+              {content}
+              <span className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
+            </div>,
+            document.body,
+          )
+        : null}
+    </span>
+  );
+}
+
+// ---- Rich per-cell detail content (shown in the HoverCard) -----------------
+const fmtDay = (iso: string | null) =>
+  iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }) : "—";
+
+function paymentStatusPlain(s: string): string {
+  const map: Record<string, string> = {
+    "To be paid": "approved, awaiting payment",
+    "Under Review": "awaiting admin review",
+    Scheduled: "scheduled for payment",
+    Paid: "paid",
+    Overdue: "overdue",
+    Pending: "pending",
+  };
+  return map[s] ?? s;
+}
+
+function DetailLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link href={href} className="mt-1.5 inline-flex font-medium text-sky-300 underline hover:text-sky-200">
+      {label} →
+    </Link>
+  );
+}
+
+function TipRow({ left, right }: { left: ReactNode; right?: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-white/70">{left}</span>
+      {right != null ? <span className="tabular-nums font-medium">{right}</span> : null}
+    </div>
+  );
+}
+
+type StepKey = keyof ClosingRow["steps"];
+function stepDetail(r: ClosingRow, step: StepKey): ReactNode {
+  const late = r.lateSteps.includes(step);
+  const Head = ({ title }: { title: string }) => (
+    <div className="mb-1 font-semibold">
+      {title}
+      {late ? <span className="ml-1 text-rose-300">· overdue</span> : null}
+    </div>
+  );
+
+  if (step === "submitted" || step === "validated") {
+    return (
+      <div>
+        <Head title={step === "submitted" ? "Timesheets submitted" : "Timesheets validated"} />
+        {r.timesheetsDetail.length ? (
+          <ul className="space-y-0.5">
+            {r.timesheetsDetail.map((t, i) => (
+              <li key={i}>
+                <TipRow left={`${fmtDay(t.start)} – ${fmtDay(t.end)}`} right={`${t.hours}h · ${t.status}`} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="text-white/70">No timesheet logged by {r.memberName} this month.</div>
+        )}
+        <DetailLink href="/admin/timesheets" label="Open timesheets" />
+      </div>
+    );
+  }
+
+  if (step === "memberInvoice") {
+    return (
+      <div>
+        <Head title="Member invoice" />
+        <div className="text-white/80">
+          {r.memberInvoiceStatus
+            ? `Received${r.memberInvoiceStatus === "paid" ? " · paid" : " · awaiting payment"}${
+                r.memberInvoiceEur ? ` · ${eur(r.memberInvoiceEur)}` : ""
+              }`
+            : `No invoice received yet from ${r.memberName}.`}
+        </div>
+        <DetailLink href="/admin/payments" label="Open payments" />
+      </div>
+    );
+  }
+
+  if (step === "clientInvoiceSent" || step === "collected") {
+    const states = r.clientInvoiceStates.length ? r.clientInvoiceStates.map(paymentStatusPlain).join(", ") : "none yet";
+    return (
+      <div>
+        <Head title={step === "collected" ? "Cash collected (project)" : "Client invoice (project)"} />
+        <TipRow left="Invoiced" right={eur(r.clientInvoicedEur)} />
+        <TipRow left="Sent to client" right={eur(r.clientSentEur)} />
+        <TipRow left="Collected" right={eur(r.clientCollectedEur)} />
+        <div className="mt-1 text-white/70">Status: {states}.</div>
+        <DetailLink href="/admin/payments" label="Open payments" />
+      </div>
+    );
+  }
+
+  // memberPaid
+  return (
+    <div>
+      <Head title="Member invoice paid" />
+      <div className="text-white/80">
+        {r.memberInvoiceStatus === "paid"
+          ? "Paid to the member."
+          : r.memberInvoiceStatus
+            ? "Not paid yet — invoice received, awaiting payment."
+            : "No member invoice received yet."}
+      </div>
+      <DetailLink href="/admin/payments" label="Open payments" />
+    </div>
+  );
+}
+
 // ---- Pipeline step chip ----------------------------------------------------
-const STATE_LABEL: Record<StepState, string> = {
-  done: "Done",
-  partial: "Partial",
-  pending: "Pending",
-  na: "Not applicable",
-};
 const STEP_DESC = {
   submitted: "Timesheets submitted for the month",
   validated: "Timesheets validated (approved by the reviewer)",
@@ -117,25 +259,16 @@ function StepBadge({ state, late }: { state: StepState; late?: boolean }) {
   );
 }
 
-function StepCell({ state, late, desc, leftBorder }: { state: StepState; late?: boolean; desc: string; leftBorder?: boolean }) {
+function StepCell({ r, step, leftBorder }: { r: ClosingRow; step: StepKey; leftBorder?: boolean }) {
+  const state = r.steps[step];
+  const late = r.lateSteps.includes(step);
   return (
     <td className={`px-3 py-2.5 text-center ${leftBorder ? "border-l border-slate-100" : ""}`}>
-      <Tip
-        label={
-          <>
-            <b className="block">{desc}</b>
-            <span className={late ? "text-rose-300" : "text-white/80"}>
-              {STATE_LABEL[state]}
-              {late ? " · overdue" : ""}
-            </span>
-          </>
-        }
-        wide
-      >
+      <HoverCard content={stepDetail(r, step)}>
         <span className="inline-flex cursor-help align-middle">
           <StepBadge state={state} late={late} />
         </span>
-      </Tip>
+      </HoverCard>
     </td>
   );
 }
@@ -155,6 +288,10 @@ export function ClosingClient({
 }) {
   const router = useRouter();
   const [view, setView] = useState<"member" | "client">("member");
+  const [pending, startTransition] = useTransition();
+  const go = (m: string) => {
+    if (/^\d{4}-\d{2}$/.test(m)) startTransition(() => router.push(href(m)));
+  };
 
   return (
     <div className="space-y-4">
@@ -162,24 +299,28 @@ export function ClosingClient({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <span className="uppercase tracking-wide">Month</span>
-          <MonthPopover
-            value={month}
-            onChange={(v) => {
-              if (/^\d{4}-\d{2}$/.test(v)) router.push(href(v));
-            }}
-          />
-          {month !== currentMonth ? (
-            <button
-              type="button"
-              onClick={() => router.push(href(currentMonth))}
-              className="font-medium text-brand-700 hover:underline"
-            >
+          <MonthPopover value={month} onChange={go} />
+          {pending ? (
+            <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+              <Spinner /> loading…
+            </span>
+          ) : month !== currentMonth ? (
+            <button type="button" onClick={() => go(currentMonth)} className="font-medium text-brand-700 hover:underline">
               This month
             </button>
           ) : null}
         </div>
         <MonthStatusEditor month={month} initial={monthStatus} />
       </div>
+
+      <div className={`relative space-y-4 transition-opacity ${pending ? "pointer-events-none opacity-50" : ""}`}>
+        {pending ? (
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-start justify-center pt-24">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow ring-1 ring-slate-200">
+              <Spinner /> Loading {monthLabel(month)}…
+            </span>
+          </div>
+        ) : null}
 
       {/* KPI strip — one card, uniform type scale, semantic colors */}
       <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
@@ -238,8 +379,18 @@ export function ClosingClient({
         <ClientView model={model} />
       )}
 
-      <Caveats />
+        <Caveats />
+      </div>
     </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 animate-spin text-brand-600" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -254,7 +405,11 @@ function MemberTable({ model, month }: { model: ClosingModel; month: string }) {
             <th rowSpan={2} className="sticky left-0 z-10 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left align-bottom">
               Member · project
             </th>
-            <th rowSpan={2} className="border-b border-slate-200 px-2 py-2 text-right align-bottom">Hours</th>
+            <th rowSpan={2} className="border-b border-slate-200 px-2 py-2 text-right align-bottom">
+              <HeaderTip label="Hours entered in the member's submitted timesheets for the month (validated hours in brackets when fewer). This is time logged in timesheets — not the days contracted or allocated on the SOW.">
+                Hours
+              </HeaderTip>
+            </th>
             <th colSpan={6} className="border-b border-l border-slate-200 px-2 py-1.5 text-center text-slate-500">
               Billing pipeline
             </th>
@@ -316,23 +471,27 @@ function MemberRow({ r, month, zebra }: { r: ClosingRow; month: string; zebra: b
         ) : null}
       </td>
       <td className="px-2 py-2.5 text-right tabular-nums text-slate-600">
-        {r.submittedHours > 0 ? (
-          <>
-            {r.submittedHours}h
-            {r.validatedHours < r.submittedHours ? (
-              <span className="text-amber-600"> ({r.validatedHours}✓)</span>
-            ) : null}
-          </>
-        ) : (
-          <span className="text-slate-300">—</span>
-        )}
+        <HoverCard content={stepDetail(r, "submitted")}>
+          <span className="cursor-help">
+            {r.submittedHours > 0 ? (
+              <>
+                {r.submittedHours}h
+                {r.validatedHours < r.submittedHours ? (
+                  <span className="text-amber-600"> ({r.validatedHours}✓)</span>
+                ) : null}
+              </>
+            ) : (
+              <span className="text-slate-300">—</span>
+            )}
+          </span>
+        </HoverCard>
       </td>
-      <StepCell state={r.steps.submitted} late={r.lateSteps.includes("submitted")} desc={STEP_DESC.submitted} leftBorder />
-      <StepCell state={r.steps.validated} late={r.lateSteps.includes("validated")} desc={STEP_DESC.validated} />
-      <StepCell state={r.steps.memberInvoice} late={r.lateSteps.includes("memberInvoice")} desc={STEP_DESC.memberInvoice} />
-      <StepCell state={r.steps.clientInvoiceSent} late={r.lateSteps.includes("clientInvoiceSent")} desc={STEP_DESC.clientInvoiceSent} />
-      <StepCell state={r.steps.collected} late={r.lateSteps.includes("collected")} desc={STEP_DESC.collected} />
-      <StepCell state={r.steps.memberPaid} late={r.lateSteps.includes("memberPaid")} desc={STEP_DESC.memberPaid} />
+      <StepCell r={r} step="submitted" leftBorder />
+      <StepCell r={r} step="validated" />
+      <StepCell r={r} step="memberInvoice" />
+      <StepCell r={r} step="clientInvoiceSent" />
+      <StepCell r={r} step="collected" />
+      <StepCell r={r} step="memberPaid" />
       <td className="border-l border-slate-100 px-2 py-2.5 text-right tabular-nums demo-blur" style={{ color: r.clientInvoicedEur > 0 ? UI.revenue : undefined }}>
         <span className={r.clientInvoicedEur > 0 ? "" : "text-slate-300"}>{eur(r.clientInvoicedEur)}</span>
       </td>

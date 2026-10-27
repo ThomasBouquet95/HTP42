@@ -45,6 +45,8 @@ export type ClosingRow = {
   validatedWeeks: number;
   // Staffed and active this month but logged nothing — absence / paused / forgot?
   staffedNoHours: boolean;
+  // The individual timesheets behind the hours (for the detail tooltip).
+  timesheetsDetail: { start: string | null; end: string | null; hours: number; status: string }[];
 
   // The member's invoice for this month's work (if received).
   memberInvoiceStatus: "" | "received" | "validated" | "paid";
@@ -54,6 +56,9 @@ export type ClosingRow = {
   clientInvoicedEur: number; // client invoices dated this month on the project
   clientSentEur: number; // of which marked sent to the client
   clientCollectedEur: number; // of which collected (Paid / Qonto-matched)
+  // Distinct payment statuses of the project's client invoices this month, for
+  // the detail tooltip (e.g. "Under Review", "To be paid", "Paid").
+  clientInvoiceStates: string[];
   // HTP42 margin on the project this month = client invoiced − member invoices.
   projectMarginEur: number | null;
 
@@ -217,7 +222,13 @@ export function buildMonthlyClose(input: {
 
   // --- Timesheet hours per member×project for the month (Friday-cutoff: the
   // week counts in the month of its end date). ---
-  type Agg = { submittedHours: number; submittedWeeks: number; validatedHours: number; validatedWeeks: number };
+  type Agg = {
+    submittedHours: number;
+    submittedWeeks: number;
+    validatedHours: number;
+    validatedWeeks: number;
+    detail: { start: string | null; end: string | null; hours: number; status: string }[];
+  };
   const tsByKey = new Map<string, Agg>();
   for (const t of input.timesheets) {
     if (t.status === "Deleted" || t.status === "Draft") continue;
@@ -225,9 +236,12 @@ export function buildMonthlyClose(input: {
     if (workMonth !== month) continue;
     if (!ACTIVE_HOURS_STATUSES.has(t.status)) continue;
     const key = `${t.projectCode}__${t.memberCode}`;
-    const agg = tsByKey.get(key) ?? { submittedHours: 0, submittedWeeks: 0, validatedHours: 0, validatedWeeks: 0 };
+    const agg =
+      tsByKey.get(key) ??
+      ({ submittedHours: 0, submittedWeeks: 0, validatedHours: 0, validatedWeeks: 0, detail: [] } as Agg);
     agg.submittedHours += t.totalHours;
     agg.submittedWeeks += 1;
+    agg.detail.push({ start: t.startDate, end: t.endDate, hours: t.totalHours, status: t.status });
     // Approved / Invoiced / Paid count as validated by the reviewer.
     if (t.status === "Approved" || t.status === "Invoiced" || t.status === "Paid") {
       agg.validatedHours += t.totalHours;
@@ -271,7 +285,7 @@ export function buildMonthlyClose(input: {
   }
 
   // --- Client invoices (Inflow) per project for the month. ---
-  type ClientAgg = { invoiced: number; sent: number; collected: number };
+  type ClientAgg = { invoiced: number; sent: number; collected: number; states: Set<string> };
   const clientByProject = new Map<string, ClientAgg>();
   for (const p of input.payments) {
     if (p.direction !== "Inflow") continue;
@@ -282,10 +296,11 @@ export function buildMonthlyClose(input: {
     const codes = p.projectRecordIds.map((id) => projectById.get(id)?.projectCode).filter(Boolean) as string[];
     const code = codes[0] ?? p.projectCodes[0] ?? "";
     if (!code) continue;
-    const agg = clientByProject.get(code) ?? { invoiced: 0, sent: 0, collected: 0 };
+    const agg = clientByProject.get(code) ?? { invoiced: 0, sent: 0, collected: 0, states: new Set<string>() };
     agg.invoiced += eur;
     if (p.sentToClientDate) agg.sent += eur;
     if (p.paymentStatus === "Paid" || p.qontoMatchedAt) agg.collected += eur;
+    if (p.paymentStatus) agg.states.add(p.paymentStatus);
     clientByProject.set(code, agg);
   }
 
@@ -314,9 +329,16 @@ export function buildMonthlyClose(input: {
     const member = memberByCode.get(memberCode);
     const project = projectByCode.get(projectCode);
     const { clientCode, clientName } = clientOfProject(projectCode);
-    const ts = tsByKey.get(key) ?? { submittedHours: 0, submittedWeeks: 0, validatedHours: 0, validatedWeeks: 0 };
+    const ts =
+      tsByKey.get(key) ??
+      ({ submittedHours: 0, submittedWeeks: 0, validatedHours: 0, validatedWeeks: 0, detail: [] } as Agg);
     const inv = invByKey.get(key);
-    const client = clientByProject.get(projectCode) ?? { invoiced: 0, sent: 0, collected: 0 };
+    const client = clientByProject.get(projectCode) ?? {
+      invoiced: 0,
+      sent: 0,
+      collected: 0,
+      states: new Set<string>(),
+    };
     const memberInvoicedProject = invByProject.get(projectCode) ?? 0;
     const track = input.tracking.get(key);
 
@@ -368,11 +390,13 @@ export function buildMonthlyClose(input: {
       validatedHours: round1(ts.validatedHours),
       validatedWeeks: ts.validatedWeeks,
       staffedNoHours,
+      timesheetsDetail: [...ts.detail].sort((a, b) => (a.start ?? "").localeCompare(b.start ?? "")),
       memberInvoiceStatus: inv?.status ?? "",
       memberInvoiceEur: inv?.eur ?? null,
       clientInvoicedEur: round0(client.invoiced),
       clientSentEur: round0(client.sent),
       clientCollectedEur: round0(client.collected),
+      clientInvoiceStates: [...client.states],
       projectMarginEur: projectMarginEur == null ? null : round0(projectMarginEur),
       sowStatus: staffing?.sowStatus || "",
       sowValidForMonth,
