@@ -294,24 +294,52 @@ export function ClosingClient({
           </div>
         ) : null}
 
-      {/* KPI strip — one card, uniform type scale, semantic colors */}
-      <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
-        <Stat label="Active lines" value={String(model.totals.members)} />
-        <Stat label="Client invoiced" value={eur(model.totals.clientInvoicedEur)} color={UI.revenue} money />
-        <Stat label="Collected" value={eur(model.totals.clientCollectedEur)} color={UI.collected} money />
-        <Stat label="Member cost" value={eur(model.totals.memberInvoicedEur)} color={UI.cost} money />
-        <Stat
-          label="Margin"
-          value={eur(model.totals.marginEur)}
-          color={model.totals.marginEur < 0 ? UI.marginNeg : UI.margin}
-          money
-        />
-        <Stat
-          label="Attention"
-          value={`${model.totals.lateRows + model.totals.staffedNoHours}`}
-          color={model.totals.lateRows > 0 ? UI.cost : UI.warn}
-          sub={`${model.totals.lateRows} late · ${model.totals.staffedNoHours} no hrs`}
-        />
+      {/* Summary — grouped to mirror the pipeline: lines · client in · expert out · margin */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <SummaryCard title="Lines">
+          <StatLine label="Active" value={String(model.totals.members)} strong />
+          <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px]">
+            {model.totals.staffedNoHours > 0 ? (
+              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800">
+                {model.totals.staffedNoHours} no hours
+              </span>
+            ) : null}
+            {model.totals.lateRows > 0 ? (
+              <span className="rounded-full bg-rose-100 px-1.5 py-0.5 font-medium text-rose-700">
+                {model.totals.lateRows} late
+              </span>
+            ) : null}
+            {model.totals.staffedNoHours === 0 && model.totals.lateRows === 0 ? (
+              <span className="text-slate-400">all on track</span>
+            ) : null}
+          </div>
+        </SummaryCard>
+
+        <SummaryCard title="Client payment" hint="money in" accent={UI.revenue}>
+          <StatLine label="Invoiced" value={eur(model.totals.clientInvoicedEur)} color={UI.revenue} />
+          <StatLine label="Collected" value={eur(model.totals.clientCollectedEur)} color={UI.collected} />
+          <StatLine label="Outstanding" value={eur(model.totals.clientInvoicedEur - model.totals.clientCollectedEur)} />
+        </SummaryCard>
+
+        <SummaryCard title="Expert payment" hint="money out" accent={UI.cost}>
+          <StatLine label="Invoiced" value={eur(model.totals.memberInvoicedEur)} color={UI.cost} />
+          <StatLine label="Paid" value={eur(model.totals.memberPaidEur)} />
+          <StatLine label="Outstanding" value={eur(model.totals.memberInvoicedEur - model.totals.memberPaidEur)} />
+        </SummaryCard>
+
+        <SummaryCard
+          title="Margin"
+          hint="in − out"
+          accent={model.totals.marginEur < 0 ? UI.marginNeg : UI.margin}
+        >
+          <StatLine
+            label="This month"
+            value={eur(model.totals.marginEur)}
+            color={model.totals.marginEur < 0 ? UI.marginNeg : UI.margin}
+            strong
+          />
+          <div className="pt-1 text-[11px] text-slate-400">Client invoiced − expert invoiced</div>
+        </SummaryCard>
       </div>
 
       {/* View toggle + legend */}
@@ -350,8 +378,6 @@ export function ClosingClient({
       ) : (
         <ClientView model={model} />
       )}
-
-        <Caveats />
       </div>
     </div>
   );
@@ -619,32 +645,51 @@ function ClientView({ model }: { model: ClosingModel }) {
 }
 
 // ---- Small bits ------------------------------------------------------------
-function Stat({
+function SummaryCard({
+  title,
+  hint,
+  accent,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  accent?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+          {accent ? <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: accent }} /> : null}
+          {title}
+        </div>
+        {hint ? <span className="text-[9px] uppercase tracking-wide text-slate-300">{hint}</span> : null}
+      </div>
+      <div className="mt-2 space-y-1">{children}</div>
+    </div>
+  );
+}
+
+function StatLine({
   label,
   value,
   color,
-  sub,
-  money,
+  strong,
 }: {
   label: string;
   value: string;
   color?: string;
-  sub?: string;
-  money?: boolean;
+  strong?: boolean;
 }) {
   return (
-    <div className="px-4 py-3">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-slate-400">
-        {color ? <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} /> : null}
-        {label}
-      </div>
-      <div
-        className={`mt-1 text-lg font-semibold tabular-nums ${money ? "demo-blur" : ""}`}
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="text-[11px] text-slate-500">{label}</span>
+      <span
+        className={`tabular-nums demo-blur ${strong ? "text-lg font-semibold" : "text-sm font-medium"}`}
         style={color ? { color } : undefined}
       >
         {value}
-      </div>
-      {sub ? <div className="mt-0.5 text-[10px] text-slate-400">{sub}</div> : null}
+      </span>
     </div>
   );
 }
@@ -735,33 +780,3 @@ function MonthStatusEditor({ month, initial }: { month: string; initial: MonthSt
   );
 }
 
-function Caveats() {
-  return (
-    <details className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-[11px] text-slate-500">
-      <summary className="cursor-pointer font-medium text-slate-600">What this tracks (and what's not in yet)</summary>
-      <div className="mt-2 space-y-1.5 leading-relaxed">
-        <p>
-          One line per network member active on a project this month (staffed, or with timesheets /
-          invoices). Timesheet hours count in the month of the week's <b>Friday</b> (the cutoff).
-        </p>
-        <p>
-          The pipeline has three stages: <b>Timesheets</b> (entered &amp; approved), <b>Client
-          payment</b> (invoice to the client — money in), and <b>Expert payment</b> (the member's
-          invoice to us — money out). Each is one coloured status; hover it for the breakdown and a
-          link into the right admin page. Client payment and <b>Margin</b> are project-level (a client
-          invoice usually bundles a project, not one member).
-        </p>
-        <p>
-          A red dot on a status means it is <b>overdue</b> against the close targets (timesheets J+4,
-          client invoice J+5, expert invoice J+7). <b>SOW</b> shows ⚠ when the staffing's SOW looks
-          expired or missing for the month.
-        </p>
-        <p className="text-slate-400">
-          Not wired yet (need a data source / a decision): rebillable expenses (entered / approved /
-          rebilled), fixed-price milestone tracking, and automatic carry-over of unresolved lines
-          from the previous month.
-        </p>
-      </div>
-    </details>
-  );
-}

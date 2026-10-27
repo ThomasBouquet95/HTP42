@@ -105,7 +105,8 @@ export type ClosingModel = {
     members: number;
     clientInvoicedEur: number;
     clientCollectedEur: number;
-    memberInvoicedEur: number;
+    memberInvoicedEur: number; // member invoices received this month
+    memberPaidEur: number; // of which already paid
     marginEur: number;
     staffedNoHours: number;
     lateRows: number;
@@ -490,6 +491,9 @@ export function buildMonthlyClose(input: {
     clientInvoicedEur: round0(clients.reduce((s, c) => s + c.clientInvoicedEur, 0)),
     clientCollectedEur: round0(clients.reduce((s, c) => s + c.clientCollectedEur, 0)),
     memberInvoicedEur: round0(rows.reduce((s, r) => s + (r.memberInvoiceEur ?? 0), 0)),
+    memberPaidEur: round0(
+      rows.reduce((s, r) => s + (r.memberInvoiceStatus === "paid" ? r.memberInvoiceEur ?? 0 : 0), 0),
+    ),
     marginEur: round0(clients.reduce((s, c) => s + c.marginEur, 0)),
     staffedNoHours: rows.filter((r) => r.staffedNoHours).length,
     lateRows: rows.filter((r) => r.stages.timesheets.late || r.stages.clientPay.late || r.stages.expertPay.late)
