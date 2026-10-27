@@ -47,6 +47,16 @@ export const env = {
       "invoices@htp42.com"
     );
   },
+  // A standing CC added to every email sent FROM the invoices mailbox, so a
+  // finance contact is always kept in the loop. Comma-separated list; set
+  // INVOICES_ALWAYS_CC="" to disable.
+  get invoicesAlwaysCc() {
+    const raw = process.env.INVOICES_ALWAYS_CC ?? "herve.marion@htp42.com";
+    return raw
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean);
+  },
   // Anthropic API key, used by the chat message "Rewrite" button to
   // grammar-correct a message via Claude. Optional: if absent, the
   // /api/chat/rewrite endpoint returns 503 and the UI hides the action.

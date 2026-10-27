@@ -35,6 +35,28 @@ type SendArgs = {
 const joinAddr = (v: string | string[] | undefined) =>
   (Array.isArray(v) ? v : v ? [v] : []).map((a) => a.trim()).filter(Boolean).join(", ");
 
+const asList = (v: string | string[] | undefined) =>
+  (Array.isArray(v) ? v : v ? [v] : []).map((a) => a.trim()).filter(Boolean);
+
+// The mailbox an email is actually sent from (explicit override, else default).
+function senderOf(from: string | undefined): string {
+  return (from?.trim() || env.invoiceSender) ?? "";
+}
+
+// Add the standing invoices CC when the mail is sent from the invoices mailbox.
+// Returns the CC list (merged, the actual dedup against To happens at send time).
+function ccWithInvoicesCopy(cc: string | string[] | undefined, sender: string): string[] {
+  const list = asList(cc);
+  const invoicesMailboxes = [env.invoiceSender, env.invoiceRecipient].map((a) => (a || "").toLowerCase());
+  if (invoicesMailboxes.includes((sender || "").toLowerCase())) {
+    const have = new Set(list.map((a) => a.toLowerCase()));
+    for (const extra of env.invoicesAlwaysCc) {
+      if (!have.has(extra.toLowerCase())) list.push(extra);
+    }
+  }
+  return list;
+}
+
 // Approximate byte size of a base64 string (4 chars ≈ 3 bytes).
 function base64Bytes(b64: string): number {
   const len = b64.length;
@@ -80,16 +102,20 @@ async function getAppToken(): Promise<string> {
 export async function sendMailViaGraph(
   args: SendArgs,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const result = await doSendMailViaGraph(args);
+  const sender = senderOf(args.from);
+  // Always keep the finance CC in the loop on anything sent from the invoices
+  // mailbox. Applied here so both the send and the email log include it.
+  const effective: SendArgs = { ...args, cc: ccWithInvoicesCopy(args.cc, sender) };
+  const result = await doSendMailViaGraph(effective);
   // Await the log write (it swallows its own errors). Firing it un-awaited
   // would let Vercel's serverless runtime freeze the function after the
   // response returns, dropping the log row before it is written.
   await logEmailSend({
     label: args.logLabel ?? "",
     status: result.ok ? "Sent" : "Failed",
-    from: (args.from?.trim() || env.invoiceSender) ?? "",
-    to: joinAddr(args.to),
-    cc: joinAddr(args.cc),
+    from: sender,
+    to: joinAddr(effective.to),
+    cc: joinAddr(effective.cc),
     subject: args.subject,
     attachments: attachmentSummary(args.attachments),
     error: result.ok ? "" : result.error,
