@@ -1,12 +1,52 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { ClosingModel, ClosingRow, StepState } from "@/lib/closing";
 import type { MonthStatus } from "@/lib/closing-store";
 
 const eur = (v: number | null | undefined) =>
   v == null ? "—" : `€${Math.round(v).toLocaleString("en-US")}`;
+
+// Modern hover tooltip: a dark rounded card with an arrow, shown above the
+// trigger. Rendered through a portal with fixed positioning so it's never
+// clipped by a scrolling table/overflow container.
+function Tip({ label, children, wide }: { label: ReactNode; children: ReactNode; wide?: boolean }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const show = () => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({ x: r.left + r.width / 2, y: r.top });
+  };
+  return (
+    <span
+      ref={ref}
+      className="relative inline-flex"
+      onMouseEnter={show}
+      onMouseLeave={() => setPos(null)}
+    >
+      {children}
+      {pos && typeof document !== "undefined"
+        ? createPortal(
+            <span
+              role="tooltip"
+              style={{ position: "fixed", left: pos.x, top: pos.y - 8, transform: "translate(-50%, -100%)" }}
+              className={`pointer-events-none z-50 block whitespace-normal rounded-lg bg-slate-900 px-2.5 py-1.5 text-left text-[11px] font-normal leading-snug text-white shadow-xl ring-1 ring-black/5 ${
+                wide ? "w-64" : "w-max max-w-[15rem]"
+              }`}
+            >
+              {label}
+              <span className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
+            </span>,
+            document.body,
+          )
+        : null}
+    </span>
+  );
+}
 
 function shiftMonth(month: string, delta: number): string {
   const [y, m] = month.split("-").map((n) => parseInt(n, 10));
@@ -22,6 +62,17 @@ function monthLabel(month: string): string {
   });
 }
 
+// A header label that carries a tooltip, with a dotted underline affordance.
+function HeaderTip({ label, children }: { label: ReactNode; children: ReactNode }) {
+  return (
+    <Tip label={label} wide>
+      <span className="cursor-help underline decoration-dotted decoration-slate-300 underline-offset-2">
+        {children}
+      </span>
+    </Tip>
+  );
+}
+
 // ---- pipeline step chip --------------------------------------------------
 const STEP_META: Record<StepState, { dot: string; text: string }> = {
   done: { dot: "bg-emerald-500", text: "text-emerald-700" },
@@ -29,29 +80,61 @@ const STEP_META: Record<StepState, { dot: string; text: string }> = {
   pending: { dot: "bg-slate-300", text: "text-slate-400" },
   na: { dot: "bg-transparent", text: "text-slate-300" },
 };
-function StepCell({ state, late, title }: { state: StepState; late?: boolean; title: string }) {
-  if (state === "na") return <td className="px-2 py-2 text-center text-slate-300">·</td>;
+const STATE_LABEL: Record<StepState, string> = {
+  done: "Done",
+  partial: "Partial",
+  pending: "Pending",
+  na: "Not applicable",
+};
+function StepCell({ state, late, desc }: { state: StepState; late?: boolean; desc: string }) {
   const m = STEP_META[state];
-  return (
-    <td className="px-2 py-2 text-center" title={title}>
-      <span
-        className={`inline-flex h-4 w-4 items-center justify-center rounded-full ${late ? "ring-2 ring-rose-400" : ""}`}
-      >
-        <span className={`h-2.5 w-2.5 rounded-full ${m.dot}`} />
+  const tip = (
+    <>
+      <b className="block">{desc}</b>
+      <span className={late ? "text-rose-300" : "text-white/80"}>
+        {STATE_LABEL[state]}
+        {late ? " · overdue" : ""}
       </span>
+    </>
+  );
+  return (
+    <td className="px-2 py-2 text-center">
+      <Tip label={tip} wide>
+        {state === "na" ? (
+          <span className="text-slate-300">·</span>
+        ) : (
+          <span
+            className={`inline-flex h-4 w-4 items-center justify-center rounded-full ${late ? "ring-2 ring-rose-400" : ""}`}
+          >
+            <span className={`h-2.5 w-2.5 rounded-full ${m.dot}`} />
+          </span>
+        )}
+      </Tip>
     </td>
   );
 }
+
+// Human explanations for each pipeline column (header + chip tooltips).
+const STEP_DESC = {
+  submitted: "Timesheets submitted for the month",
+  validated: "Timesheets validated (approved by the reviewer)",
+  memberInvoice: "Invoice received from the network member",
+  clientInvoiceSent: "Client invoice issued & sent to the client (project level)",
+  collected: "Client invoice collected — paid or matched in Qonto (project level)",
+  memberPaid: "The network member's invoice has been paid",
+} as const;
 
 export function ClosingClient({
   model,
   month,
   currentMonth,
+  availableMonths,
   monthStatus,
 }: {
   model: ClosingModel;
   month: string;
   currentMonth: string;
+  availableMonths: string[];
   monthStatus: MonthStatus;
 }) {
   const router = useRouter();
@@ -70,9 +153,20 @@ export function ClosingClient({
           >
             ←
           </button>
-          <div className="min-w-[9rem] text-center text-sm font-semibold text-slate-800">
-            {monthLabel(month)}
-          </div>
+          <select
+            value={availableMonths.includes(month) ? month : ""}
+            onChange={(e) => go(e.target.value)}
+            aria-label="Select month"
+            className="min-w-[10rem] rounded-md border border-slate-300 bg-white px-2 py-1.5 text-center text-sm font-semibold text-slate-800 focus:border-brand-500 focus:outline-none"
+          >
+            {!availableMonths.includes(month) ? <option value={month}>{monthLabel(month)}</option> : null}
+            {availableMonths.map((m) => (
+              <option key={m} value={m}>
+                {monthLabel(m)}
+                {m === currentMonth ? " (this month)" : ""}
+              </option>
+            ))}
+          </select>
           <button
             onClick={() => go(shiftMonth(month, 1))}
             className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
@@ -122,7 +216,8 @@ export function ClosingClient({
 
       {model.rows.length === 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400">
-          No active members on projects for {monthLabel(month)}.
+          No active members on projects for {monthLabel(month)}. Pick another month from the selector
+          above{availableMonths.length ? ` (data exists for ${monthLabel(availableMonths[0])})` : ""}.
         </div>
       ) : view === "member" ? (
         <MemberTable model={model} month={month} />
@@ -143,16 +238,22 @@ function MemberTable({ model, month }: { model: ClosingModel; month: string }) {
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-400">
             <th className="px-3 py-2 text-left">Member · project</th>
-            <th className="px-2 py-2 text-right">Hours</th>
-            <th className="px-2 py-2 text-center" title="Timesheets submitted">TS&nbsp;sub</th>
-            <th className="px-2 py-2 text-center" title="Timesheets validated">TS&nbsp;val</th>
-            <th className="px-2 py-2 text-center" title="Member invoice received">Mbr&nbsp;inv</th>
-            <th className="px-2 py-2 text-center" title="Client invoice sent (project level)">Cli&nbsp;sent</th>
-            <th className="px-2 py-2 text-center" title="Client invoice collected (project level)">Cashed</th>
-            <th className="px-2 py-2 text-center" title="Member invoice paid">Mbr&nbsp;paid</th>
-            <th className="px-2 py-2 text-right">Mbr €</th>
-            <th className="px-2 py-2 text-right" title="Project margin: client invoiced − member invoices">Margin</th>
-            <th className="px-2 py-2 text-center">SOW</th>
+            <th className="px-2 py-2 text-right">
+              <HeaderTip label="Hours submitted for the month, with validated hours in brackets when fewer.">Hours</HeaderTip>
+            </th>
+            <th className="px-2 py-2 text-center"><HeaderTip label={STEP_DESC.submitted}>TS&nbsp;sub</HeaderTip></th>
+            <th className="px-2 py-2 text-center"><HeaderTip label={STEP_DESC.validated}>TS&nbsp;val</HeaderTip></th>
+            <th className="px-2 py-2 text-center"><HeaderTip label={STEP_DESC.memberInvoice}>Mbr&nbsp;inv</HeaderTip></th>
+            <th className="px-2 py-2 text-center"><HeaderTip label={STEP_DESC.clientInvoiceSent}>Cli&nbsp;sent</HeaderTip></th>
+            <th className="px-2 py-2 text-center"><HeaderTip label={STEP_DESC.collected}>Cashed</HeaderTip></th>
+            <th className="px-2 py-2 text-center"><HeaderTip label={STEP_DESC.memberPaid}>Mbr&nbsp;paid</HeaderTip></th>
+            <th className="px-2 py-2 text-right"><HeaderTip label="EUR amount of the member's invoice for this month.">Mbr €</HeaderTip></th>
+            <th className="px-2 py-2 text-right">
+              <HeaderTip label="HTP42 margin on the project this month: client invoiced − member invoices (project level).">Margin</HeaderTip>
+            </th>
+            <th className="px-2 py-2 text-center">
+              <HeaderTip label="SOW / Work Order validity for the month. ⚠ = looks expired or missing.">SOW</HeaderTip>
+            </th>
             <th className="px-3 py-2 text-left">Comment · last reminder</th>
           </tr>
         </thead>
@@ -183,9 +284,11 @@ function MemberRow({ r, month }: { r: ClosingRow; month: string }) {
           <span>{r.clientName}</span>
         </div>
         {r.staffedNoHours ? (
-          <span className="mt-1 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
-            staffed · no hours
-          </span>
+          <Tip label="Staffed and active this month but no hours logged — absence, paused mission, or forgotten?" wide>
+            <span className="mt-1 inline-block cursor-help rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+              staffed · no hours
+            </span>
+          </Tip>
         ) : null}
       </td>
       <td className="px-2 py-2 text-right tabular-nums text-slate-600">
@@ -200,12 +303,12 @@ function MemberRow({ r, month }: { r: ClosingRow; month: string }) {
           <span className="text-slate-300">—</span>
         )}
       </td>
-      <StepCell state={r.steps.submitted} late={r.lateSteps.includes("submitted")} title="Timesheets submitted" />
-      <StepCell state={r.steps.validated} late={r.lateSteps.includes("validated")} title="Timesheets validated" />
-      <StepCell state={r.steps.memberInvoice} late={r.lateSteps.includes("memberInvoice")} title="Member invoice received" />
-      <StepCell state={r.steps.clientInvoiceSent} late={r.lateSteps.includes("clientInvoiceSent")} title="Client invoice sent to client (project level)" />
-      <StepCell state={r.steps.collected} late={r.lateSteps.includes("collected")} title="Client invoice collected / Qonto-matched (project level)" />
-      <StepCell state={r.steps.memberPaid} late={r.lateSteps.includes("memberPaid")} title="Member invoice paid" />
+      <StepCell state={r.steps.submitted} late={r.lateSteps.includes("submitted")} desc={STEP_DESC.submitted} />
+      <StepCell state={r.steps.validated} late={r.lateSteps.includes("validated")} desc={STEP_DESC.validated} />
+      <StepCell state={r.steps.memberInvoice} late={r.lateSteps.includes("memberInvoice")} desc={STEP_DESC.memberInvoice} />
+      <StepCell state={r.steps.clientInvoiceSent} late={r.lateSteps.includes("clientInvoiceSent")} desc={STEP_DESC.clientInvoiceSent} />
+      <StepCell state={r.steps.collected} late={r.lateSteps.includes("collected")} desc={STEP_DESC.collected} />
+      <StepCell state={r.steps.memberPaid} late={r.lateSteps.includes("memberPaid")} desc={STEP_DESC.memberPaid} />
       <td className="px-2 py-2 text-right tabular-nums text-slate-600 demo-blur">{eur(r.memberInvoiceEur)}</td>
       <td className="px-2 py-2 text-right tabular-nums demo-blur">
         <span className={r.projectMarginEur != null && r.projectMarginEur < 0 ? "text-rose-600" : "text-slate-700"}>
@@ -214,13 +317,17 @@ function MemberRow({ r, month }: { r: ClosingRow; month: string }) {
       </td>
       <td className="px-2 py-2 text-center">
         {r.sowValidForMonth === false ? (
-          <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" title={r.sowStatus || "SOW not valid for this month"}>
-            ⚠
-          </span>
+          <Tip label={`SOW / Work Order not valid for this month${r.sowStatus ? ` (status: ${r.sowStatus})` : ""} — don't invoice on an expired contract.`} wide>
+            <span className="cursor-help rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">⚠</span>
+          </Tip>
         ) : r.sowValidForMonth === true ? (
-          <span className="text-emerald-500" title={r.sowStatus || "SOW valid"}>✓</span>
+          <Tip label={`SOW valid for the month${r.sowStatus ? ` (status: ${r.sowStatus})` : ""}.`} wide>
+            <span className="cursor-help text-emerald-500">✓</span>
+          </Tip>
         ) : (
-          <span className="text-slate-300" title="SOW validity unknown">?</span>
+          <Tip label="SOW validity unknown (no dates on the staffing)." wide>
+            <span className="cursor-help text-slate-300">?</span>
+          </Tip>
         )}
       </td>
       <td className="px-3 py-2">

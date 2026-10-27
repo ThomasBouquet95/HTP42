@@ -40,9 +40,8 @@ export default async function AdminClosingPage({
 
   const { today, month: currentMonth } = parisNowParts();
   const sp = await searchParams;
-  const month = /^\d{4}-\d{2}$/.test(sp.month ?? "") ? sp.month! : currentMonth;
 
-  const [members, staffings, timesheets, invoices, payments, projects, clients, purchaseOrders, tracking] =
+  const [members, staffings, timesheets, invoices, payments, projects, clients, purchaseOrders] =
     await Promise.all([
       listAllMembers(),
       listAllStaffings(),
@@ -52,8 +51,35 @@ export default async function AdminClosingPage({
       listProjects(),
       listClients(),
       listPurchaseOrders(),
-      loadClosingTracking(month),
     ]);
+
+  // Months that actually have activity (newest first), so the page opens on a
+  // populated month even when the current calendar month is still empty.
+  const monthsWithData = new Set<string>();
+  for (const t of timesheets) {
+    const m = (t.endDate || t.startDate || "").slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(m)) monthsWithData.add(m);
+  }
+  for (const inv of invoices) {
+    const m = (inv.submissionDate || "").slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(m)) monthsWithData.add(m);
+  }
+  for (const p of payments) {
+    const m = (p.invoiceDate || "").slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(m)) monthsWithData.add(m);
+  }
+  const requested = /^\d{4}-\d{2}$/.test(sp.month ?? "") ? sp.month! : "";
+  const month =
+    requested ||
+    (monthsWithData.has(currentMonth) ? currentMonth : [...monthsWithData].sort().reverse()[0] || currentMonth);
+
+  // The dropdown always offers the current month plus every month with data.
+  const availableMonths = [...new Set([currentMonth, month, ...monthsWithData])]
+    .filter((m) => /^\d{4}-\d{2}$/.test(m))
+    .sort()
+    .reverse();
+
+  const tracking = await loadClosingTracking(month);
 
   const clientNameById = new Map(clients.map((c) => [c.id, c.clientName || c.clientCode]));
 
@@ -84,6 +110,7 @@ export default async function AdminClosingPage({
         model={model}
         month={month}
         currentMonth={currentMonth}
+        availableMonths={availableMonths}
         monthStatus={tracking.status}
       />
     </main>
