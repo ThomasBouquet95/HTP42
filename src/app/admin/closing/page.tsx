@@ -104,7 +104,7 @@ export default async function AdminClosingPage({
   return (
     <main className="max-w-[108rem] mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <AdminTabs active="closing" />
-      <PageHeader title="Monthly close" subtitle="· clôture mensuelle" />
+      <PageHeader title="Monthly close" subtitle="· track every member from timesheet to cash" />
       <ClosingClient
         model={model}
         month={month}
