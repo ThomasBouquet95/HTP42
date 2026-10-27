@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SegmentedTabs } from "@/components/filters";
+import { UI, moneyToneClass } from "@/lib/ui";
 import type { ClosingModel, ClosingRow, StepState } from "@/lib/closing";
 import type { MonthStatus } from "@/lib/closing-store";
 
@@ -155,17 +156,23 @@ export function ClosingClient({
         <MonthStatusEditor month={month} initial={monthStatus} />
       </div>
 
-      {/* Summary tiles */}
-      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Tile label="Active lines" value={String(model.totals.members)} />
-        <Tile label="Client invoiced" value={eur(model.totals.clientInvoicedEur)} accent="#059669" money />
-        <Tile label="Collected" value={eur(model.totals.clientCollectedEur)} accent="#0ea5e9" money />
-        <Tile label="Member cost" value={eur(model.totals.memberInvoicedEur)} accent="#dc2626" money />
-        <Tile label="Margin" value={eur(model.totals.marginEur)} accent="#0f172a" strong money />
-        <Tile
-          label="Needs attention"
-          value={`${model.totals.lateRows} late · ${model.totals.staffedNoHours} no hrs`}
-          accent={model.totals.lateRows > 0 ? "#dc2626" : "#94a3b8"}
+      {/* KPI strip — one card, uniform type scale, semantic colors */}
+      <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
+        <Stat label="Active lines" value={String(model.totals.members)} />
+        <Stat label="Client invoiced" value={eur(model.totals.clientInvoicedEur)} color={UI.revenue} money />
+        <Stat label="Collected" value={eur(model.totals.clientCollectedEur)} color={UI.collected} money />
+        <Stat label="Member cost" value={eur(model.totals.memberInvoicedEur)} color={UI.cost} money />
+        <Stat
+          label="Margin"
+          value={eur(model.totals.marginEur)}
+          color={model.totals.marginEur < 0 ? UI.marginNeg : UI.margin}
+          money
+        />
+        <Stat
+          label="Attention"
+          value={`${model.totals.lateRows + model.totals.staffedNoHours}`}
+          color={model.totals.lateRows > 0 ? UI.cost : UI.warn}
+          sub={`${model.totals.lateRows} late · ${model.totals.staffedNoHours} no hrs`}
         />
       </div>
 
@@ -228,14 +235,17 @@ function MemberTable({ model, month }: { model: ClosingModel; month: string }) {
             <th className="px-2 text-center"><HeaderTip label={STEP_DESC.clientInvoiceSent}>Cli sent</HeaderTip></th>
             <th className="px-2 text-center"><HeaderTip label={STEP_DESC.collected}>Cashed</HeaderTip></th>
             <th className="px-2 text-center"><HeaderTip label={STEP_DESC.memberPaid}>Mbr paid</HeaderTip></th>
-            <th className="px-2 text-right"><HeaderTip label="EUR amount of the member's invoice for this month.">Mbr €</HeaderTip></th>
+            <th className="px-2 text-right"><HeaderTip label="Client invoiced on this project this month (project level, EUR).">Client €</HeaderTip></th>
+            <th className="px-2 text-right"><HeaderTip label="EUR amount of this member's invoice for the month.">Member €</HeaderTip></th>
             <th className="px-2 text-right">
               <HeaderTip label="HTP42 margin on the project this month: client invoiced − member invoices (project level).">Margin</HeaderTip>
             </th>
             <th className="px-2 text-center">
               <HeaderTip label="SOW / Work Order validity for the month. ⚠ = looks expired or missing.">SOW</HeaderTip>
             </th>
-            <th className="px-3 text-left">Comment · relance</th>
+            <th className="px-3 text-left">
+              <HeaderTip label="A free note plus the date you last chased this line (member invoice or client payment). For your tracking only.">Follow-up</HeaderTip>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -292,11 +302,14 @@ function MemberRow({ r, month, zebra }: { r: ClosingRow; month: string; zebra: b
       <StepCell state={r.steps.clientInvoiceSent} late={r.lateSteps.includes("clientInvoiceSent")} desc={STEP_DESC.clientInvoiceSent} />
       <StepCell state={r.steps.collected} late={r.lateSteps.includes("collected")} desc={STEP_DESC.collected} />
       <StepCell state={r.steps.memberPaid} late={r.lateSteps.includes("memberPaid")} desc={STEP_DESC.memberPaid} />
-      <td className="px-2 py-2.5 text-right tabular-nums text-slate-600 demo-blur">{eur(r.memberInvoiceEur)}</td>
-      <td className="px-2 py-2.5 text-right tabular-nums demo-blur">
-        <span className={r.projectMarginEur != null && r.projectMarginEur < 0 ? "text-rose-600" : "text-slate-700"}>
-          {eur(r.projectMarginEur)}
-        </span>
+      <td className="px-2 py-2.5 text-right tabular-nums demo-blur" style={{ color: r.clientInvoicedEur > 0 ? UI.revenue : undefined }}>
+        <span className={r.clientInvoicedEur > 0 ? "" : "text-slate-300"}>{eur(r.clientInvoicedEur)}</span>
+      </td>
+      <td className="px-2 py-2.5 text-right tabular-nums demo-blur" style={{ color: r.memberInvoiceEur ? UI.cost : undefined }}>
+        <span className={r.memberInvoiceEur ? "" : "text-slate-300"}>{eur(r.memberInvoiceEur)}</span>
+      </td>
+      <td className="px-2 py-2.5 text-right tabular-nums font-medium demo-blur">
+        <span className={moneyToneClass(r.projectMarginEur)}>{eur(r.projectMarginEur)}</span>
       </td>
       <td className="px-2 py-2.5 text-center">
         {r.sowValidForMonth === false ? (
@@ -350,7 +363,7 @@ function LineEditor({ r, month }: { r: ClosingRow; month: string }) {
   }
 
   return (
-    <div className="min-w-[14rem] space-y-1">
+    <div className="min-w-[15rem] space-y-1.5">
       <textarea
         value={comment}
         onChange={(e) => setComment(e.target.value)}
@@ -358,11 +371,15 @@ function LineEditor({ r, month }: { r: ClosingRow; month: string }) {
           if (comment !== r.comment) save({ comment, lastReminderDate: reminder });
         }}
         rows={1}
-        placeholder="Add a note…"
+        placeholder="Note de suivi…"
         className="w-full resize-y rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-700 placeholder:text-slate-300 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
       />
       <div className="flex items-center gap-2">
-        <span className="text-[10px] uppercase tracking-wide text-slate-400">Relance</span>
+        <Tip label="Date of the last time you chased this line (reminded the member to invoice, or the client to pay). Just for tracking." wide>
+          <span className="inline-flex cursor-help items-center gap-1 text-[10px] uppercase tracking-wide text-slate-400">
+            <CalendarIcon /> Relancé le
+          </span>
+        </Tip>
         <input
           type="date"
           value={reminder}
@@ -370,11 +387,20 @@ function LineEditor({ r, month }: { r: ClosingRow; month: string }) {
             setReminder(e.target.value);
             save({ comment, lastReminderDate: e.target.value });
           }}
-          className="rounded-md border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600 focus:border-brand-500 focus:outline-none"
+          className="rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] text-slate-600 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
         />
         <SaveState state={state} />
       </div>
     </div>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+      <rect x="3.5" y="5" width="17" height="15" rx="2" />
+      <path d="M3.5 9h17M8 3v4M16 3v4" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -421,10 +447,10 @@ function ClientView({ model }: { model: ClosingModel }) {
             ) : null}
           </div>
           <div className="mt-3 grid grid-cols-4 gap-2 rounded-lg bg-slate-50/70 p-2 text-center">
-            <Mini label="Invoiced" value={eur(c.clientInvoicedEur)} tone="#059669" />
-            <Mini label="Collected" value={eur(c.clientCollectedEur)} tone="#0ea5e9" />
-            <Mini label="Cost" value={eur(c.memberInvoicedEur)} tone="#dc2626" />
-            <Mini label="Margin" value={eur(c.marginEur)} tone={c.marginEur < 0 ? "#dc2626" : "#0f172a"} />
+            <Mini label="Invoiced" value={eur(c.clientInvoicedEur)} tone={UI.revenue} />
+            <Mini label="Collected" value={eur(c.clientCollectedEur)} tone={UI.collected} />
+            <Mini label="Cost" value={eur(c.memberInvoicedEur)} tone={UI.cost} />
+            <Mini label="Margin" value={eur(c.marginEur)} tone={c.marginEur < 0 ? UI.marginNeg : UI.margin} />
           </div>
           <ul className="mt-3 space-y-1.5 border-t border-slate-100 pt-2.5 text-[11px]">
             {c.rows.map((r) => (
@@ -455,31 +481,32 @@ function ClientView({ model }: { model: ClosingModel }) {
 }
 
 // ---- Small bits ------------------------------------------------------------
-function Tile({
+function Stat({
   label,
   value,
-  accent,
-  strong,
+  color,
+  sub,
   money,
 }: {
   label: string;
   value: string;
-  accent?: string;
-  strong?: boolean;
+  color?: string;
+  sub?: string;
   money?: boolean;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-      {accent ? <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: accent }} /> : null}
-      <div className="pl-1.5">
-        <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
-        <div
-          className={`mt-1 tabular-nums font-semibold ${strong ? "text-xl" : "text-base"} ${money ? "demo-blur" : ""}`}
-          style={accent ? { color: accent } : undefined}
-        >
-          {value}
-        </div>
+    <div className="px-4 py-3">
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-slate-400">
+        {color ? <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} /> : null}
+        {label}
       </div>
+      <div
+        className={`mt-1 text-lg font-semibold tabular-nums ${money ? "demo-blur" : ""}`}
+        style={color ? { color } : undefined}
+      >
+        {value}
+      </div>
+      {sub ? <div className="mt-0.5 text-[10px] text-slate-400">{sub}</div> : null}
     </div>
   );
 }

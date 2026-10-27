@@ -19,6 +19,7 @@ import type {
   ProjectRecord,
   StaffingAdminRecord,
 } from "./airtable";
+import { DEFAULT_FX_TO_EUR } from "./fx";
 
 export type StepState = "done" | "partial" | "pending" | "na";
 
@@ -194,6 +195,19 @@ export function buildMonthlyClose(input: {
   const projectByCode = new Map(input.projects.map((p) => [p.projectCode, p]));
   const projectById = new Map(input.projects.map((p) => [p.id, p]));
 
+  // Member invoices carry their own currency (EUR / USD / CHF) with no EUR value,
+  // so convert via the linked project's FX rate (falling back to a desk rate),
+  // the same way the earnings rollup does — otherwise member cost / margin mix
+  // currencies.
+  const invoiceEur = (inv: MemberInvoiceRecord): number | null => {
+    if (inv.amount == null) return null;
+    const cur = inv.currency || "EUR";
+    if (cur === "EUR") return inv.amount;
+    const fx = projectByCode.get(inv.projectCode)?.fxToEur;
+    const rate = fx && fx > 0 ? fx : DEFAULT_FX_TO_EUR[cur] ?? 1;
+    return inv.amount * rate;
+  };
+
   const clientOfProject = (code: string): { clientCode: string; clientName: string } => {
     const proj = projectByCode.get(code);
     const id = proj?.clientRecordIds?.[0] ?? "";
@@ -242,7 +256,7 @@ export function buildMonthlyClose(input: {
     const invMonth = covered.find((m) => m === month) ?? (covered.length === 0 ? monthOf(inv.submissionDate) : "");
     if (invMonth !== month) continue;
     const key = `${inv.projectCode}__${inv.memberCode}`;
-    const eur = inv.amount ?? null; // member invoices carry EUR-ish amounts
+    const eur = invoiceEur(inv);
     // Only two meaningful states exist in the data: received (awaiting payment)
     // and paid. "Paid" is set either on the invoice or via a Paid outflow.
     const status: ClosingRow["memberInvoiceStatus"] =
