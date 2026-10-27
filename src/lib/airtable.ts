@@ -2769,6 +2769,38 @@ export async function getProjectById(recordId: string): Promise<ProjectRecord | 
   }
 }
 
+// Client purchase orders, for PO-headroom tracking on the monthly close. The
+// "Project Code" / "Client Code" links resolve to the linked record's primary
+// field (the code), so linkedDisplay gives those codes directly.
+export type PurchaseOrderRecord = {
+  id: string;
+  poNumber: string;
+  projectCode: string;
+  clientCode: string;
+  totalAmount: number | null;
+  amountInvoiced: number | null;
+  amountRemaining: number | null;
+  currency: string;
+  status: string;
+};
+
+export const listPurchaseOrders = cache(async function listPurchaseOrders(): Promise<
+  PurchaseOrderRecord[]
+> {
+  const records = await base("Purchase Orders").select().all();
+  return records.map((r) => ({
+    id: r.id,
+    poNumber: str(r, "PO Number"),
+    projectCode: linkedDisplay(r, "Project Code")[0] ?? "",
+    clientCode: linkedDisplay(r, "Client Code")[0] ?? "",
+    totalAmount: numOrNull(r, "Total Amount"),
+    amountInvoiced: numOrNull(r, "Amount Invoiced"),
+    amountRemaining: numOrNull(r, "Amount Remaining to Invoice"),
+    currency: str(r, "Currency"),
+    status: str(r, "Status"),
+  }));
+});
+
 export type ProjectInput = {
   projectCode: string;
   projectName: string;
