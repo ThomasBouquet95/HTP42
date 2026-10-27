@@ -68,10 +68,9 @@ export default async function AdminClosingPage({
     const m = (p.invoiceDate || "").slice(0, 7);
     if (/^\d{4}-\d{2}$/.test(m)) monthsWithData.add(m);
   }
+  // Default to the current month (an explicit ?month= wins).
   const requested = /^\d{4}-\d{2}$/.test(sp.month ?? "") ? sp.month! : "";
-  const month =
-    requested ||
-    (monthsWithData.has(currentMonth) ? currentMonth : [...monthsWithData].sort().reverse()[0] || currentMonth);
+  const month = requested || currentMonth;
 
   // The dropdown always offers the current month plus every month with data.
   const availableMonths = [...new Set([currentMonth, month, ...monthsWithData])]

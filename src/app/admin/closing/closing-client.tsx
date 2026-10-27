@@ -2,16 +2,31 @@
 
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { SegmentedTabs } from "@/components/filters";
 import type { ClosingModel, ClosingRow, StepState } from "@/lib/closing";
 import type { MonthStatus } from "@/lib/closing-store";
 
 const eur = (v: number | null | undefined) =>
   v == null ? "—" : `€${Math.round(v).toLocaleString("en-US")}`;
+const href = (m: string) => `/admin/closing?month=${m}`;
 
-// Modern hover tooltip: a dark rounded card with an arrow, shown above the
-// trigger. Rendered through a portal with fixed positioning so it's never
-// clipped by a scrolling table/overflow container.
+function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split("-").map((n) => parseInt(n, 10));
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+function monthLabel(month: string): string {
+  const [y, m] = month.split("-").map((n) => parseInt(n, 10));
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-GB", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+// ---- Modern hover tooltip (portal + fixed positioning, never clipped) ------
 function Tip({ label, children, wide }: { label: ReactNode; children: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -22,12 +37,7 @@ function Tip({ label, children, wide }: { label: ReactNode; children: ReactNode;
     setPos({ x: r.left + r.width / 2, y: r.top });
   };
   return (
-    <span
-      ref={ref}
-      className="relative inline-flex"
-      onMouseEnter={show}
-      onMouseLeave={() => setPos(null)}
-    >
+    <span ref={ref} className="relative inline-flex" onMouseEnter={show} onMouseLeave={() => setPos(null)}>
       {children}
       {pos && typeof document !== "undefined"
         ? createPortal(
@@ -47,22 +57,6 @@ function Tip({ label, children, wide }: { label: ReactNode; children: ReactNode;
     </span>
   );
 }
-
-function shiftMonth(month: string, delta: number): string {
-  const [y, m] = month.split("-").map((n) => parseInt(n, 10));
-  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-function monthLabel(month: string): string {
-  const [y, m] = month.split("-").map((n) => parseInt(n, 10));
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-GB", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-// A header label that carries a tooltip, with a dotted underline affordance.
 function HeaderTip({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <Tip label={label} wide>
@@ -73,12 +67,12 @@ function HeaderTip({ label, children }: { label: ReactNode; children: ReactNode 
   );
 }
 
-// ---- pipeline step chip --------------------------------------------------
-const STEP_META: Record<StepState, { dot: string; text: string }> = {
-  done: { dot: "bg-emerald-500", text: "text-emerald-700" },
-  partial: { dot: "bg-amber-500", text: "text-amber-700" },
-  pending: { dot: "bg-slate-300", text: "text-slate-400" },
-  na: { dot: "bg-transparent", text: "text-slate-300" },
+// ---- Pipeline step chip ----------------------------------------------------
+const STEP_META: Record<StepState, string> = {
+  done: "bg-emerald-500",
+  partial: "bg-amber-400",
+  pending: "bg-slate-200",
+  na: "",
 };
 const STATE_LABEL: Record<StepState, string> = {
   done: "Done",
@@ -86,8 +80,16 @@ const STATE_LABEL: Record<StepState, string> = {
   pending: "Pending",
   na: "Not applicable",
 };
+const STEP_DESC = {
+  submitted: "Timesheets submitted for the month",
+  validated: "Timesheets validated (approved by the reviewer)",
+  memberInvoice: "Invoice received from the network member",
+  clientInvoiceSent: "Client invoice issued & sent to the client (project level)",
+  collected: "Client invoice collected — paid or matched in Qonto (project level)",
+  memberPaid: "The network member's invoice has been paid",
+} as const;
+
 function StepCell({ state, late, desc }: { state: StepState; late?: boolean; desc: string }) {
-  const m = STEP_META[state];
   const tip = (
     <>
       <b className="block">{desc}</b>
@@ -98,31 +100,23 @@ function StepCell({ state, late, desc }: { state: StepState; late?: boolean; des
     </>
   );
   return (
-    <td className="px-2 py-2 text-center">
+    <td className="px-2 py-2.5 text-center">
       <Tip label={tip} wide>
         {state === "na" ? (
           <span className="text-slate-300">·</span>
         ) : (
           <span
-            className={`inline-flex h-4 w-4 items-center justify-center rounded-full ${late ? "ring-2 ring-rose-400" : ""}`}
+            className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${
+              late ? "ring-2 ring-rose-400 ring-offset-1" : ""
+            }`}
           >
-            <span className={`h-2.5 w-2.5 rounded-full ${m.dot}`} />
+            <span className={`h-2.5 w-2.5 rounded-full ${STEP_META[state]}`} />
           </span>
         )}
       </Tip>
     </td>
   );
 }
-
-// Human explanations for each pipeline column (header + chip tooltips).
-const STEP_DESC = {
-  submitted: "Timesheets submitted for the month",
-  validated: "Timesheets validated (approved by the reviewer)",
-  memberInvoice: "Invoice received from the network member",
-  clientInvoiceSent: "Client invoice issued & sent to the client (project level)",
-  collected: "Client invoice collected — paid or matched in Qonto (project level)",
-  memberPaid: "The network member's invoice has been paid",
-} as const;
 
 export function ClosingClient({
   model,
@@ -139,45 +133,49 @@ export function ClosingClient({
 }) {
   const router = useRouter();
   const [view, setView] = useState<"member" | "client">("member");
-  const go = (m: string) => router.push(`/admin/closing?month=${m}`);
 
   return (
     <div className="space-y-4">
-      {/* Month nav + status */}
+      {/* Control bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => go(shiftMonth(month, -1))}
-            className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+        <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+          <Link
+            href={href(shiftMonth(month, -1))}
             aria-label="Previous month"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
           >
             ←
-          </button>
+          </Link>
           <select
-            value={availableMonths.includes(month) ? month : ""}
-            onChange={(e) => go(e.target.value)}
+            value={availableMonths.includes(month) ? month : "__cur__"}
+            onChange={(e) => router.push(href(e.target.value))}
             aria-label="Select month"
-            className="min-w-[10rem] rounded-md border border-slate-300 bg-white px-2 py-1.5 text-center text-sm font-semibold text-slate-800 focus:border-brand-500 focus:outline-none"
+            className="min-w-[10rem] cursor-pointer rounded-md border-0 bg-transparent px-2 py-1 text-center text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
-            {!availableMonths.includes(month) ? <option value={month}>{monthLabel(month)}</option> : null}
+            {!availableMonths.includes(month) ? (
+              <option value={month}>{monthLabel(month)}</option>
+            ) : null}
             {availableMonths.map((m) => (
               <option key={m} value={m}>
                 {monthLabel(m)}
-                {m === currentMonth ? " (this month)" : ""}
+                {m === currentMonth ? " · this month" : ""}
               </option>
             ))}
           </select>
-          <button
-            onClick={() => go(shiftMonth(month, 1))}
-            className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+          <Link
+            href={href(shiftMonth(month, 1))}
             aria-label="Next month"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
           >
             →
-          </button>
+          </Link>
           {month !== currentMonth ? (
-            <button onClick={() => go(currentMonth)} className="text-xs font-medium text-brand-700 hover:underline">
-              This month
-            </button>
+            <Link
+              href={href(currentMonth)}
+              className="ml-1 rounded-md px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50"
+            >
+              Today
+            </Link>
           ) : null}
         </div>
         <MonthStatusEditor month={month} initial={monthStatus} />
@@ -186,38 +184,47 @@ export function ClosingClient({
       {/* Summary tiles */}
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Tile label="Active lines" value={String(model.totals.members)} />
-        <Tile label="Client invoiced" value={eur(model.totals.clientInvoicedEur)} accent="#059669" />
-        <Tile label="Collected" value={eur(model.totals.clientCollectedEur)} accent="#0ea5e9" />
-        <Tile label="Member cost" value={eur(model.totals.memberInvoicedEur)} accent="#dc2626" />
-        <Tile label="Margin" value={eur(model.totals.marginEur)} accent="#0f172a" strong />
+        <Tile label="Client invoiced" value={eur(model.totals.clientInvoicedEur)} accent="#059669" money />
+        <Tile label="Collected" value={eur(model.totals.clientCollectedEur)} accent="#0ea5e9" money />
+        <Tile label="Member cost" value={eur(model.totals.memberInvoicedEur)} accent="#dc2626" money />
+        <Tile label="Margin" value={eur(model.totals.marginEur)} accent="#0f172a" strong money />
         <Tile
           label="Needs attention"
           value={`${model.totals.lateRows} late · ${model.totals.staffedNoHours} no hrs`}
-          accent={model.totals.lateRows > 0 ? "#dc2626" : "#64748b"}
+          accent={model.totals.lateRows > 0 ? "#dc2626" : "#94a3b8"}
         />
       </div>
 
-      <div className="flex items-center justify-between gap-3">
-        <div className="inline-flex rounded-lg bg-slate-100 p-1 text-xs font-semibold">
-          {(["member", "client"] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`rounded-md px-3 py-1.5 transition ${
-                view === v ? "bg-white text-brand-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              {v === "member" ? "By member" : "By client"}
-            </button>
-          ))}
-        </div>
+      {/* View toggle + legend */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SegmentedTabs
+          value={view}
+          onChange={setView}
+          ariaLabel="Closing view"
+          options={[
+            { value: "member", label: "By member" },
+            { value: "client", label: "By client" },
+          ]}
+        />
         <Legend />
       </div>
 
       {model.rows.length === 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400">
-          No active members on projects for {monthLabel(month)}. Pick another month from the selector
-          above{availableMonths.length ? ` (data exists for ${monthLabel(availableMonths[0])})` : ""}.
+        <div className="rounded-xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+          <div className="text-sm font-medium text-slate-700">No active members for {monthLabel(month)}</div>
+          <p className="mt-1 text-xs text-slate-500">
+            Nothing is staffed or logged in this month yet.
+            {availableMonths.length ? (
+              <>
+                {" "}
+                Latest data is in{" "}
+                <Link href={href(availableMonths[0])} className="font-medium text-brand-700 hover:underline">
+                  {monthLabel(availableMonths[0])}
+                </Link>
+                .
+              </>
+            ) : null}
+          </p>
         </div>
       ) : view === "member" ? (
         <MemberTable model={model} month={month} />
@@ -230,36 +237,36 @@ export function ClosingClient({
   );
 }
 
-// ---- By-member table -----------------------------------------------------
+// ---- By-member table -------------------------------------------------------
 function MemberTable({ model, month }: { model: ClosingModel; month: string }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-      <table className="min-w-full text-xs">
+      <table className="min-w-full border-separate border-spacing-0 text-xs">
         <thead>
-          <tr className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-400">
-            <th className="px-3 py-2 text-left">Member · project</th>
-            <th className="px-2 py-2 text-right">
-              <HeaderTip label="Hours submitted for the month, with validated hours in brackets when fewer.">Hours</HeaderTip>
+          <tr className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-400 [&>th]:border-b [&>th]:border-slate-200 [&>th]:py-2.5">
+            <th className="sticky left-0 z-10 bg-slate-50 px-3 text-left">Member · project</th>
+            <th className="px-2 text-right">
+              <HeaderTip label="Hours submitted for the month; validated hours shown in brackets when fewer.">Hours</HeaderTip>
             </th>
-            <th className="px-2 py-2 text-center"><HeaderTip label={STEP_DESC.submitted}>TS&nbsp;sub</HeaderTip></th>
-            <th className="px-2 py-2 text-center"><HeaderTip label={STEP_DESC.validated}>TS&nbsp;val</HeaderTip></th>
-            <th className="px-2 py-2 text-center"><HeaderTip label={STEP_DESC.memberInvoice}>Mbr&nbsp;inv</HeaderTip></th>
-            <th className="px-2 py-2 text-center"><HeaderTip label={STEP_DESC.clientInvoiceSent}>Cli&nbsp;sent</HeaderTip></th>
-            <th className="px-2 py-2 text-center"><HeaderTip label={STEP_DESC.collected}>Cashed</HeaderTip></th>
-            <th className="px-2 py-2 text-center"><HeaderTip label={STEP_DESC.memberPaid}>Mbr&nbsp;paid</HeaderTip></th>
-            <th className="px-2 py-2 text-right"><HeaderTip label="EUR amount of the member's invoice for this month.">Mbr €</HeaderTip></th>
-            <th className="px-2 py-2 text-right">
+            <th className="px-2 text-center"><HeaderTip label={STEP_DESC.submitted}>Subm.</HeaderTip></th>
+            <th className="px-2 text-center"><HeaderTip label={STEP_DESC.validated}>Valid.</HeaderTip></th>
+            <th className="px-2 text-center"><HeaderTip label={STEP_DESC.memberInvoice}>Mbr inv</HeaderTip></th>
+            <th className="px-2 text-center"><HeaderTip label={STEP_DESC.clientInvoiceSent}>Cli sent</HeaderTip></th>
+            <th className="px-2 text-center"><HeaderTip label={STEP_DESC.collected}>Cashed</HeaderTip></th>
+            <th className="px-2 text-center"><HeaderTip label={STEP_DESC.memberPaid}>Mbr paid</HeaderTip></th>
+            <th className="px-2 text-right"><HeaderTip label="EUR amount of the member's invoice for this month.">Mbr €</HeaderTip></th>
+            <th className="px-2 text-right">
               <HeaderTip label="HTP42 margin on the project this month: client invoiced − member invoices (project level).">Margin</HeaderTip>
             </th>
-            <th className="px-2 py-2 text-center">
+            <th className="px-2 text-center">
               <HeaderTip label="SOW / Work Order validity for the month. ⚠ = looks expired or missing.">SOW</HeaderTip>
             </th>
-            <th className="px-3 py-2 text-left">Comment · last reminder</th>
+            <th className="px-3 text-left">Comment · relance</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
-          {model.rows.map((r) => (
-            <MemberRow key={r.key} r={r} month={month} />
+        <tbody>
+          {model.rows.map((r, i) => (
+            <MemberRow key={r.key} r={r} month={month} zebra={i % 2 === 1} />
           ))}
         </tbody>
       </table>
@@ -267,38 +274,40 @@ function MemberTable({ model, month }: { model: ClosingModel; month: string }) {
   );
 }
 
-function MemberRow({ r, month }: { r: ClosingRow; month: string }) {
-  const rowTint = r.staffedNoHours
-    ? "bg-amber-50/40"
+function MemberRow({ r, month, zebra }: { r: ClosingRow; month: string; zebra: boolean }) {
+  const tint = r.staffedNoHours
+    ? "bg-amber-50/50"
     : r.lateSteps.length > 0
-      ? "bg-rose-50/30"
-      : "";
+      ? "bg-rose-50/40"
+      : zebra
+        ? "bg-slate-50/40"
+        : "bg-white";
   return (
-    <tr className={`align-top ${rowTint}`}>
-      <td className="px-3 py-2">
+    <tr className={`align-top ${tint} [&>td]:border-b [&>td]:border-slate-100`}>
+      <td className={`sticky left-0 z-10 px-3 py-2.5 ${tint}`}>
         <div className="font-medium text-slate-800 demo-blur">{r.memberName}</div>
-        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400">
-          <span>{r.projectName}</span>
-          <span className="font-mono">{r.projectCode}</span>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-slate-400">
+          <span className="truncate">{r.projectName}</span>
+          <span className="font-mono text-slate-300">{r.projectCode}</span>
           <span className="text-slate-300">·</span>
           <span>{r.clientName}</span>
         </div>
         {r.staffedNoHours ? (
           <Tip label="Staffed and active this month but no hours logged — absence, paused mission, or forgotten?" wide>
-            <span className="mt-1 inline-block cursor-help rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
-              staffed · no hours
+            <span className="mt-1 inline-flex cursor-help items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+              no hours
             </span>
           </Tip>
         ) : null}
       </td>
-      <td className="px-2 py-2 text-right tabular-nums text-slate-600">
+      <td className="px-2 py-2.5 text-right tabular-nums text-slate-600">
         {r.submittedHours > 0 ? (
-          <span title={`${r.validatedHours}h validated of ${r.submittedHours}h`}>
+          <>
             {r.submittedHours}h
             {r.validatedHours < r.submittedHours ? (
               <span className="text-amber-600"> ({r.validatedHours}✓)</span>
             ) : null}
-          </span>
+          </>
         ) : (
           <span className="text-slate-300">—</span>
         )}
@@ -309,13 +318,13 @@ function MemberRow({ r, month }: { r: ClosingRow; month: string }) {
       <StepCell state={r.steps.clientInvoiceSent} late={r.lateSteps.includes("clientInvoiceSent")} desc={STEP_DESC.clientInvoiceSent} />
       <StepCell state={r.steps.collected} late={r.lateSteps.includes("collected")} desc={STEP_DESC.collected} />
       <StepCell state={r.steps.memberPaid} late={r.lateSteps.includes("memberPaid")} desc={STEP_DESC.memberPaid} />
-      <td className="px-2 py-2 text-right tabular-nums text-slate-600 demo-blur">{eur(r.memberInvoiceEur)}</td>
-      <td className="px-2 py-2 text-right tabular-nums demo-blur">
+      <td className="px-2 py-2.5 text-right tabular-nums text-slate-600 demo-blur">{eur(r.memberInvoiceEur)}</td>
+      <td className="px-2 py-2.5 text-right tabular-nums demo-blur">
         <span className={r.projectMarginEur != null && r.projectMarginEur < 0 ? "text-rose-600" : "text-slate-700"}>
           {eur(r.projectMarginEur)}
         </span>
       </td>
-      <td className="px-2 py-2 text-center">
+      <td className="px-2 py-2.5 text-center">
         {r.sowValidForMonth === false ? (
           <Tip label={`SOW / Work Order not valid for this month${r.sowStatus ? ` (status: ${r.sowStatus})` : ""} — don't invoice on an expired contract.`} wide>
             <span className="cursor-help rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">⚠</span>
@@ -330,7 +339,7 @@ function MemberRow({ r, month }: { r: ClosingRow; month: string }) {
           </Tip>
         )}
       </td>
-      <td className="px-3 py-2">
+      <td className="px-3 py-2.5">
         <LineEditor r={r} month={month} />
       </td>
     </tr>
@@ -375,11 +384,11 @@ function LineEditor({ r, month }: { r: ClosingRow; month: string }) {
           if (comment !== r.comment) save({ comment, lastReminderDate: reminder });
         }}
         rows={1}
-        placeholder="Note…"
-        className="w-full resize-y rounded border border-slate-200 px-2 py-1 text-[11px] focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+        placeholder="Add a note…"
+        className="w-full resize-y rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-700 placeholder:text-slate-300 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
       />
       <div className="flex items-center gap-2">
-        <label className="text-[10px] text-slate-400">Relance</label>
+        <span className="text-[10px] uppercase tracking-wide text-slate-400">Relance</span>
         <input
           type="date"
           value={reminder}
@@ -387,23 +396,30 @@ function LineEditor({ r, month }: { r: ClosingRow; month: string }) {
             setReminder(e.target.value);
             save({ comment, lastReminderDate: e.target.value });
           }}
-          className="rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600 focus:border-brand-500 focus:outline-none"
+          className="rounded-md border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600 focus:border-brand-500 focus:outline-none"
         />
-        <span className="text-[10px]">
-          {state === "saving" ? (
-            <span className="text-slate-400">saving…</span>
-          ) : state === "saved" ? (
-            <span className="text-emerald-600">✓</span>
-          ) : state === "error" ? (
-            <span className="text-rose-600">save failed</span>
-          ) : null}
-        </span>
+        <SaveState state={state} />
       </div>
     </div>
   );
 }
 
-// ---- By-client rollup ----------------------------------------------------
+function SaveState({ state }: { state: "idle" | "saving" | "saved" | "error" }) {
+  if (state === "idle") return null;
+  return (
+    <span className="text-[10px]">
+      {state === "saving" ? (
+        <span className="text-slate-400">saving…</span>
+      ) : state === "saved" ? (
+        <span className="text-emerald-600">✓ saved</span>
+      ) : (
+        <span className="text-rose-600">save failed</span>
+      )}
+    </span>
+  );
+}
+
+// ---- By-client rollup ------------------------------------------------------
 function ClientView({ model }: { model: ClosingModel }) {
   return (
     <div className="grid gap-3 lg:grid-cols-2">
@@ -412,42 +428,46 @@ function ClientView({ model }: { model: ClosingModel }) {
           <div className="flex items-start justify-between gap-2">
             <div>
               <div className="text-sm font-semibold text-slate-900 demo-blur">{c.clientName}</div>
-              <div className="text-[11px] text-slate-400">
+              <div className="mt-0.5 text-[11px] text-slate-400">
                 {c.memberCount} member{c.memberCount === 1 ? "" : "s"} · {c.projectCount} project
                 {c.projectCount === 1 ? "" : "s"}
               </div>
             </div>
             {c.poRemainingEur != null ? (
-              <div
-                className={`rounded-md px-2 py-1 text-[10px] font-medium ${
-                  c.poLow ? "bg-rose-50 text-rose-700 ring-1 ring-rose-200" : "bg-slate-50 text-slate-500"
-                }`}
-                title="Purchase-order headroom remaining across this client's projects"
-              >
-                PO left {eur(c.poRemainingEur)}
-                {c.poLow ? " ⚠" : ""}
-              </div>
+              <Tip label="Purchase-order headroom remaining across this client's projects. ⚠ when nearly exhausted." wide>
+                <span
+                  className={`cursor-help rounded-md px-2 py-1 text-[10px] font-medium ${
+                    c.poLow ? "bg-rose-50 text-rose-700 ring-1 ring-rose-200" : "bg-slate-50 text-slate-500 ring-1 ring-slate-200"
+                  }`}
+                >
+                  PO left {eur(c.poRemainingEur)}
+                  {c.poLow ? " ⚠" : ""}
+                </span>
+              </Tip>
             ) : null}
           </div>
-          <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+          <div className="mt-3 grid grid-cols-4 gap-2 rounded-lg bg-slate-50/70 p-2 text-center">
             <Mini label="Invoiced" value={eur(c.clientInvoicedEur)} tone="#059669" />
             <Mini label="Collected" value={eur(c.clientCollectedEur)} tone="#0ea5e9" />
-            <Mini label="Member cost" value={eur(c.memberInvoicedEur)} tone="#dc2626" />
+            <Mini label="Cost" value={eur(c.memberInvoicedEur)} tone="#dc2626" />
             <Mini label="Margin" value={eur(c.marginEur)} tone={c.marginEur < 0 ? "#dc2626" : "#0f172a"} />
           </div>
-          <ul className="mt-3 space-y-1 border-t border-slate-100 pt-2 text-[11px]">
+          <ul className="mt-3 space-y-1.5 border-t border-slate-100 pt-2.5 text-[11px]">
             {c.rows.map((r) => (
               <li key={r.key} className="flex items-center justify-between gap-2">
-                <span className="truncate text-slate-600 demo-blur" title={`${r.memberName} · ${r.projectName}`}>
-                  {r.memberName}
-                  <span className="ml-1 text-slate-400">{r.projectName}</span>
+                <span className="min-w-0 truncate text-slate-600 demo-blur" title={`${r.memberName} · ${r.projectName}`}>
+                  {r.memberName} <span className="text-slate-400">· {r.projectName}</span>
                 </span>
-                <span className="flex shrink-0 items-center gap-1">
-                  {r.staffedNoHours ? <span title="staffed, no hours">🟠</span> : null}
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {r.staffedNoHours ? (
+                    <Tip label="Staffed, no hours this month." wide>
+                      <span className="h-1.5 w-1.5 cursor-help rounded-full bg-amber-500" />
+                    </Tip>
+                  ) : null}
                   {r.lateSteps.length > 0 ? (
-                    <span className="text-rose-600" title={`late: ${r.lateSteps.join(", ")}`}>
-                      ⏰
-                    </span>
+                    <Tip label={`Overdue: ${r.lateSteps.join(", ")}`} wide>
+                      <span className="h-1.5 w-1.5 cursor-help rounded-full bg-rose-500" />
+                    </Tip>
                   ) : null}
                   <span className="tabular-nums text-slate-400">{r.submittedHours}h</span>
                 </span>
@@ -460,15 +480,27 @@ function ClientView({ model }: { model: ClosingModel }) {
   );
 }
 
-// ---- small bits ----------------------------------------------------------
-function Tile({ label, value, accent, strong }: { label: string; value: string; accent?: string; strong?: boolean }) {
+// ---- Small bits ------------------------------------------------------------
+function Tile({
+  label,
+  value,
+  accent,
+  strong,
+  money,
+}: {
+  label: string;
+  value: string;
+  accent?: string;
+  strong?: boolean;
+  money?: boolean;
+}) {
   return (
     <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
       {accent ? <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: accent }} /> : null}
       <div className="pl-1.5">
         <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
         <div
-          className={`mt-1 tabular-nums ${strong ? "text-xl" : "text-base"} font-semibold demo-blur`}
+          className={`mt-1 tabular-nums font-semibold ${strong ? "text-xl" : "text-base"} ${money ? "demo-blur" : ""}`}
           style={accent ? { color: accent } : undefined}
         >
           {value}
@@ -491,9 +523,9 @@ function Legend() {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-400">
       <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" /> done</span>
-      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" /> partial</span>
-      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-slate-300" /> pending</span>
-      <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-full ring-2 ring-rose-400" /> late</span>
+      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400" /> partial</span>
+      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-slate-200" /> pending</span>
+      <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-full ring-2 ring-rose-400" /> overdue</span>
     </div>
   );
 }
@@ -519,18 +551,13 @@ function MonthStatusEditor({ month, initial }: { month: string; initial: MonthSt
     }
   }
 
-  const pill =
-    status === "Done"
-      ? "bg-emerald-100 text-emerald-800"
-      : status === "In progress"
-        ? "bg-amber-100 text-amber-800"
-        : "bg-slate-100 text-slate-500";
+  const dot =
+    status === "Done" ? "bg-emerald-500" : status === "In progress" ? "bg-amber-500" : "bg-slate-300";
 
   return (
-    <div className="flex items-center gap-2">
-      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${pill}`}>
-        {status || "Not started"}
-      </span>
+    <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm">
+      <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Close</span>
+      <span className={`h-2 w-2 rounded-full ${dot}`} />
       <select
         value={status}
         onChange={(e) => {
@@ -538,7 +565,7 @@ function MonthStatusEditor({ month, initial }: { month: string; initial: MonthSt
           setStatus(next);
           save({ status: next, comment });
         }}
-        className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+        className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-brand-500 focus:outline-none"
       >
         <option value="">Not started</option>
         <option value="In progress">In progress</option>
@@ -551,17 +578,9 @@ function MonthStatusEditor({ month, initial }: { month: string; initial: MonthSt
           if (comment !== initial.comment) save({ status, comment });
         }}
         placeholder="Close note…"
-        className="w-40 rounded-md border border-slate-300 px-2 py-1 text-xs focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+        className="w-36 rounded-md border border-slate-300 px-2 py-1 text-xs focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
       />
-      <span className="w-10 text-[10px]">
-        {state === "saving" ? (
-          <span className="text-slate-400">…</span>
-        ) : state === "saved" ? (
-          <span className="text-emerald-600">saved</span>
-        ) : state === "error" ? (
-          <span className="text-rose-600">error</span>
-        ) : null}
-      </span>
+      <SaveState state={state} />
     </div>
   );
 }
@@ -576,15 +595,14 @@ function Caveats() {
           invoices). Timesheet hours count in the month of the week's <b>Friday</b> (the cutoff).
         </p>
         <p>
-          <b>Client invoice sent / collected</b> and <b>margin</b> are tracked at <b>project</b> level
-          (a client invoice usually bundles a project, not one member), shown on each row for context
-          and rolled up in the By client view. <b>Collected</b> = payment marked Paid or matched to a
-          Qonto transaction.
+          <b>Cli sent / Cashed</b> and <b>Margin</b> are tracked at <b>project</b> level (a client
+          invoice usually bundles a project, not one member), shown per line for context and rolled up
+          in the By client view. <b>Cashed</b> = payment marked Paid or matched to a Qonto transaction.
         </p>
         <p>
-          <b>Late</b> flags use default targets after month end: timesheets submitted J+{2}, validated
-          J+{4}, client invoice sent J+{5}, member invoice J+{7}. SOW shows ⚠ when the staffing's SOW
-          looks expired/missing for the month.
+          <b>Overdue</b> (red ring) uses default targets after month end: submitted J+2, validated J+4,
+          client invoice J+5, member invoice J+7. <b>SOW</b> shows ⚠ when the staffing's SOW looks
+          expired or missing for the month.
         </p>
         <p className="text-slate-400">
           Not wired yet (need a data source / a decision): rebillable expenses (saisies / validées /
