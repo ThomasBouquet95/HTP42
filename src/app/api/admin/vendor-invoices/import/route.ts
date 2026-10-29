@@ -7,6 +7,7 @@ import {
   createPaymentForVendorInvoice,
   createVendorInvoice,
   ensureVendorInvoicesSchema,
+  findProjectIdByCode,
   getPaymentById,
   vendorInvoiceIdentityKey,
   vendorInvoiceIdentityKeys,
@@ -26,14 +27,30 @@ export const runtime = "nodejs";
 // uploading, can take a while — give the function generous headroom.
 export const maxDuration = 300;
 
-// Import paid IT / vendor invoices from the billing mailbox into Airtable.
+// Import paid vendor invoices from the billing mailbox into Airtable.
 // Idempotent: each email is deduped by its internetMessageId, so re-running
-// (nightly cron or manual) never creates duplicates. Every imported row is
-// filed under the internal IT project and left as "Needs Review" so an admin
-// glances at the auto-extracted vendor/amount before trusting it.
+// (nightly cron or manual) never creates duplicates. Each invoice is also
+// auto-classified (by Claude) into one internal HTP42 project from its supplier,
+// description, line items and primary purpose. A clearly classified invoice with
+// an amount is booked as a Paid outflow linked to that project; anything with no
+// amount OR an unclear project is left "Needs Review" for an admin to finish.
+
+// The internal HTP42 projects a vendor invoice can be classified into, with the
+// cue for each. Exactly one is chosen by primary business purpose; genuinely
+// unclear invoices are left blank and flagged for manual review.
+const PROJECT_OPTIONS: { code: string; hint: string }[] = [
+  { code: "INT-EVENTS", hint: "HTP42 Events — company events, conferences we host/attend as a company, offsites, venue & catering for events." },
+  { code: "INT-G&A", hint: "HTP42 General & Administrative — accounting, legal, banking/finance fees, insurance, office rent & supplies, HR, general admin overhead." },
+  { code: "INT-IT", hint: "HTP42 IT — software & SaaS subscriptions, cloud/hosting, domains, hardware, IT services & support." },
+  { code: "INT-PS", hint: "HTP42 Professional Services — external consultants, subcontractors and professional advisory engaged to deliver work." },
+  { code: "INT-TRAVEL", hint: "HTP42 Travel — flights, trains, hotels, car hire, taxis/ride-share, mileage and other travel costs." },
+  { code: "INT-SM", hint: "HTP42 Sales & Marketing — advertising, marketing tools, CRM, branding, design, sponsorships, lead generation." },
+];
+const PROJECT_CODES = new Set(PROJECT_OPTIONS.map((p) => p.code));
 
 const EXTRACT_SYSTEM = [
-  "You extract header fields from a single PDF attachment that MIGHT be a paid vendor / IT invoice.",
+  "You extract header fields from a single PDF attachment that MIGHT be a paid vendor / IT invoice,",
+  "and classify it into exactly one HTP42 internal project.",
   "Return STRICTLY valid JSON, no Markdown fences, matching:",
   "{",
   '  "isInvoice": boolean — true ONLY if this document is actually an invoice, bill or receipt asking for or confirming a payment. false for anything else (cover letter, quote, statement, contract, terms, delivery note, marketing, logo).',
@@ -42,7 +59,13 @@ const EXTRACT_SYSTEM = [
   '  "invoiceDate": string — invoice date as ISO yyyy-mm-dd. Empty if unclear.',
   '  "amount": number | null — the total amount due (gross / total incl. tax). null if unclear.',
   '  "currency": string — ISO code: "EUR", "USD", "CHF", etc. Empty if unclear.',
+  '  "project": string — EXACTLY one of the project codes below, or "" if the right one is genuinely unclear:',
+  ...PROJECT_OPTIONS.map((p) => `      ${p.code} — ${p.hint}`),
+  '  "projectReason": string — one short sentence on why that project (or why it is unclear).',
   "}",
+  "Classification: use the supplier, the invoice description, the line items and the PRIMARY business",
+  "purpose of the spend. If several projects could apply, pick the one matching the primary purpose.",
+  'If you genuinely cannot tell, set "project" to "" (do NOT guess) — it will be sent for manual review.',
   "Rules: never invent values; use empty string / null when unsure. Convert dates to ISO.",
 ].join("\n");
 
@@ -53,12 +76,23 @@ type Extracted = {
   invoiceDate: string;
   amount: number | null;
   currency: string;
+  project: string;
+  projectReason: string;
 };
 
 async function extractFields(base64: string): Promise<Extracted> {
   // Default to treating it as an invoice when we can't ask the model (no API
   // key, or an error): a human then reviews it, rather than silently dropping.
-  const fallback: Extracted = { isInvoice: true, vendor: "", invoiceNumber: "", invoiceDate: "", amount: null, currency: "" };
+  const fallback: Extracted = {
+    isInvoice: true,
+    vendor: "",
+    invoiceNumber: "",
+    invoiceDate: "",
+    amount: null,
+    currency: "",
+    project: "",
+    projectReason: "",
+  };
   if (!env.anthropicApiKey) return fallback;
   try {
     const client = new Anthropic({ apiKey: env.anthropicApiKey });
@@ -88,6 +122,10 @@ async function extractFields(base64: string): Promise<Extracted> {
     const parsed = JSON.parse(text) as Record<string, unknown>;
     const s = (k: string) => (typeof parsed[k] === "string" ? (parsed[k] as string).trim() : "");
     const amt = parsed.amount;
+    // Only accept a project the model returns if it's one of the known codes;
+    // anything else (incl. a hallucinated code) is treated as unclear.
+    const projectRaw = s("project").toUpperCase();
+    const project = PROJECT_CODES.has(projectRaw) ? projectRaw : "";
     return {
       // Default true when the flag is missing, so a real invoice is never
       // dropped on a malformed response.
@@ -97,6 +135,8 @@ async function extractFields(base64: string): Promise<Extracted> {
       invoiceDate: s("invoiceDate"),
       amount: typeof amt === "number" ? amt : null,
       currency: s("currency").toUpperCase(),
+      project,
+      projectReason: s("projectReason"),
     };
   } catch (e) {
     console.error("vendor invoice extract failed:", e);
@@ -111,12 +151,13 @@ function buildPaidPayment(
   fields: Extracted,
   currency: string,
   m: MailInvoice,
+  projectId: string | null,
 ): PaymentInput {
   const paidDate = fields.invoiceDate || (m.receivedDateTime ? m.receivedDateTime.slice(0, 10) : null);
   return {
     direction: "Outflow",
     type: "Expense",
-    projectRecordIds: [],
+    projectRecordIds: projectId ? [projectId] : [],
     clientRecordIds: [],
     memberRecordIds: [],
     memberInvoiceRecordIds: [],
@@ -131,7 +172,9 @@ function buildPaidPayment(
     paymentDate: paidDate,
     dueDate: null,
     beneficiary: fields.vendor,
-    comment: `Auto-created from ${env.automatedInvoiceProjectCode} automated invoice import.`,
+    comment: `Auto-created from automated invoice import.${
+      fields.project ? ` Classified as ${fields.project}.` : ""
+    }`,
     invoiceUrl: "",
   };
 }
@@ -195,29 +238,40 @@ async function run() {
         }
 
         const currency = fields.currency || "EUR";
-        // These invoices are always already paid. With an amount we create the
-        // matching "Paid" outflow payment and mark the invoice Paid; without
-        // one we flag it "Needs Review" (no payment until the amount is filled).
+        // Classify into an internal project (by primary purpose). Unclear ones
+        // are left unassigned and flagged for manual review rather than guessed.
+        const projectId = fields.project ? await findProjectIdByCode(fields.project) : null;
+        // These invoices are always already paid. We only auto-create the matching
+        // "Paid" outflow payment when BOTH the amount AND the project are known;
+        // otherwise the invoice is flagged "Needs Review" so an admin fills the
+        // gap (and classifies it) before it is booked.
         const hasAmount = fields.amount != null;
+        const classified = fields.project !== "";
+        const needsReview = !hasAmount || !classified;
+        const classificationNote = classified
+          ? `Auto-classified as ${fields.project}${fields.projectReason ? ` — ${fields.projectReason}` : ""}.`
+          : `Project unclear — needs manual classification${fields.projectReason ? ` (${fields.projectReason})` : ""}.`;
+        const attachmentNote = m.pdfs.length > 1 ? `Attachment ${idx + 1} of ${m.pdfs.length} in this email.` : "";
         const input: VendorInvoiceInput = {
           vendor: fields.vendor,
           invoiceNumber: fields.invoiceNumber,
           invoiceDate: fields.invoiceDate,
           amount: fields.amount,
           currency,
-          projectCode: env.automatedInvoiceProjectCode,
-          status: hasAmount ? "Paid" : "Needs Review",
+          // The classified project (blank when unclear, so review is obvious).
+          projectCode: fields.project,
+          status: needsReview ? "Needs Review" : "Paid",
           messageId: attachmentKey,
           emailSubject: m.subject,
           emailFrom: m.from,
           receivedAt: m.receivedDateTime,
-          notes: m.pdfs.length > 1 ? `Attachment ${idx + 1} of ${m.pdfs.length} in this email.` : "",
+          notes: [classificationNote, attachmentNote].filter(Boolean).join(" "),
         };
         const id = await createVendorInvoice(input);
         // One record = one invoice PDF (not every attachment on the email).
         await attachVendorInvoicePdf(id, pdf.filename, pdf.base64);
-        if (hasAmount) {
-          const paymentId = await createPaymentForVendorInvoice(id, buildPaidPayment(fields, currency, m));
+        if (!needsReview) {
+          const paymentId = await createPaymentForVendorInvoice(id, buildPaidPayment(fields, currency, m, projectId));
           await attachPaymentPdf(paymentId, pdf.filename, pdf.base64).catch(() => {});
           // Already Paid — send the same paid-recap an admin would on marking Paid.
           const created = await getPaymentById(paymentId).catch(() => null);

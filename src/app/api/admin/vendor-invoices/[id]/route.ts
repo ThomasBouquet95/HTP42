@@ -4,6 +4,7 @@ import { requireAdminAction } from "@/lib/auth";
 import {
   createPaymentForVendorInvoice,
   deleteVendorInvoice,
+  findProjectIdByCode,
   getPaymentById,
   getVendorInvoiceById,
   updateVendorInvoice,
@@ -51,10 +52,12 @@ export async function PATCH(
     // pairing the nightly import makes automatically.
     const updated = (await getVendorInvoiceById(id)) ?? existing;
     if (markPaid && updated.amount != null && !updated.paymentId) {
+      // Link the payment to the (now classified) project when the code resolves.
+      const projectId = updated.projectCode ? await findProjectIdByCode(updated.projectCode) : null;
       const payment: PaymentInput = {
         direction: "Outflow",
         type: "Expense",
-        projectRecordIds: [],
+        projectRecordIds: projectId ? [projectId] : [],
         clientRecordIds: [],
         memberRecordIds: [],
         memberInvoiceRecordIds: [],

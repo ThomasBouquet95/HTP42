@@ -25,7 +25,7 @@ export const CRON_META: Record<string, CronMeta> = {
   "/api/admin/vendor-invoices/import": {
     title: "Import vendor invoices",
     description:
-      "Pulls paid supplier / IT invoices from the finance mailbox and files each as a Paid Outflow payment, hands-off, so bookkeeping shows up without manual entry.",
+      "Pulls paid supplier / IT invoices from the finance mailbox, auto-classifies each into one internal project (IT, G&A, Travel, Events, Sales & Marketing, Professional Services) by supplier + purpose, and files it as a Paid Outflow linked to that project. Invoices with no amount or an unclear project are left Needs Review.",
     category: "Finance",
     manualTrigger: true,
   },
