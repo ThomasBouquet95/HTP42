@@ -9,6 +9,9 @@ type Result = {
   posted?: number;
   skippedAlreadyPosted?: number;
   recentMessagesRead?: number;
+  searchResults?: number;
+  searchError?: string | null;
+  slackError?: string | null;
   error?: string;
 };
 
@@ -76,10 +79,24 @@ export function SignalsTestButton() {
             {typeof result.recentMessagesRead === "number" ? (
               <> · read {result.recentMessagesRead} recent message(s) for dedup</>
             ) : null}
-            {result.posted === 0 ? (
+            {result.searchError ? (
+              <div className="mt-1 font-medium text-rose-700">
+                ⚠ Web search failed: {result.searchError}. The bot can&apos;t fetch news — check that
+                web search is enabled for the Anthropic API key.
+              </div>
+            ) : null}
+            {result.slackError ? (
+              <div className="mt-1 font-medium text-rose-700">
+                ⚠ Slack post failed: {result.slackError}
+                {result.slackError === "not_in_channel"
+                  ? " — invite the bot to #life-science-signals."
+                  : " — the bot token may be invalid/rotated; update SLACK_BOT_TOKEN."}
+              </div>
+            ) : null}
+            {result.posted === 0 && !result.searchError && !result.slackError ? (
               <div className="mt-1 text-slate-500">
-                Nothing posted — either nothing cleared the bar today, or every item was already in
-                the channel. That is a normal outcome.
+                Nothing posted — {result.found === 0 ? "nothing cleared the bar today" : "every item was already in the channel"}.
+                {typeof result.searchResults === "number" ? ` (${result.searchResults} web results scanned.)` : ""} That is a normal outcome.
               </div>
             ) : null}
           </div>

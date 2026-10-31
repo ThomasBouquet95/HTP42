@@ -142,15 +142,28 @@ function parseItems(text: string): SignalItem[] {
   }
 }
 
-// Server web-search tool — typed loosely via the create params so we don't pin an
-// exact SDK type name.
-const WEB_SEARCH_TOOL = { type: "web_search_20250305", name: "web_search", max_uses: 10 };
+// Server web-search tool. Current variant (dynamic filtering), supported on
+// Sonnet 4.6 and the Opus 4.6+/Sonnet 5+ families. The older web_search_20250305
+// variant is deprecated; keeping it risks the model returning zero results.
+const WEB_SEARCH_TOOL = { type: "web_search_20260209", name: "web_search", max_uses: 10 };
 
-export async function fetchSignals(
-  today: string,
-  recentHeadlines: string[] = [],
-): Promise<SignalItem[]> {
-  if (!env.anthropicApiKey) return [];
+export type SignalsResult = {
+  items: SignalItem[];
+  // Why there might be no items, for logging / the in-app test button.
+  diagnostics: {
+    searchError: string | null; // web-search tool error_code, if any
+    searchResults: number; // how many web results came back
+    textChars: number; // length of the model's text output we parsed
+    stopReason: string | null;
+  };
+};
+
+export async function fetchSignals(today: string, recentHeadlines: string[] = []): Promise<SignalsResult> {
+  const empty = (searchError: string | null): SignalsResult => ({
+    items: [],
+    diagnostics: { searchError, searchResults: 0, textChars: 0, stopReason: null },
+  });
+  if (!env.anthropicApiKey) return empty("no_api_key");
   const client = new Anthropic({ apiKey: env.anthropicApiKey });
   const avoidBlock =
     recentHeadlines.length > 0
@@ -174,12 +187,29 @@ export async function fetchSignals(
       },
     ],
   });
+
+  // Web-search failures come back as a result BLOCK with an error_code (HTTP 200),
+  // not as a thrown error — so detect it explicitly instead of silently seeing 0.
+  let searchError: string | null = null;
+  let searchResults = 0;
+  for (const b of response.content as unknown as Array<Record<string, unknown>>) {
+    if (b?.type !== "web_search_tool_result") continue;
+    const c = b.content;
+    if (Array.isArray(c)) searchResults += c.length;
+    else if (c && typeof c === "object" && "error_code" in (c as Record<string, unknown>)) {
+      searchError = String((c as Record<string, unknown>).error_code);
+    }
+  }
+
   const text = response.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("\n")
     .trim();
-  return parseItems(text);
+  return {
+    items: parseItems(text),
+    diagnostics: { searchError, searchResults, textChars: text.length, stopReason: response.stop_reason ?? null },
+  };
 }
 
 export function renderSignalSlack(it: SignalItem): string {

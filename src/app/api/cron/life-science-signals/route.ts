@@ -54,7 +54,26 @@ async function run() {
   );
 
   // Pass the known headlines to the model so it avoids the same stories upfront.
-  const items = await fetchSignals(today, recentHeadlines);
+  // A hard API error (e.g. an unsupported tool/model) throws; a web-search tool
+  // failure comes back in diagnostics so "nothing posted" is never a silent dud.
+  let items;
+  let diagnostics;
+  try {
+    const r = await fetchSignals(today, recentHeadlines);
+    items = r.items;
+    diagnostics = r.diagnostics;
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    console.error("[cron] life-science-signals: fetchSignals failed —", error);
+    return NextResponse.json({ ok: false, reason: "signals_fetch_failed", error }, { status: 200 });
+  }
+  if (diagnostics.searchError) {
+    console.error(`[cron] life-science-signals: web search error "${diagnostics.searchError}"`);
+  }
+  console.log(
+    `[cron] life-science-signals: search results ${diagnostics.searchResults}, ` +
+      `model text ${diagnostics.textChars} chars, items ${items.length}, stop ${diagnostics.stopReason}`,
+  );
 
   // De-duplicate: skip anything already posted recently, dedup within the batch
   // by source URL, and cap for safety.
@@ -77,10 +96,13 @@ async function run() {
   }
 
   let posted = 0;
+  let slackError: string | null = null;
   for (const it of toPost) {
     const r = await postToSlack(env.slackChannels.lifeScienceSignals, renderSignalSlack(it));
     if (r.ok) posted += 1;
+    else if (!slackError) slackError = r.error ?? "unknown";
   }
+  if (slackError) console.error(`[cron] life-science-signals: slack post error "${slackError}"`);
 
   console.log(`[cron] life-science-signals: done — found ${items.length}, posted ${posted}`);
   return NextResponse.json({
@@ -89,6 +111,10 @@ async function run() {
     posted,
     skippedAlreadyPosted: skippedKnown,
     recentMessagesRead: recentTexts.length,
+    // Diagnostics so a "nothing posted" run is self-explanatory from the test button.
+    searchResults: diagnostics.searchResults,
+    searchError: diagnostics.searchError,
+    slackError,
   });
 }
 
