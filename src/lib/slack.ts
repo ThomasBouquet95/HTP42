@@ -50,6 +50,62 @@ type SlackHistoryResponse = {
   messages?: { text?: string }[];
 };
 
+// Fast health check for the bot: is the token valid, can it see + read the target
+// channel? Used by the setup-check button so a broken bot is diagnosed in ~1s
+// without running the slow web-search pipeline.
+export async function diagnoseSlackChannel(channel: string): Promise<{
+  tokenPresent: boolean;
+  authOk: boolean;
+  authError?: string;
+  botUser?: string;
+  channelId: string | null;
+  canReadChannel: boolean;
+  channelError?: string;
+}> {
+  const token = env.slackBotToken;
+  if (!token) {
+    return { tokenPresent: false, authOk: false, channelId: null, canReadChannel: false };
+  }
+  // 1) Is the token itself valid? (catches a rotated / revoked token.)
+  let authOk = false;
+  let authError: string | undefined;
+  let botUser: string | undefined;
+  try {
+    const res = await fetch("https://slack.com/api/auth.test", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; user?: string };
+    authOk = !!data.ok;
+    authError = data.error;
+    botUser = data.user;
+  } catch (e) {
+    authError = e instanceof Error ? e.message : "fetch_error";
+  }
+  if (!authOk) {
+    return { tokenPresent: true, authOk, authError, channelId: null, canReadChannel: false };
+  }
+  // 2) Can it see + read the target channel? (catches not-in-channel / missing scope.)
+  const channelId = await resolveChannelId(channel);
+  if (!channelId) {
+    return { tokenPresent: true, authOk, botUser, channelId: null, canReadChannel: false, channelError: "channel_not_found_or_no_read_scope" };
+  }
+  let canReadChannel = false;
+  let channelError: string | undefined;
+  try {
+    const url = new URL("https://slack.com/api/conversations.history");
+    url.searchParams.set("channel", channelId);
+    url.searchParams.set("limit", "1");
+    const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    canReadChannel = !!data.ok;
+    channelError = data.error;
+  } catch (e) {
+    channelError = e instanceof Error ? e.message : "fetch_error";
+  }
+  return { tokenPresent: true, authOk, botUser, channelId, canReadChannel, channelError };
+}
+
 // Resolve a channel reference (name like "#finance" or a raw ID like "C0123ABCD")
 // to its channel ID, which conversations.history requires. Returns the input
 // unchanged if it already looks like an ID, or null if it can't be resolved.
