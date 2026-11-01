@@ -226,8 +226,10 @@ function applyFilters(
     }
     if (sp.project && t.projectCode !== sp.project) return false;
     if (sp.staffing && t.staffingRecordId !== sp.staffing) return false;
-    if (sp.from && (t.startDate ?? "") < sp.from) return false;
-    if (sp.to && (t.startDate ?? "") > sp.to) return false;
+    // Friday cutoff: attribute each week to the month of its END date, matching
+    // the on-screen Month filter.
+    if (sp.from && (t.endDate ?? "") < sp.from) return false;
+    if (sp.to && (t.endDate ?? "") > sp.to) return false;
     return true;
   });
 }

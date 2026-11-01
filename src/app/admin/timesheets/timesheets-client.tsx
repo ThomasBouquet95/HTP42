@@ -7,9 +7,10 @@ import { TIMESHEET_STATUSES } from "@/lib/airtable";
 import { StatusBadge, timesheetStatusLabel } from "@/components/status-badge";
 import { WeekChip } from "@/components/week-chip";
 import { Button } from "@/components/form-controls";
-import { FilterBar, FilterMultiSelect, FilterDateRange, SegmentedTabs } from "@/components/filters";
+import { FilterBar, FilterMultiSelect, SegmentedTabs } from "@/components/filters";
 import { ConfirmDialog } from "@/components/modal";
-import { TimesheetsByProject, TimesheetsByMember } from "./timesheets-breakdown";
+import { currentMonthKey, monthBounds, monthKeyOptions } from "@/lib/dates";
+import { MonthFilter, TimesheetsByProject, TimesheetsByMember } from "./timesheets-breakdown";
 import { TimesheetReviewClient, type ReviewerMember } from "./review-client";
 import { TimesheetEditModal } from "./timesheet-edit-modal";
 import { dayIsos, downloadTimesheetsCsv } from "./timesheets-export";
@@ -38,6 +39,10 @@ type Filters = {
   status: TimesheetStatus[];
   memberCodes: string[];
   projectCodes: string[];
+  // Month filter (yyyy-MM), or "all" for no month filter. The from/to bounds
+  // below are derived from it and are what the row predicate actually compares
+  // (against each week's END date, so the Friday-cutoff rule holds).
+  month: string;
   from: string;
   to: string;
 };
@@ -50,8 +55,10 @@ const DEFAULT_FILTERS: Filters = {
   status: ["Submitted", "Approved", "Invoiced", "Paid"],
   memberCodes: [],
   projectCodes: [],
-  from: "",
-  to: "",
+  // Preselect the current month (its calendar bounds), so admins land on the
+  // month they're closing rather than the entire history.
+  month: currentMonthKey(),
+  ...monthBounds(currentMonthKey()),
 };
 
 type PaymentLink = { id: string; code: string; status: string };
@@ -126,6 +133,11 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
     setFilters({
       ...DEFAULT_FILTERS,
       status: [],
+      // Drilling in from a breakdown should show that project/member across all
+      // months, not just the current one.
+      month: "all",
+      from: "",
+      to: "",
       projectCodes: proj,
       memberCodes: mem,
     });
@@ -225,13 +237,22 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [rows]);
 
+  // Month options: current month + every month present in the data (by counted /
+  // end-date month), newest first.
+  const monthOptions = useMemo(
+    () => monthKeyOptions(rows.map((t) => t.endDate)),
+    [rows],
+  );
+
   const filtered = useMemo(() => {
     return rows.filter((t) => {
       if (filters.status.length > 0 && !filters.status.includes(t.status)) return false;
       if (filters.memberCodes.length && !filters.memberCodes.includes(t.memberCode)) return false;
       if (filters.projectCodes.length && !filters.projectCodes.includes(t.projectCode)) return false;
-      if (filters.from && (t.startDate ?? "") < filters.from) return false;
-      if (filters.to && (t.startDate ?? "") > filters.to) return false;
+      // Friday cutoff: a week counts in the month of its END date, so filter the
+      // end date against the selected month's calendar bounds.
+      if (filters.from && (t.endDate ?? "") < filters.from) return false;
+      if (filters.to && (t.endDate ?? "") > filters.to) return false;
       return true;
     });
   }, [rows, filters]);
@@ -263,6 +284,16 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
 
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((prev) => ({ ...prev, [key]: value }));
+  }
+
+  // Changing the month also recomputes the from/to bounds the predicate uses.
+  // "all" clears them so every month shows.
+  function setMonth(month: string) {
+    setFilters((prev) => ({
+      ...prev,
+      month,
+      ...(month === "all" ? { from: "", to: "" } : monthBounds(month)),
+    }));
   }
 
   function exportCsv() {
@@ -356,13 +387,7 @@ export function AdminTimesheetsClient({ timesheets, invoices, paymentByInvoiceId
                 label: name && name !== code ? `${code} · ${name}` : code,
               }))}
             />
-            <FilterDateRange
-              label="Week"
-              from={filters.from}
-              to={filters.to}
-              onFrom={(v) => update("from", v)}
-              onTo={(v) => update("to", v)}
-            />
+            <MonthFilter value={filters.month} onChange={setMonth} options={monthOptions} />
           </FilterBar>
           <div className="flex gap-2">
             <Button tone="secondary" size="sm" onClick={() => setFilters(DEFAULT_FILTERS)}>

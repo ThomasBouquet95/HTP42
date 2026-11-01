@@ -107,6 +107,51 @@ export function isSplitWeek(startIso: string | null, endIso: string | null): boo
   return a.getUTCMonth() !== b.getUTCMonth() || a.getUTCFullYear() !== b.getUTCFullYear();
 }
 
+// The month a week is counted in, as a yyyy-MM key (from the Friday / end date).
+// This is the single source of truth for "which month does this timesheet belong
+// to": a week 28 Sep -> 2 Oct ends in October, so it's "2026-10".
+export function countedMonthKey(endIso: string | null): string {
+  if (!endIso) return "";
+  const d = parseIsoDate(endIso);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+// The current month as a yyyy-MM key.
+export function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+// ISO [from, to] bounds (first and last calendar day) for a yyyy-MM key. Filtering
+// a week's END date within these bounds implements the Friday-cutoff rule.
+export function monthBounds(monthKey: string): { from: string; to: string } {
+  const [y, m] = monthKey.split("-").map((n) => parseInt(n, 10));
+  if (!y || !m) return { from: "", to: "" };
+  return { from: `${monthKey}-01`, to: toIsoDate(new Date(Date.UTC(y, m, 0))) };
+}
+
+// Human label for a yyyy-MM key, e.g. "October 2026".
+export function monthKeyLabel(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map((n) => parseInt(n, 10));
+  if (!y || !m) return monthKey;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+// The month options to offer: the current month plus every month that appears in
+// the data (by counted / end-date month), newest first.
+export function monthKeyOptions(endIsos: (string | null)[]): string[] {
+  const set = new Set<string>([currentMonthKey()]);
+  for (const iso of endIsos) {
+    const k = countedMonthKey(iso);
+    if (k) set.add(k);
+  }
+  return [...set].sort().reverse();
+}
+
 // The month a week is counted in, as a label (the Friday's month).
 export function countedMonthLabel(endIso: string | null): string {
   if (!endIso) return "";

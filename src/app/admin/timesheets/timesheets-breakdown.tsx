@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { StatusPill } from "@/components/badge";
 import { WeekChip } from "@/components/week-chip";
 import { Button } from "@/components/form-controls";
-import { FilterBar, FilterMultiSelect, FilterDateRange } from "@/components/filters";
+import { FilterBar, FilterMultiSelect } from "@/components/filters";
 import { SearchSelect } from "@/components/search-select";
+import { currentMonthKey, monthBounds, monthKeyLabel, monthKeyOptions } from "@/lib/dates";
 import { TIMESHEET_STATUSES } from "@/lib/airtable";
 import { timesheetStatusLabel } from "@/components/status-badge";
 import type { AdminTimesheetRecord } from "@/lib/airtable";
@@ -151,10 +152,17 @@ function GroupedTimesheets({
 }) {
   const [picked, setPicked] = useState(options[0]?.value ?? "");
   // Status defaults to the billing lifecycle (Draft / Cancelled / Deleted off);
-  // an empty selection means "any status". Week is an optional start-date range.
+  // an empty selection means "any status".
   const [status, setStatus] = useState<string[]>(DEFAULT_BREAKDOWN_STATUS);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  // Month filter: "all" or a yyyy-MM key, defaulting to the current month. A week
+  // is attributed to the month of its Friday (end date), so the range below
+  // compares each week's END date to the month's calendar bounds.
+  const [month, setMonth] = useState<string>(currentMonthKey());
+  const monthOptions = useMemo(() => monthKeyOptions(timesheets.map((t) => t.endDate)), [timesheets]);
+  const { from, to } = useMemo(
+    () => (month === "all" ? { from: "", to: "" } : monthBounds(month)),
+    [month],
+  );
 
   const rows = useMemo(
     () =>
@@ -228,12 +236,10 @@ function GroupedTimesheets({
   const filtersDirty =
     status.length !== DEFAULT_BREAKDOWN_STATUS.length ||
     !DEFAULT_BREAKDOWN_STATUS.every((s) => status.includes(s)) ||
-    !!from ||
-    !!to;
+    month !== currentMonthKey();
   function reset() {
     setStatus(DEFAULT_BREAKDOWN_STATUS);
-    setFrom("");
-    setTo("");
+    setMonth(currentMonthKey());
   }
 
   return (
@@ -243,7 +249,7 @@ function GroupedTimesheets({
           <FilterBar>
             <Picker label={pickLabel} value={picked} onChange={setPicked} options={options} />
             <FilterMultiSelect label="Status" selected={status} onChange={setStatus} options={statusOptions} />
-            <FilterDateRange label="Week" from={from} to={to} onFrom={setFrom} onTo={setTo} />
+            <MonthFilter value={month} onChange={setMonth} options={monthOptions} />
           </FilterBar>
           <div className="flex gap-2">
             <Button tone="secondary" size="sm" onClick={reset} disabled={!filtersDirty}>
@@ -478,6 +484,34 @@ function Chevron({ open }: { open: boolean }) {
     >
       <path d="M4.5 3 7.5 6 4.5 9" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+export function MonthFilter({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+}) {
+  return (
+    <div className="inline-flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
+      Month
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+      >
+        <option value="all">All time</option>
+        {options.map((k) => (
+          <option key={k} value={k}>
+            {monthKeyLabel(k)}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }
 

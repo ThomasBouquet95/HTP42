@@ -11,7 +11,16 @@ import { EditIcon, EyeIcon, IconButton, TrashIcon } from "@/components/admin-ico
 import { WeekChip } from "@/components/week-chip";
 import { CalendarRange } from "@/components/calendar-range";
 import { TimesheetDetailModal } from "@/components/timesheet-detail-modal";
-import { formatHumanDate, formatWeekRange, parseIsoDate, thisMondayIso, toIsoDate } from "@/lib/dates";
+import {
+  currentMonthKey,
+  formatHumanDate,
+  formatWeekRange,
+  monthBounds,
+  monthKeyLabel,
+  monthKeyOptions,
+  parseIsoDate,
+  toIsoDate,
+} from "@/lib/dates";
 
 const ALL_STATUSES: TimesheetStatus[] = [
   "Draft",
@@ -39,61 +48,29 @@ type Props = {
   hideSummary?: boolean;
 };
 
-type PeriodKey = "all" | "thisWeek" | "thisMonth" | "custom";
-
 type Filters = {
   status: "All" | TimesheetStatus;
   projectCode: string;
   staffingId: string;
-  period: PeriodKey;
-  // Resolved range; for presets these are computed from `period`. For "custom"
-  // they're the user-edited Monday→Friday range. Empty string means open-ended.
+  // "all", "custom" (free from/to range), or a yyyy-MM month key. A month filters
+  // by the week's END date (Friday cutoff), so a week spanning two months counts
+  // in the later one — e.g. 28 Sep → 2 Oct counts in October.
+  month: string;
+  // Resolved range: month bounds for a month key, the user range for "custom",
+  // empty for "all". The filter compares each week's END date to this range.
   from: string;
   to: string;
 };
 
-// Defaults: this month so the user lands on the broader picture of recent
-// work (multiple weeks visible by default). Status=All so they don't miss
-// their own drafts at first glance.
+// Default to the current month so the user lands on this period's work.
 const DEFAULT_FILTERS: Filters = {
   status: "All",
   projectCode: "All",
   staffingId: "All",
-  period: "thisMonth",
+  month: currentMonthKey(),
   from: "",
   to: "",
 };
-
-const PERIOD_OPTIONS: { value: PeriodKey; label: string }[] = [
-  { value: "all", label: "All time" },
-  { value: "thisWeek", label: "This week" },
-  { value: "thisMonth", label: "This month" },
-  { value: "custom", label: "Custom range…" },
-];
-
-// All presets resolve to a [fromMonday, toMonday] range. The filter then keeps
-// every timesheet whose startDate (always a Monday) sits inside it.
-function resolvePeriod(period: PeriodKey): { from: string; to: string } {
-  if (period === "all" || period === "custom") return { from: "", to: "" };
-  const today = parseIsoDate(thisMondayIso());
-  const thisMonday = thisMondayIso();
-  const monday = (d: Date) => {
-    // Snap any date back to its containing Monday.
-    const day = d.getUTCDay();
-    const offset = day === 0 ? -6 : 1 - day; // Sunday → previous Monday
-    const m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + offset));
-    return toIsoDate(m);
-  };
-  const year = today.getUTCFullYear();
-  const month = today.getUTCMonth();
-  if (period === "thisWeek") return { from: thisMonday, to: thisMonday };
-  if (period === "thisMonth") {
-    const first = new Date(Date.UTC(year, month, 1));
-    const last = new Date(Date.UTC(year, month + 1, 0));
-    return { from: monday(first), to: monday(last) };
-  }
-  return { from: "", to: "" };
-}
 
 export function SummaryClient({
   timesheets,
@@ -105,10 +82,8 @@ export function SummaryClient({
 }: Props) {
   const router = useRouter();
   const [filters, setFilters] = useState<Filters>(() => {
-    // Resolve the default period's from/to so the table is filtered on first
-    // paint — useState is initialised once so the resolved range is fine.
-    const range = resolvePeriod(DEFAULT_FILTERS.period);
-    const base = { ...DEFAULT_FILTERS, ...range };
+    // Resolve the default month's from/to so the table is filtered on first paint.
+    const base = { ...DEFAULT_FILTERS, ...monthBounds(DEFAULT_FILTERS.month) };
     return defaultStatus ? { ...base, status: defaultStatus } : base;
   });
   const [openTimesheetId, setOpenTimesheetId] = useState<string | null>(null);
@@ -164,6 +139,11 @@ export function SummaryClient({
     }
   }
 
+  const monthOptions = useMemo(
+    () => monthKeyOptions(timesheets.map((t) => t.endDate)),
+    [timesheets],
+  );
+
   const projectOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const t of timesheets) {
@@ -204,8 +184,9 @@ export function SummaryClient({
         if (filters.status !== "All" && t.status !== filters.status) return false;
         if (filters.projectCode !== "All" && t.projectCode !== filters.projectCode) return false;
         if (filters.staffingId !== "All" && t.staffingRecordId !== filters.staffingId) return false;
-        if (filters.from && (t.startDate ?? "") < filters.from) return false;
-        if (filters.to && (t.startDate ?? "") > filters.to) return false;
+        // Friday cutoff: attribute each week to the month of its END date.
+        if (filters.from && (t.endDate ?? "") < filters.from) return false;
+        if (filters.to && (t.endDate ?? "") > filters.to) return false;
         return true;
       })
       .sort((a, b) => {
@@ -340,26 +321,31 @@ export function SummaryClient({
             ]}
           />
           <Select
-            label="Period"
-            value={filters.period}
+            label="Month"
+            value={filters.month}
             onChange={(v) => {
-              const next = v as PeriodKey;
-              if (next === "custom") {
-                update("period", next);
+              if (v === "custom") {
+                setFilters((prev) => ({ ...prev, month: "custom" }));
+              } else if (v === "all") {
+                setFilters((prev) => ({ ...prev, month: "all", from: "", to: "" }));
               } else {
-                const { from, to } = resolvePeriod(next);
-                setFilters((prev) => ({ ...prev, period: next, from, to }));
+                const { from, to } = monthBounds(v);
+                setFilters((prev) => ({ ...prev, month: v, from, to }));
               }
             }}
-            options={PERIOD_OPTIONS}
+            options={[
+              { value: "all", label: "All time" },
+              ...monthOptions.map((k) => ({ value: k, label: monthKeyLabel(k) })),
+              { value: "custom", label: "Custom range…" },
+            ]}
             hint={
-              filters.period !== "all" && filters.period !== "custom" && filters.from && filters.to
-                ? `Weeks of ${formatHumanDate(filters.from)} → ${formatHumanDate(filters.to)}`
+              filters.month !== "all" && filters.month !== "custom"
+                ? "A week counts in the month of its Friday"
                 : undefined
             }
           />
         </div>
-        {filters.period === "custom" ? (
+        {filters.month === "custom" ? (
           <div className="mt-2 flex flex-wrap items-end gap-2">
             <CustomRangePicker
               from={filters.from}
@@ -370,7 +356,7 @@ export function SummaryClient({
               tone="secondary"
               size="sm"
               onClick={() =>
-                setFilters((prev) => ({ ...prev, period: "all", from: "", to: "" }))
+                setFilters((prev) => ({ ...prev, month: "all", from: "", to: "" }))
               }
             >
               All time
@@ -387,12 +373,9 @@ export function SummaryClient({
               tone="secondary"
               size="sm"
               onClick={() => {
-                // Reset has to RE-RESOLVE the default period's range so the
-                // table actually filters back to the current week (raw
-                // DEFAULT_FILTERS keeps from/to empty so they're not stale
-                // when stored).
-                const range = resolvePeriod(DEFAULT_FILTERS.period);
-                setFilters({ ...DEFAULT_FILTERS, ...range });
+                // Reset re-resolves the default month's range so the table
+                // filters back to the current month.
+                setFilters({ ...DEFAULT_FILTERS, ...monthBounds(DEFAULT_FILTERS.month) });
               }}
             >
               Reset
