@@ -145,7 +145,9 @@ function parseItems(text: string): SignalItem[] {
 // Server web-search tool. Current variant (dynamic filtering), supported on
 // Sonnet 4.6 and the Opus 4.6+/Sonnet 5+ families. The older web_search_20250305
 // variant is deprecated; keeping it risks the model returning zero results.
-const WEB_SEARCH_TOOL = { type: "web_search_20260209", name: "web_search", max_uses: 10 };
+// max_uses capped at 6: each search is a server round-trip, and 10 pushed the
+// total run past intermediary idle timeouts. 6 still covers the brief well.
+const WEB_SEARCH_TOOL = { type: "web_search_20260209", name: "web_search", max_uses: 6 };
 
 export type SignalsResult = {
   items: SignalItem[];
@@ -164,14 +166,20 @@ export async function fetchSignals(today: string, recentHeadlines: string[] = []
     diagnostics: { searchError, searchResults: 0, textChars: 0, stopReason: null },
   });
   if (!env.anthropicApiKey) return empty("no_api_key");
-  const client = new Anthropic({ apiKey: env.anthropicApiKey });
+  // A web-search run makes several server round-trips and can run 1–2 minutes.
+  // A plain (non-streaming) request holds one POST open with no bytes flowing
+  // the whole time, so an intermediary idle timeout can sever it after a long
+  // wait ("searching… then failed"). Streaming keeps SSE events flowing, which
+  // is the documented remedy. The explicit timeout stays under the route's
+  // maxDuration (300s) so a genuine hang fails cleanly instead of being killed.
+  const client = new Anthropic({ apiKey: env.anthropicApiKey, timeout: 280_000 });
   const avoidBlock =
     recentHeadlines.length > 0
       ? `\n\nAlready posted in this channel over the last few days — do NOT repeat these, ` +
         `nor the same underlying event under a different headline:\n- ` +
         recentHeadlines.slice(0, 60).join("\n- ")
       : "";
-  const response = await client.messages.create({
+  const stream = client.messages.stream({
     model: "claude-sonnet-4-6",
     max_tokens: 4096,
     system: SYSTEM_PROMPT,
@@ -187,6 +195,7 @@ export async function fetchSignals(today: string, recentHeadlines: string[] = []
       },
     ],
   });
+  const response = await stream.finalMessage();
 
   // Web-search failures come back as a result BLOCK with an error_code (HTTP 200),
   // not as a thrown error — so detect it explicitly instead of silently seeing 0.

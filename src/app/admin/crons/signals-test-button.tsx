@@ -47,6 +47,13 @@ export function SignalsTestButton() {
     setCheck(null);
     try {
       const res = await fetch("/api/cron/life-science-signals", { method: "POST" });
+      // A gateway timeout (504/502/503) means the serverless function was still
+      // running when the platform cut it off — the web search ran too long.
+      if (res.status === 504 || res.status === 502 || res.status === 503) {
+        throw new Error(
+          "The run exceeded the server time limit (504). The web search took too long this time — it often still posts to #life-science-signals a moment later. Try again, or check the channel / cron logs.",
+        );
+      }
       const data = (await res.json().catch(() => ({}))) as Result;
       if (!res.ok) throw new Error(data.error ?? data.reason ?? "Run failed.");
       setResult(data);
