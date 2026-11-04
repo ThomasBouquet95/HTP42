@@ -12,6 +12,7 @@ import {
   CURRENCIES,
   MEMBER_ROLES,
   MEMBER_STATUSES,
+  NETWORK_LEVELS,
 } from "@/lib/airtable";
 import { toEur } from "@/lib/earnings";
 import { MembersAdminClient } from "./members-client";
@@ -80,6 +81,7 @@ export default async function AdminMembersPage() {
           members={members}
           roles={MEMBER_ROLES}
           statuses={MEMBER_STATUSES}
+          levels={NETWORK_LEVELS}
           currencies={CURRENCIES}
           legacyRoleCount={legacyRoleCount}
           staffings={staffingsLite}

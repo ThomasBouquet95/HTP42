@@ -5,7 +5,8 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
-import type { Currency, MemberRole, MemberStatus, YesNo } from "@/lib/airtable";
+import { NETWORK_LEVEL_DESCRIPTIONS } from "@/components/network-level-badge";
+import type { Currency, MemberRole, MemberStatus, NetworkLevel, YesNo } from "@/lib/airtable";
 
 // The four tooling / access provisioning flags, in display order.
 const TOOLING_FIELDS = [
@@ -23,6 +24,7 @@ type Editable = {
   personalEmail: string;
   role: MemberRole | "";
   status: MemberStatus;
+  networkLevel: NetworkLevel;
   title: string;
   country: string;
   phone: string;
@@ -44,11 +46,13 @@ export function MemberEditButton({
   member,
   roles,
   statuses,
+  levels,
   currencies,
 }: {
   member: Editable;
   roles: readonly MemberRole[];
   statuses: readonly MemberStatus[];
+  levels: readonly NetworkLevel[];
   currencies: readonly Currency[];
 }) {
   const router = useRouter();
@@ -89,6 +93,7 @@ export function MemberEditButton({
     personalEmail: member.personalEmail,
     role: member.role,
     status: member.status,
+    networkLevel: member.networkLevel || "Guest",
     title: member.title,
     country: member.country,
     phone: member.phone,
@@ -120,6 +125,7 @@ export function MemberEditButton({
           personalEmail: form.personalEmail.trim(),
           role: form.role || undefined,
           status: form.status,
+          networkLevel: form.networkLevel || undefined,
           title: form.title,
           country: form.country,
           phone: form.phone,
@@ -234,6 +240,20 @@ export function MemberEditButton({
               ))}
             </FormSelect>
             <FormField label="Title" value={form.title} onChange={(v) => set("title", v)} />
+            <div className="sm:col-span-2">
+              <FormSelect
+                label="Network member level"
+                value={form.networkLevel || "Guest"}
+                onChange={(v) => set("networkLevel", v as NetworkLevel)}
+              >
+                {levels.map((l) => (
+                  <option key={l} value={l}>{l}</option>
+                ))}
+              </FormSelect>
+              <p className="mt-1 text-[11px] leading-snug text-slate-500">
+                {NETWORK_LEVEL_DESCRIPTIONS[(form.networkLevel || "Guest") as NetworkLevel]}
+              </p>
+            </div>
           </div>
         </Section>
 

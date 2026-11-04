@@ -10,10 +10,12 @@ import {
   findMemberByEmail,
   MEMBER_ROLES,
   MEMBER_STATUSES,
+  NETWORK_LEVELS,
   CURRENCIES,
   type Currency,
   type MemberRole,
   type MemberStatus,
+  type NetworkLevel,
 } from "@/lib/airtable";
 
 const patchSchema = z.object({
@@ -61,6 +63,7 @@ const schema = z.object({
   title: z.string().max(200).optional(),
   role: z.enum(MEMBER_ROLES as [string, ...string[]]).optional(),
   status: z.enum(MEMBER_STATUSES as [string, ...string[]]).optional(),
+  networkLevel: z.enum(NETWORK_LEVELS as [string, ...string[]]).optional(),
   dailyRate: nullableNumber,
   htp42DailyRate: nullableNumber,
   currency: z.union([z.enum(CURRENCIES as [string, ...string[]]), z.literal("")]).optional(),
@@ -133,6 +136,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       title: d.title,
       role: d.role as MemberRole | undefined,
       status: d.status as MemberStatus | undefined,
+      networkLevel: d.networkLevel as NetworkLevel | undefined,
       dailyRate: d.dailyRate,
       htp42DailyRate: d.htp42DailyRate,
       currency: d.currency as Currency | "" | undefined,

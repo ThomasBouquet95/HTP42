@@ -48,6 +48,9 @@ export const FIELDS = {
     personalEmail: "Personal Email",
     status: "Status",
     role: "Role",
+    // Network member level (Guest…Platinum). A single-select on Network Members,
+    // lazily created via the meta API — see ensureMemberLevelField.
+    networkLevel: "Network Member Level",
     introduction: "Introduction",
     country: "Country",
     phone: "Phone",
@@ -469,6 +472,13 @@ export const FIELDS = {
 export type MemberStatus = "Active" | "Partially Active" | "Inactive";
 export const MEMBER_STATUSES: MemberStatus[] = ["Active", "Partially Active", "Inactive"];
 
+// Network member level — a loyalty/engagement tier admins assign to each member.
+// Guest is the default for anyone without an explicit level. Ordered from
+// entry (Guest) to top (Platinum); the UI uses this order for the badge ramp.
+export type NetworkLevel = "Guest" | "Bronze" | "Silver" | "Gold" | "Platinum";
+export const NETWORK_LEVELS: NetworkLevel[] = ["Guest", "Bronze", "Silver", "Gold", "Platinum"];
+export const DEFAULT_NETWORK_LEVEL: NetworkLevel = "Guest";
+
 export type MemberRole =
   | "Managing Partner"
   | "Operating Partner"
@@ -715,6 +725,8 @@ export type MemberRecord = {
   personalEmail: string;
   status: MemberStatus;
   role: MemberRole | "";
+  // Network engagement tier. Defaults to "Guest" when unset on the record.
+  networkLevel: NetworkLevel;
   introduction: string;
   country: string;
   phone: string;
@@ -1026,6 +1038,8 @@ function memberFromRecord(r: AirtableRecord<FieldSet>): MemberRecord {
     personalEmail: str(r, FIELDS.networkMembers.personalEmail),
     status: str(r, FIELDS.networkMembers.status) as MemberStatus,
     role: str(r, FIELDS.networkMembers.role) as MemberRole | "",
+    // Default existing members to Guest unless a level is already set.
+    networkLevel: (str(r, FIELDS.networkMembers.networkLevel) as NetworkLevel) || DEFAULT_NETWORK_LEVEL,
     introduction: str(r, FIELDS.networkMembers.introduction),
     country: str(r, FIELDS.networkMembers.country),
     phone: str(r, FIELDS.networkMembers.phone),
@@ -1696,6 +1710,55 @@ async function ensureMemberToolingFields(): Promise<void> {
   }
 }
 
+// Lazily create the "Network Member Level" single-select on Network Members,
+// with one coloured choice per tier. Idempotent + cached so we don't hit the
+// meta API on every admin write. Mirrors ensureMemberToolingFields.
+let memberLevelFieldReady = false;
+async function ensureMemberLevelField(): Promise<void> {
+  if (memberLevelFieldReady) return;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.networkMembers);
+    if (!table) return;
+    if (table.fields.some((f) => f.name === FIELDS.networkMembers.networkLevel)) {
+      memberLevelFieldReady = true;
+      return;
+    }
+    // One distinct Airtable colour per tier (entry → top).
+    const colorByLevel: Record<NetworkLevel, string> = {
+      Guest: "grayLight2",
+      Bronze: "orangeLight2",
+      Silver: "blueLight2",
+      Gold: "yellowLight2",
+      Platinum: "purpleLight2",
+    };
+    const create = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: FIELDS.networkMembers.networkLevel,
+          type: "singleSelect",
+          options: { choices: NETWORK_LEVELS.map((l) => ({ name: l, color: colorByLevel[l] })) },
+          description: "Network engagement tier (Guest → Platinum).",
+        }),
+      },
+    );
+    if (create.ok) memberLevelFieldReady = true;
+  } catch (e) {
+    console.error("ensureMemberLevelField failed:", e);
+  }
+}
+
 // Add the tooling flags to a write payload (as multi-select arrays: "" clears).
 // Ensures the fields exist first, but only when at least one is being written.
 async function applyMemberToolingFields(
@@ -1720,6 +1783,7 @@ export type MemberAdminUpdate = MemberProfileUpdate & {
   email?: string;
   role?: MemberRole;
   status?: MemberStatus;
+  networkLevel?: NetworkLevel;
   title?: string;
   dailyRate?: number | null;
   htp42DailyRate?: number | null;
@@ -1752,6 +1816,10 @@ export async function adminCreateMember(input: MemberCreateInput): Promise<Membe
   if (input.legalEntity !== undefined) fields[FIELDS.networkMembers.legalEntity] = input.legalEntity;
   if (input.title !== undefined) fields[FIELDS.networkMembers.title] = input.title;
   if (input.role !== undefined) fields[FIELDS.networkMembers.role] = input.role;
+  if (input.networkLevel !== undefined) {
+    await ensureMemberLevelField();
+    fields[FIELDS.networkMembers.networkLevel] = input.networkLevel;
+  }
   if (input.personalEmail !== undefined) {
     fields[FIELDS.networkMembers.personalEmail] = input.personalEmail || null;
   }
@@ -2458,6 +2526,10 @@ export async function adminUpdateMember(
   if (input.title !== undefined) fields[FIELDS.networkMembers.title] = input.title;
   if (input.role !== undefined) fields[FIELDS.networkMembers.role] = input.role;
   if (input.status !== undefined) fields[FIELDS.networkMembers.status] = input.status;
+  if (input.networkLevel !== undefined) {
+    await ensureMemberLevelField();
+    fields[FIELDS.networkMembers.networkLevel] = input.networkLevel;
+  }
   if (input.dailyRate !== undefined) fields[FIELDS.networkMembers.dailyRate] = input.dailyRate;
   if (input.htp42DailyRate !== undefined) {
     fields[FIELDS.networkMembers.htp42DailyRate] = input.htp42DailyRate;

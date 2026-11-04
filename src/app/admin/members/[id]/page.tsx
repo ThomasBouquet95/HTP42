@@ -5,6 +5,7 @@ import { AdminTabs } from "@/components/admin-tabs";
 import { DownloadChip } from "@/components/download-chip";
 import { ButtonLink } from "@/components/form-controls";
 import { Badge, StatusPill } from "@/components/badge";
+import { NetworkLevelBadge } from "@/components/network-level-badge";
 import {
   listAllInvoices,
   listAllMembers,
@@ -15,6 +16,7 @@ import {
   CURRENCIES,
   MEMBER_ROLES,
   MEMBER_STATUSES,
+  NETWORK_LEVELS,
 } from "@/lib/airtable";
 import { MemberEditButton } from "./member-edit-button";
 import { MemberTimesheets } from "./member-timesheets";
@@ -162,6 +164,7 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
               {member.fullName || member.memberCode}
             </h1>
             <StatusPill status={member.status} />
+            <NetworkLevelBadge level={member.networkLevel || "Guest"} />
           </div>
           <div className="mt-0.5 text-xs text-slate-500">
             <span className="font-mono">{member.memberCode}</span>
@@ -187,6 +190,7 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
               personalEmail: member.personalEmail,
               role: member.role,
               status: member.status,
+              networkLevel: member.networkLevel,
               title: member.title,
               country: member.country,
               phone: member.phone,
@@ -202,6 +206,7 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
             }}
             roles={MEMBER_ROLES}
             statuses={MEMBER_STATUSES}
+            levels={NETWORK_LEVELS}
             currencies={CURRENCIES}
           />
           <div className="text-right text-xs text-slate-500">

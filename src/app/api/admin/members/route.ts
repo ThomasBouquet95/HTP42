@@ -7,10 +7,12 @@ import {
   findMemberByEmail,
   MEMBER_ROLES,
   MEMBER_STATUSES,
+  NETWORK_LEVELS,
   CURRENCIES,
   type Currency,
   type MemberRole,
   type MemberStatus,
+  type NetworkLevel,
 } from "@/lib/airtable";
 import { apiError, zodMessage } from "@/lib/errors";
 
@@ -25,6 +27,7 @@ const schema = z.object({
     .optional(),
   status: z.enum(MEMBER_STATUSES as [string, ...string[]]),
   role: z.enum(MEMBER_ROLES as [string, ...string[]]).optional(),
+  networkLevel: z.enum(NETWORK_LEVELS as [string, ...string[]]).optional(),
   title: z.string().max(200).optional(),
   introduction: z.string().max(5000).optional(),
   country: z.string().max(120).optional(),
@@ -75,6 +78,7 @@ export async function POST(request: Request) {
       personalEmail: d.personalEmail,
       status: d.status as MemberStatus,
       role: d.role as MemberRole | undefined,
+      networkLevel: d.networkLevel as NetworkLevel | undefined,
       title: d.title,
       introduction: d.introduction,
       country: d.country,

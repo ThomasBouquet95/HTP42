@@ -11,12 +11,14 @@ import { FilterBar, FilterMultiSelect, SegmentedTabs } from "@/components/filter
 import { StatusPill } from "@/components/badge";
 import { DownloadChip } from "@/components/download-chip";
 import { StatusSelect } from "@/components/status-select";
+import { NetworkLevelBadge, NETWORK_LEVEL_DESCRIPTIONS } from "@/components/network-level-badge";
 import { MemberNotes } from "./member-notes";
 import type {
   Currency,
   MemberAdminRecord,
   MemberRole,
   MemberStatus,
+  NetworkLevel,
   StaffingStatus,
 } from "@/lib/airtable";
 
@@ -31,6 +33,7 @@ type Props = {
   members: MemberAdminRecord[];
   roles: readonly MemberRole[];
   statuses: readonly MemberStatus[];
+  levels: readonly NetworkLevel[];
   currencies: readonly Currency[];
   legacyRoleCount?: number;
   staffings: StaffingLite[];
@@ -52,6 +55,7 @@ type FormState = {
   personalEmail: string;
   role: string;
   status: string;
+  networkLevel: string;
   title: string;
   country: string;
   phone: string;
@@ -72,6 +76,7 @@ const EMPTY: FormState = {
   personalEmail: "",
   role: "",
   status: "Active",
+  networkLevel: "Guest",
   title: "",
   country: "",
   phone: "",
@@ -93,6 +98,7 @@ function fromRecord(m: MemberAdminRecord): FormState {
     personalEmail: m.personalEmail,
     role: m.role,
     status: m.status || "Active",
+    networkLevel: m.networkLevel || "Guest",
     title: m.title,
     country: m.country,
     phone: m.phone,
@@ -111,6 +117,7 @@ export function MembersAdminClient({
   members,
   roles,
   statuses,
+  levels,
   currencies,
   legacyRoleCount = 0,
   staffings,
@@ -165,6 +172,7 @@ export function MembersAdminClient({
   const [tab, setTab] = useState<"all" | "staffed" | "bench">("all");
   const [roleFilter, setRoleFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [levelFilter, setLevelFilter] = useState<string[]>([]);
   const [countryFilter, setCountryFilter] = useState<string[]>([]);
   const [editing, setEditing] = useState<MemberAdminRecord | null>(null);
   const [creating, setCreating] = useState(false);
@@ -320,10 +328,11 @@ export function MembersAdminClient({
       if (tab === "bench" && (staffing.staffedIds.has(m.id) || m.status === "Inactive")) return false;
       if (roleFilter.length > 0 && !roleFilter.includes(m.role)) return false;
       if (statusFilter.length > 0 && !statusFilter.includes(m.status)) return false;
+      if (levelFilter.length > 0 && !levelFilter.includes(m.networkLevel || "Guest")) return false;
       if (countryFilter.length > 0 && !countryFilter.includes(m.country)) return false;
       if (!q) return true;
       const projects = staffing.projectsByMember.get(m.id) ?? [];
-      return [m.memberCode, m.fullName, m.email, m.role, m.title, m.country, ...projects.flatMap((p) => [p.code, p.name])]
+      return [m.memberCode, m.fullName, m.email, m.role, m.networkLevel, m.title, m.country, ...projects.flatMap((p) => [p.code, p.name])]
         .some((v) => v && v.toLowerCase().includes(q));
     });
     // Smart default order: most active first, inactive last. Rank by activity
@@ -340,7 +349,7 @@ export function MembersAdminClient({
       if (d !== 0) return d;
       return (a.fullName || a.memberCode).localeCompare(b.fullName || b.memberCode);
     });
-  }, [members, search, roleFilter, statusFilter, countryFilter, tab, staffing, billed]);
+  }, [members, search, roleFilter, statusFilter, levelFilter, countryFilter, tab, staffing, billed]);
 
   // Counts for the primary Staffed / Bench tabs (over active members).
   const tabCounts = useMemo(() => {
@@ -471,6 +480,7 @@ export function MembersAdminClient({
         personalEmail: form.personalEmail.trim(),
         status: form.status,
         role: form.role || undefined,
+        networkLevel: form.networkLevel || undefined,
         title: form.title,
         country: form.country,
         phone: form.phone,
@@ -569,6 +579,12 @@ export function MembersAdminClient({
           selected={statusFilter}
           onChange={setStatusFilter}
           options={statuses.map((s) => ({ value: s, label: s }))}
+        />
+        <FilterMultiSelect
+          label="Level"
+          selected={levelFilter}
+          onChange={setLevelFilter}
+          options={levels.map((l) => ({ value: l, label: l }))}
         />
         <FilterMultiSelect
           label="Country"
@@ -682,6 +698,7 @@ export function MembersAdminClient({
                     <path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
+                  <NetworkLevelBadge level={m.networkLevel || "Guest"} className="shrink-0" />
                   <div className="flex shrink-0 items-center gap-1.5">
                     <button
                       type="button"
@@ -1034,6 +1051,20 @@ export function MembersAdminClient({
               <option key={r} value={r}>{r}</option>
             ))}
           </FormSelect>
+          <div>
+            <FormSelect
+              label="Network member level"
+              value={form.networkLevel || "Guest"}
+              onChange={(v) => updateField("networkLevel", v)}
+            >
+              {levels.map((l) => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+            </FormSelect>
+            <p className="mt-1 text-[11px] leading-snug text-slate-500">
+              {NETWORK_LEVEL_DESCRIPTIONS[(form.networkLevel || "Guest") as NetworkLevel]}
+            </p>
+          </div>
           <FormField label="Title" value={form.title} onChange={(v) => updateField("title", v)} />
           <FormField label="Country" value={form.country} onChange={(v) => updateField("country", v)} />
           <FormField label="Phone" value={form.phone} onChange={(v) => updateField("phone", v)} />
