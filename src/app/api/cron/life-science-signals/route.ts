@@ -104,11 +104,31 @@ async function run() {
   }
   if (slackError) console.error(`[cron] life-science-signals: slack post error "${slackError}"`);
 
-  console.log(`[cron] life-science-signals: done — found ${items.length}, posted ${posted}`);
+  // Quiet-day heartbeat: when nothing cleared the bar, still drop a short note so
+  // the channel knows the bot ran and simply found nothing — rather than looking
+  // dead. Only on a GENUINELY quiet day: not when the web search errored (that's
+  // a failure, not a quiet day), and not when items were found but all already
+  // posted (there WAS news). The note carries today's date and is skipped if one
+  // is already in the recent history for today, so repeated runs don't spam it.
+  let quietNote = false;
+  const noteMarker = `No new signals today (${today})`;
+  const alreadyNoted = recentTexts.some((t) => t.includes(noteMarker));
+  if (posted === 0 && items.length === 0 && !diagnostics.searchError && !slackError && !alreadyNoted) {
+    const note = `_${noteMarker}. Scanned the usual sources — nothing cleared the bar. Back tomorrow._`;
+    const r = await postToSlack(env.slackChannels.lifeScienceSignals, note);
+    if (r.ok) quietNote = true;
+    else if (!slackError) slackError = r.error ?? "unknown";
+  }
+
+  console.log(
+    `[cron] life-science-signals: done — found ${items.length}, posted ${posted}` +
+      (quietNote ? " (+ quiet-day note)" : ""),
+  );
   return NextResponse.json({
     ok: true,
     found: items.length,
     posted,
+    quietNote,
     skippedAlreadyPosted: skippedKnown,
     recentMessagesRead: recentTexts.length,
     // Diagnostics so a "nothing posted" run is self-explanatory from the test button.

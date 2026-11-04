@@ -7,6 +7,7 @@ type Result = {
   reason?: string;
   found?: number;
   posted?: number;
+  quietNote?: boolean;
   skippedAlreadyPosted?: number;
   recentMessagesRead?: number;
   searchResults?: number;
@@ -158,6 +159,7 @@ export function SignalsTestButton() {
               <div className="mt-1 text-slate-500">
                 Nothing posted — {result.found === 0 ? "nothing cleared the bar today" : "every item was already in the channel"}.
                 {typeof result.searchResults === "number" ? ` (${result.searchResults} web results scanned.)` : ""} That is a normal outcome.
+                {result.quietNote ? " Posted a short “no signals today” note to the channel." : null}
               </div>
             ) : null}
           </div>
