@@ -208,12 +208,16 @@ function CheckReport({ c }: { c: Check }) {
             ? `Can access ${c.channel}`
             : `Can't access ${c.channel} — ${s?.channelError ?? "unknown"}${
                 s?.channelError === "not_in_channel"
-                  ? " (invite the bot: /invite @bot in the channel)"
-                  : s?.channelError === "channel_not_found_or_no_read_scope"
-                    ? " (add channels:read scope + reinstall, or invite the bot)"
-                    : s?.channelError === "missing_scope"
-                      ? " (add channels:history scope + reinstall the app)"
-                      : ""
+                  ? ` (invite the bot: type "/invite @${s?.botUser ?? "htp42_bot"}" in ${c.channel})`
+                  : s?.channelError === "channel_not_found_or_not_member"
+                    ? ` (if ${c.channel} is private, invite the bot — "/invite @${s?.botUser ?? "htp42_bot"}" in the channel; otherwise check the channel name)`
+                    : s?.channelError === "missing_read_scope"
+                      ? " (add the channels:read + groups:read scopes to the Slack app and reinstall it)"
+                      : s?.channelError === "channel_not_found_or_no_read_scope"
+                        ? " (add channels:read scope + reinstall, or invite the bot)"
+                        : s?.channelError === "missing_scope"
+                          ? " (add channels:history + groups:history scopes + reinstall the app)"
+                          : ""
               }`}
         </Line>
       ) : null}

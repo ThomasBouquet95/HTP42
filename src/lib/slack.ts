@@ -86,9 +86,19 @@ export async function diagnoseSlackChannel(channel: string): Promise<{
     return { tokenPresent: true, authOk, authError, channelId: null, canReadChannel: false };
   }
   // 2) Can it see + read the target channel? (catches not-in-channel / missing scope.)
-  const channelId = await resolveChannelId(channel);
+  const resolved = await resolveChannelIdDetailed(channel);
+  const channelId = resolved.id;
   if (!channelId) {
-    return { tokenPresent: true, authOk, botUser, channelId: null, canReadChannel: false, channelError: "channel_not_found_or_no_read_scope" };
+    // Report the precise reason so the button can give the right fix: a scope
+    // error (add scope + reinstall) vs. not_found (wrong name, or the bot isn't
+    // a member of this private channel — invite it).
+    const channelError =
+      resolved.error === "missing_scope" || resolved.error === "not_allowed_token_type"
+        ? "missing_read_scope"
+        : resolved.error === "not_found"
+          ? "channel_not_found_or_not_member"
+          : "channel_not_found_or_no_read_scope";
+    return { tokenPresent: true, authOk, botUser, channelId: null, canReadChannel: false, channelError };
   }
   let canReadChannel = false;
   let channelError: string | undefined;
@@ -112,12 +122,24 @@ export async function diagnoseSlackChannel(channel: string): Promise<{
 // Best-effort: needs the channels:read / groups:read scope; returns null without
 // it rather than throwing (so callers degrade gracefully).
 export async function resolveChannelId(channel: string): Promise<string | null> {
+  return (await resolveChannelIdDetailed(channel)).id;
+}
+
+// Like resolveChannelId but also reports WHY resolution failed, so the setup
+// check can tell "missing scope" (fix: add scope + reinstall) apart from
+// "listed fine but no such channel / bot not a member of this private channel"
+// (fix: check the name / invite the bot). `error` is the raw Slack API error
+// from conversations.list (e.g. "missing_scope"), or "not_found" when the list
+// succeeded but no channel matched the name.
+export async function resolveChannelIdDetailed(
+  channel: string,
+): Promise<{ id: string | null; error?: string }> {
   const token = env.slackBotToken;
-  if (!token || !channel) return null;
+  if (!token || !channel) return { id: null, error: "not_configured" };
   // Already an ID (Slack channel IDs start with C/G/D).
-  if (/^[CGD][A-Z0-9]{6,}$/.test(channel)) return channel;
+  if (/^[CGD][A-Z0-9]{6,}$/.test(channel)) return { id: channel };
   const wanted = channel.replace(/^#/, "").trim().toLowerCase();
-  if (!wanted) return null;
+  if (!wanted) return { id: null, error: "not_configured" };
   try {
     let cursor = "";
     for (let page = 0; page < 10; page++) {
@@ -130,17 +152,21 @@ export async function resolveChannelId(channel: string): Promise<string | null> 
       const data = (await res.json().catch(() => ({}))) as SlackListResponse;
       if (!data.ok) {
         console.error(`[slack] conversations.list failed: ${data.error ?? "unknown"}`);
-        return null;
+        return { id: null, error: data.error ?? "list_failed" };
       }
       const hit = (data.channels ?? []).find((c) => c.name?.toLowerCase() === wanted);
-      if (hit?.id) return hit.id;
+      if (hit?.id) return { id: hit.id };
       cursor = data.response_metadata?.next_cursor ?? "";
       if (!cursor) break;
     }
   } catch (e) {
     console.error("[slack] resolveChannelId error:", e);
+    return { id: null, error: e instanceof Error ? e.message : "fetch_error" };
   }
-  return null;
+  // conversations.list worked but nothing matched. For a public channel this
+  // means the name is wrong; for a private one it means the bot isn't a member
+  // (private channels only appear in the list when the bot has been invited).
+  return { id: null, error: "not_found" };
 }
 
 // Read the recent message texts from a channel (newest first), limited to the
