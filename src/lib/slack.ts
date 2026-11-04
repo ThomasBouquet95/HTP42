@@ -140,18 +140,45 @@ export async function resolveChannelIdDetailed(
   if (/^[CGD][A-Z0-9]{6,}$/.test(channel)) return { id: channel };
   const wanted = channel.replace(/^#/, "").trim().toLowerCase();
   if (!wanted) return { id: null, error: "not_configured" };
+  // Search public and private channels in SEPARATE calls. Slack rejects a single
+  // conversations.list that asks for `private_channel` when the token lacks
+  // groups:read — with `missing_scope` for the whole call, so a public channel
+  // would never be found either. Querying each type on its own means a public
+  // channel resolves with just channels:read; a missing groups:read only skips
+  // the private pass instead of failing everything.
+  let sawMissingScope = false;
+  for (const type of ["public_channel", "private_channel"] as const) {
+    const r = await listChannelsOfType(token, type, wanted);
+    if (r.id) return { id: r.id };
+    if (r.error === "missing_scope") sawMissingScope = true;
+    else if (r.error && r.error !== "not_found") return { id: null, error: r.error };
+  }
+  // Nothing matched. If a pass was blocked by a missing scope, say so (the public
+  // pass needs channels:read, the private pass groups:read); otherwise it's a
+  // genuine not-found (wrong name, or a private channel the bot isn't in).
+  return { id: null, error: sawMissingScope ? "missing_scope" : "not_found" };
+}
+
+// One conversations.list pass for a single channel type, paginated. Returns the
+// matching id, or an error string ("missing_scope", "not_found", or the raw
+// Slack error). Kept separate so a scope gap on one type can't fail the other.
+async function listChannelsOfType(
+  token: string,
+  type: "public_channel" | "private_channel",
+  wanted: string,
+): Promise<{ id: string | null; error?: string }> {
   try {
     let cursor = "";
     for (let page = 0; page < 10; page++) {
       const url = new URL("https://slack.com/api/conversations.list");
-      url.searchParams.set("types", "public_channel,private_channel");
+      url.searchParams.set("types", type);
       url.searchParams.set("limit", "1000");
       url.searchParams.set("exclude_archived", "true");
       if (cursor) url.searchParams.set("cursor", cursor);
       const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
       const data = (await res.json().catch(() => ({}))) as SlackListResponse;
       if (!data.ok) {
-        console.error(`[slack] conversations.list failed: ${data.error ?? "unknown"}`);
+        console.error(`[slack] conversations.list (${type}) failed: ${data.error ?? "unknown"}`);
         return { id: null, error: data.error ?? "list_failed" };
       }
       const hit = (data.channels ?? []).find((c) => c.name?.toLowerCase() === wanted);
@@ -160,12 +187,9 @@ export async function resolveChannelIdDetailed(
       if (!cursor) break;
     }
   } catch (e) {
-    console.error("[slack] resolveChannelId error:", e);
+    console.error(`[slack] conversations.list (${type}) error:`, e);
     return { id: null, error: e instanceof Error ? e.message : "fetch_error" };
   }
-  // conversations.list worked but nothing matched. For a public channel this
-  // means the name is wrong; for a private one it means the bot isn't a member
-  // (private channels only appear in the list when the bot has been invited).
   return { id: null, error: "not_found" };
 }
 
