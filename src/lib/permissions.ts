@@ -15,6 +15,7 @@ export type RolePermissions = Record<string, PagePerms>;
 export const ADMIN_PAGES: { key: string; label: string; category: string; href: string }[] = [
   { key: "networkcockpit", label: "Network cockpit", category: "Network / HR", href: "/admin/network" },
   { key: "members", label: "Members", category: "Network / HR", href: "/admin/members" },
+  { key: "candidates", label: "Candidates", category: "Network / HR", href: "/admin/candidates" },
   { key: "memberreviews", label: "Client reviews", category: "Network / HR", href: "/admin/member-reviews" },
   { key: "signins", label: "App activity", category: "Network / HR", href: "/admin/sign-ins" },
   { key: "clients", label: "Clients & Partners", category: "Clients", href: "/admin/clients" },

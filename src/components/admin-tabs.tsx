@@ -10,6 +10,7 @@ import { can } from "@/lib/permissions";
 type PageKey =
   | "networkcockpit"
   | "members"
+  | "candidates"
   | "memberreviews"
   | "staffing"
   | "opportunities"
@@ -45,6 +46,7 @@ const CATEGORIES: Category[] = [
     label: "Network / HR",
     pages: [
       { key: "members", href: "/admin/members", label: "Members" },
+      { key: "candidates", href: "/admin/candidates", label: "Candidates" },
       { key: "memberreviews", href: "/admin/member-reviews", label: "Client review" },
       { key: "signins", href: "/admin/sign-ins", label: "App activity" },
     ],

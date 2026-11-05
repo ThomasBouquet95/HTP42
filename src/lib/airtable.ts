@@ -38,6 +38,7 @@ export const TABLES = {
   emailLog: "Email Log",
   supportTickets: "Support Tickets",
   paymentDecisions: "Payment Decisions",
+  candidates: "Candidates",
 } as const;
 
 export const FIELDS = {
@@ -137,6 +138,21 @@ export const FIELDS = {
     currency: "Currency",
     expectedStart: "Expected Start",
     convertedProject: "Converted Project",
+  },
+  // Lightweight ATS for prospective network members. Lazily created via the meta
+  // API — see ensureCandidatesSchema.
+  candidates: {
+    fullName: "Full Name",
+    email: "Email",
+    phone: "Phone",
+    linkedin: "LinkedIn",
+    country: "Country",
+    source: "Source",
+    expertise: "Profile / Expertise",
+    callNotes: "Call Notes",
+    status: "Status",
+    cv: "CV / One-slider",
+    onboardedMember: "Onboarded Member",
   },
   clientSurveys: {
     token: "Token",
@@ -9147,4 +9163,315 @@ export async function updateSupportTicketStatus(recordId: string, status: string
     [{ id: recordId, fields: { [FIELDS.supportTickets.status]: status } as FieldSet }],
     { typecast: true },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Candidates — a lightweight ATS for prospective network members
+// ---------------------------------------------------------------------------
+
+// Pipeline statuses, in board order. "Onboarded" and "Rejected" are the two
+// terminal states; everything before is an open candidate.
+export type CandidateStatus = "To Contact" | "In Discussion" | "Onboarded" | "Rejected";
+export const CANDIDATE_STATUSES: CandidateStatus[] = [
+  "To Contact",
+  "In Discussion",
+  "Onboarded",
+  "Rejected",
+];
+export const DEFAULT_CANDIDATE_STATUS: CandidateStatus = "To Contact";
+
+export type CandidateRecord = {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  linkedin: string;
+  country: string;
+  source: string;
+  expertise: string;
+  callNotes: string;
+  status: CandidateStatus;
+  cv: AttachmentRef | null;
+  // Set once the candidate is onboarded: the resulting Network Member record id
+  // (link) so the ATS can show "already a member" and avoid double-onboarding.
+  onboardedMemberId: string;
+};
+
+export type CandidateInput = {
+  fullName: string;
+  email: string;
+  phone: string;
+  linkedin: string;
+  country: string;
+  source: string;
+  expertise: string;
+  callNotes: string;
+  status: CandidateStatus;
+};
+
+function candidateFromRecord(r: AirtableRecord<FieldSet>): CandidateRecord {
+  return {
+    id: r.id,
+    fullName: str(r, FIELDS.candidates.fullName),
+    email: str(r, FIELDS.candidates.email),
+    phone: str(r, FIELDS.candidates.phone),
+    linkedin: str(r, FIELDS.candidates.linkedin),
+    country: str(r, FIELDS.candidates.country),
+    source: str(r, FIELDS.candidates.source),
+    expertise: str(r, FIELDS.candidates.expertise),
+    callNotes: str(r, FIELDS.candidates.callNotes),
+    status: (str(r, FIELDS.candidates.status) as CandidateStatus) || DEFAULT_CANDIDATE_STATUS,
+    cv: firstAttachment(r, FIELDS.candidates.cv),
+    onboardedMemberId: firstLinkedId(r, FIELDS.candidates.onboardedMember),
+  };
+}
+
+function candidateFields(input: CandidateInput): Record<string, unknown> {
+  return {
+    [FIELDS.candidates.fullName]: input.fullName,
+    [FIELDS.candidates.email]: input.email || null,
+    [FIELDS.candidates.phone]: input.phone || null,
+    [FIELDS.candidates.linkedin]: input.linkedin || null,
+    [FIELDS.candidates.country]: input.country || null,
+    [FIELDS.candidates.source]: input.source || null,
+    [FIELDS.candidates.expertise]: input.expertise || null,
+    [FIELDS.candidates.callNotes]: input.callNotes || null,
+    [FIELDS.candidates.status]: input.status,
+  };
+}
+
+// Create the Candidates table (with its fields) if it doesn't exist yet.
+// Idempotent + cached. Returns true when the table is present/ready.
+let candidatesTableReady = false;
+export async function ensureCandidatesSchema(): Promise<boolean> {
+  if (candidatesTableReady) return true;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { tables: Array<{ id: string; name: string }> };
+    if (data.tables.some((t) => t.name === TABLES.candidates)) {
+      candidatesTableReady = true;
+      return true;
+    }
+    const membersTable = data.tables.find((t) => t.name === TABLES.networkMembers);
+    const F = FIELDS.candidates;
+    const fields: Array<Record<string, unknown>> = [
+      { name: F.fullName, type: "singleLineText" },
+      { name: F.email, type: "email" },
+      { name: F.phone, type: "singleLineText" },
+      { name: F.linkedin, type: "url" },
+      { name: F.country, type: "singleLineText" },
+      { name: F.source, type: "singleLineText" },
+      { name: F.expertise, type: "multilineText" },
+      { name: F.callNotes, type: "multilineText" },
+      {
+        name: F.status,
+        type: "singleSelect",
+        options: { choices: CANDIDATE_STATUSES.map((s) => ({ name: s })) },
+      },
+      { name: F.cv, type: "multipleAttachments" },
+      ...(membersTable
+        ? [
+            {
+              name: F.onboardedMember,
+              type: "multipleRecordLinks",
+              options: { linkedTableId: membersTable.id },
+            },
+          ]
+        : []),
+    ];
+    const create = await fetch(metaUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: TABLES.candidates,
+        description: "Lightweight ATS: prospective network members and their pipeline status.",
+        fields,
+      }),
+    });
+    if (create.ok) {
+      candidatesTableReady = true;
+      return true;
+    }
+    console.error("Failed to create Candidates table:", await create.text().catch(() => ""));
+    return false;
+  } catch (e) {
+    console.error("ensureCandidatesSchema failed:", e);
+    return false;
+  }
+}
+
+export async function listCandidates(): Promise<CandidateRecord[]> {
+  try {
+    const ok = await ensureCandidatesSchema();
+    if (!ok) return [];
+    const records = await base(TABLES.candidates).select().all();
+    return records.map(candidateFromRecord);
+  } catch (e) {
+    console.error("listCandidates failed:", e);
+    return [];
+  }
+}
+
+export async function getCandidateById(recordId: string): Promise<CandidateRecord | null> {
+  try {
+    await ensureCandidatesSchema();
+    const r = await base(TABLES.candidates).find(recordId);
+    return candidateFromRecord(r);
+  } catch {
+    return null;
+  }
+}
+
+export async function createCandidate(input: CandidateInput): Promise<string> {
+  await ensureCandidatesSchema();
+  const [created] = await base(TABLES.candidates).create(
+    [{ fields: candidateFields(input) as FieldSet }],
+    { typecast: true },
+  );
+  return created.id;
+}
+
+export async function updateCandidate(recordId: string, input: CandidateInput): Promise<void> {
+  await ensureCandidatesSchema();
+  await base(TABLES.candidates).update(
+    [{ id: recordId, fields: candidateFields(input) as FieldSet }],
+    { typecast: true },
+  );
+}
+
+// Inline status change from the board (drag / dropdown) without a full edit.
+export async function setCandidateStatus(recordId: string, status: CandidateStatus): Promise<void> {
+  await ensureCandidatesSchema();
+  await base(TABLES.candidates).update(
+    [{ id: recordId, fields: { [FIELDS.candidates.status]: status } as FieldSet }],
+    { typecast: true },
+  );
+}
+
+export async function deleteCandidate(recordId: string): Promise<void> {
+  await base(TABLES.candidates).destroy([recordId]);
+}
+
+// Upload (replace) the candidate's CV / one-slider attachment.
+export async function uploadCandidateAttachment(
+  recordId: string,
+  filename: string,
+  contentType: string,
+  base64: string,
+): Promise<CandidateRecord | null> {
+  await ensureCandidatesSchema();
+  const fieldName = FIELDS.candidates.cv;
+  await base(TABLES.candidates).update([
+    { id: recordId, fields: { [fieldName]: [] } as FieldSet },
+  ]);
+  const url = `https://content.airtable.com/v0/${env.airtableBaseId}/${recordId}/${encodeURIComponent(fieldName)}/uploadAttachment`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ contentType, filename, file: base64 }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Airtable upload failed (${res.status}): ${text}`);
+  }
+  return getCandidateById(recordId);
+}
+
+export async function clearCandidateAttachment(recordId: string): Promise<CandidateRecord | null> {
+  await ensureCandidatesSchema();
+  await base(TABLES.candidates).update([
+    { id: recordId, fields: { [FIELDS.candidates.cv]: [] } as FieldSet },
+  ]);
+  return getCandidateById(recordId);
+}
+
+// Pure mapping from a candidate to the fields of a new Network Member (minus the
+// generated member code). Kept separate so the "no re-entry" contract is unit
+// testable: expertise becomes the member's profile introduction, phone/country
+// carry over, and a new member starts Active at the Guest tier.
+export function candidateMemberCreateFields(
+  c: Pick<CandidateRecord, "fullName" | "email" | "phone" | "country" | "expertise">,
+): Omit<MemberCreateInput, "memberCode"> {
+  return {
+    fullName: c.fullName.trim(),
+    email: c.email.trim(),
+    status: "Active",
+    networkLevel: "Guest",
+    phone: c.phone || undefined,
+    country: c.country || undefined,
+    introduction: c.expertise || undefined,
+  };
+}
+
+export type OnboardResult =
+  | { ok: true; memberId: string; memberCode: string }
+  | { ok: false; error: string };
+
+// Turn a candidate into a Network Member with no data re-entry: map the fields
+// we already captured, generate a member code, copy the CV across, then mark the
+// candidate "Onboarded" and link it to the new member. Idempotent-ish: refuses
+// if the candidate is already linked to a member.
+export async function onboardCandidateAsMember(recordId: string): Promise<OnboardResult> {
+  await ensureCandidatesSchema();
+  const candidate = await getCandidateById(recordId);
+  if (!candidate) return { ok: false, error: "Candidate not found." };
+  if (candidate.onboardedMemberId) {
+    return { ok: false, error: "This candidate has already been onboarded as a member." };
+  }
+  const fullName = candidate.fullName.trim();
+  if (!fullName) return { ok: false, error: "Add the candidate's full name before onboarding." };
+  const email = candidate.email.trim();
+  if (!email) {
+    return { ok: false, error: "Add the candidate's email before onboarding — it's their login." };
+  }
+  // Don't create a duplicate member for an email that already exists.
+  const clash = await findMemberByEmail(email);
+  if (clash) {
+    return { ok: false, error: `A member with ${email} already exists (${clash.fullName || clash.memberCode}).` };
+  }
+  const memberCode = await suggestMemberCode(fullName);
+  // Create the member from the candidate's data. Expertise → the member's
+  // profile introduction; phone/country carried over; new members start Active
+  // at the Guest tier.
+  const member = await adminCreateMember({
+    memberCode,
+    ...candidateMemberCreateFields(candidate),
+  });
+  // Copy the CV / one-slider across by URL (Airtable ingests it) — no re-upload.
+  if (candidate.cv?.url) {
+    try {
+      await base(TABLES.networkMembers).update([
+        {
+          id: member.id,
+          fields: {
+            [FIELDS.networkMembers.cv]: [
+              { url: candidate.cv.url, filename: candidate.cv.filename || "cv" },
+            ],
+          } as unknown as FieldSet,
+        },
+      ]);
+    } catch (e) {
+      // A failed CV copy shouldn't undo a successful onboard; log and continue.
+      console.error("onboardCandidateAsMember: CV copy failed:", e);
+    }
+  }
+  // Mark the candidate onboarded and link it to the new member.
+  await base(TABLES.candidates).update(
+    [
+      {
+        id: recordId,
+        fields: {
+          [FIELDS.candidates.status]: "Onboarded",
+          [FIELDS.candidates.onboardedMember]: [member.id],
+        } as FieldSet,
+      },
+    ],
+    { typecast: true },
+  );
+  return { ok: true, memberId: member.id, memberCode };
 }
