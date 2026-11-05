@@ -9444,19 +9444,23 @@ export async function onboardCandidateAsMember(recordId: string): Promise<Onboar
   });
   // Copy the CV / one-slider across by URL (Airtable ingests it) — no re-upload.
   if (candidate.cv?.url) {
+    // Download the candidate's CV bytes and re-upload them to the member via the
+    // content-upload endpoint. This is reliable, unlike setting the attachment by
+    // URL (which makes Airtable asynchronously re-fetch an expiring URL and can
+    // silently drop the file). Best-effort: a copy failure must not undo a
+    // successful onboard, but it's logged so it's never silently lost.
     try {
-      await base(TABLES.networkMembers).update([
-        {
-          id: member.id,
-          fields: {
-            [FIELDS.networkMembers.cv]: [
-              { url: candidate.cv.url, filename: candidate.cv.filename || "cv" },
-            ],
-          } as unknown as FieldSet,
-        },
-      ]);
+      const fileRes = await fetch(candidate.cv.url);
+      if (!fileRes.ok) throw new Error(`download failed (HTTP ${fileRes.status})`);
+      const base64 = Buffer.from(await fileRes.arrayBuffer()).toString("base64");
+      await uploadMemberAttachment(
+        member.id,
+        "cv",
+        candidate.cv.filename || "cv",
+        candidate.cv.type || "application/pdf",
+        base64,
+      );
     } catch (e) {
-      // A failed CV copy shouldn't undo a successful onboard; log and continue.
       console.error("onboardCandidateAsMember: CV copy failed:", e);
     }
   }
