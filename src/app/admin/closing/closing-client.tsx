@@ -334,11 +334,13 @@ export function ClosingClient({
         >
           <StatLine
             label="This month"
-            value={eur(model.totals.marginEur)}
+            value={`${model.totals.marginIsForecast ? "~" : ""}${eur(model.totals.marginEur)}`}
             color={model.totals.marginEur < 0 ? UI.marginNeg : UI.margin}
             strong
           />
-          <div className="pt-1 text-[11px] text-slate-400">Client invoiced − expert invoiced</div>
+          <div className="pt-1 text-[11px] text-slate-400">
+            Client invoiced − expert cost{model.totals.marginIsForecast ? " (~ includes forecast)" : ""}
+          </div>
         </SummaryCard>
       </div>
 
@@ -404,7 +406,8 @@ function MemberTable({ model, month }: { model: ClosingModel; month: string }) {
               Member · project
             </th>
             <th rowSpan={2} className="border-b border-slate-200 px-2 py-2 text-right align-bottom">
-              <HeaderTip label="Hours entered in the member's submitted timesheets for the month (validated hours in brackets when fewer). This is time logged in timesheets — not the days contracted or allocated on the SOW.">
+              <HeaderTip label="Hours logged in the member's timesheets for this month (validated hours in brackets when fewer). A week straddling two months is split by the actual day worked, so only this month's days are counted. Time logged — not the days contracted or allocated on the SOW.">
+
                 Hours
               </HeaderTip>
             </th>
@@ -426,7 +429,7 @@ function MemberTable({ model, month }: { model: ClosingModel; month: string }) {
             <th className="px-3 text-center"><HeaderTip label={STAGE_HEADER.expertPay}>Expert payment</HeaderTip></th>
             <th className="border-l border-slate-200 px-2 text-right"><HeaderTip label="Client invoiced on this project this month (project level, EUR).">Client</HeaderTip></th>
             <th className="px-2 text-right"><HeaderTip label="EUR amount of this member's invoice for the month.">Member</HeaderTip></th>
-            <th className="px-2 text-right"><HeaderTip label="HTP42 margin on the project this month: client invoiced − member invoices (project level).">Margin</HeaderTip></th>
+            <th className="px-2 text-right"><HeaderTip label="HTP42 margin on the project this month: client invoiced − expert cost (project level). When the expert invoice hasn't arrived, the cost is forecast from the staffing day rate and the margin shows a ~. When there's revenue but no cost is known or forecastable, it shows —, never 100% of the client revenue.">Margin</HeaderTip></th>
           </tr>
         </thead>
         <tbody>
@@ -479,10 +482,24 @@ function MemberRow({ r, month, zebra }: { r: ClosingRow; month: string; zebra: b
         <span className={r.clientInvoicedEur > 0 ? "" : "text-slate-300"}>{eur(r.clientInvoicedEur)}</span>
       </td>
       <td className="px-2 py-2.5 text-right tabular-nums demo-blur" style={{ color: r.memberInvoiceEur ? UI.cost : undefined }}>
-        <span className={r.memberInvoiceEur ? "" : "text-slate-300"}>{eur(r.memberInvoiceEur)}</span>
+        {r.memberInvoiceEur ? (
+          <span>{eur(r.memberInvoiceEur)}</span>
+        ) : r.memberCostForecastEur ? (
+          <Tip label="No expert invoice yet — forecast cost from the staffing day rate × days worked." wide>
+            <span className="cursor-help text-slate-400">~{eur(r.memberCostForecastEur)}</span>
+          </Tip>
+        ) : (
+          <span className="text-slate-300">—</span>
+        )}
       </td>
       <td className="px-2 py-2.5 text-right tabular-nums font-medium demo-blur">
-        <span className={moneyToneClass(r.projectMarginEur)}>{eur(r.projectMarginEur)}</span>
+        {r.projectMarginIsForecast && r.projectMarginEur != null ? (
+          <Tip label="Forecast margin: the expert invoice hasn't arrived, so the cost is estimated from the staffing day rate." wide>
+            <span className={`cursor-help ${moneyToneClass(r.projectMarginEur)}`}>~{eur(r.projectMarginEur)}</span>
+          </Tip>
+        ) : (
+          <span className={moneyToneClass(r.projectMarginEur)}>{eur(r.projectMarginEur)}</span>
+        )}
       </td>
       <td className="border-l border-slate-100 px-2 py-2.5 text-center">
         {r.sowValidForMonth === false ? (
@@ -613,8 +630,16 @@ function ClientView({ model }: { model: ClosingModel }) {
           <div className="mt-3 grid grid-cols-4 gap-2 rounded-lg bg-slate-50/70 p-2 text-center">
             <Mini label="Invoiced" value={eur(c.clientInvoicedEur)} tone={UI.revenue} />
             <Mini label="Collected" value={eur(c.clientCollectedEur)} tone={UI.collected} />
-            <Mini label="Cost" value={eur(c.memberInvoicedEur)} tone={UI.cost} />
-            <Mini label="Margin" value={eur(c.marginEur)} tone={c.marginEur < 0 ? UI.marginNeg : UI.margin} />
+            <Mini
+              label={c.memberForecastEur > 0 ? "Cost (+ fcst)" : "Cost"}
+              value={c.memberForecastEur > 0 ? `~${eur(c.memberInvoicedEur + c.memberForecastEur)}` : eur(c.memberInvoicedEur)}
+              tone={UI.cost}
+            />
+            <Mini
+              label="Margin"
+              value={`${c.marginIsForecast ? "~" : ""}${eur(c.marginEur)}`}
+              tone={c.marginEur < 0 ? UI.marginNeg : UI.margin}
+            />
           </div>
           <ul className="mt-3 space-y-1.5 border-t border-slate-100 pt-2.5 text-[11px]">
             {c.rows.map((r) => (

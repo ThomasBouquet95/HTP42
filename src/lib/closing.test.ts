@@ -119,6 +119,80 @@ describe("buildMonthlyClose", () => {
     expect(model.rows[0].staffedNoHours).toBe(true);
   });
 
+  it("splits a straddling week's hours by the real day worked (point 2)", () => {
+    // Mon 28 Sep → Fri 2 Oct: 18h in September (Mon–Wed), 12h in October (Thu–Fri).
+    const straddler = ts({
+      memberCode: "DOEJ1",
+      projectCode: "AGX-1",
+      startDate: "2026-09-28",
+      endDate: "2026-10-02",
+      status: "Approved",
+      totalHours: 30,
+      monday: { hours: 6, task: "" },
+      tuesday: { hours: 6, task: "" },
+      wednesday: { hours: 6, task: "" },
+      thursday: { hours: 6, task: "" },
+      friday: { hours: 6, task: "" },
+    });
+    const oct = buildMonthlyClose({
+      ...base, month: "2026-10", members, projects,
+      staffings: [staffing("AGX-1", "DOEJ1")], timesheets: [straddler], invoices: [], payments: [],
+    });
+    expect(oct.rows[0].submittedHours).toBe(12); // only the Oct days, not all 30
+    const sep = buildMonthlyClose({
+      ...base, month: "2026-09", members, projects,
+      staffings: [staffing("AGX-1", "DOEJ1")], timesheets: [straddler], invoices: [], payments: [],
+    });
+    expect(sep.rows[0].submittedHours).toBe(18);
+  });
+
+  it("splits an expert invoice across the months its hours cover (point 1)", () => {
+    const straddler = ts({
+      id: "tsSTRAD", memberCode: "DOEJ1", projectCode: "AGX-1",
+      startDate: "2026-09-28", endDate: "2026-10-02", status: "Approved", totalHours: 30,
+      monday: { hours: 6, task: "" }, tuesday: { hours: 6, task: "" }, wednesday: { hours: 6, task: "" },
+      thursday: { hours: 6, task: "" }, friday: { hours: 6, task: "" },
+    });
+    const model = buildMonthlyClose({
+      ...base, month: "2026-10", members, projects,
+      staffings: [staffing("AGX-1", "DOEJ1")],
+      timesheets: [straddler],
+      invoices: [inv({ memberCode: "DOEJ1", projectCode: "AGX-1", coveredTimesheetIds: ["tsSTRAD"], amount: 3000, currency: "EUR" })],
+      payments: [],
+    });
+    // 12 of 30 covered hours fall in October → 3000 × 12/30 = 1200.
+    expect(model.rows[0].memberInvoiceEur).toBe(1200);
+  });
+
+  it("forecasts the cost from the staffing rate when no expert invoice yet (point 3)", () => {
+    const t1 = ts({ memberCode: "DOEJ1", projectCode: "AGX-1", endDate: "2026-10-30", status: "Approved", totalHours: 40 });
+    const model = buildMonthlyClose({
+      ...base, month: "2026-10", members, projects,
+      staffings: [staffing("AGX-1", "DOEJ1", { ratePerDay: 500, currency: "EUR" })],
+      timesheets: [t1],
+      invoices: [], // no expert invoice
+      payments: [pay({ projectRecordIds: ["recAGX-1"], invoiceValueEur: 10000, invoiceDate: "2026-10-05", paymentStatus: "To be paid" })],
+    });
+    const r = model.rows[0];
+    // 40h / 8 = 5 days × €500 = €2,500 forecast cost → margin 10000 − 2500.
+    expect(r.memberCostForecastEur).toBe(2500);
+    expect(r.projectMarginEur).toBe(7500);
+    expect(r.projectMarginIsForecast).toBe(true);
+    expect(model.clients[0].marginIsForecast).toBe(true);
+  });
+
+  it("shows no margin (—) when there's revenue but no cost is known or forecastable (point 3)", () => {
+    const t1 = ts({ memberCode: "DOEJ1", projectCode: "AGX-1", endDate: "2026-10-30", status: "Approved", totalHours: 40 });
+    const model = buildMonthlyClose({
+      ...base, month: "2026-10", members, projects,
+      staffings: [staffing("AGX-1", "DOEJ1")], // no ratePerDay → can't forecast
+      timesheets: [t1],
+      invoices: [],
+      payments: [pay({ projectRecordIds: ["recAGX-1"], invoiceValueEur: 10000, invoiceDate: "2026-10-05", paymentStatus: "To be paid" })],
+    });
+    expect(model.rows[0].projectMarginEur).toBeNull(); // not 10000
+  });
+
   it("marks a stage late once past its target after month end", () => {
     // today is 2026-11-15, ~15 days after Oct close — submitted target is J+2.
     const model = buildMonthlyClose({

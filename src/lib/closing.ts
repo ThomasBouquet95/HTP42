@@ -62,8 +62,16 @@ export type ClosingRow = {
   // Distinct payment statuses of the project's client invoices this month, for
   // the detail tooltip (e.g. "Under Review", "To be paid", "Paid").
   clientInvoiceStates: string[];
-  // HTP42 margin on the project this month = client invoiced − member invoices.
+  // HTP42 margin on the project this month = client invoiced − member cost.
+  // Null ("—") when there's revenue but no way to know the cost yet (no expert
+  // invoice and no staffing rate to forecast from).
   projectMarginEur: number | null;
+  // True when the margin uses a forecast cost (staffing rate × days) because the
+  // expert invoice hasn't arrived — shown with a "~" so it's not read as actual.
+  projectMarginIsForecast: boolean;
+  // Forecast expert cost for this member×project (days worked × staffing rate),
+  // used when the real invoice is missing. Null when the staffing has no rate.
+  memberCostForecastEur: number | null;
 
   // --- Contract controls ---
   sowStatus: string;
@@ -90,7 +98,11 @@ export type ClosingClientGroup = {
   clientInvoicedEur: number;
   clientCollectedEur: number;
   memberInvoicedEur: number;
+  // Forecast expert cost rolled up (members working but not yet invoiced).
+  memberForecastEur: number;
   marginEur: number;
+  // True when the rolled-up margin includes any forecast cost.
+  marginIsForecast: boolean;
   // Purchase-order headroom across the client's projects (null when no PO).
   poRemainingEur: number | null;
   poLow: boolean; // remaining under the alert threshold
@@ -107,7 +119,9 @@ export type ClosingModel = {
     clientCollectedEur: number;
     memberInvoicedEur: number; // member invoices received this month
     memberPaidEur: number; // of which already paid
+    memberForecastEur: number; // forecast cost for members not yet invoiced
     marginEur: number;
+    marginIsForecast: boolean; // margin includes a forecast cost
     staffedNoHours: number;
     lateRows: number;
   };
@@ -174,6 +188,51 @@ function expertStage(hasInvoice: boolean, isPaid: boolean, outflowStatus: string
 
 function monthOf(iso: string | null | undefined): string {
   return iso ? iso.slice(0, 7) : "";
+}
+
+const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
+
+function addDaysIso(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// Total hours on a timesheet from its per-day breakdown, falling back to the
+// stored total when there's no day detail.
+function timesheetTotalHours(t: AdminTimesheetRecord): number {
+  let sum = 0;
+  let any = false;
+  for (const k of DAY_KEYS) {
+    const h = t[k]?.hours ?? 0;
+    if (h) {
+      any = true;
+      sum += h;
+    }
+  }
+  return any ? sum : t.totalHours || 0;
+}
+
+// Hours of a timesheet that actually fall in the given month. A week straddling
+// two months is split by the real day worked (Monday = startDate, +1 per day),
+// so October no longer swallows the September days of a 28 Sep → 2 Oct week.
+// Falls back to attributing the whole week to its end month when there's no
+// per-day breakdown (keeps older data and the unit fixtures working).
+function timesheetHoursInMonth(t: AdminTimesheetRecord, month: string): number {
+  if (t.startDate) {
+    let sum = 0;
+    let any = false;
+    for (let i = 0; i < DAY_KEYS.length; i += 1) {
+      const h = t[DAY_KEYS[i]]?.hours ?? 0;
+      if (h) {
+        any = true;
+        if (monthOf(addDaysIso(t.startDate, i)) === month) sum += h;
+      }
+    }
+    if (any) return sum;
+  }
+  return monthOf(t.endDate || t.startDate) === month ? t.totalHours || 0 : 0;
 }
 
 // Last calendar day of a yyyy-MM, as yyyy-mm-dd.
@@ -270,22 +329,27 @@ export function buildMonthlyClose(input: {
     validatedWeeks: number;
     detail: { start: string | null; end: string | null; hours: number; status: string }[];
   };
+  // By-id lookup so we can split an invoice across the months of the timesheets
+  // it covers (see below).
+  const tsById = new Map(input.timesheets.map((t) => [t.id, t]));
+
   const tsByKey = new Map<string, Agg>();
   for (const t of input.timesheets) {
     if (t.status === "Deleted" || t.status === "Draft") continue;
-    const workMonth = monthOf(t.endDate || t.startDate);
-    if (workMonth !== month) continue;
     if (!ACTIVE_HOURS_STATUSES.has(t.status)) continue;
+    // Day-accurate hours in this month (straddling weeks are split by day).
+    const hours = timesheetHoursInMonth(t, month);
+    if (hours <= 0) continue;
     const key = `${t.projectCode}__${t.memberCode}`;
     const agg =
       tsByKey.get(key) ??
       ({ submittedHours: 0, submittedWeeks: 0, validatedHours: 0, validatedWeeks: 0, detail: [] } as Agg);
-    agg.submittedHours += t.totalHours;
+    agg.submittedHours += hours;
     agg.submittedWeeks += 1;
-    agg.detail.push({ start: t.startDate, end: t.endDate, hours: t.totalHours, status: t.status });
+    agg.detail.push({ start: t.startDate, end: t.endDate, hours, status: t.status });
     // Approved / Invoiced / Paid count as validated by the reviewer.
     if (t.status === "Approved" || t.status === "Invoiced" || t.status === "Paid") {
-      agg.validatedHours += t.totalHours;
+      agg.validatedHours += hours;
       agg.validatedWeeks += 1;
     }
     tsByKey.set(key, agg);
@@ -304,19 +368,40 @@ export function buildMonthlyClose(input: {
       if (p.paymentStatus) invoiceOutflowStatus.set(id, p.paymentStatus);
     }
   }
-  // Work-month of a covered timesheet, to map an invoice to the month it bills.
-  const tsMonthById = new Map<string, string>();
-  for (const t of input.timesheets) tsMonthById.set(t.id, monthOf(t.endDate || t.startDate));
+  // The EUR of an expert invoice attributable to THIS month, by the service
+  // month of the work it bills — so the expert side lines up with the client
+  // side and with the hours. When an invoice covers timesheets spanning two
+  // months (a straddling week, or a single invoice for two months), its amount
+  // is split proportionally by the covered hours that fall in each month, so
+  // October no longer "cumulates" September + October. Only when an invoice has
+  // no covered timesheets do we fall back to its submission month.
+  const invoicePortionInMonth = (inv: MemberInvoiceRecord): number | null => {
+    const eur = invoiceEur(inv);
+    if (eur == null) return null;
+    const covered = inv.coveredTimesheetIds
+      .map((id) => tsById.get(id))
+      .filter((t): t is AdminTimesheetRecord => !!t);
+    if (covered.length > 0) {
+      let total = 0;
+      let inMonth = 0;
+      for (const t of covered) {
+        total += timesheetTotalHours(t);
+        inMonth += timesheetHoursInMonth(t, month);
+      }
+      if (total > 0) return eur * (inMonth / total);
+      // Covered links but no hours on them — fall through to the submission date.
+    }
+    return monthOf(inv.submissionDate) === month ? eur : 0;
+  };
+
   type InvInfo = { status: ClosingRow["memberInvoiceStatus"]; eur: number | null; outflowStatus: string };
   const invByKey = new Map<string, InvInfo>();
   const invByProject = new Map<string, number>(); // project -> member-invoiced EUR this month
   for (const inv of input.invoices) {
     if ((inv.status || "") === "Cancelled") continue;
-    const covered = inv.coveredTimesheetIds.map((id) => tsMonthById.get(id)).filter(Boolean) as string[];
-    const invMonth = covered.find((m) => m === month) ?? (covered.length === 0 ? monthOf(inv.submissionDate) : "");
-    if (invMonth !== month) continue;
+    const eur = invoicePortionInMonth(inv);
+    if (eur == null || eur <= 0) continue;
     const key = `${inv.projectCode}__${inv.memberCode}`;
-    const eur = invoiceEur(inv);
     // Only two meaningful states exist in the data: received (awaiting payment)
     // and paid. "Paid" is set either on the invoice or via a Paid outflow.
     const status: ClosingRow["memberInvoiceStatus"] =
@@ -326,10 +411,10 @@ export function buildMonthlyClose(input: {
     // Keep the most-advanced status + sum amounts if several.
     invByKey.set(key, {
       status: rankInvoice(status) >= rankInvoice(prev?.status ?? "") ? status : prev!.status,
-      eur: (prev?.eur ?? 0) + (eur ?? 0) || eur,
+      eur: (prev?.eur ?? 0) + eur,
       outflowStatus: prev?.outflowStatus || outflowStatus,
     });
-    if (eur) invByProject.set(inv.projectCode, (invByProject.get(inv.projectCode) ?? 0) + eur);
+    invByProject.set(inv.projectCode, (invByProject.get(inv.projectCode) ?? 0) + eur);
   }
 
   // --- Client invoices (Inflow) per project for the month. ---
@@ -351,6 +436,54 @@ export function buildMonthlyClose(input: {
     if (p.paymentStatus) agg.states.add(p.paymentStatus);
     clientByProject.set(code, agg);
   }
+
+  // --- Forecast expert cost (point 3). When a member has worked but not yet
+  // invoiced, estimate the cost from the staffing day rate × days (hours / 8),
+  // so the margin can show a forecast instead of 100% of client revenue. ---
+  const staffingByKey = new Map<string, StaffingAdminRecord>();
+  for (const st of input.staffings) {
+    const mc = st.memberCodes[0] ?? "";
+    if (!mc || !st.projectCode) continue;
+    const k = `${st.projectCode}__${mc}`;
+    if (!staffingByKey.has(k)) staffingByKey.set(k, st);
+  }
+  const staffingRateEur = (st: StaffingAdminRecord | undefined): number | null => {
+    if (!st || st.ratePerDay == null) return null;
+    const cur = st.currency || "EUR";
+    if (cur === "EUR") return st.ratePerDay;
+    const fx = st.fxToEur && st.fxToEur > 0 ? st.fxToEur : DEFAULT_FX_TO_EUR[cur] ?? 1;
+    return st.ratePerDay * fx;
+  };
+  // Forecast cost per key (days worked this month × staffing rate), when a rate
+  // is known. One working day = 8 hours (matches staffing's daysUsed convention).
+  const forecastByKey = new Map<string, number>();
+  for (const [key, agg] of tsByKey) {
+    if (agg.submittedHours <= 0) continue;
+    const rate = staffingRateEur(staffingByKey.get(key));
+    if (rate == null) continue;
+    forecastByKey.set(key, (agg.submittedHours / 8) * rate);
+  }
+  // Project-level forecast cost = forecast for members who worked but have NO
+  // expert invoice yet (invoiced members already contribute their real amount).
+  const forecastCostByProject = new Map<string, number>();
+  for (const [key, forecast] of forecastByKey) {
+    if (invByKey.has(key)) continue;
+    const proj = key.split("__")[0];
+    forecastCostByProject.set(proj, (forecastCostByProject.get(proj) ?? 0) + forecast);
+  }
+
+  // Project margin, using actual cost where invoiced and a forecast otherwise.
+  // Returns null ("—") when there is revenue but no cost is known or forecastable
+  // — never 100 % of the client revenue.
+  const projectMargin = (code: string): { eur: number | null; forecast: boolean } => {
+    const ci = clientByProject.get(code)?.invoiced ?? 0;
+    const actual = invByProject.get(code) ?? 0;
+    const forecast = forecastCostByProject.get(code) ?? 0;
+    const estCost = actual + forecast;
+    if (ci <= 0 && actual <= 0) return { eur: null, forecast: false };
+    if (estCost <= 0) return { eur: null, forecast: false }; // revenue but unknown cost
+    return { eur: ci - estCost, forecast: forecast > 0 };
+  };
 
   // --- Build the member×project rows. Start from staffings active in the month,
   // then fold in any timesheet / invoice keys not covered by a staffing. ---
@@ -387,7 +520,6 @@ export function buildMonthlyClose(input: {
       collected: 0,
       states: new Set<string>(),
     };
-    const memberInvoicedProject = invByProject.get(projectCode) ?? 0;
     const track = input.tracking.get(key);
 
     const staffedNoHours = !!staffing && ts.submittedHours === 0;
@@ -399,8 +531,8 @@ export function buildMonthlyClose(input: {
       expertPay: expertStage(!!inv, inv?.status === "paid", inv?.outflowStatus ?? "", sinceEnd),
     };
 
-    const projectMarginEur =
-      client.invoiced > 0 || memberInvoicedProject > 0 ? client.invoiced - memberInvoicedProject : null;
+    const margin = projectMargin(projectCode);
+    const memberCostForecastEur = inv ? null : forecastByKey.get(key) ?? null;
 
     return {
       key,
@@ -422,7 +554,9 @@ export function buildMonthlyClose(input: {
       clientSentEur: round0(client.sent),
       clientCollectedEur: round0(client.collected),
       clientInvoiceStates: [...client.states],
-      projectMarginEur: projectMarginEur == null ? null : round0(projectMarginEur),
+      projectMarginEur: margin.eur == null ? null : round0(margin.eur),
+      projectMarginIsForecast: margin.forecast,
+      memberCostForecastEur: memberCostForecastEur == null ? null : round0(memberCostForecastEur),
       sowStatus: staffing?.sowStatus || "",
       sowValidForMonth,
       stages,
@@ -454,7 +588,9 @@ export function buildMonthlyClose(input: {
         clientInvoicedEur: 0,
         clientCollectedEur: 0,
         memberInvoicedEur: 0,
+        memberForecastEur: 0,
         marginEur: 0,
+        marginIsForecast: false,
         poRemainingEur: null,
         poLow: false,
         rows: [],
@@ -464,20 +600,24 @@ export function buildMonthlyClose(input: {
     g.rows.push(r);
     g.memberCount += 1;
     g.memberInvoicedEur += r.memberInvoiceEur ?? 0;
-    // Client-side figures once per project.
+    // Client-side figures + project forecast cost once per project.
     const projKey = `${r.clientCode}__${r.projectCode}`;
     if (!projectSeen.has(projKey)) {
       projectSeen.add(projKey);
       g.projectCount += 1;
       g.clientInvoicedEur += r.clientInvoicedEur;
       g.clientCollectedEur += r.clientCollectedEur;
+      g.memberForecastEur += forecastCostByProject.get(r.projectCode) ?? 0;
     }
   }
   for (const g of groups.values()) {
-    g.marginEur = round0(g.clientInvoicedEur - g.memberInvoicedEur);
+    // Cost = real expert invoices + forecast for members not yet invoiced.
+    g.marginEur = round0(g.clientInvoicedEur - (g.memberInvoicedEur + g.memberForecastEur));
+    g.marginIsForecast = g.memberForecastEur > 0;
     g.clientInvoicedEur = round0(g.clientInvoicedEur);
     g.clientCollectedEur = round0(g.clientCollectedEur);
     g.memberInvoicedEur = round0(g.memberInvoicedEur);
+    g.memberForecastEur = round0(g.memberForecastEur);
     const po = poRemainingByClient.get(g.clientCode);
     if (po) {
       g.poRemainingEur = round0(po.remaining);
@@ -494,7 +634,9 @@ export function buildMonthlyClose(input: {
     memberPaidEur: round0(
       rows.reduce((s, r) => s + (r.memberInvoiceStatus === "paid" ? r.memberInvoiceEur ?? 0 : 0), 0),
     ),
+    memberForecastEur: round0(clients.reduce((s, c) => s + c.memberForecastEur, 0)),
     marginEur: round0(clients.reduce((s, c) => s + c.marginEur, 0)),
+    marginIsForecast: clients.some((c) => c.marginIsForecast),
     staffedNoHours: rows.filter((r) => r.staffedNoHours).length,
     lateRows: rows.filter((r) => r.stages.timesheets.late || r.stages.clientPay.late || r.stages.expertPay.late)
       .length,
