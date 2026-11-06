@@ -7,7 +7,7 @@ import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
 import { DownloadChip } from "@/components/download-chip";
-import type { CandidateRecord, CandidateStatus } from "@/lib/airtable";
+import type { CandidateNote, CandidateRecord, CandidateStatus } from "@/lib/airtable";
 
 type Props = {
   candidates: CandidateRecord[];
@@ -36,7 +36,9 @@ type FormState = {
   country: string;
   source: string;
   expertise: string;
-  callNotes: string;
+  // Only used on create — an optional first note. Existing candidates manage
+  // notes as a dated list on the card.
+  initialNote: string;
   status: string;
 };
 
@@ -48,7 +50,7 @@ const EMPTY: FormState = {
   country: "",
   source: "",
   expertise: "",
-  callNotes: "",
+  initialNote: "",
   status: "To Contact",
 };
 
@@ -61,9 +63,16 @@ function fromRecord(c: CandidateRecord): FormState {
     country: c.country,
     source: c.source,
     expertise: c.expertise,
-    callNotes: c.callNotes,
+    initialNote: "",
     status: c.status,
   };
+}
+
+function noteDate(at: string | null): string {
+  if (!at) return "Earlier";
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return "Earlier";
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function initials(name: string): string {
@@ -94,6 +103,14 @@ export function CandidatesClient({ candidates, statuses }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [attachBusyId, setAttachBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
+
+  // Notes: a full-note viewer popup and an add-note popup.
+  const [noteView, setNoteView] = useState<{ candidate: CandidateRecord; note: CandidateNote } | null>(null);
+  const [noteAddFor, setNoteAddFor] = useState<CandidateRecord | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
+  const editFileRef = useRef<HTMLInputElement>(null);
 
   function flash(kind: "ok" | "error", msg: string) {
     setToast({ kind, msg });
@@ -233,7 +250,6 @@ export function CandidatesClient({ candidates, statuses }: Props) {
           country: onboardForm.country,
           source: onboardTarget.source,
           expertise: onboardForm.expertise,
-          callNotes: onboardTarget.callNotes,
           status: onboardTarget.status,
         }),
       });
@@ -284,6 +300,58 @@ export function CandidatesClient({ candidates, statuses }: Props) {
       flash("error", e instanceof Error ? e.message : "Remove failed.");
     } finally {
       setAttachBusyId(null);
+    }
+  }
+
+  // ---- notes --------------------------------------------------------------
+  function openAddNote(c: CandidateRecord) {
+    setNoteAddFor(c);
+    setNoteText("");
+    setNoteError(null);
+  }
+  async function submitNote() {
+    if (!noteAddFor) return;
+    if (!noteText.trim()) {
+      setNoteError("Write something first.");
+      return;
+    }
+    setNoteBusy(true);
+    setNoteError(null);
+    try {
+      const res = await fetch(`/api/admin/candidates/${noteAddFor.id}/notes`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: noteText }),
+      });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? "Could not add the note.");
+      }
+      setNoteAddFor(null);
+      setNoteText("");
+      flash("ok", "Note added");
+      router.refresh();
+    } catch (e) {
+      setNoteError(e instanceof Error ? e.message : "Could not add the note.");
+    } finally {
+      setNoteBusy(false);
+    }
+  }
+  async function deleteNote(c: CandidateRecord, noteId: string) {
+    try {
+      const res = await fetch(`/api/admin/candidates/${c.id}/notes`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ noteId }),
+      });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? "Could not delete the note.");
+      }
+      setNoteView(null);
+      router.refresh();
+    } catch (e) {
+      flash("error", e instanceof Error ? e.message : "Could not delete the note.");
     }
   }
 
@@ -346,6 +414,8 @@ export function CandidatesClient({ candidates, statuses }: Props) {
                       onOnboard={() => openOnboard(c)}
                       onUpload={(f) => uploadAttachment(c, f)}
                       onRemoveFile={() => removeAttachment(c)}
+                      onViewNote={(note) => setNoteView({ candidate: c, note })}
+                      onAddNote={() => openAddNote(c)}
                     />
                   ))
                 )}
@@ -423,13 +493,60 @@ export function CandidatesClient({ candidates, statuses }: Props) {
         <div className="mt-3">
           <FormTextarea label="Profile / expertise" value={form.expertise} onChange={(v) => updateField("expertise", v)} rows={3} />
         </div>
-        <div className="mt-3">
-          <FormTextarea label="Call notes" value={form.callNotes} onChange={(v) => updateField("callNotes", v)} rows={4} />
-        </div>
-        {!creating ? (
-          <p className="mt-3 text-[11px] text-slate-400">
-            Upload a CV / one-slider from the candidate card (expand it on the board).
-          </p>
+        {creating ? (
+          <div className="mt-3">
+            <FormTextarea
+              label="First note (optional)"
+              value={form.initialNote}
+              onChange={(v) => updateField("initialNote", v)}
+              rows={3}
+              hint="You can add more dated notes later as discussions progress."
+            />
+          </div>
+        ) : null}
+
+        {/* CV upload, directly from the edit form. */}
+        {!creating && editing ? (
+          <div className="mt-4 border-t border-slate-100 pt-3">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              CV / one-slider
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <DownloadChip url={editing.cv?.url} title="Open CV / one-slider" emptyTitle="No file yet" />
+              <input
+                ref={editFileRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void uploadAttachment(editing, f);
+                  if (editFileRef.current) editFileRef.current.value = "";
+                }}
+              />
+              <Button
+                tone="secondary"
+                size="sm"
+                onClick={() => editFileRef.current?.click()}
+                disabled={attachBusyId === editing.id}
+              >
+                {attachBusyId === editing.id ? "Uploading…" : editing.cv ? "Replace" : "Upload"}
+              </Button>
+              {editing.cv ? (
+                <Button
+                  tone="secondary"
+                  size="sm"
+                  onClick={() => removeAttachment(editing)}
+                  disabled={attachBusyId === editing.id}
+                >
+                  Remove
+                </Button>
+              ) : null}
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">
+              PDF, Word/PowerPoint, or image — up to 5 MB. Notes are managed on the candidate card.
+            </p>
+          </div>
         ) : null}
       </Modal>
 
@@ -482,6 +599,69 @@ export function CandidatesClient({ candidates, statuses }: Props) {
         <p className="mt-1 text-[11px] text-slate-400">New member starts Active at the Guest level.</p>
       </Modal>
 
+      {/* ---- Full-note viewer ---- */}
+      <Modal
+        open={!!noteView}
+        onClose={() => setNoteView(null)}
+        title={`Note · ${noteView ? noteDate(noteView.note.at) : ""}`}
+        size="md"
+        footer={
+          <>
+            {noteView && noteView.note.id !== "legacy" ? (
+              <Button
+                tone="danger"
+                size="sm"
+                onClick={() => noteView && deleteNote(noteView.candidate, noteView.note.id)}
+              >
+                Delete note
+              </Button>
+            ) : null}
+            <div className="flex-1" />
+            <Button tone="secondary" size="sm" onClick={() => setNoteView(null)}>
+              Close
+            </Button>
+          </>
+        }
+      >
+        {noteView ? (
+          <p className="whitespace-pre-line text-sm text-slate-700">{noteView.note.text}</p>
+        ) : null}
+      </Modal>
+
+      {/* ---- Add note ---- */}
+      <Modal
+        open={!!noteAddFor}
+        onClose={() => (noteBusy ? null : setNoteAddFor(null))}
+        busy={noteBusy}
+        title={`Add note${noteAddFor ? ` · ${noteAddFor.fullName}` : ""}`}
+        size="md"
+        footer={
+          <>
+            <div className="flex-1" />
+            <Button tone="secondary" size="sm" onClick={() => setNoteAddFor(null)} disabled={noteBusy}>
+              Cancel
+            </Button>
+            <Button tone="primary" size="sm" onClick={submitNote} disabled={noteBusy || !noteText.trim()}>
+              {noteBusy ? "Saving…" : "Add note"}
+            </Button>
+          </>
+        }
+      >
+        {noteError ? (
+          <div className="mb-3 rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-700 ring-1 ring-rose-200">
+            {noteError}
+          </div>
+        ) : null}
+        <FormTextarea
+          label="Note"
+          value={noteText}
+          onChange={setNoteText}
+          rows={5}
+          placeholder="What came out of the latest discussion?"
+        />
+        <p className="mt-1 text-[11px] text-slate-400">Dated automatically and added to the top of the list.</p>
+      </Modal>
+
       <ConfirmDialog
         open={!!deleteTarget}
         title="Delete candidate?"
@@ -520,6 +700,8 @@ function CandidateCard({
   onOnboard,
   onUpload,
   onRemoveFile,
+  onViewNote,
+  onAddNote,
 }: {
   c: CandidateRecord;
   open: boolean;
@@ -531,6 +713,8 @@ function CandidateCard({
   onOnboard: () => void;
   onUpload: (file: File) => void;
   onRemoveFile: () => void;
+  onViewNote: (note: CandidateNote) => void;
+  onAddNote: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   return (
@@ -579,12 +763,39 @@ function CandidateCard({
             {c.country ? <Row label="Country">{c.country}</Row> : null}
             {c.source ? <Row label="Source">{c.source}</Row> : null}
           </dl>
-          {c.callNotes ? (
-            <div className="mt-2">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Call notes</div>
-              <p className="mt-0.5 whitespace-pre-line text-slate-600">{c.callNotes}</p>
+          {/* Notes: dated, newest first. Preview only — click to read in full. */}
+          <div className="mt-2">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Notes{c.notes.length ? ` · ${c.notes.length}` : ""}
+              </span>
+              <button
+                type="button"
+                onClick={onAddNote}
+                className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-brand-600 hover:bg-brand-50"
+              >
+                + Add note
+              </button>
             </div>
-          ) : null}
+            {c.notes.length === 0 ? (
+              <p className="text-[11px] text-slate-400">No notes yet.</p>
+            ) : (
+              <ul className="space-y-1">
+                {c.notes.map((n) => (
+                  <li key={n.id}>
+                    <button
+                      type="button"
+                      onClick={() => onViewNote(n)}
+                      className="block w-full rounded-md border border-slate-100 bg-slate-50/70 px-2 py-1 text-left hover:border-slate-200 hover:bg-slate-50"
+                    >
+                      <span className="block text-[10px] text-slate-400">{noteDate(n.at)}</span>
+                      <span className="line-clamp-2 text-[11px] text-slate-600">{n.text}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
           {/* CV / one-slider */}
           <div className="mt-2 flex flex-wrap items-center gap-2">

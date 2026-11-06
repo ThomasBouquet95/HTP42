@@ -34,7 +34,6 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       country: d.country,
       source: d.source,
       expertise: d.expertise,
-      callNotes: d.callNotes,
       status: d.status as CandidateStatus,
     });
     return NextResponse.json({ ok: true });

@@ -12,6 +12,11 @@ export const candidateSchema = z.object({
   country: z.string().max(120).default(""),
   source: z.string().max(300).default(""),
   expertise: z.string().max(5000).default(""),
-  callNotes: z.string().max(10000).default(""),
   status: z.enum(CANDIDATE_STATUSES as [string, ...string[]]).default("To Contact"),
+});
+
+// The collection POST also accepts an optional first note so a candidate can be
+// created with context in one step. Notes are otherwise managed on their own.
+export const candidateCreateSchema = candidateSchema.extend({
+  initialNote: z.string().max(10000).default(""),
 });

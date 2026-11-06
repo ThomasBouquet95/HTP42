@@ -9189,7 +9189,10 @@ export type CandidateRecord = {
   country: string;
   source: string;
   expertise: string;
-  callNotes: string;
+  // Dated notes, newest first — added one at a time as discussions progress.
+  // Stored as a JSON array in the "Call Notes" field (back-compat: a legacy
+  // plain-text value is surfaced as a single undated note).
+  notes: CandidateNote[];
   status: CandidateStatus;
   cv: AttachmentRef | null;
   // Set once the candidate is onboarded: the resulting Network Member record id
@@ -9197,6 +9200,11 @@ export type CandidateRecord = {
   onboardedMemberId: string;
 };
 
+// A single dated candidate note. `at` is the ISO creation timestamp.
+export type CandidateNote = { id: string; text: string; at: string | null };
+
+// The editable candidate fields (notes are managed separately via
+// addCandidateNote / deleteCandidateNote, not overwritten on a profile edit).
 export type CandidateInput = {
   fullName: string;
   email: string;
@@ -9205,9 +9213,36 @@ export type CandidateInput = {
   country: string;
   source: string;
   expertise: string;
-  callNotes: string;
   status: CandidateStatus;
 };
+
+// Parse the notes field: a JSON array of {id,text,at}, or — for candidates
+// created before notes were a list — a single legacy note from the plain text.
+export function parseCandidateNotes(raw: string): CandidateNote[] {
+  const s = (raw ?? "").trim();
+  if (!s) return [];
+  if (s.startsWith("[")) {
+    try {
+      const arr = JSON.parse(s) as unknown;
+      if (Array.isArray(arr)) {
+        return arr
+          .filter(
+            (n): n is { id?: unknown; text?: unknown; at?: unknown } =>
+              !!n && typeof n === "object" && typeof (n as { text?: unknown }).text === "string",
+          )
+          .map((n) => ({
+            id: typeof n.id === "string" && n.id ? n.id : `n_${Math.random().toString(36).slice(2)}`,
+            text: String(n.text),
+            at: typeof n.at === "string" && n.at ? n.at : null,
+          }))
+          .filter((n) => n.text.trim().length > 0);
+      }
+    } catch {
+      // fall through to legacy single-note
+    }
+  }
+  return [{ id: "legacy", text: s, at: null }];
+}
 
 function candidateFromRecord(r: AirtableRecord<FieldSet>): CandidateRecord {
   return {
@@ -9219,7 +9254,7 @@ function candidateFromRecord(r: AirtableRecord<FieldSet>): CandidateRecord {
     country: str(r, FIELDS.candidates.country),
     source: str(r, FIELDS.candidates.source),
     expertise: str(r, FIELDS.candidates.expertise),
-    callNotes: str(r, FIELDS.candidates.callNotes),
+    notes: parseCandidateNotes(str(r, FIELDS.candidates.callNotes)),
     status: (str(r, FIELDS.candidates.status) as CandidateStatus) || DEFAULT_CANDIDATE_STATUS,
     cv: firstAttachment(r, FIELDS.candidates.cv),
     onboardedMemberId: firstLinkedId(r, FIELDS.candidates.onboardedMember),
@@ -9235,9 +9270,16 @@ function candidateFields(input: CandidateInput): Record<string, unknown> {
     [FIELDS.candidates.country]: input.country || null,
     [FIELDS.candidates.source]: input.source || null,
     [FIELDS.candidates.expertise]: input.expertise || null,
-    [FIELDS.candidates.callNotes]: input.callNotes || null,
     [FIELDS.candidates.status]: input.status,
   };
+}
+
+// Serialise notes back to the field; null when empty so the cell clears.
+function serializeCandidateNotes(notes: CandidateNote[]): string | null {
+  const clean = notes
+    .map((n) => ({ id: n.id, text: n.text.trim(), at: n.at ?? null }))
+    .filter((n) => n.text.length > 0);
+  return clean.length ? JSON.stringify(clean) : null;
 }
 
 // Create the Candidates table (with its fields) if it doesn't exist yet.
@@ -9327,13 +9369,53 @@ export async function getCandidateById(recordId: string): Promise<CandidateRecor
   }
 }
 
-export async function createCandidate(input: CandidateInput): Promise<string> {
+export async function createCandidate(
+  input: CandidateInput,
+  initialNote?: string,
+): Promise<string> {
   await ensureCandidatesSchema();
+  const fields = candidateFields(input);
+  const note = (initialNote ?? "").trim();
+  if (note) {
+    fields[FIELDS.candidates.callNotes] = serializeCandidateNotes([
+      { id: `n_${Math.random().toString(36).slice(2)}`, text: note, at: new Date().toISOString() },
+    ]);
+  }
   const [created] = await base(TABLES.candidates).create(
-    [{ fields: candidateFields(input) as FieldSet }],
+    [{ fields: fields as FieldSet }],
     { typecast: true },
   );
   return created.id;
+}
+
+// Append a dated note (newest first). Returns the updated note list.
+export async function addCandidateNote(recordId: string, text: string): Promise<CandidateNote[]> {
+  await ensureCandidatesSchema();
+  const clean = (text ?? "").trim();
+  if (!clean) {
+    const cur = await getCandidateById(recordId);
+    return cur?.notes ?? [];
+  }
+  const r = await base(TABLES.candidates).find(recordId);
+  const existing = parseCandidateNotes(str(r, FIELDS.candidates.callNotes));
+  const next: CandidateNote[] = [
+    { id: `n_${Math.random().toString(36).slice(2)}`, text: clean, at: new Date().toISOString() },
+    ...existing,
+  ];
+  await base(TABLES.candidates).update([
+    { id: recordId, fields: { [FIELDS.candidates.callNotes]: serializeCandidateNotes(next) } as FieldSet },
+  ]);
+  return next;
+}
+
+export async function deleteCandidateNote(recordId: string, noteId: string): Promise<CandidateNote[]> {
+  await ensureCandidatesSchema();
+  const r = await base(TABLES.candidates).find(recordId);
+  const next = parseCandidateNotes(str(r, FIELDS.candidates.callNotes)).filter((n) => n.id !== noteId);
+  await base(TABLES.candidates).update([
+    { id: recordId, fields: { [FIELDS.candidates.callNotes]: serializeCandidateNotes(next) } as FieldSet },
+  ]);
+  return next;
 }
 
 export async function updateCandidate(recordId: string, input: CandidateInput): Promise<void> {
