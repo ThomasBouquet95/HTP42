@@ -37,6 +37,32 @@ export function FounderEarningsSummary({
   const [project, setProject] = useState("all");
   const [editing, setEditing] = useState<FounderEarning | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  async function syncFromTimesheets() {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await fetch("/api/founder-earnings/backfill", { method: "POST" });
+      const d = (await res.json().catch(() => ({}))) as {
+        created?: number;
+        skipped?: number;
+        noRate?: number;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(d.error ?? "Sync failed.");
+      const parts = [`${d.created ?? 0} added`];
+      if (d.skipped) parts.push(`${d.skipped} already there`);
+      if (d.noRate) parts.push(`${d.noRate} skipped (no staffing rate)`);
+      setSyncMsg(parts.join(" · "));
+      router.refresh();
+    } catch (e) {
+      setSyncMsg(e instanceof Error ? e.message : "Sync failed.");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const projectName = useMemo(() => new Map(projects.map((p) => [p.code, p.name])), [projects]);
 
@@ -154,9 +180,20 @@ export function FounderEarningsSummary({
             </div>
           ) : null}
         </div>
-        <p className="mt-2 text-[11px] text-slate-400">
-          Exactly what shows as your node on the financial cockpit. Recording an earning also creates
-          a paid entry — no invoice to upload.
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] text-slate-400">
+            Exactly what shows as your node on the financial cockpit. Recording an earning also creates
+            a paid entry — no invoice to upload.
+          </p>
+          <div className="flex items-center gap-2">
+            {syncMsg ? <span className="text-[11px] text-slate-500">{syncMsg}</span> : null}
+            <Button tone="secondary" size="sm" onClick={syncFromTimesheets} disabled={syncing}>
+              {syncing ? "Syncing…" : "Sync from timesheets"}
+            </Button>
+          </div>
+        </div>
+        <p className="mt-1 text-[10px] text-slate-400">
+          New submitted timesheets record an earning automatically. Use this to backfill past weeks.
         </p>
       </div>
 

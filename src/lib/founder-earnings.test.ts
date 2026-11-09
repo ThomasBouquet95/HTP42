@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  founderEarningAmounts,
   founderEarningMarker,
   isFounderEarningPayment,
   isFounderEarningsUser,
   splitNetworkFromOwnWork,
+  timesheetEarningMarker,
+  timesheetIdOfEarning,
 } from "./founder-earnings";
 
 // The founder path is deliberately limited to one person (Pascal Bouquet /
@@ -77,5 +80,34 @@ describe("splitNetworkFromOwnWork — his slice only, both sides", () => {
     expect(ownPayments).toHaveLength(0);
     expect(ownRevenueByProjectId.size).toBe(0);
     expect(ownTotalEur).toBe(0);
+  });
+});
+
+describe("founderEarningAmounts (auto-sync from timesheets)", () => {
+  it("bills hours ÷ 8 × the day rate in EUR", () => {
+    // 40h = 5 days × €1,000 = €5,000.
+    expect(founderEarningAmounts(40, 1000, "EUR", null)).toEqual({ amount: 5000, currency: "EUR", amountEur: 5000 });
+    // A partial week: 30h = 3.75 days × €800 = €3,000.
+    expect(founderEarningAmounts(30, 800, "EUR", null)).toEqual({ amount: 3000, currency: "EUR", amountEur: 3000 });
+  });
+
+  it("converts a non-EUR rate using the staffing FX", () => {
+    // 40h = 5 days × 1000 USD = 5000 USD × 0.9 = 4500 EUR.
+    expect(founderEarningAmounts(40, 1000, "USD", 0.9)).toEqual({ amount: 5000, currency: "USD", amountEur: 4500 });
+  });
+
+  it("returns null when there are no hours or no rate", () => {
+    expect(founderEarningAmounts(0, 1000, "EUR", null)).toBeNull();
+    expect(founderEarningAmounts(40, null, "EUR", null)).toBeNull();
+    expect(founderEarningAmounts(40, 0, "EUR", null)).toBeNull();
+  });
+});
+
+describe("timesheet earning marker (dedup)", () => {
+  it("round-trips a timesheet id through the comment marker", () => {
+    const marker = timesheetEarningMarker("recABC123");
+    expect(marker).toBe("[ts:recABC123]");
+    expect(timesheetIdOfEarning(`Auto from timesheet (week ending 2026-08-28). ${marker}`)).toBe("recABC123");
+    expect(timesheetIdOfEarning("Manually entered, no marker")).toBeNull();
   });
 });

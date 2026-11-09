@@ -26,9 +26,15 @@ import {
   createPayment,
   deletePayment,
   findProjectIdByCode,
+  getTimesheetsForMember,
+  listAllStaffings,
   listPayments,
   type Currency,
 } from "./airtable";
+import { DEFAULT_FX_TO_EUR } from "./fx";
+
+// Timesheet statuses that count as "submitted work" worth recording an earning.
+const EARNABLE_TS_STATUSES = new Set(["Submitted", "Approved", "Invoiced", "Paid"]);
 
 // Who gets the special path. Matched by email (preferred) or full name — edit
 // these to change the person, or empty both to disable the UI path entirely.
@@ -291,6 +297,198 @@ export async function createFounderPayment(opts: {
     comment: `Founder earning (auto-paid). ${founderEarningMarker(opts.earningId)}`,
     invoiceUrl: "",
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// AUTO-SYNC FROM TIMESHEETS. So the founder's dashboard revenue fills itself:
+// each submitted timesheet creates one founder earning (hours ÷ 8 × the
+// staffing day rate), backdated to the week's end date so it lands in the right
+// month, plus the matching auto-paid Outflow payment — exactly like the manual
+// path. Idempotent per timesheet via a [ts:<id>] marker in the earning comment.
+// ─────────────────────────────────────────────────────────────────────────
+
+const HOURS_PER_DAY = 8;
+
+export function timesheetEarningMarker(timesheetId: string): string {
+  return `[ts:${timesheetId}]`;
+}
+const TS_EARNING_RE = /\[ts:([A-Za-z0-9]+)\]/;
+export function timesheetIdOfEarning(comment: string): string | null {
+  return TS_EARNING_RE.exec(comment)?.[1] ?? null;
+}
+
+export type FounderSyncOutcome = "created" | "skipped" | "no-rate" | "no-hours";
+
+// Pure: the earning amount (staffing currency) + its EUR value for a week of
+// work. One day = 8 hours. Null when there are no hours or no rate to bill at.
+export function founderEarningAmounts(
+  totalHours: number,
+  ratePerDay: number | null,
+  currency: string,
+  fxToEur: number | null,
+): { amount: number; currency: string; amountEur: number } | null {
+  if (!totalHours || totalHours <= 0) return null;
+  if (!ratePerDay || ratePerDay <= 0) return null;
+  const cur = currency || "EUR";
+  const amount = round2((totalHours / HOURS_PER_DAY) * ratePerDay);
+  const fx = cur === "EUR" ? 1 : fxToEur && fxToEur > 0 ? fxToEur : DEFAULT_FX_TO_EUR[cur] ?? 1;
+  return { amount, currency: cur, amountEur: round2(amount * fx) };
+}
+
+// Create the founder earning (+ payment) for one submitted timesheet. Pass
+// `existingTsIds` (built from listFounderEarnings) to dedup in a batch without
+// re-listing; omit it for a one-off submit and it lists once itself.
+export async function syncFounderEarningFromTimesheet(opts: {
+  memberRecordId: string;
+  memberCode: string;
+  memberName: string;
+  timesheetId: string;
+  projectCode: string;
+  endDate: string | null; // Friday of the week — the earning's period
+  totalHours: number;
+  ratePerDay: number | null;
+  currency: string;
+  fxToEur: number | null;
+  existingTsIds?: Set<string>;
+}): Promise<FounderSyncOutcome> {
+  if (!opts.totalHours || opts.totalHours <= 0) return "no-hours";
+  if (!opts.ratePerDay || opts.ratePerDay <= 0) return "no-rate";
+
+  const seen =
+    opts.existingTsIds ??
+    new Set(
+      (await listFounderEarnings())
+        .map((e) => timesheetIdOfEarning(e.comment))
+        .filter((x): x is string => !!x),
+    );
+  if (seen.has(opts.timesheetId)) return "skipped";
+
+  const money = founderEarningAmounts(opts.totalHours, opts.ratePerDay, opts.currency, opts.fxToEur);
+  if (!money) return "no-rate";
+  const { amount, currency, amountEur } = money;
+  const date = (opts.endDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+
+  const comment = `Auto from timesheet (week ending ${date}). ${timesheetEarningMarker(opts.timesheetId)}`;
+  const earningId = await createFounderEarning({
+    memberCode: opts.memberCode,
+    memberName: opts.memberName,
+    projectCode: opts.projectCode,
+    amount,
+    currency,
+    amountEur,
+    comment,
+    submittedAt: new Date(`${date}T12:00:00Z`).toISOString(),
+  });
+  // Mirror the manual path: also create the instantly-Paid Outflow payment.
+  try {
+    if (earningId) {
+      await createFounderPayment({
+        earningId,
+        memberRecordId: opts.memberRecordId,
+        memberName: opts.memberName,
+        projectCode: opts.projectCode,
+        amount,
+        currency,
+        amountEur,
+        date,
+      });
+    }
+  } catch (e) {
+    console.error("syncFounderEarningFromTimesheet: payment failed:", e);
+  }
+  seen.add(opts.timesheetId);
+  return "created";
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+export type FounderBackfillResult = {
+  created: number;
+  skipped: number;
+  noRate: number;
+  noHours: number;
+  considered: number;
+};
+
+// Backfill earnings for every already-submitted timesheet of the founder that
+// doesn't have one yet (the "do it backwards" part). Idempotent: existing ones
+// are skipped. Returns a per-outcome tally so the UI can report what happened.
+export async function backfillFounderEarningsFromTimesheets(member: {
+  sub: string;
+  memberCode: string;
+  fullName?: string | null;
+  email?: string | null;
+}): Promise<FounderBackfillResult> {
+  const [timesheets, staffings, earnings] = await Promise.all([
+    getTimesheetsForMember(member.memberCode),
+    listAllStaffings(),
+    listFounderEarnings(),
+  ]);
+  const staffingById = new Map(staffings.map((s) => [s.id, s]));
+  const existingTsIds = new Set(
+    earnings.map((e) => timesheetIdOfEarning(e.comment)).filter((x): x is string => !!x),
+  );
+  const memberName = member.fullName || member.email || member.memberCode;
+  const result: FounderBackfillResult = { created: 0, skipped: 0, noRate: 0, noHours: 0, considered: 0 };
+  // Oldest first, so a partial run still fills the earliest gaps.
+  const ordered = [...timesheets].sort((a, b) => (a.endDate ?? "").localeCompare(b.endDate ?? ""));
+  for (const t of ordered) {
+    if (!EARNABLE_TS_STATUSES.has(t.status)) continue;
+    result.considered += 1;
+    const st = staffingById.get(t.staffingRecordId);
+    const outcome = await syncFounderEarningFromTimesheet({
+      memberRecordId: member.sub,
+      memberCode: member.memberCode,
+      memberName,
+      timesheetId: t.id,
+      projectCode: t.projectCode || st?.projectCode || "",
+      endDate: t.endDate,
+      totalHours: t.totalHours,
+      ratePerDay: st?.ratePerDay ?? null,
+      currency: st?.currency || "",
+      fxToEur: st?.fxToEur ?? null,
+      existingTsIds,
+    });
+    if (outcome === "created") result.created += 1;
+    else if (outcome === "skipped") result.skipped += 1;
+    else if (outcome === "no-rate") result.noRate += 1;
+    else if (outcome === "no-hours") result.noHours += 1;
+  }
+  return result;
+}
+
+// Convenience hook for the timesheet-submit routes: no-op unless the submitter
+// is the founder, then resolve the staffing day rate and record the earning.
+// Best-effort — never throws (a founder-earning hiccup must not block a submit).
+export async function syncFounderEarningOnSubmit(opts: {
+  session: { sub: string; memberCode: string; fullName?: string | null; email?: string | null };
+  timesheetId: string;
+  staffingId: string;
+  projectCode: string;
+  endDate: string | null;
+  totalHours: number;
+}): Promise<void> {
+  try {
+    if (!isFounderEarningsUser(opts.session)) return;
+    const staffing = (await listAllStaffings()).find((s) => s.id === opts.staffingId);
+    if (!staffing) return;
+    await syncFounderEarningFromTimesheet({
+      memberRecordId: opts.session.sub,
+      memberCode: opts.session.memberCode,
+      memberName: opts.session.fullName || opts.session.email || opts.session.memberCode,
+      timesheetId: opts.timesheetId,
+      projectCode: opts.projectCode || staffing.projectCode,
+      endDate: opts.endDate,
+      totalHours: opts.totalHours,
+      ratePerDay: staffing.ratePerDay,
+      currency: staffing.currency || "",
+      fxToEur: staffing.fxToEur,
+    });
+  } catch (e) {
+    console.error("syncFounderEarningOnSubmit failed:", e);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────

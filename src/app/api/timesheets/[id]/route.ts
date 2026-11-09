@@ -14,6 +14,18 @@ import { timesheetInputSchema } from "@/lib/validation";
 import { fridayOfWeek, isMonday, todayIso, weekOverlapsRange } from "@/lib/dates";
 import { apiError, zodMessage } from "@/lib/errors";
 import { initiateReviewOnSubmit } from "@/lib/timesheet-review";
+import { syncFounderEarningOnSubmit } from "@/lib/founder-earnings";
+
+// Sum a week's day hours from the submitted input.
+function weekHours(i: {
+  monday: { hours: number };
+  tuesday: { hours: number };
+  wednesday: { hours: number };
+  thursday: { hours: number };
+  friday: { hours: number };
+}): number {
+  return i.monday.hours + i.tuesday.hours + i.wednesday.hours + i.thursday.hours + i.friday.hours;
+}
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -90,6 +102,16 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         memberCode: session.memberCode,
         memberName: session.fullName || session.memberCode,
         resubmit: existing.status === "Rejected",
+      });
+      // Founder only: record his own billable earning for this week (deduped per
+      // timesheet, so a resubmit won't double-count).
+      await syncFounderEarningOnSubmit({
+        session,
+        timesheetId: id,
+        staffingId: staffing.id,
+        projectCode: staffing.projectCode,
+        endDate,
+        totalHours: weekHours(input),
       });
     }
     return NextResponse.json({ ok: true });
