@@ -81,6 +81,7 @@ const schema = z.object({
         id: z.string().max(64),
         html: z.string().max(10000),
         at: z.string().max(40).nullable().optional(),
+        by: z.string().max(200).optional(),
       }),
     )
     .max(200)
@@ -149,6 +150,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         id: n.id,
         html: n.html,
         at: n.at ?? null,
+        by: n.by,
       })),
     });
     if (!updated) {

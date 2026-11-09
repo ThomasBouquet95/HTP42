@@ -257,7 +257,7 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
             </div>
           </Card>
 
-          <MemberNotes memberId={member.id} initialNotes={member.internalNotes} />
+          <MemberNotes memberId={member.id} initialNotes={member.internalNotes} authorName={access.session.fullName} />
 
           {member.bankAccountName || member.iban || member.bankAccountAddress ? (
             <Card title="Bank account">

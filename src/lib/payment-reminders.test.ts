@@ -3,8 +3,10 @@ import {
   buildPaymentReminders,
   classifyUrgency,
   daysOverdue,
+  execHtmlToSlack,
   remindersHeadline,
   renderRemindersSections,
+  renderRemindersSlack,
   type PaymentLike,
 } from "./payment-reminders";
 
@@ -123,5 +125,54 @@ describe("renderRemindersSections", () => {
     expect(m.client.items[0].label).toBe("F-260720USD");
     const html = renderRemindersSections(m);
     expect((html.match(/F-260720USD/g) || []).length).toBe(1);
+  });
+});
+
+describe("execHtmlToSlack", () => {
+  it("converts bold/paragraph HTML to Slack mrkdwn", () => {
+    const out = execHtmlToSlack("<p>Cash is <strong>tight</strong>.</p><p>Chase <b>Pierre Fabre</b>.</p>");
+    expect(out).toContain("*tight*");
+    expect(out).toContain("*Pierre Fabre*");
+    expect(out).not.toContain("<");
+  });
+});
+
+describe("renderRemindersSlack", () => {
+  const m = buildPaymentReminders(
+    [
+      pay({ direction: "Inflow", dueDate: "2026-09-01", amountEur: 58500, clientLabel: "Pierre Fabre", reference: "F-1" }),
+      pay({ direction: "Inflow", dueDate: "2026-10-01", amountEur: 500, clientLabel: "Future Co", reference: "F-2" }),
+      pay({ direction: "Outflow", isMember: true, dueDate: "2026-09-02", amountEur: 11250, memberLabel: "Dr. Linda Dib", reference: "RE-15" }),
+    ],
+    TODAY,
+    "18 September 2026",
+  );
+  const out = renderRemindersSlack(m, "Summary line.", "https://x/admin/payments");
+
+  it("includes the title, summary, both sections and the portal link", () => {
+    expect(out).toContain("💶 Payments due — 18 September 2026");
+    expect(out).toContain("Summary line.");
+    expect(out).toContain("Client payments — incoming");
+    expect(out).toContain("Payments to network members — outgoing");
+    expect(out).toContain("→ https://x/admin/payments");
+  });
+
+  it("lists overdue items by name and rolls up the upcoming ones", () => {
+    expect(out).toContain("*Pierre Fabre*"); // overdue, listed
+    expect(out).toContain("*Dr. Linda Dib*"); // overdue, listed
+    expect(out).toContain("1 upcoming / undated"); // Future Co not listed, counted
+    expect(out).not.toContain("Future Co");
+  });
+
+  it("caps long overdue lists with a +N more", () => {
+    const many = buildPaymentReminders(
+      Array.from({ length: 20 }, (_, i) =>
+        pay({ direction: "Inflow", dueDate: "2026-09-01", amountEur: 1000 + i, clientLabel: `Late ${i}`, reference: `F-${i}` }),
+      ),
+      TODAY,
+      "18 September 2026",
+    );
+    const text = renderRemindersSlack(many, "", "https://x", 12);
+    expect(text).toContain("+8 more overdue");
   });
 });

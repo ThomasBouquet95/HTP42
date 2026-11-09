@@ -182,3 +182,66 @@ export function renderRemindersSections(model: PaymentRemindersModel): string {
     section("Payments to network members — outgoing", model.member),
   ].join("\n");
 }
+
+// Slack mrkdwn requires only these three escaped.
+function slackEsc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Convert the AI exec-summary HTML fragment to Slack mrkdwn: bold tags → *…*,
+// breaks/paragraphs → newlines, everything else stripped, a few entities decoded.
+export function execHtmlToSlack(html: string): string {
+  return html
+    .replace(/<\/(p|div|h[1-6])>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<(strong|b)>/gi, "*")
+    .replace(/<\/(strong|b)>/gi, "*")
+    .replace(/<(em|i)>/gi, "_")
+    .replace(/<\/(em|i)>/gi, "_")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+// Slack version of the weekly digest: the exec summary, then the overdue items
+// per group (the actionable ones), capped with a "+N more" and a count of the
+// upcoming/undated rest, plus a link to the full list. Posts to #payments.
+export function renderRemindersSlack(
+  model: PaymentRemindersModel,
+  execSlack: string,
+  portalUrl: string,
+  maxPerGroup = 12,
+): string {
+  const line = (it: ReminderItem) =>
+    `${marker(it.urgency)} *${slackEsc(it.label)}*` +
+    (it.reference && it.reference !== it.label ? ` ${slackEsc(it.reference)}` : "") +
+    ` — ${slackEsc(itemFigures(it))}`;
+  const section = (title: string, g: ReminderGroup): string => {
+    const head = `*${title}* (${g.items.length} · ${eur0(g.totalEur)})`;
+    if (!g.items.length) return `${head}\nNone outstanding.`;
+    const overdue = g.items.filter((it) => it.urgency !== "green");
+    const green = g.items.length - overdue.length;
+    const shown = overdue.slice(0, maxPerGroup);
+    const lines = shown.map(line);
+    const extras: string[] = [];
+    const moreOverdue = overdue.length - shown.length;
+    if (moreOverdue > 0) extras.push(`+${moreOverdue} more overdue`);
+    if (green > 0) extras.push(`${green} upcoming / undated`);
+    if (overdue.length === 0) lines.push("_Nothing overdue._");
+    if (extras.length) lines.push(`_${extras.join(" · ")}_`);
+    return `${head}\n${lines.join("\n")}`;
+  };
+  return [
+    `*💶 Payments due — ${model.date}*`,
+    execSlack,
+    section("Client payments — incoming", model.client),
+    section("Payments to network members — outgoing", model.member),
+    `→ ${portalUrl}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}

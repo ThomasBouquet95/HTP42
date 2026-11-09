@@ -7,13 +7,16 @@ import { listAllMembers, listClients, listPayments } from "@/lib/airtable";
 import { effectiveEur } from "@/lib/fx";
 import {
   buildPaymentReminders,
+  execHtmlToSlack,
   remindersHeadline,
   remindersPromptData,
   renderRemindersSections,
+  renderRemindersSlack,
   type PaymentRemindersModel,
 } from "@/lib/payment-reminders";
 import { resolveEmail } from "@/lib/email-templates-server";
 import { sendMailViaGraph } from "@/lib/email";
+import { postToSlack } from "@/lib/slack";
 import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
@@ -136,9 +139,25 @@ async function run() {
   console.log(
     `[cron] payment-reminders: ${result.ok ? "sent" : "failed"} to ${to.join(", ")} — ${headline}`,
   );
+
+  // Also post the same digest to Slack (#payments). Best-effort: a Slack hiccup
+  // (or no bot token) never fails the email job.
+  let slackOk: boolean | null = null;
+  if (env.slackBotToken) {
+    const slackText = renderRemindersSlack(
+      model,
+      execHtmlToSlack(execHtml),
+      `${env.appUrl}/admin/payments`,
+    );
+    const posted = await postToSlack(env.slackChannels.payments, slackText);
+    slackOk = posted.ok;
+    if (!posted.ok) console.error(`[cron] payment-reminders: slack post failed — ${posted.error}`);
+  }
+
   return NextResponse.json({
     ok: result.ok,
     to,
+    slack: slackOk,
     incoming: { count: model.client.items.length, overdue: model.client.counts.red + model.client.counts.orange },
     toMembers: { count: model.member.items.length, overdue: model.member.counts.red + model.member.counts.orange },
   });

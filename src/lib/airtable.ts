@@ -784,7 +784,7 @@ export type MemberAdminRecord = MemberRecord & {
 
 // A single admin-only internal note. `html` is a sanitised inline-formatting
 // fragment (bold/italic/underline); `at` is the ISO creation timestamp.
-export type MemberNote = { id: string; html: string; at: string | null };
+export type MemberNote = { id: string; html: string; at: string | null; by?: string };
 
 export type ClientKind = "Client" | "Partner";
 export const CLIENT_KINDS: ClientKind[] = ["Client", "Partner"];
@@ -1244,13 +1244,14 @@ function parseMemberNotes(raw: string, legacy: string): MemberNote[] {
       if (Array.isArray(arr)) {
         return arr
           .filter(
-            (n): n is { id?: unknown; html?: unknown; at?: unknown } =>
+            (n): n is { id?: unknown; html?: unknown; at?: unknown; by?: unknown } =>
               !!n && typeof n === "object" && typeof (n as { html?: unknown }).html === "string",
           )
           .map((n) => ({
             id: typeof n.id === "string" && n.id ? n.id : `n_${Math.random().toString(36).slice(2)}`,
             html: sanitizeNoteHtml(String(n.html)),
             at: typeof n.at === "string" && n.at ? n.at : null,
+            by: typeof n.by === "string" && n.by ? n.by : undefined,
           }))
           .filter((n) => noteHtmlToPlain(n.html).length > 0);
       }
@@ -2562,7 +2563,12 @@ export async function adminUpdateMember(
     await ensureMemberInternalNotesField();
     // Sanitise each note server-side and drop empties before persisting.
     const clean = input.internalNotes
-      .map((n) => ({ id: n.id, html: sanitizeNoteHtml(n.html), at: n.at ?? null }))
+      .map((n) => ({
+        id: n.id,
+        html: sanitizeNoteHtml(n.html),
+        at: n.at ?? null,
+        ...(n.by ? { by: n.by } : {}),
+      }))
       .filter((n) => noteHtmlToPlain(n.html).length > 0);
     fields[FIELDS.networkMembers.internalNotes] = clean.length ? JSON.stringify(clean) : null;
   }
