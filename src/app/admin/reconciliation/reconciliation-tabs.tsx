@@ -37,7 +37,7 @@ export function ReconciliationTabs({
       {tab === "reconcile" ? (
         <ReconciliationClient rows={rows} weeks={weeks} totals={totals} liveSend={liveSend} intakeEmail={intakeEmail} />
       ) : (
-        <FindDownloadClient />
+        <FindDownloadClient accountantEmail={intakeEmail} />
       )}
     </div>
   );

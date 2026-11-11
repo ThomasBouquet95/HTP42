@@ -25,7 +25,7 @@ const eur = (v: number | null) =>
   v == null ? "—" : `€${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const keyOf = (m: Match) => `${m.kind}:${m.id}`;
 
-export function FindDownloadClient() {
+export function FindDownloadClient({ accountantEmail }: { accountantEmail: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [zipping, setZipping] = useState(false);
@@ -115,6 +115,14 @@ export function FindDownloadClient() {
             Upload the list, the platform finds each stored invoice, and you download them one by one or all at once.
             Nothing is sent or saved here.
           </div>
+          {accountantEmail ? (
+            <div className="mt-1 text-slate-500">
+              Accountant (Fulll):{" "}
+              <a href={`mailto:${accountantEmail}`} className="font-medium text-brand-600 hover:underline">
+                {accountantEmail}
+              </a>
+            </div>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <input
