@@ -26,6 +26,15 @@ export const env = {
   get appUrl() {
     return (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
   },
+  // Fulll missing-invoice reconciliation. The accountant's intake address is set
+  // here; sending is OFF by default so nothing reaches the live intake until an
+  // admin flips FULLL_SEND_ENABLED=true (until then, "Send" is a dry run).
+  get fulll() {
+    return {
+      intakeEmail: process.env.FULLL_INTAKE_EMAIL ?? "factures+cHEA-072a8f@m.fulll.io",
+      sendEnabled: process.env.FULLL_SEND_ENABLED === "true",
+    };
+  },
   get azure() {
     return {
       tenantId: required("AZURE_TENANT_ID"),

@@ -25,6 +25,7 @@ type PageKey =
   | "closing"
   | "retribution"
   | "invoices"
+  | "reconciliation"
   | "legalcockpit"
   | "contracts"
   | "documents"
@@ -78,6 +79,7 @@ const CATEGORIES: Category[] = [
       { key: "payments", href: "/admin/payments", label: "Payments" },
       { key: "bank", href: "/admin/qonto", label: "Bank (Qonto)" },
       { key: "invoices", href: "/admin/invoices", label: "Invoices" },
+      { key: "reconciliation", href: "/admin/reconciliation", label: "Reconciliation" },
       { key: "retribution", href: "/admin/retribution", label: "Retribution" },
     ],
   },

@@ -29,6 +29,7 @@ export const ADMIN_PAGES: { key: string; label: string; category: string; href: 
   { key: "payments", label: "Payments", category: "Finance", href: "/admin/payments" },
   { key: "bank", label: "Bank (Qonto)", category: "Finance", href: "/admin/qonto" },
   { key: "invoices", label: "Invoices", category: "Finance", href: "/admin/invoices" },
+  { key: "reconciliation", label: "Reconciliation (Fulll)", category: "Finance", href: "/admin/reconciliation" },
   { key: "retribution", label: "Retribution", category: "Finance", href: "/admin/retribution" },
   { key: "legalcockpit", label: "Legal cockpit", category: "Legal", href: "/admin/legal" },
   { key: "contracts", label: "Contracts", category: "Legal", href: "/admin/contracts" },
