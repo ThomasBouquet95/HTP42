@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { env } from "@/lib/env";
 import { isProcessed, weeklyBuckets } from "@/lib/reconciliation";
 import { listReconRows } from "@/lib/reconciliation-store";
-import { ReconciliationClient } from "./reconciliation-client";
+import { ReconciliationTabs } from "./reconciliation-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +30,7 @@ export default async function AdminReconciliationPage() {
         title="Reconciliation (Fulll)"
         subtitle="· match bank transactions to stored invoices and send them to the accountant"
       />
-      <ReconciliationClient
+      <ReconciliationTabs
         rows={rows}
         weeks={weeks}
         totals={totals}

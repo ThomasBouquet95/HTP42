@@ -1,15 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireAdminAction } from "@/lib/auth";
 import { apiError } from "@/lib/errors";
-import { listAllInvoices, listProjects, listVendorInvoices } from "@/lib/airtable";
-import { DEFAULT_FX_TO_EUR } from "@/lib/fx";
 import { matchTransaction, parseFulllWorkbook } from "@/lib/reconciliation";
-import {
-  buildCandidates,
-  createReconRows,
-  listReconRows,
-  type NewReconRow,
-} from "@/lib/reconciliation-store";
+import { loadReconCandidates } from "@/lib/reconciliation-server";
+import { createReconRows, listReconRows, type NewReconRow } from "@/lib/reconciliation-store";
 
 export const runtime = "nodejs";
 // Parsing + matching 100+ transactions against all invoices takes a moment.
@@ -40,42 +34,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No transactions found in that file." }, { status: 400 });
     }
 
-    const [existing, members, vendors, projects] = await Promise.all([
-      listReconRows(),
-      listAllInvoices(),
-      listVendorInvoices(),
-      listProjects(),
-    ]);
+    const [existing, candidates] = await Promise.all([listReconRows(), loadReconCandidates()]);
     const known = new Set(existing.map((r) => r.fingerprint));
-
-    const fxByProjectCode = new Map<string, number>();
-    for (const p of projects) if (p.fxToEur && p.fxToEur > 0) fxByProjectCode.set(p.projectCode, p.fxToEur);
-    const candidates = buildCandidates({
-      memberInvoices: members.map((m) => ({
-        id: m.id,
-        memberName: m.memberName,
-        invoiceCode: m.invoiceCode,
-        amount: m.amount,
-        currency: m.currency,
-        submissionDate: m.submissionDate,
-        projectCode: m.projectCode,
-        pdf: m.pdf,
-        status: m.status,
-      })),
-      vendorInvoices: vendors.map((v) => ({
-        id: v.id,
-        vendor: v.vendor,
-        invoiceNumber: v.invoiceNumber,
-        amountEur: v.amountEur,
-        amount: v.amount,
-        currency: v.currency,
-        invoiceDate: v.invoiceDate,
-        pdf: v.pdf,
-        status: v.status,
-      })),
-      fxByProjectCode,
-      defaultFx: (cur) => DEFAULT_FX_TO_EUR[cur] ?? 1,
-    });
 
     const toCreate: NewReconRow[] = [];
     let found = 0;

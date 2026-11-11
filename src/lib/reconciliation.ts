@@ -112,8 +112,11 @@ export function normalizeText(s: string): string {
 }
 
 // Stable fingerprint so a re-uploaded file keeps each transaction's state.
-export function txnFingerprint(date: string, debit: number, credit: number, libelle: string): string {
-  return `${date}|${debit.toFixed(2)}|${credit.toFixed(2)}|${normalizeText(libelle)}`;
+// Based on date + debit + normalised libellé only: the Crédit column is left
+// out on purpose — some Fulll exports put a lot/batch number there (e.g. "118")
+// rather than a euro amount, and that must not change a transaction's identity.
+export function txnFingerprint(date: string, debit: number, libelle: string): string {
+  return `${date}|${debit.toFixed(2)}|${normalizeText(libelle)}`;
 }
 
 // ---- Workbook parsing (jszip; the Fulll export is a single simple sheet) ---
@@ -136,7 +139,7 @@ export function rowsToTransactions(rows: string[][]): FulllTxn[] {
       debit,
       credit,
       commentaire: (r[5] ?? "").trim(),
-      fingerprint: txnFingerprint(date, debit, credit, libelle),
+      fingerprint: txnFingerprint(date, debit, libelle),
     });
   }
   return out;

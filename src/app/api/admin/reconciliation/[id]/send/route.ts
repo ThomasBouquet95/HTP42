@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminAction } from "@/lib/auth";
 import { apiError, zodMessage } from "@/lib/errors";
-import { listAllInvoices, listVendorInvoices } from "@/lib/airtable";
 import { sendMailViaGraph } from "@/lib/email";
 import { env } from "@/lib/env";
+import { resolveInvoicePdf } from "@/lib/reconciliation-server";
 import { getReconRow, updateReconRow } from "@/lib/reconciliation-store";
 
 export const runtime = "nodejs";
@@ -42,19 +42,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   try {
     // Resolve the invoice PDF fresh (attachment URLs expire).
-    let pdfUrl = "";
-    let pdfName = "";
-    let label = row.matchedLabel;
-    if (row.matchedKind === "member") {
-      const inv = (await listAllInvoices()).find((i) => i.id === row.matchedInvoiceId);
-      if (inv?.pdf) { pdfUrl = inv.pdf.url; pdfName = inv.pdf.filename || "invoice.pdf"; label = inv.memberName || label; }
-    } else {
-      const inv = (await listVendorInvoices()).find((i) => i.id === row.matchedInvoiceId);
-      if (inv?.pdf) { pdfUrl = inv.pdf.url; pdfName = inv.pdf.filename || "invoice.pdf"; label = inv.vendor || label; }
-    }
-    if (!pdfUrl) {
+    const pdf = await resolveInvoicePdf(row.matchedKind, row.matchedInvoiceId);
+    if (!pdf) {
       return NextResponse.json({ error: "The matched invoice has no PDF to send." }, { status: 400 });
     }
+    const pdfUrl = pdf.url;
+    const pdfName = pdf.filename;
+    const label = pdf.label || row.matchedLabel;
 
     const now = new Date().toISOString();
     const live = env.fulll.sendEnabled && !!env.fulll.intakeEmail;

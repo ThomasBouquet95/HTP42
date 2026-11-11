@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireAdminAction } from "@/lib/auth";
 import { apiError } from "@/lib/errors";
-import { listAllInvoices, listProjects, listVendorInvoices } from "@/lib/airtable";
-import { DEFAULT_FX_TO_EUR } from "@/lib/fx";
 import { matchTransaction, type FulllTxn } from "@/lib/reconciliation";
-import { buildCandidates, getReconRow } from "@/lib/reconciliation-store";
+import { loadReconCandidates } from "@/lib/reconciliation-server";
+import { getReconRow } from "@/lib/reconciliation-store";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -20,26 +19,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!row) return NextResponse.json({ error: "Row not found." }, { status: 404 });
 
   try {
-    const [members, vendors, projects] = await Promise.all([
-      listAllInvoices(),
-      listVendorInvoices(),
-      listProjects(),
-    ]);
-    const fxByProjectCode = new Map<string, number>();
-    for (const p of projects) if (p.fxToEur && p.fxToEur > 0) fxByProjectCode.set(p.projectCode, p.fxToEur);
-    const candidates = buildCandidates({
-      memberInvoices: members.map((m) => ({
-        id: m.id, memberName: m.memberName, invoiceCode: m.invoiceCode, amount: m.amount,
-        currency: m.currency, submissionDate: m.submissionDate, projectCode: m.projectCode, pdf: m.pdf, status: m.status,
-      })),
-      vendorInvoices: vendors.map((v) => ({
-        id: v.id, vendor: v.vendor, invoiceNumber: v.invoiceNumber, amountEur: v.amountEur, amount: v.amount,
-        currency: v.currency, invoiceDate: v.invoiceDate, pdf: v.pdf, status: v.status,
-      })),
-      fxByProjectCode,
-      defaultFx: (cur) => DEFAULT_FX_TO_EUR[cur] ?? 1,
-    });
-
+    const candidates = await loadReconCandidates();
     const txn: FulllTxn = {
       date: row.date,
       codeJournal: row.codeJournal,

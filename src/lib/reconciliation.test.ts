@@ -54,10 +54,14 @@ describe("rowsToTransactions", () => {
     expect(txns[0].fingerprint).toContain("2026-02-26|4900.00");
   });
 
-  it("fingerprint ignores card mask + case so re-uploads are stable", () => {
-    const a = txnFingerprint("2026-03-02", 159.86, 0, "AWS EMEA  CARTE ***6218");
-    const b = txnFingerprint("2026-03-02", 159.86, 0, "aws emea carte ***6218");
+  it("fingerprint ignores card mask, case and the Crédit column so re-uploads are stable", () => {
+    const a = txnFingerprint("2026-03-02", 159.86, "AWS EMEA  CARTE ***6218");
+    const b = txnFingerprint("2026-03-02", 159.86, "aws emea carte ***6218");
     expect(a).toBe(b);
+    // Same transaction, lot number later added to the Crédit column → same id.
+    const rowsNoLot = rowsToTransactions([["18/04/2026", "BQ", "OSTERIA DODICI 23322", "155,43", "", ""]]);
+    const rowsWithLot = rowsToTransactions([["18/04/2026", "BQ", "OSTERIA DODICI 23322", "155,43", "118", ""]]);
+    expect(rowsNoLot[0].fingerprint).toBe(rowsWithLot[0].fingerprint);
   });
 });
 
