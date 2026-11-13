@@ -26,13 +26,14 @@ export const env = {
   get appUrl() {
     return (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
   },
-  // Fulll missing-invoice reconciliation. The accountant's intake address is set
-  // here; sending is OFF by default so nothing reaches the live intake until an
-  // admin flips FULLL_SEND_ENABLED=true (until then, "Send" is a dry run).
+  // Fulll missing-invoice reconciliation. Sends the matched invoice PDF to the
+  // accountant's intake address. Live whenever an intake address is set; set
+  // FULLL_SEND_ENABLED=false to force dry-run (no email) instead.
   get fulll() {
+    const intakeEmail = process.env.FULLL_INTAKE_EMAIL ?? "factures+cHEA-072a8f@m.fulll.io";
     return {
-      intakeEmail: process.env.FULLL_INTAKE_EMAIL ?? "factures+cHEA-072a8f@m.fulll.io",
-      sendEnabled: process.env.FULLL_SEND_ENABLED === "true",
+      intakeEmail,
+      sendEnabled: !!intakeEmail && process.env.FULLL_SEND_ENABLED !== "false",
     };
   },
   get azure() {

@@ -107,6 +107,18 @@ describe("matchTransaction", () => {
     expect(r.candidates.length).toBe(2);
   });
 
+  it("matches a member by their company alias when the libellé shows the company", () => {
+    const companyTxn = {
+      date: "2026-11-05", codeJournal: "BQ", libelle: "LITTLE CUBE CONSULTING GMBH",
+      debit: 38593.75, credit: 0, commentaire: "", fingerprint: "fp2",
+    };
+    const r = matchTransaction(companyTxn, [
+      cand({ id: "jen", label: "Jennifer Example", aliases: ["Little Cube Consulting GmbH"], reference: "INV-9", amountEur: 38593.75, dateIso: "2026-11-01" }),
+    ]);
+    expect(r.status).toBe("found");
+    expect(r.best?.id).toBe("jen");
+  });
+
   it("returns not_found when no candidate matches the amount", () => {
     const r = matchTransaction(txn, [cand({ id: "a", label: "Born Djurhuus", reference: "ECS-2026-04", amountEur: 999 })]);
     expect(r.status).toBe("not_found");

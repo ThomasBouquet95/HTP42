@@ -33,7 +33,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!row.matchedInvoiceId || !row.matchedKind) {
     return NextResponse.json({ error: "Confirm an invoice match before sending." }, { status: 400 });
   }
-  if (row.sentToFulllAt && !force) {
+  // Only block re-sending something that already went out for REAL. A prior dry
+  // run never emailed anything, so it can be sent live without a confirmation.
+  if (row.sentToFulllAt && row.sendMode === "live" && !force) {
     return NextResponse.json(
       { error: `Already sent on ${row.sentToFulllAt.slice(0, 10)}. Re-send only with confirmation.`, alreadySent: true },
       { status: 409 },

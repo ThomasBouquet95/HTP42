@@ -22,6 +22,9 @@ export type ReconCandidate = {
   id: string;
   label: string; // counterparty (member name / vendor)
   reference: string; // invoiceCode / invoiceNumber
+  // Extra names the bank libellé might use instead of `label` — e.g. a network
+  // member's own company ("Little Cube Consulting" for Jennifer). Matched on too.
+  aliases?: string[];
   amountEur: number | null;
   dateIso: string | null;
   pdfUrl: string | null;
@@ -273,10 +276,12 @@ export function scoreCandidate(txn: FulllTxn, c: ReconCandidate): ScoredCandidat
   const refN = normalizeText(c.reference);
   // Reference hit: the invoice ref/number appears in the libellé (strong).
   const refMatch = refN.length >= 3 && libN.includes(refN);
-  // Name hit: a significant counterparty token appears in the libellé.
-  const labelTokens = tokensOf(c.label);
+  // Name hit: a significant counterparty token (the person's name OR one of
+  // their company aliases) appears in the libellé. Dedup tokens so a name that
+  // also appears as an alias isn't double-counted.
+  const labelTokens = new Set([c.label, ...(c.aliases ?? [])].flatMap(tokensOf));
   const libTokens = new Set(tokensOf(txn.libelle));
-  const nameHits = labelTokens.filter((t) => libTokens.has(t)).length;
+  const nameHits = [...labelTokens].filter((t) => libTokens.has(t)).length;
   const nameMatch = nameHits > 0;
   const daysApart = c.dateIso ? daysBetween(txn.date, c.dateIso) : null;
   // Payments land on/after the invoice date; allow a little slack before it.

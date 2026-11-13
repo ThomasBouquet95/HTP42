@@ -279,6 +279,9 @@ export function buildCandidates(input: {
     projectCode: string;
     pdf: { url: string; filename: string } | null;
     status: string;
+    // The member's own company name(s) (legal entity / billing company) that a
+    // bank libellé may use instead of their personal name.
+    aliases?: string[];
   }[];
   vendorInvoices: {
     id: string;
@@ -308,6 +311,7 @@ export function buildCandidates(input: {
       id: m.id,
       label: m.memberName,
       reference: [m.invoiceCode, m.projectCode].filter(Boolean).join(" "),
+      aliases: (m.aliases ?? []).filter(Boolean),
       amountEur: eur,
       dateIso: m.submissionDate,
       pdfUrl: m.pdf?.url ?? null,
