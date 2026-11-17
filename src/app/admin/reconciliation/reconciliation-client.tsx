@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Modal } from "@/components/modal";
+import { Modal, ConfirmDialog } from "@/components/modal";
 import { Button } from "@/components/form-controls";
 import { SearchInput } from "@/components/search-input";
 import { SegmentedTabs } from "@/components/filters";
@@ -37,6 +37,9 @@ export function ReconciliationClient({ rows, weeks, totals, liveSend, intakeEmai
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmUpload, setConfirmUpload] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -80,13 +83,12 @@ export function ReconciliationClient({ rows, weeks, totals, liveSend, intakeEmai
       fd.set("file", file);
       const res = await fetch("/api/admin/reconciliation/upload", { method: "POST", body: fd });
       const d = (await res.json().catch(() => ({}))) as {
-        added?: number; alreadyPresent?: number; found?: number; review?: number; notFound?: number; error?: string;
+        added?: number; found?: number; review?: number; notFound?: number; error?: string;
       };
       if (!res.ok) throw new Error(d.error ?? "Upload failed.");
       flash(
         "ok",
-        `Added ${d.added ?? 0} (${d.found ?? 0} matched · ${d.review ?? 0} to review · ${d.notFound ?? 0} not found)` +
-          (d.alreadyPresent ? ` · ${d.alreadyPresent} already loaded` : ""),
+        `Loaded ${d.added ?? 0} (${d.found ?? 0} matched · ${d.review ?? 0} to review · ${d.notFound ?? 0} not found)`,
       );
       router.refresh();
     } catch (e) {
@@ -94,6 +96,22 @@ export function ReconciliationClient({ rows, weeks, totals, liveSend, intakeEmai
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function doReset() {
+    setResetting(true);
+    try {
+      const res = await fetch("/api/admin/reconciliation/reset", { method: "POST" });
+      const d = (await res.json().catch(() => ({}))) as { deleted?: number; error?: string };
+      if (!res.ok) throw new Error(d.error ?? "Reset failed.");
+      setConfirmReset(false);
+      flash("ok", `Cleared ${d.deleted ?? 0} row${d.deleted === 1 ? "" : "s"} — upload a fresh file.`);
+      router.refresh();
+    } catch (e) {
+      flash("error", e instanceof Error ? e.message : "Reset failed.");
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -157,7 +175,8 @@ export function ReconciliationClient({ rows, weeks, totals, liveSend, intakeEmai
         <div className="text-xs text-slate-600">
           <div className="font-semibold text-slate-800">Upload the monthly Fulll Excel</div>
           <div className="mt-0.5 text-slate-500">
-            Over- and under-threshold files both work. Transactions already loaded keep their status.
+            Over- and under-threshold files both work. Each upload <strong>replaces</strong> everything
+            currently loaded (table + chart).
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -171,8 +190,18 @@ export function ReconciliationClient({ rows, weeks, totals, liveSend, intakeEmai
               if (f) void onUpload(f);
             }}
           />
-          <Button tone="primary" size="sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
-            {uploading ? "Processing…" : "Upload Excel"}
+          {rows.length > 0 ? (
+            <Button tone="secondary" size="sm" onClick={() => setConfirmReset(true)} disabled={uploading || resetting}>
+              {resetting ? "Clearing…" : "Clear all"}
+            </Button>
+          ) : null}
+          <Button
+            tone="primary"
+            size="sm"
+            onClick={() => (rows.length > 0 ? setConfirmUpload(true) : fileRef.current?.click())}
+            disabled={uploading || resetting}
+          >
+            {uploading ? "Processing…" : rows.length > 0 ? "Replace with new file" : "Upload Excel"}
           </Button>
         </div>
       </div>
@@ -298,6 +327,30 @@ export function ReconciliationClient({ rows, weeks, totals, liveSend, intakeEmai
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={confirmUpload}
+        title="Replace the current data?"
+        message={`Uploading a new file clears all ${rows.length} loaded transaction${rows.length === 1 ? "" : "s"} — matches, comments and send history — and the weekly chart, then loads the new file from scratch. This can't be undone.`}
+        confirmLabel="Choose file & replace"
+        confirmTone="danger"
+        onCancel={() => setConfirmUpload(false)}
+        onConfirm={() => {
+          setConfirmUpload(false);
+          fileRef.current?.click();
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmReset}
+        title="Clear all reconciliation data?"
+        message={`This permanently deletes all ${rows.length} loaded transaction${rows.length === 1 ? "" : "s"} — including their matches, comments and send history — so you can re-upload the Excel from scratch. This can't be undone.`}
+        confirmLabel="Clear everything"
+        confirmTone="danger"
+        busy={resetting}
+        onCancel={() => setConfirmReset(false)}
+        onConfirm={doReset}
+      />
 
       {matchFor ? (
         <MatchModal

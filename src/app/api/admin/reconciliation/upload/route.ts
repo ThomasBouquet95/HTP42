@@ -3,7 +3,7 @@ import { requireAdminAction } from "@/lib/auth";
 import { apiError } from "@/lib/errors";
 import { matchTransaction, parseFulllWorkbook } from "@/lib/reconciliation";
 import { loadReconCandidates } from "@/lib/reconciliation-server";
-import { createReconRows, listReconRows, type NewReconRow } from "@/lib/reconciliation-store";
+import { createReconRows, deleteAllReconRows, type NewReconRow } from "@/lib/reconciliation-store";
 
 export const runtime = "nodejs";
 // Parsing + matching 100+ transactions against all invoices takes a moment.
@@ -34,15 +34,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No transactions found in that file." }, { status: 400 });
     }
 
-    const [existing, candidates] = await Promise.all([listReconRows(), loadReconCandidates()]);
-    const known = new Set(existing.map((r) => r.fingerprint));
+    const candidates = await loadReconCandidates();
+    // Every upload is a full replace: wipe the table + chart, then load the new
+    // file fresh (no carry-over of prior rows, matches or comments).
+    await deleteAllReconRows();
 
     const toCreate: NewReconRow[] = [];
     let found = 0;
     let review = 0;
     let notFound = 0;
     for (const t of txns) {
-      if (known.has(t.fingerprint)) continue;
       // Credit-only lines (money in) aren't missing supplier invoices; skip.
       if (t.debit <= 0) continue;
       const m = matchTransaction(t, candidates);
@@ -65,15 +66,7 @@ export async function POST(request: Request) {
     }
 
     const created = await createReconRows(toCreate);
-    return NextResponse.json({
-      ok: true,
-      parsed: txns.length,
-      added: created,
-      alreadyPresent: txns.length - toCreate.length,
-      found,
-      review,
-      notFound,
-    });
+    return NextResponse.json({ ok: true, parsed: txns.length, added: created, found, review, notFound });
   } catch (e) {
     return apiError(e, "process the reconciliation file");
   }

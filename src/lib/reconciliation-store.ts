@@ -253,6 +253,22 @@ export async function updateReconRow(id: string, patch: ReconRowPatch): Promise<
   }
 }
 
+// Delete every reconciliation row (the "reset" / re-upload action). Returns how
+// many were removed. Airtable deletes up to 10 records per call.
+export async function deleteAllReconRows(): Promise<number> {
+  const rows = await listReconRows();
+  let deleted = 0;
+  for (let i = 0; i < rows.length; i += 10) {
+    const chunk = rows.slice(i, i + 10);
+    const url = new URL(dataUrl());
+    for (const r of chunk) url.searchParams.append("records[]", r.id);
+    const res = await fetch(url, { method: "DELETE", headers: authHeaders() });
+    if (res.ok) deleted += chunk.length;
+    else console.error("deleteAllReconRows chunk failed:", res.status, await res.text().catch(() => ""));
+  }
+  return deleted;
+}
+
 export async function getReconRow(id: string): Promise<FulllReconRow | null> {
   await ensureReconciliationTable();
   try {

@@ -39,10 +39,8 @@ export function AdminNav({
     };
   }, [openKey]);
 
-  const active = categories.find((c) => c.key === activeCatKey) ?? categories[0];
-
   return (
-    <div ref={ref} className="space-y-2">
+    <div ref={ref}>
       <div className="flex items-start justify-between gap-3">
         {/* Category row — pills wrap on narrow screens (no clipping). */}
         <nav className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1">
@@ -98,29 +96,6 @@ export function AdminNav({
           <DemoModeToggle />
         </div>
       </div>
-
-      {/* Inline sub-page row for the active category. */}
-      {active && active.pages.length > 1 ? (
-        <nav className="flex flex-wrap items-center gap-1 border-b border-slate-200 -mb-px">
-          {active.pages.map((p) => {
-            const isActive = p.key === activeKey;
-            return (
-              <Link
-                key={p.key}
-                href={p.href}
-                aria-current={isActive ? "page" : undefined}
-                className={`inline-flex items-center px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
-                  isActive
-                    ? "border-brand-600 text-brand-700"
-                    : "border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300"
-                }`}
-              >
-                {p.label}
-              </Link>
-            );
-          })}
-        </nav>
-      ) : null}
     </div>
   );
 }
