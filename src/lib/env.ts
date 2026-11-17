@@ -36,6 +36,13 @@ export const env = {
       sendEnabled: !!intakeEmail && process.env.FULLL_SEND_ENABLED !== "false",
     };
   },
+  // External bookkeeping intakes that must receive paid-payment invoice PDFs by
+  // email (Fulll + Qonto). No humans are copied on these. Overridable per env.
+  get bookkeepingInboxes() {
+    const fulll = process.env.FULLL_INTAKE_EMAIL ?? "factures+cHEA-072a8f@m.fulll.io";
+    const qonto = process.env.QONTO_RECEIPTS_EMAIL ?? "receipts-ukcbzgcdo9a6@inbox.qonto.com";
+    return [fulll, qonto].map((a) => a.trim()).filter(Boolean);
+  },
   get azure() {
     return {
       tenantId: required("AZURE_TENANT_ID"),
@@ -57,11 +64,12 @@ export const env = {
       "invoices@htp42.com"
     );
   },
-  // A standing CC added to every email sent FROM the invoices mailbox, so a
-  // finance contact is always kept in the loop. Comma-separated list; set
-  // INVOICES_ALWAYS_CC="" to disable.
+  // A standing CC added to every email sent FROM the invoices mailbox. Now
+  // empty by default — the team is kept in the loop via Slack, not email, and
+  // the bookkeeping emails (Fulll/Qonto) must not copy any person. Set
+  // INVOICES_ALWAYS_CC="a@b.com" to re-enable a standing CC.
   get invoicesAlwaysCc() {
-    const raw = process.env.INVOICES_ALWAYS_CC ?? "herve.marion@htp42.com";
+    const raw = process.env.INVOICES_ALWAYS_CC ?? "";
     return raw
       .split(",")
       .map((a) => a.trim())
