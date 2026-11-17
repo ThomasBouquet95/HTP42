@@ -6,8 +6,7 @@ import {
   getPaymentById,
 } from "@/lib/airtable";
 import { env } from "@/lib/env";
-import { sendMailViaGraph } from "@/lib/email";
-import { resolveEmail } from "@/lib/email-templates-server";
+import { postToSlack } from "@/lib/slack";
 import { hasPdfSignature } from "@/lib/file-signatures";
 import { apiError } from "@/lib/errors";
 
@@ -77,34 +76,11 @@ export async function POST(
     [existing.paymentCode, existing.invoiceReference, counterparty]
       .filter(Boolean)
       .join(" · ") || existing.id;
-  const { name, subject, textBody, htmlBody, to, cc, from } = await resolveEmail(
-    "payment_invoice_uploaded",
-    {
-      label,
-      direction: existing.direction || "n/a",
-      type: existing.type || "n/a",
-      counterparty: counterparty || "n/a",
-      invoiceReference: existing.invoiceReference || "n/a",
-      amount,
-      paymentStatus: existing.paymentStatus || "n/a",
-      uploadedBy: session.fullName || session.email || session.memberCode,
-      portalUrl: `${env.appUrl}/admin/payments`,
-    },
-  );
-
-  void sendMailViaGraph({
-    to,
-    cc,
-    from,
-    subject,
-    textBody,
-    htmlBody,
-    attachments: [{ filename, contentType: "application/pdf", base64 }],
-    logLabel: name,
-  }).then((result) => {
-    if (!result.ok) {
-      console.error("Payment invoice notification email failed:", result.error);
-    }
+  void postToSlack(
+    env.slackChannels.payments,
+    `*📎 Invoice attached to payment* — ${label} · ${amount}\nby ${session.fullName || session.email || session.memberCode} · → ${env.appUrl}/admin/payments`,
+  ).then((r) => {
+    if (!r.ok) console.error("Payment invoice Slack post failed:", r.error);
   });
 
   const after = (await getPaymentById(id)) ?? existing;

@@ -16,10 +16,8 @@ import {
 } from "@/lib/airtable";
 import { extractInvoiceFromPdfBase64 } from "@/lib/invoice-extract";
 import { env } from "@/lib/env";
-import { sendMailViaGraph } from "@/lib/email";
-import { resolveEmail } from "@/lib/email-templates-server";
+import { postToSlack } from "@/lib/slack";
 import { hasPdfSignature } from "@/lib/file-signatures";
-import { generateTimesheetSummaryPdf } from "@/lib/timesheet-pdf";
 
 export const runtime = "nodejs";
 const MAX_BYTES = 2 * 1024 * 1024; // 2 MB
@@ -243,125 +241,24 @@ export async function POST(request: Request) {
     const member = session.fullName || session.email || session.memberCode;
 
     const totalCoveredHours = chosenTimesheets.reduce((s, t) => s + t.totalHours, 0);
-    // Plain-text + HTML listings of the covered timesheets, used in both
-    // the body and the supporting PDF.
-    const tsTextLines = chosenTimesheets.map((t) => {
-      const range = t.endDate
-        ? `Week of ${t.startDate} → ${t.endDate}`
-        : `Week of ${t.startDate ?? "—"}`;
-      return `- ${range} · ${t.timesheetCode} · ${t.totalHours.toFixed(2)} h`;
-    });
-    const tsHtmlList = chosenTimesheets
-      .map((t) => {
-        const range = t.endDate
-          ? `Week of ${t.startDate} → ${t.endDate}`
-          : `Week of ${t.startDate ?? "—"}`;
-        return `<li><strong>${range}</strong> · ${t.timesheetCode} · <code>${t.totalHours.toFixed(
-          2,
-        )} h</code></li>`;
-      })
-      .join("");
-
-    const coveredTimesheets =
+    const amountStr2 = amount != null ? `${amount.toLocaleString("en-US")} ${currency || ""}`.trim() : "—";
+    const tsNote =
       chosenTimesheets.length > 0
-        ? {
-            text: `Covered timesheets (${chosenTimesheets.length}, total ${totalCoveredHours.toFixed(
-              2,
-            )} h):\n${tsTextLines.join("\n")}`,
-            html: `<p><strong>Covered timesheets</strong> (${chosenTimesheets.length}, total <code>${totalCoveredHours.toFixed(
-              2,
-            )} h</code>):</p><ul>${tsHtmlList}</ul><p>A detailed week-by-week breakdown is attached as a separate PDF.</p>`,
-          }
-        : { text: "", html: "" };
-
-    const {
-      name,
-      subject,
-      textBody: text,
-      htmlBody: html,
-      to,
-      cc,
-      from,
-    } = await resolveEmail("invoice_submitted", {
-      member,
-      memberEmail: session.email || "",
-      staffingOrProject: staffing.staffingCode || project.projectCode,
-      staffingCode: staffing.staffingCode,
-      projectCode: project.projectCode,
-      projectName: project.projectName,
-      amount: amount != null ? `${amount.toLocaleString("en-US")} ${currency || ""}`.trim() : "—",
-      comment: comment || "—",
-      coveredTimesheets,
-      portalUrl: `${env.appUrl}/admin/payments`,
-    });
-    // Always copy the submitting member on their own invoice (their @htp42.com
-    // login address), in addition to any configured CC.
-    const ccList = [session.email, ...cc].filter((v): v is string => !!v);
-
-    // Build the attachments array. The user's own invoice PDF always
-    // ships; the generated timesheet summary only when timesheets were
-    // selected.
-    const attachments: { filename: string; contentType: string; base64: string }[] = [
-      { filename, contentType: "application/pdf", base64 },
-    ];
-    if (chosenTimesheets.length > 0) {
-      try {
-        const tsPdf = await generateTimesheetSummaryPdf(
-          {
-            memberName: session.fullName || session.email || session.memberCode,
-            memberCode: session.memberCode,
-            comment,
-            staffingCode: staffing.staffingCode,
-            projectCode: project.projectCode,
-            projectName: project.projectName,
-            subtitle: `Attached to the invoice submission from ${
-              session.fullName || session.email || session.memberCode
-            } (${session.memberCode}).`,
-          },
-          chosenTimesheets.map((t) => ({
-            timesheetCode: t.timesheetCode,
-            staffingCode: t.staffingCode,
-            projectCode: t.projectCode,
-            projectName: t.projectName,
-            startDate: t.startDate,
-            endDate: t.endDate,
-            submissionDate: t.submissionDate,
-            totalHours: t.totalHours,
-            monday: t.monday,
-            tuesday: t.tuesday,
-            wednesday: t.wednesday,
-            thursday: t.thursday,
-            friday: t.friday,
-          })),
-        );
-        attachments.push({
-          filename: `timesheets-${staffing.staffingCode || project.projectCode}.pdf`,
-          contentType: "application/pdf",
-          base64: tsPdf.toString("base64"),
-        });
-      } catch (e) {
-        // Don't block the invoice email if the PDF generator throws —
-        // surface it in the server log; the email still goes out with the
-        // member's own PDF and the inline timesheet listing.
-        console.error("Timesheet summary PDF generation failed:", e);
-      }
-    }
-
-    const sendResult = await sendMailViaGraph({
-      to,
-      cc: ccList,
-      from,
-      subject,
-      textBody: text,
-      htmlBody: html,
-      attachments,
-      logLabel: name,
-    });
-    if (sendResult.ok) {
-      await markInvoiceEmail(invoiceId, { ok: true, sentAt: new Date().toISOString() });
-    } else {
-      await markInvoiceEmail(invoiceId, { ok: false, error: sendResult.error });
-    }
+        ? ` · ${chosenTimesheets.length} week${chosenTimesheets.length === 1 ? "" : "s"}, ${totalCoveredHours.toFixed(1)}h`
+        : "";
+    // Notify finance on Slack (#payments) instead of email. The invoice PDF is
+    // already stored on the record; the Slack note links to it in the portal.
+    const slackText =
+      `*🧾 Invoice submitted* — ${member} · *${amountStr2}*\n` +
+      `${staffing.staffingCode || project.projectCode}${project.projectName ? ` (${project.projectName})` : ""}${tsNote}` +
+      `${comment ? `\n_${comment}_` : ""}\n→ ${env.appUrl}/admin/payments`;
+    const posted = await postToSlack(env.slackChannels.payments, slackText);
+    await markInvoiceEmail(
+      invoiceId,
+      posted.ok
+        ? { ok: true, sentAt: new Date().toISOString() }
+        : { ok: false, error: posted.error ?? "slack post failed" },
+    );
   } catch (e) {
     // The PDF couldn't be attached or the email send threw. The record
     // exists so the user's submission isn't lost; surface the error.

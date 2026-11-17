@@ -5,8 +5,7 @@ import {
   getContractById,
 } from "@/lib/airtable";
 import { env } from "@/lib/env";
-import { sendMailViaGraph } from "@/lib/email";
-import { resolveEmail } from "@/lib/email-templates-server";
+import { postToSlack } from "@/lib/slack";
 import { hasPdfSignature } from "@/lib/file-signatures";
 import { apiError } from "@/lib/errors";
 
@@ -63,50 +62,20 @@ export async function POST(
     return apiError(e, "upload the contract PDF");
   }
 
-  // 2) Notify HTP42's inbox so a paper trail exists outside Airtable.
-  // Same destination as invoice notifications by design — finance keeps
-  // one inbox for "documents that just landed in the portal". Best-
-  // effort: an email failure mustn't unwind the successful upload.
+  // 2) Post to Slack (#finance) so a paper trail exists outside Airtable.
+  // Best-effort: a Slack failure mustn't unwind the successful upload.
   const counterparty =
     existing.clientNames.filter(Boolean).join(", ") ||
     existing.signatory1.company ||
     existing.signatory1.name ||
     "";
   const label =
-    [existing.contractType, counterparty, existing.projectCode]
-      .filter(Boolean)
-      .join(" · ") || existing.id;
-  const signatoryLine = [existing.signatory1, existing.signatory2]
-    .filter((s) => s.name)
-    .map((s) => `${s.name}${s.role ? ` (${s.role})` : ""}${s.date ? ` on ${s.date}` : ""}`)
-    .join("; ");
-  const { name, subject, textBody, htmlBody, to, cc, from } = await resolveEmail("contract_uploaded", {
-    label,
-    contractType: existing.contractType || "n/a",
-    counterparty: counterparty || "n/a",
-    projectCode: existing.projectCode || "n/a",
-    memberCodes: existing.memberCodes.length > 0 ? existing.memberCodes.join(", ") : "n/a",
-    signatories: signatoryLine || "n/a",
-    signatureDate: existing.signatureDate || "n/a",
-    expiryDate: existing.expiryDate || "n/a",
-    stage: existing.stage || "n/a",
-    uploadedBy: session.fullName || session.email || session.memberCode,
-    portalUrl: `${env.appUrl}/admin/contracts`,
-  });
-
-  void sendMailViaGraph({
-    to,
-    cc,
-    from,
-    subject,
-    textBody,
-    htmlBody,
-    attachments: [{ filename, contentType: "application/pdf", base64 }],
-    logLabel: name,
-  }).then((result) => {
-    if (!result.ok) {
-      console.error("Contract upload notification email failed:", result.error);
-    }
+    [existing.contractType, counterparty, existing.projectCode].filter(Boolean).join(" · ") || existing.id;
+  void postToSlack(
+    env.slackChannels.finance,
+    `*📄 Contract uploaded* — ${label}\nby ${session.fullName || session.email || session.memberCode} · → ${env.appUrl}/admin/contracts`,
+  ).then((r) => {
+    if (!r.ok) console.error("Contract upload Slack post failed:", r.error);
   });
 
   const after = (await getContractById(id)) ?? existing;

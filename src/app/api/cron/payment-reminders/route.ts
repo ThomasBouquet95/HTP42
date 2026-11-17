@@ -10,12 +10,9 @@ import {
   execHtmlToSlack,
   remindersHeadline,
   remindersPromptData,
-  renderRemindersSections,
   renderRemindersSlack,
   type PaymentRemindersModel,
 } from "@/lib/payment-reminders";
-import { resolveEmail } from "@/lib/email-templates-server";
-import { sendMailViaGraph } from "@/lib/email";
 import { postToSlack } from "@/lib/slack";
 import { env } from "@/lib/env";
 
@@ -120,43 +117,19 @@ async function run() {
   const exec = await summarize(model);
   const execHtml =
     exec ?? `<p style="margin:0 0 12px">Payments due, ${displayDate}. ${headline}.</p>`;
-  const summaryHtml = `${execHtml}\n${renderRemindersSections(model)}`;
-  const summaryText = summaryHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
-  const { name, subject, textBody, htmlBody, to, cc, from } = await resolveEmail("payment_reminders_weekly", {
-    date: displayDate,
-    headline,
-    summary: { text: summaryText, html: summaryHtml },
-    portalUrl: `${env.appUrl}/admin/payments`,
-  });
-
-  if (!to.length) {
-    console.warn("[cron] payment-reminders: no recipients resolved, skipping send");
-    return NextResponse.json({ ok: false, reason: "no recipients" });
-  }
-
-  const result = await sendMailViaGraph({ to, cc, from, subject, textBody, htmlBody, logLabel: name });
-  console.log(
-    `[cron] payment-reminders: ${result.ok ? "sent" : "failed"} to ${to.join(", ")} — ${headline}`,
-  );
-
-  // Also post the same digest to Slack (#payments). Best-effort: a Slack hiccup
-  // (or no bot token) never fails the email job.
+  // Slack-only now (#payments) — the weekly email was retired.
   let slackOk: boolean | null = null;
   if (env.slackBotToken) {
-    const slackText = renderRemindersSlack(
-      model,
-      execHtmlToSlack(execHtml),
-      `${env.appUrl}/admin/payments`,
-    );
+    const slackText = renderRemindersSlack(model, execHtmlToSlack(execHtml), `${env.appUrl}/admin/payments`);
     const posted = await postToSlack(env.slackChannels.payments, slackText);
     slackOk = posted.ok;
     if (!posted.ok) console.error(`[cron] payment-reminders: slack post failed — ${posted.error}`);
   }
+  console.log(`[cron] payment-reminders: slack ${slackOk ? "posted" : "skipped/failed"} — ${headline}`);
 
   return NextResponse.json({
-    ok: result.ok,
-    to,
+    ok: slackOk ?? false,
     slack: slackOk,
     incoming: { count: model.client.items.length, overdue: model.client.counts.red + model.client.counts.orange },
     toMembers: { count: model.member.items.length, overdue: model.member.counts.red + model.member.counts.orange },

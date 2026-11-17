@@ -11,11 +11,10 @@ import {
   buildDigestModel,
   digestHeadline,
   digestPromptData,
-  renderDigestSections,
   type DigestModel,
 } from "@/lib/project-status-digest";
-import { resolveEmail } from "@/lib/email-templates-server";
-import { sendMailViaGraph } from "@/lib/email";
+import { execHtmlToSlack } from "@/lib/payment-reminders";
+import { postToSlack } from "@/lib/slack";
 import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
@@ -120,30 +119,40 @@ async function run() {
   // rendered deterministically so every project consistently shows its flag.
   const exec = await summarize(model);
   const execHtml = exec ?? `<p style="margin:0 0 12px">Portfolio snapshot for ${date}. ${digestHeadline(model)}.</p>`;
-  const ownNote =
+  // Post to Slack (#finance) instead of email. The per-project list is rendered
+  // as mrkdwn from the model; Claude's exec summary leads.
+  const ownNoteSlack =
     ownTotalEur > 0
-      ? `<p style="margin:12px 0 0;color:#64748b;font-size:12px">Network figures only — Pascal Bouquet's own billable work (€${Math.round(ownTotalEur).toLocaleString("en-US")}) is netted out of revenue and cost.</p>`
+      ? `\n_Network figures only — Pascal Bouquet's own billable work (€${Math.round(ownTotalEur).toLocaleString("en-US")}) netted out._`
       : "";
-  const summaryHtml = `${execHtml}\n${renderDigestSections(model)}${ownNote}`;
-  const summaryText = summaryHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const slackText = [
+    `*📊 Project status — ${date}*`,
+    execHtmlToSlack(execHtml),
+    renderDigestSlack(model),
+    `→ ${env.appUrl}/admin/cockpit${ownNoteSlack}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
-  const { name, subject, textBody, htmlBody, to, cc, from } = await resolveEmail("project_status_digest", {
-    date,
-    headline,
-    summary: { text: summaryText, html: summaryHtml },
-    portalUrl: `${env.appUrl}/admin/cockpit`,
-  });
-
-  if (!to.length) {
-    console.warn("[cron] project-status-digest: no recipients resolved, skipping send");
-    return NextResponse.json({ ok: false, reason: "no recipients", counts: model.counts });
-  }
-
-  const result = await sendMailViaGraph({ to, cc, from, subject, textBody, htmlBody, logLabel: name });
+  const posted = await postToSlack(env.slackChannels.finance, slackText);
   console.log(
-    `[cron] project-status-digest: ${result.ok ? "sent" : "failed"} to ${to.join(", ")} — ${headline}`,
+    `[cron] project-status-digest: slack ${posted.ok ? "posted" : "failed"} to ${env.slackChannels.finance} — ${headline}`,
   );
-  return NextResponse.json({ ok: result.ok, counts: model.counts, atRisk: model.atRisk.length, to });
+  return NextResponse.json({ ok: posted.ok, counts: model.counts, atRisk: model.atRisk.length });
+}
+
+// Compact mrkdwn of the project buckets for Slack (the email uses HTML sections).
+function renderDigestSlack(model: DigestModel): string {
+  const c = model.counts;
+  const lines = [`Running ${c.running} · planned ${c.planned} · completed ${c.completed}`];
+  if (model.atRisk.length > 0) {
+    lines.push("*At risk / needs attention:*");
+    for (const p of model.atRisk.slice(0, 10)) {
+      lines.push(`• ${p.name || p.code}${p.headlineReason ? ` — ${p.headlineReason}` : ""}`);
+    }
+    if (model.atRisk.length > 10) lines.push(`• +${model.atRisk.length - 10} more`);
+  }
+  return lines.join("\n");
 }
 
 // Daily Vercel cron. Protected by CRON_SECRET (Vercel injects
