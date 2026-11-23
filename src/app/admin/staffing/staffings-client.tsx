@@ -12,6 +12,7 @@ import { StaffingsByProject, StaffingsByMember } from "./staffings-breakdown";
 import { DateField } from "@/components/date-picker";
 import { EditIcon, IconButton } from "@/components/admin-icons";
 import { StatusSelect } from "@/components/status-select";
+import { staffingFxRisks } from "@/lib/staffing-fx-risk";
 import type {
   Currency,
   ProjectRole,
@@ -20,7 +21,7 @@ import type {
   StaffingStatus,
 } from "@/lib/airtable";
 
-type ProjectOpt = { code: string; name: string; clientName?: string };
+type ProjectOpt = { code: string; name: string; clientName?: string; currency?: string };
 type MemberOpt = {
   id: string;
   code: string;
@@ -234,6 +235,13 @@ export function StaffingsAdminClient({
   const [error, setError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StaffingAdminRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Set when Save is clicked on a staffing with an FX risk: shows a confirm
+  // popup before saving.
+  const [fxConfirmOpen, setFxConfirmOpen] = useState(false);
+  const projectCurrency = useMemo(
+    () => new Map(projects.map((p) => [p.code, p.currency || ""])),
+    [projects],
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -344,13 +352,30 @@ export function StaffingsAdminClient({
     return derivedTotal * fx;
   }, [derivedTotal, form.fxToEur]);
 
-  async function submit() {
+  // FX risk for the staffing being edited (project billing currency vs the
+  // rate's currency and the member's own invoicing currency).
+  const formFxRisks = useMemo(() => {
+    const m = membersById.get(form.memberId);
+    return staffingFxRisks({
+      projectCurrency: projectCurrency.get(form.projectCode),
+      staffingCurrency: form.currency,
+      memberCurrency: m?.currency,
+      memberName: m?.name,
+    });
+  }, [form.projectCode, form.memberId, form.currency, membersById, projectCurrency]);
+
+  async function submit(fxAcknowledged = false) {
     setError(null);
     const v = validateStaffingForm(form);
     if (v) {
       setError(v);
       return;
     }
+    if (formFxRisks.length > 0 && !fxAcknowledged) {
+      setFxConfirmOpen(true);
+      return;
+    }
+    setFxConfirmOpen(false);
     setSaving(true);
     try {
       const body = {
@@ -575,6 +600,22 @@ export function StaffingsAdminClient({
                     {s.ratePerDay == null
                       ? "—"
                       : `${s.ratePerDay.toLocaleString("en-US")} ${s.currency || ""}`.trim()}
+                    {(() => {
+                      const pc = projectCurrency.get(s.projectCode);
+                      const risks = staffingFxRisks({
+                        projectCurrency: pc,
+                        staffingCurrency: s.currency,
+                        memberCurrency: membersById.get(s.memberRecordIds[0] ?? "")?.currency,
+                      });
+                      return risks.length > 0 ? (
+                        <span
+                          className="ml-1 inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-1.5 text-[10px] font-semibold text-amber-800"
+                          title={risks.map((r) => r.title).join("\n")}
+                        >
+                          Risk: FX
+                        </span>
+                      ) : null;
+                    })()}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums hidden lg:table-cell demo-blur">
                     {s.daysAllocated ?? "—"}
@@ -652,7 +693,7 @@ export function StaffingsAdminClient({
             <Button tone="secondary" size="sm" onClick={closeModal} disabled={saving}>
               Cancel
             </Button>
-            <Button tone="primary" size="sm" onClick={submit} disabled={saving}>
+            <Button tone="primary" size="sm" onClick={() => submit()} disabled={saving}>
               {saving ? "Saving…" : creating ? "Create staffing" : "Save changes"}
             </Button>
           </>
@@ -779,6 +820,19 @@ export function StaffingsAdminClient({
             ))}
           </FormSelect>
         </div>
+        {formFxRisks.length > 0 ? (
+          <div
+            role="alert"
+            className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900 space-y-1.5"
+          >
+            {formFxRisks.map((r) => (
+              <div key={r.kind}>
+                <div className="font-semibold">⚠ {r.title}</div>
+                <div className="text-amber-800">{r.detail}</div>
+              </div>
+            ))}
+          </div>
+        ) : null}
         {(derivedTotal != null || derivedTotalEur != null) ? (
           <div className="mt-3 rounded-md bg-slate-50 border border-slate-200 p-2.5 text-xs text-slate-700">
             {derivedTotal != null ? (
@@ -846,6 +900,25 @@ export function StaffingsAdminClient({
       </Modal>
 
       <MemberInfoModal member={memberOpen} onClose={() => setMemberOpen(null)} />
+
+      <ConfirmDialog
+        open={fxConfirmOpen}
+        title="Currency risk on this staffing"
+        message={
+          <div className="space-y-2">
+            {formFxRisks.map((r) => (
+              <div key={r.kind}>
+                <div className="font-semibold text-amber-800">⚠ {r.title}</div>
+                <div className="text-slate-600">{r.detail}</div>
+              </div>
+            ))}
+          </div>
+        }
+        confirmLabel={creating ? "Create anyway" : "Save anyway"}
+        busy={saving}
+        onCancel={() => setFxConfirmOpen(false)}
+        onConfirm={() => submit(true)}
+      />
 
       <ConfirmDialog
         open={!!deleteTarget}

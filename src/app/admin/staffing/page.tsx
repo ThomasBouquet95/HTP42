@@ -69,6 +69,7 @@ export default async function AdminStaffingPage() {
               (p.clientRecordIds[0] && clientById.get(p.clientRecordIds[0])?.clientName) ||
               p.clientCodes[0] ||
               "",
+            currency: p.currency,
           }))}
           members={members.map((m) => ({
             id: m.id,
