@@ -29,6 +29,9 @@ type Filters = {
   // Member record id of an assignee to filter by, or "All".
   assignee: "All" | string;
   search: string;
+  // Completed work (Done / Cancelled) is hidden by default; this reveals it.
+  // Selecting a specific status in the dropdown always overrides this.
+  showCompleted: boolean;
 };
 
 const DEFAULT_FILTERS: Filters = {
@@ -37,7 +40,10 @@ const DEFAULT_FILTERS: Filters = {
   project: "All",
   assignee: "All",
   search: "",
+  showCompleted: false,
 };
+
+const COMPLETED_STATUSES: readonly string[] = ["Done", "Cancelled"];
 
 const STATUS_ORDER: TaskStatus[] = ["To do", "In Progress", "Done", "Cancelled"];
 
@@ -129,7 +135,12 @@ export function TasksClient({
       // Mode maps 1:1 to the Visibility field — tasks created from the
       // Personal tab never show up in Shared and vice versa.
       if (t.visibility !== mode) return false;
-      if (filters.status !== "All" && t.status !== filters.status) return false;
+      if (filters.status !== "All") {
+        if (t.status !== filters.status) return false;
+      } else if (!filters.showCompleted && COMPLETED_STATUSES.includes(t.status)) {
+        // "All statuses" hides completed work unless the toggle is on.
+        return false;
+      }
       if (filters.priority !== "All" && t.priority !== filters.priority) return false;
       if (filters.project !== "All" && t.projectRecordId !== filters.project) return false;
       if (
@@ -193,6 +204,17 @@ export function TasksClient({
     }
     return map;
   }, [filtered]);
+
+  // Which columns the Board shows. When "All statuses" is active and completed
+  // work is hidden, drop the terminal Done / Cancelled columns so the board
+  // matches the list's default. A specific status filter is handled by the
+  // per-column task lists already.
+  const boardStatuses = useMemo(() => {
+    if (filters.status === "All" && !filters.showCompleted) {
+      return STATUS_ORDER.filter((s) => !COMPLETED_STATUSES.includes(s));
+    }
+    return STATUS_ORDER;
+  }, [filters.status, filters.showCompleted]);
 
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((p) => ({ ...p, [key]: value }));
@@ -399,6 +421,21 @@ export function TasksClient({
           <Button tone="secondary" size="sm" onClick={resetFilters}>
             Reset filters
           </Button>
+          <label
+            className={`inline-flex cursor-pointer items-center gap-1.5 text-xs ${
+              filters.status !== "All" ? "opacity-40" : ""
+            }`}
+            title="Done and Cancelled tasks are hidden by default"
+          >
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+              checked={filters.showCompleted}
+              disabled={filters.status !== "All"}
+              onChange={(e) => update("showCompleted", e.target.checked)}
+            />
+            <span className="text-slate-600">Show completed</span>
+          </label>
           <span className="text-xs text-slate-500">
             {filtered.length} task{filtered.length === 1 ? "" : "s"}
           </span>
@@ -422,9 +459,16 @@ export function TasksClient({
 
       {view === "kanban" ? (
         // Wider To do / In Progress columns, narrower Done / Cancelled — they
-        // are terminal states that mostly need scanning, not editing.
-        <div className="grid gap-3 lg:grid-cols-[2fr_2fr_1fr_1fr]">
-          {STATUS_ORDER.map((s) => (
+        // are terminal states that mostly need scanning, not editing. The
+        // terminal columns drop out when completed work is hidden by default.
+        <div
+          className={`grid gap-3 ${
+            boardStatuses.length === 4
+              ? "lg:grid-cols-[2fr_2fr_1fr_1fr]"
+              : "lg:grid-cols-2"
+          }`}
+        >
+          {boardStatuses.map((s) => (
             <Column
               key={s}
               status={s}
