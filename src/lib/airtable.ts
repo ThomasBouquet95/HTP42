@@ -96,10 +96,11 @@ export const FIELDS = {
     // ensureMemberAvailabilityFields.
     availability: "Availability",
     availabilityStatus: "Availability Status",
-    onePagerShare: "One-pager Sharing",
     lastAvailabilityCheck: "Last Availability Check",
-    nextFollowUp: "Next Follow-up",
     availabilityComment: "Availability Comment",
+    // HTP42 one-pager deck (PPT/PDF), kept next to the member's CV. Lazily
+    // created via the meta API — see ensureMemberOnePagerField.
+    onePager: "One-Pager (HTP42)",
   },
   projects: {
     projectCode: "Project Code",
@@ -507,17 +508,14 @@ export const NETWORK_LEVELS: NetworkLevel[] = ["Guest", "Bronze", "Silver", "Gol
 export const DEFAULT_NETWORK_LEVEL: NetworkLevel = "Guest";
 
 // Network availability tracking (outreach to the network about mission
-// readiness). Values are kept in French to match how the team records them.
-export type AvailabilityStatus = "Disponible" | "Partiel" | "Pas dispo" | "Pas de réponse";
+// readiness).
+export type AvailabilityStatus = "Available" | "Partial" | "Not available" | "No response";
 export const AVAILABILITY_STATUSES: AvailabilityStatus[] = [
-  "Disponible",
-  "Partiel",
-  "Pas dispo",
-  "Pas de réponse",
+  "Available",
+  "Partial",
+  "Not available",
+  "No response",
 ];
-// Whether the member lets us share their anonymised one-pager with clients.
-export type OnePagerShare = "Oui" | "Non" | "Pas de réponse";
-export const ONE_PAGER_SHARE_OPTIONS: OnePagerShare[] = ["Oui", "Non", "Pas de réponse"];
 
 export type MemberRole =
   | "Managing Partner"
@@ -784,14 +782,14 @@ export type MemberRecord = {
   billingCompanyName: string;
   billingCompanyCountry: string;
   billingCompanyAddress: string;
-  // Network availability outreach (mission readiness + one-pager sharing).
-  // Free-text availability, e.g. "2,5 j/sem". Dates are ISO "YYYY-MM-DD" or "".
+  // Network availability outreach (mission readiness). Free-text availability,
+  // e.g. "2.5 days/week". lastAvailabilityCheck is ISO "YYYY-MM-DD" or "".
   availability: string;
   availabilityStatus: AvailabilityStatus | "";
-  onePagerShare: OnePagerShare | "";
   lastAvailabilityCheck: string;
-  nextFollowUp: string;
   availabilityComment: string;
+  // HTP42 one-pager deck, kept alongside the CV.
+  onePager: AttachmentRef | null;
 };
 
 // A Yes/No provisioning flag stored as a multi-select ("" = not set).
@@ -1104,10 +1102,9 @@ function memberFromRecord(r: AirtableRecord<FieldSet>): MemberRecord {
     availability: str(r, FIELDS.networkMembers.availability),
     availabilityStatus:
       (str(r, FIELDS.networkMembers.availabilityStatus) as AvailabilityStatus) || "",
-    onePagerShare: (str(r, FIELDS.networkMembers.onePagerShare) as OnePagerShare) || "",
     lastAvailabilityCheck: str(r, FIELDS.networkMembers.lastAvailabilityCheck),
-    nextFollowUp: str(r, FIELDS.networkMembers.nextFollowUp),
     availabilityComment: str(r, FIELDS.networkMembers.availabilityComment),
+    onePager: firstAttachment(r, FIELDS.networkMembers.onePager),
   };
 }
 
@@ -1198,14 +1195,58 @@ export async function updateMemberProfile(
 // The content endpoint *appends*, so to make this behave like a replace we
 // first clear the field. Otherwise "replace the CV" leaves the old file as
 // the first attachment and firstAttachment() keeps returning the stale one.
+export type MemberAttachmentField = "photo" | "cv" | "onePager";
+
+function memberAttachmentFieldName(field: MemberAttachmentField): string {
+  if (field === "photo") return FIELDS.networkMembers.photo;
+  if (field === "onePager") return FIELDS.networkMembers.onePager;
+  return FIELDS.networkMembers.cv;
+}
+
+// The one-pager field is newer than the table, so add it lazily on first use.
+let memberOnePagerFieldReady = false;
+async function ensureMemberOnePagerField(): Promise<void> {
+  if (memberOnePagerFieldReady) return;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, { headers: { Authorization: `Bearer ${env.airtablePat}` }, cache: "no-store" });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.networkMembers);
+    if (!table) return;
+    if (table.fields.some((f) => f.name === FIELDS.networkMembers.onePager)) {
+      memberOnePagerFieldReady = true;
+      return;
+    }
+    const create = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: FIELDS.networkMembers.onePager,
+          type: "multipleAttachments",
+          description: "HTP42 one-pager deck (PPT/PDF), kept alongside the member's CV.",
+        }),
+      },
+    );
+    if (create.ok) memberOnePagerFieldReady = true;
+  } catch (e) {
+    console.error("ensureMemberOnePagerField failed:", e);
+  }
+}
+
 export async function uploadMemberAttachment(
   recordId: string,
-  field: "photo" | "cv",
+  field: MemberAttachmentField,
   filename: string,
   contentType: string,
   base64: string,
 ): Promise<MemberRecord | null> {
-  const fieldName = field === "photo" ? FIELDS.networkMembers.photo : FIELDS.networkMembers.cv;
+  if (field === "onePager") await ensureMemberOnePagerField();
+  const fieldName = memberAttachmentFieldName(field);
   // Clear first so the upload replaces rather than appends.
   await base(TABLES.networkMembers).update([
     { id: recordId, fields: { [fieldName]: [] } as FieldSet },
@@ -1228,9 +1269,10 @@ export async function uploadMemberAttachment(
 
 export async function clearMemberAttachment(
   recordId: string,
-  field: "photo" | "cv",
+  field: MemberAttachmentField,
 ): Promise<MemberRecord | null> {
-  const fieldName = field === "photo" ? FIELDS.networkMembers.photo : FIELDS.networkMembers.cv;
+  if (field === "onePager") await ensureMemberOnePagerField();
+  const fieldName = memberAttachmentFieldName(field);
   await base(TABLES.networkMembers).update([
     { id: recordId, fields: { [fieldName]: [] } as FieldSet },
   ]);
@@ -1845,32 +1887,16 @@ async function ensureMemberAvailabilityFields(): Promise<void> {
         type: "singleSelect",
         options: {
           choices: [
-            { name: "Disponible", color: "greenLight2" },
-            { name: "Partiel", color: "yellowLight2" },
-            { name: "Pas dispo", color: "redLight2" },
-            { name: "Pas de réponse", color: "grayLight2" },
-          ],
-        },
-      });
-    }
-    if (!existing.has(F.onePagerShare)) {
-      toAdd.push({
-        name: F.onePagerShare,
-        type: "singleSelect",
-        options: {
-          choices: [
-            { name: "Oui", color: "greenLight2" },
-            { name: "Non", color: "redLight2" },
-            { name: "Pas de réponse", color: "grayLight2" },
+            { name: "Available", color: "greenLight2" },
+            { name: "Partial", color: "yellowLight2" },
+            { name: "Not available", color: "redLight2" },
+            { name: "No response", color: "grayLight2" },
           ],
         },
       });
     }
     if (!existing.has(F.lastAvailabilityCheck)) {
       toAdd.push({ name: F.lastAvailabilityCheck, type: "date", options: { dateFormat: { name: "iso", format: "YYYY-MM-DD" } } });
-    }
-    if (!existing.has(F.nextFollowUp)) {
-      toAdd.push({ name: F.nextFollowUp, type: "date", options: { dateFormat: { name: "iso", format: "YYYY-MM-DD" } } });
     }
     if (!existing.has(F.availabilityComment)) {
       toAdd.push({ name: F.availabilityComment, type: "multilineText" });
@@ -1904,9 +1930,7 @@ async function applyMemberAvailabilityFields(
   input: {
     availability?: string;
     availabilityStatus?: AvailabilityStatus | "";
-    onePagerShare?: OnePagerShare | "";
     lastAvailabilityCheck?: string | null;
-    nextFollowUp?: string | null;
     availabilityComment?: string;
   },
 ): Promise<void> {
@@ -1914,17 +1938,13 @@ async function applyMemberAvailabilityFields(
   const present =
     input.availability !== undefined ||
     input.availabilityStatus !== undefined ||
-    input.onePagerShare !== undefined ||
     input.lastAvailabilityCheck !== undefined ||
-    input.nextFollowUp !== undefined ||
     input.availabilityComment !== undefined;
   if (!present) return;
   await ensureMemberAvailabilityFields();
   if (input.availability !== undefined) fields[F.availability] = input.availability || null;
   if (input.availabilityStatus !== undefined) fields[F.availabilityStatus] = input.availabilityStatus || null;
-  if (input.onePagerShare !== undefined) fields[F.onePagerShare] = input.onePagerShare || null;
   if (input.lastAvailabilityCheck !== undefined) fields[F.lastAvailabilityCheck] = input.lastAvailabilityCheck || null;
-  if (input.nextFollowUp !== undefined) fields[F.nextFollowUp] = input.nextFollowUp || null;
   if (input.availabilityComment !== undefined) fields[F.availabilityComment] = input.availabilityComment || null;
 }
 
@@ -1966,9 +1986,7 @@ export type MemberAdminUpdate = MemberProfileUpdate & {
   // Network availability outreach. "" / null clears a field.
   availability?: string;
   availabilityStatus?: AvailabilityStatus | "";
-  onePagerShare?: OnePagerShare | "";
   lastAvailabilityCheck?: string | null;
-  nextFollowUp?: string | null;
   availabilityComment?: string;
 };
 

@@ -12,14 +12,12 @@ import {
   MEMBER_STATUSES,
   NETWORK_LEVELS,
   AVAILABILITY_STATUSES,
-  ONE_PAGER_SHARE_OPTIONS,
   CURRENCIES,
   type Currency,
   type MemberRole,
   type MemberStatus,
   type NetworkLevel,
   type AvailabilityStatus,
-  type OnePagerShare,
 } from "@/lib/airtable";
 
 // Accepts "" (clear), an ISO date, or omitted. Kept lax; the store coerces.
@@ -84,11 +82,7 @@ const schema = z.object({
   availabilityStatus: z
     .union([z.enum(AVAILABILITY_STATUSES as [string, ...string[]]), z.literal("")])
     .optional(),
-  onePagerShare: z
-    .union([z.enum(ONE_PAGER_SHARE_OPTIONS as [string, ...string[]]), z.literal("")])
-    .optional(),
   lastAvailabilityCheck: isoDateOrEmpty,
-  nextFollowUp: isoDateOrEmpty,
   availabilityComment: z.string().max(2000).optional(),
   // Admin/HR-only note — never surfaced to the member.
   internalNote: z.string().max(5000).optional(),
@@ -158,9 +152,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       networkLevel: d.networkLevel as NetworkLevel | undefined,
       availability: d.availability,
       availabilityStatus: d.availabilityStatus as AvailabilityStatus | "" | undefined,
-      onePagerShare: d.onePagerShare as OnePagerShare | "" | undefined,
       lastAvailabilityCheck: d.lastAvailabilityCheck,
-      nextFollowUp: d.nextFollowUp,
       availabilityComment: d.availabilityComment,
       dailyRate: d.dailyRate,
       htp42DailyRate: d.htp42DailyRate,

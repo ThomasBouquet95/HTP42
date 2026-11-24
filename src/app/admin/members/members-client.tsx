@@ -12,12 +12,10 @@ import { StatusPill } from "@/components/badge";
 import { DownloadChip } from "@/components/download-chip";
 import { StatusSelect } from "@/components/status-select";
 import { NetworkLevelBadge, NETWORK_LEVEL_DESCRIPTIONS } from "@/components/network-level-badge";
-import { AvailabilityStatusBadge, OnePagerShareBadge } from "@/components/availability-badge";
+import { AvailabilityStatusBadge } from "@/components/availability-badge";
 import { MemberNotes } from "./member-notes";
 import {
   AVAILABILITY_STATUSES,
-  ONE_PAGER_SHARE_OPTIONS,
-  type AvailabilityStatus,
   type Currency,
   type MemberAdminRecord,
   type MemberRole,
@@ -73,9 +71,7 @@ type FormState = {
   introduction: string;
   availability: string;
   availabilityStatus: string;
-  onePagerShare: string;
   lastAvailabilityCheck: string;
-  nextFollowUp: string;
   availabilityComment: string;
 };
 
@@ -100,9 +96,7 @@ const EMPTY: FormState = {
   introduction: "",
   availability: "",
   availabilityStatus: "",
-  onePagerShare: "",
   lastAvailabilityCheck: "",
-  nextFollowUp: "",
   availabilityComment: "",
 };
 
@@ -128,9 +122,7 @@ function fromRecord(m: MemberAdminRecord): FormState {
     introduction: m.introduction,
     availability: m.availability,
     availabilityStatus: m.availabilityStatus,
-    onePagerShare: m.onePagerShare,
     lastAvailabilityCheck: m.lastAvailabilityCheck,
-    nextFollowUp: m.nextFollowUp,
     availabilityComment: m.availabilityComment,
   };
 }
@@ -197,9 +189,8 @@ export function MembersAdminClient({
   const [levelFilter, setLevelFilter] = useState<string[]>([]);
   const [countryFilter, setCountryFilter] = useState<string[]>([]);
   const [availFilter, setAvailFilter] = useState<string[]>([]);
-  const [shareFilter, setShareFilter] = useState<string[]>([]);
-  // Quick client-selection shortcut: available (Disponible/Partiel) AND OK to
-  // share the one-pager. Overrides the two filters above while on.
+  // Quick client-selection shortcut: only members who are Available or Partial.
+  // Overrides the Availability filter above while on.
   const [readyOnly, setReadyOnly] = useState(false);
   const [editing, setEditing] = useState<MemberAdminRecord | null>(null);
   const [creating, setCreating] = useState(false);
@@ -358,15 +349,13 @@ export function MembersAdminClient({
       if (levelFilter.length > 0 && !levelFilter.includes(m.networkLevel || "Guest")) return false;
       if (countryFilter.length > 0 && !countryFilter.includes(m.country)) return false;
       if (readyOnly) {
-        if (m.availabilityStatus !== "Disponible" && m.availabilityStatus !== "Partiel") return false;
-        if (m.onePagerShare !== "Oui") return false;
-      } else {
-        if (availFilter.length > 0 && !availFilter.includes(m.availabilityStatus || "Pas de réponse")) return false;
-        if (shareFilter.length > 0 && !shareFilter.includes(m.onePagerShare || "Pas de réponse")) return false;
+        if (m.availabilityStatus !== "Available" && m.availabilityStatus !== "Partial") return false;
+      } else if (availFilter.length > 0 && !availFilter.includes(m.availabilityStatus || "No response")) {
+        return false;
       }
       if (!q) return true;
       const projects = staffing.projectsByMember.get(m.id) ?? [];
-      return [m.memberCode, m.fullName, m.email, m.role, m.networkLevel, m.title, m.country, m.availability, m.availabilityComment, ...projects.flatMap((p) => [p.code, p.name])]
+      return [m.memberCode, m.fullName, m.email, m.role, m.networkLevel, m.title, m.country, m.availability, m.availabilityComment, m.availabilityStatus, ...projects.flatMap((p) => [p.code, p.name])]
         .some((v) => v && v.toLowerCase().includes(q));
     });
     // Smart default order: most active first, inactive last. Rank by activity
@@ -383,7 +372,7 @@ export function MembersAdminClient({
       if (d !== 0) return d;
       return (a.fullName || a.memberCode).localeCompare(b.fullName || b.memberCode);
     });
-  }, [members, search, roleFilter, statusFilter, levelFilter, countryFilter, availFilter, shareFilter, readyOnly, tab, staffing, billed]);
+  }, [members, search, roleFilter, statusFilter, levelFilter, countryFilter, availFilter, readyOnly, tab, staffing, billed]);
 
   // Counts for the primary Staffed / Bench tabs (over active members).
   const tabCounts = useMemo(() => {
@@ -528,9 +517,7 @@ export function MembersAdminClient({
         currency: form.currency,
         availability: form.availability,
         availabilityStatus: form.availabilityStatus,
-        onePagerShare: form.onePagerShare,
         lastAvailabilityCheck: form.lastAvailabilityCheck,
-        nextFollowUp: form.nextFollowUp,
         availabilityComment: form.availabilityComment,
       };
       const url = creating ? "/api/admin/members" : `/api/admin/members/${editing!.id}`;
@@ -638,12 +625,6 @@ export function MembersAdminClient({
           onChange={setAvailFilter}
           options={AVAILABILITY_STATUSES.map((s) => ({ value: s, label: s }))}
         />
-        <FilterMultiSelect
-          label="One-pager"
-          selected={shareFilter}
-          onChange={setShareFilter}
-          options={ONE_PAGER_SHARE_OPTIONS.map((s) => ({ value: s, label: s }))}
-        />
       </FilterBar>
 
       {/* Primary tabs: staffing state (secondary filters live above). */}
@@ -662,7 +643,7 @@ export function MembersAdminClient({
           type="button"
           onClick={() => setReadyOnly((v) => !v)}
           aria-pressed={readyOnly}
-          title="Available (Disponible / Partiel) and OK to share the one-pager — ready for a client selection"
+          title="Only members marked Available or Partial — ready for a client selection"
           className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
             readyOnly
               ? "border-emerald-300 bg-emerald-50 text-emerald-800"
@@ -670,7 +651,7 @@ export function MembersAdminClient({
           }`}
         >
           <span className={`h-2 w-2 rounded-full ${readyOnly ? "bg-emerald-500" : "bg-slate-300"}`} aria-hidden />
-          Ready for client selection
+          Available only
         </button>
         <span className="ml-auto text-[11px] text-slate-500">{filtered.length} shown</span>
       </div>
@@ -728,7 +709,7 @@ export function MembersAdminClient({
                       {m.role ? ` · ${m.role}` : ""}
                       {m.title ? ` · ${m.title}` : ""}
                     </span>
-                    {m.availabilityStatus || m.onePagerShare || m.availability ? (
+                    {m.availabilityStatus || m.availability ? (
                       <span className="mt-1 flex flex-wrap items-center gap-1.5">
                         {m.availabilityStatus ? <AvailabilityStatusBadge status={m.availabilityStatus} /> : null}
                         {m.availability ? (
@@ -736,7 +717,6 @@ export function MembersAdminClient({
                             {m.availability}
                           </span>
                         ) : null}
-                        {m.onePagerShare ? <OnePagerShareBadge value={m.onePagerShare} /> : null}
                       </span>
                     ) : null}
                   </span>
@@ -846,20 +826,10 @@ export function MembersAdminClient({
                             {m.availability}
                           </span>
                         ) : null}
-                        <OnePagerShareBadge value={m.onePagerShare} />
                       </div>
                       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
                         <Field label="Last check">{m.lastAvailabilityCheck || "—"}</Field>
-                        <Field label="Next follow-up">
-                          {m.nextFollowUp ? (
-                            <span className={isOverdue(m.nextFollowUp) ? "font-medium text-rose-600" : ""}>
-                              {m.nextFollowUp}
-                            </span>
-                          ) : (
-                            "—"
-                          )}
-                        </Field>
-                        <Field label="Comment" className="sm:col-span-3">
+                        <Field label="Comment" className="sm:col-span-2">
                           {m.availabilityComment || "—"}
                         </Field>
                       </dl>
@@ -1238,11 +1208,8 @@ export function MembersAdminClient({
           </div>
         </div>
         <div className="mt-4 rounded-md border border-slate-200 p-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-              Network availability
-            </div>
-            <AvailabilityStatusBadge status={(form.availabilityStatus || "") as AvailabilityStatus | ""} />
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+            Network availability
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <FormSelect
@@ -1250,39 +1217,22 @@ export function MembersAdminClient({
               value={form.availabilityStatus}
               onChange={(v) => updateField("availabilityStatus", v)}
             >
-              <option value="">— Pas de réponse —</option>
-              {AVAILABILITY_STATUSES.map((s) => (
+              <option value="">— No response —</option>
+              {AVAILABILITY_STATUSES.filter((s) => s !== "No response").map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </FormSelect>
             <FormField
-              label="Availability (free text)"
+              label="Availability"
               value={form.availability}
               onChange={(v) => updateField("availability", v)}
-              placeholder="e.g. 2,5 j/sem"
+              placeholder="e.g. 2.5 days/week"
             />
-            <FormSelect
-              label="One-pager sharing"
-              value={form.onePagerShare}
-              onChange={(v) => updateField("onePagerShare", v)}
-            >
-              <option value="">— Pas de réponse —</option>
-              {ONE_PAGER_SHARE_OPTIONS.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </FormSelect>
-            <div />
             <FormField
               label="Last check"
               type="date"
               value={form.lastAvailabilityCheck}
               onChange={(v) => updateField("lastAvailabilityCheck", v)}
-            />
-            <FormField
-              label="Next follow-up"
-              type="date"
-              value={form.nextFollowUp}
-              onChange={(v) => updateField("nextFollowUp", v)}
             />
           </div>
           <div className="mt-3">
@@ -1379,13 +1329,6 @@ function Spinner() {
       />
     </svg>
   );
-}
-
-// A follow-up date is "overdue" once it's strictly before today (local date).
-function isOverdue(isoDate: string): boolean {
-  if (!isoDate) return false;
-  const today = new Date().toISOString().slice(0, 10);
-  return isoDate.slice(0, 10) < today;
 }
 
 function Field({

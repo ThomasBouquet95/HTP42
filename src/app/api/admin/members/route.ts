@@ -9,14 +9,12 @@ import {
   MEMBER_STATUSES,
   NETWORK_LEVELS,
   AVAILABILITY_STATUSES,
-  ONE_PAGER_SHARE_OPTIONS,
   CURRENCIES,
   type Currency,
   type MemberRole,
   type MemberStatus,
   type NetworkLevel,
   type AvailabilityStatus,
-  type OnePagerShare,
 } from "@/lib/airtable";
 import { apiError, zodMessage } from "@/lib/errors";
 
@@ -48,11 +46,7 @@ const schema = z.object({
   availabilityStatus: z
     .union([z.enum(AVAILABILITY_STATUSES as [string, ...string[]]), z.literal("")])
     .optional(),
-  onePagerShare: z
-    .union([z.enum(ONE_PAGER_SHARE_OPTIONS as [string, ...string[]]), z.literal("")])
-    .optional(),
   lastAvailabilityCheck: isoDateOrEmpty,
-  nextFollowUp: isoDateOrEmpty,
   availabilityComment: z.string().max(2000).optional(),
 });
 
@@ -107,9 +101,7 @@ export async function POST(request: Request) {
       currency: d.currency as Currency | "" | undefined,
       availability: d.availability,
       availabilityStatus: d.availabilityStatus as AvailabilityStatus | "" | undefined,
-      onePagerShare: d.onePagerShare as OnePagerShare | "" | undefined,
       lastAvailabilityCheck: d.lastAvailabilityCheck,
-      nextFollowUp: d.nextFollowUp,
       availabilityComment: d.availabilityComment,
     });
     return NextResponse.json({ member: created });

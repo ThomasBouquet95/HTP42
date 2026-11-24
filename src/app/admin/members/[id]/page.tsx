@@ -6,7 +6,8 @@ import { DownloadChip } from "@/components/download-chip";
 import { ButtonLink } from "@/components/form-controls";
 import { Badge, StatusPill } from "@/components/badge";
 import { NetworkLevelBadge } from "@/components/network-level-badge";
-import { AvailabilityStatusBadge, OnePagerShareBadge } from "@/components/availability-badge";
+import { AvailabilityStatusBadge } from "@/components/availability-badge";
+import { MemberOnePager } from "./member-one-pager";
 import {
   listAllInvoices,
   listAllMembers,
@@ -36,12 +37,6 @@ function prettyDate(raw: string | null | undefined): string {
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return raw;
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
-
-// A follow-up date strictly before today (local) counts as overdue.
-function isPast(isoDate: string): boolean {
-  if (!isoDate) return false;
-  return isoDate.slice(0, 10) < new Date().toISOString().slice(0, 10);
 }
 
 // "3 days ago" / "just now" — coarse, good enough for an at-a-glance page.
@@ -212,9 +207,7 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
               claudeLicense: member.claudeLicense,
               availability: member.availability,
               availabilityStatus: member.availabilityStatus,
-              onePagerShare: member.onePagerShare,
               lastAvailabilityCheck: member.lastAvailabilityCheck,
-              nextFollowUp: member.nextFollowUp,
               availabilityComment: member.availabilityComment,
             }}
             roles={MEMBER_ROLES}
@@ -269,15 +262,9 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
                   {member.availability}
                 </span>
               ) : null}
-              <OnePagerShareBadge value={member.onePagerShare} />
             </div>
-            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+            <dl className="mt-3 text-xs">
               <Stat label="Last check" value={member.lastAvailabilityCheck || "—"} />
-              <Stat
-                label="Next follow-up"
-                value={member.nextFollowUp || "—"}
-                sub={member.nextFollowUp && isPast(member.nextFollowUp) ? "overdue" : undefined}
-              />
             </dl>
             {member.availabilityComment ? (
               <p className="mt-2 whitespace-pre-line border-t border-slate-100 pt-2 text-xs leading-relaxed text-slate-600">
@@ -293,6 +280,14 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
                 {member.cv?.filename || (member.cv ? "CV.pdf" : "No CV uploaded")}
               </div>
             </div>
+          </Card>
+
+          <Card title="One-pager (HTP42)">
+            <MemberOnePager
+              memberId={member.id}
+              url={member.onePager?.url ?? null}
+              filename={member.onePager?.filename ?? null}
+            />
           </Card>
 
           <MemberNotes memberId={member.id} initialNotes={member.internalNotes} authorName={access.session.fullName} />

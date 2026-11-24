@@ -6,16 +6,13 @@ import { useRouter } from "next/navigation";
 import { Modal } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { NETWORK_LEVEL_DESCRIPTIONS } from "@/components/network-level-badge";
-import { AvailabilityStatusBadge } from "@/components/availability-badge";
 import {
   AVAILABILITY_STATUSES,
-  ONE_PAGER_SHARE_OPTIONS,
   type AvailabilityStatus,
   type Currency,
   type MemberRole,
   type MemberStatus,
   type NetworkLevel,
-  type OnePagerShare,
   type YesNo,
 } from "@/lib/airtable";
 
@@ -50,9 +47,7 @@ type Editable = {
   claudeLicense: YesNo;
   availability: string;
   availabilityStatus: AvailabilityStatus | "";
-  onePagerShare: OnePagerShare | "";
   lastAvailabilityCheck: string;
-  nextFollowUp: string;
   availabilityComment: string;
 };
 
@@ -125,9 +120,7 @@ export function MemberEditButton({
     claudeLicense: member.claudeLicense,
     availability: member.availability,
     availabilityStatus: member.availabilityStatus,
-    onePagerShare: member.onePagerShare,
     lastAvailabilityCheck: member.lastAvailabilityCheck,
-    nextFollowUp: member.nextFollowUp,
     availabilityComment: member.availabilityComment,
   }));
 
@@ -163,9 +156,7 @@ export function MemberEditButton({
           claudeLicense: form.claudeLicense,
           availability: form.availability,
           availabilityStatus: form.availabilityStatus,
-          onePagerShare: form.onePagerShare,
           lastAvailabilityCheck: form.lastAvailabilityCheck,
-          nextFollowUp: form.nextFollowUp,
           availabilityComment: form.availabilityComment,
         }),
       });
@@ -327,49 +318,28 @@ export function MemberEditButton({
         </Section>
 
         <Section title="Network availability">
-          <div className="mb-2 flex items-center gap-2">
-            <span className="text-[11px] text-slate-500">Current:</span>
-            <AvailabilityStatusBadge status={form.availabilityStatus} />
-          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <FormSelect
               label="Availability status"
               value={form.availabilityStatus}
               onChange={(v) => set("availabilityStatus", v as AvailabilityStatus | "")}
             >
-              <option value="">— Pas de réponse —</option>
-              {AVAILABILITY_STATUSES.map((s) => (
+              <option value="">— No response —</option>
+              {AVAILABILITY_STATUSES.filter((s) => s !== "No response").map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </FormSelect>
             <FormField
-              label="Availability (free text)"
+              label="Availability"
               value={form.availability}
               onChange={(v) => set("availability", v)}
-              placeholder="e.g. 2,5 j/sem"
+              placeholder="e.g. 2.5 days/week"
             />
-            <FormSelect
-              label="One-pager sharing"
-              value={form.onePagerShare}
-              onChange={(v) => set("onePagerShare", v as OnePagerShare | "")}
-            >
-              <option value="">— Pas de réponse —</option>
-              {ONE_PAGER_SHARE_OPTIONS.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </FormSelect>
-            <div />
             <FormField
               label="Last check"
               type="date"
               value={form.lastAvailabilityCheck}
               onChange={(v) => set("lastAvailabilityCheck", v)}
-            />
-            <FormField
-              label="Next follow-up"
-              type="date"
-              value={form.nextFollowUp}
-              onChange={(v) => set("nextFollowUp", v)}
             />
           </div>
           <div className="mt-3">
