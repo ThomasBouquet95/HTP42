@@ -7,6 +7,7 @@
     { "path": "/api/cron/payment-reminders", "schedule": "0 7 * * 1" },
     { "path": "/api/cron/timesheet-review-reminders", "schedule": "0 8 25 * *" },
     { "path": "/api/cron/daily-slack-digest", "schedule": "0 7 * * *" },
-    { "path": "/api/cron/life-science-signals", "schedule": "0 6 * * *" }
+    { "path": "/api/cron/life-science-signals", "schedule": "0 6 * * *" },
+    { "path": "/api/cron/founder-earnings-sync", "schedule": "0 2 * * *" }
   ]
 }
