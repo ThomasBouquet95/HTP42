@@ -6,7 +6,18 @@ import { useRouter } from "next/navigation";
 import { Modal } from "@/components/modal";
 import { Button, FormField, FormSelect, FormTextarea } from "@/components/form-controls";
 import { NETWORK_LEVEL_DESCRIPTIONS } from "@/components/network-level-badge";
-import type { Currency, MemberRole, MemberStatus, NetworkLevel, YesNo } from "@/lib/airtable";
+import { AvailabilityStatusBadge } from "@/components/availability-badge";
+import {
+  AVAILABILITY_STATUSES,
+  ONE_PAGER_SHARE_OPTIONS,
+  type AvailabilityStatus,
+  type Currency,
+  type MemberRole,
+  type MemberStatus,
+  type NetworkLevel,
+  type OnePagerShare,
+  type YesNo,
+} from "@/lib/airtable";
 
 // The four tooling / access provisioning flags, in display order.
 const TOOLING_FIELDS = [
@@ -37,6 +48,12 @@ type Editable = {
   officeLicense: YesNo;
   notionLicense: YesNo;
   claudeLicense: YesNo;
+  availability: string;
+  availabilityStatus: AvailabilityStatus | "";
+  onePagerShare: OnePagerShare | "";
+  lastAvailabilityCheck: string;
+  nextFollowUp: string;
+  availabilityComment: string;
 };
 
 // Admin edit affordance on a member's page: opens a modal with the editable
@@ -106,6 +123,12 @@ export function MemberEditButton({
     officeLicense: member.officeLicense,
     notionLicense: member.notionLicense,
     claudeLicense: member.claudeLicense,
+    availability: member.availability,
+    availabilityStatus: member.availabilityStatus,
+    onePagerShare: member.onePagerShare,
+    lastAvailabilityCheck: member.lastAvailabilityCheck,
+    nextFollowUp: member.nextFollowUp,
+    availabilityComment: member.availabilityComment,
   }));
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
@@ -138,6 +161,12 @@ export function MemberEditButton({
           officeLicense: form.officeLicense,
           notionLicense: form.notionLicense,
           claudeLicense: form.claudeLicense,
+          availability: form.availability,
+          availabilityStatus: form.availabilityStatus,
+          onePagerShare: form.onePagerShare,
+          lastAvailabilityCheck: form.lastAvailabilityCheck,
+          nextFollowUp: form.nextFollowUp,
+          availabilityComment: form.availabilityComment,
         }),
       });
       if (!res.ok) {
@@ -294,6 +323,62 @@ export function MemberEditButton({
                 <option value="No">No</option>
               </FormSelect>
             ))}
+          </div>
+        </Section>
+
+        <Section title="Network availability">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-[11px] text-slate-500">Current:</span>
+            <AvailabilityStatusBadge status={form.availabilityStatus} />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormSelect
+              label="Availability status"
+              value={form.availabilityStatus}
+              onChange={(v) => set("availabilityStatus", v as AvailabilityStatus | "")}
+            >
+              <option value="">— Pas de réponse —</option>
+              {AVAILABILITY_STATUSES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </FormSelect>
+            <FormField
+              label="Availability (free text)"
+              value={form.availability}
+              onChange={(v) => set("availability", v)}
+              placeholder="e.g. 2,5 j/sem"
+            />
+            <FormSelect
+              label="One-pager sharing"
+              value={form.onePagerShare}
+              onChange={(v) => set("onePagerShare", v as OnePagerShare | "")}
+            >
+              <option value="">— Pas de réponse —</option>
+              {ONE_PAGER_SHARE_OPTIONS.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </FormSelect>
+            <div />
+            <FormField
+              label="Last check"
+              type="date"
+              value={form.lastAvailabilityCheck}
+              onChange={(v) => set("lastAvailabilityCheck", v)}
+            />
+            <FormField
+              label="Next follow-up"
+              type="date"
+              value={form.nextFollowUp}
+              onChange={(v) => set("nextFollowUp", v)}
+            />
+          </div>
+          <div className="mt-3">
+            <FormTextarea
+              label="Comment"
+              value={form.availabilityComment}
+              onChange={(v) => set("availabilityComment", v)}
+              rows={2}
+            />
           </div>
         </Section>
 

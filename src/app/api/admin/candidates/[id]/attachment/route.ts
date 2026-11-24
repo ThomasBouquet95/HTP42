@@ -4,11 +4,18 @@ import {
   clearCandidateAttachment,
   getCandidateById,
   uploadCandidateAttachment,
+  type CandidateAttachmentKind,
 } from "@/lib/airtable";
 import { apiError } from "@/lib/errors";
 import { hasImageSignature, hasPdfSignature, hasWordSignature } from "@/lib/file-signatures";
 
 export const runtime = "nodejs";
+
+// Which attachment the request targets: the original CV (default) or the HTP42
+// one-pager. Passed as ?kind=onePager (falls back to CV for any other value).
+function kindOf(request: Request): CandidateAttachmentKind {
+  return new URL(request.url).searchParams.get("kind") === "onePager" ? "onePager" : "cv";
+}
 
 // CV or one-slider for a candidate. Accepts PDF, Word/PowerPoint (both ZIP
 // containers, caught by hasWordSignature's PK check) and images (PNG/JPG). 5 MB
@@ -50,6 +57,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       file.name || "attachment",
       file.type || "application/octet-stream",
       buf.toString("base64"),
+      kindOf(request),
     );
     return NextResponse.json({ candidate: updated });
   } catch (e) {
@@ -57,12 +65,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 }
 
-export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await requireAdminAction("candidates", "edit");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
   try {
-    const updated = await clearCandidateAttachment(id);
+    const updated = await clearCandidateAttachment(id, kindOf(request));
     return NextResponse.json({ candidate: updated });
   } catch (e) {
     return apiError(e, "remove the attachment");

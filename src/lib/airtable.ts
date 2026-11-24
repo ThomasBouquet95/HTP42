@@ -92,6 +92,14 @@ export const FIELDS = {
     // Admin/HR-only rich notes, stored as a JSON array of { id, html, at }.
     // Same admin-only guarantees as internalNote (never on MemberRecord).
     internalNotes: "Internal Notes",
+    // Network availability outreach. Lazily created via the meta API — see
+    // ensureMemberAvailabilityFields.
+    availability: "Availability",
+    availabilityStatus: "Availability Status",
+    onePagerShare: "One-pager Sharing",
+    lastAvailabilityCheck: "Last Availability Check",
+    nextFollowUp: "Next Follow-up",
+    availabilityComment: "Availability Comment",
   },
   projects: {
     projectCode: "Project Code",
@@ -152,6 +160,9 @@ export const FIELDS = {
     callNotes: "Call Notes",
     status: "Status",
     cv: "CV / One-slider",
+    // HTP42 one-pager deck (PPT/PDF). Lazily created on an existing table via
+    // the meta API — see ensureCandidateOnePagerField.
+    onePager: "One-Pager (HTP42)",
     onboardedMember: "Onboarded Member",
   },
   clientSurveys: {
@@ -495,6 +506,19 @@ export type NetworkLevel = "Guest" | "Bronze" | "Silver" | "Gold" | "Platinum";
 export const NETWORK_LEVELS: NetworkLevel[] = ["Guest", "Bronze", "Silver", "Gold", "Platinum"];
 export const DEFAULT_NETWORK_LEVEL: NetworkLevel = "Guest";
 
+// Network availability tracking (outreach to the network about mission
+// readiness). Values are kept in French to match how the team records them.
+export type AvailabilityStatus = "Disponible" | "Partiel" | "Pas dispo" | "Pas de réponse";
+export const AVAILABILITY_STATUSES: AvailabilityStatus[] = [
+  "Disponible",
+  "Partiel",
+  "Pas dispo",
+  "Pas de réponse",
+];
+// Whether the member lets us share their anonymised one-pager with clients.
+export type OnePagerShare = "Oui" | "Non" | "Pas de réponse";
+export const ONE_PAGER_SHARE_OPTIONS: OnePagerShare[] = ["Oui", "Non", "Pas de réponse"];
+
 export type MemberRole =
   | "Managing Partner"
   | "Operating Partner"
@@ -760,6 +784,14 @@ export type MemberRecord = {
   billingCompanyName: string;
   billingCompanyCountry: string;
   billingCompanyAddress: string;
+  // Network availability outreach (mission readiness + one-pager sharing).
+  // Free-text availability, e.g. "2,5 j/sem". Dates are ISO "YYYY-MM-DD" or "".
+  availability: string;
+  availabilityStatus: AvailabilityStatus | "";
+  onePagerShare: OnePagerShare | "";
+  lastAvailabilityCheck: string;
+  nextFollowUp: string;
+  availabilityComment: string;
 };
 
 // A Yes/No provisioning flag stored as a multi-select ("" = not set).
@@ -1069,6 +1101,13 @@ function memberFromRecord(r: AirtableRecord<FieldSet>): MemberRecord {
     billingCompanyName: str(r, FIELDS.networkMembers.billingCompanyName),
     billingCompanyCountry: str(r, FIELDS.networkMembers.billingCompanyCountry),
     billingCompanyAddress: str(r, FIELDS.networkMembers.billingCompanyAddress),
+    availability: str(r, FIELDS.networkMembers.availability),
+    availabilityStatus:
+      (str(r, FIELDS.networkMembers.availabilityStatus) as AvailabilityStatus) || "",
+    onePagerShare: (str(r, FIELDS.networkMembers.onePagerShare) as OnePagerShare) || "",
+    lastAvailabilityCheck: str(r, FIELDS.networkMembers.lastAvailabilityCheck),
+    nextFollowUp: str(r, FIELDS.networkMembers.nextFollowUp),
+    availabilityComment: str(r, FIELDS.networkMembers.availabilityComment),
   };
 }
 
@@ -1776,6 +1815,119 @@ async function ensureMemberLevelField(): Promise<void> {
   }
 }
 
+// Lazily add the 6 network-availability fields to Network Members (two single
+// selects, two dates, two free-text). Idempotent + cached. Mirrors
+// ensureMemberLevelField.
+let memberAvailabilityFieldsReady = false;
+async function ensureMemberAvailabilityFields(): Promise<void> {
+  if (memberAvailabilityFieldsReady) return;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.networkMembers);
+    if (!table) return;
+    const F = FIELDS.networkMembers;
+    const existing = new Set(table.fields.map((f) => f.name));
+    const toAdd: Array<Record<string, unknown>> = [];
+    if (!existing.has(F.availability)) {
+      toAdd.push({ name: F.availability, type: "singleLineText", description: "Free-text availability, e.g. 2,5 j/sem." });
+    }
+    if (!existing.has(F.availabilityStatus)) {
+      toAdd.push({
+        name: F.availabilityStatus,
+        type: "singleSelect",
+        options: {
+          choices: [
+            { name: "Disponible", color: "greenLight2" },
+            { name: "Partiel", color: "yellowLight2" },
+            { name: "Pas dispo", color: "redLight2" },
+            { name: "Pas de réponse", color: "grayLight2" },
+          ],
+        },
+      });
+    }
+    if (!existing.has(F.onePagerShare)) {
+      toAdd.push({
+        name: F.onePagerShare,
+        type: "singleSelect",
+        options: {
+          choices: [
+            { name: "Oui", color: "greenLight2" },
+            { name: "Non", color: "redLight2" },
+            { name: "Pas de réponse", color: "grayLight2" },
+          ],
+        },
+      });
+    }
+    if (!existing.has(F.lastAvailabilityCheck)) {
+      toAdd.push({ name: F.lastAvailabilityCheck, type: "date", options: { dateFormat: { name: "iso", format: "YYYY-MM-DD" } } });
+    }
+    if (!existing.has(F.nextFollowUp)) {
+      toAdd.push({ name: F.nextFollowUp, type: "date", options: { dateFormat: { name: "iso", format: "YYYY-MM-DD" } } });
+    }
+    if (!existing.has(F.availabilityComment)) {
+      toAdd.push({ name: F.availabilityComment, type: "multilineText" });
+    }
+    if (toAdd.length === 0) {
+      memberAvailabilityFieldsReady = true;
+      return;
+    }
+    const fieldsUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`;
+    for (const field of toAdd) {
+      const create = await fetch(fieldsUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify(field),
+      });
+      if (!create.ok) {
+        console.error("ensureMemberAvailabilityFields: field create failed:", field.name, await create.text().catch(() => ""));
+        return; // leave uncached so a later write retries the rest
+      }
+    }
+    memberAvailabilityFieldsReady = true;
+  } catch (e) {
+    console.error("ensureMemberAvailabilityFields failed:", e);
+  }
+}
+
+// Add the availability fields to a write payload. Ensures the fields exist
+// first, but only when at least one is being written. "" / null clears.
+async function applyMemberAvailabilityFields(
+  fields: Record<string, unknown>,
+  input: {
+    availability?: string;
+    availabilityStatus?: AvailabilityStatus | "";
+    onePagerShare?: OnePagerShare | "";
+    lastAvailabilityCheck?: string | null;
+    nextFollowUp?: string | null;
+    availabilityComment?: string;
+  },
+): Promise<void> {
+  const F = FIELDS.networkMembers;
+  const present =
+    input.availability !== undefined ||
+    input.availabilityStatus !== undefined ||
+    input.onePagerShare !== undefined ||
+    input.lastAvailabilityCheck !== undefined ||
+    input.nextFollowUp !== undefined ||
+    input.availabilityComment !== undefined;
+  if (!present) return;
+  await ensureMemberAvailabilityFields();
+  if (input.availability !== undefined) fields[F.availability] = input.availability || null;
+  if (input.availabilityStatus !== undefined) fields[F.availabilityStatus] = input.availabilityStatus || null;
+  if (input.onePagerShare !== undefined) fields[F.onePagerShare] = input.onePagerShare || null;
+  if (input.lastAvailabilityCheck !== undefined) fields[F.lastAvailabilityCheck] = input.lastAvailabilityCheck || null;
+  if (input.nextFollowUp !== undefined) fields[F.nextFollowUp] = input.nextFollowUp || null;
+  if (input.availabilityComment !== undefined) fields[F.availabilityComment] = input.availabilityComment || null;
+}
+
 // Add the tooling flags to a write payload (as multi-select arrays: "" clears).
 // Ensures the fields exist first, but only when at least one is being written.
 async function applyMemberToolingFields(
@@ -1811,6 +1963,13 @@ export type MemberAdminUpdate = MemberProfileUpdate & {
   claudeLicense?: YesNo;
   internalNote?: string;
   internalNotes?: MemberNote[];
+  // Network availability outreach. "" / null clears a field.
+  availability?: string;
+  availabilityStatus?: AvailabilityStatus | "";
+  onePagerShare?: OnePagerShare | "";
+  lastAvailabilityCheck?: string | null;
+  nextFollowUp?: string | null;
+  availabilityComment?: string;
 };
 
 export type MemberCreateInput = MemberAdminUpdate & {
@@ -1864,6 +2023,7 @@ export async function adminCreateMember(input: MemberCreateInput): Promise<Membe
     fields[FIELDS.networkMembers.currency] = input.currency;
   }
   await applyMemberToolingFields(fields, input);
+  await applyMemberAvailabilityFields(fields, input);
   const [created] = await base(TABLES.networkMembers).create(
     [{ fields: fields as FieldSet }],
     // typecast lets Airtable auto-add a new Role single-select choice on write.
@@ -2555,6 +2715,7 @@ export async function adminUpdateMember(
     fields[FIELDS.networkMembers.currency] = input.currency === "" ? null : input.currency;
   }
   await applyMemberToolingFields(fields, input);
+  await applyMemberAvailabilityFields(fields, input);
   if (input.internalNote !== undefined) {
     await ensureMemberInternalNoteField();
     fields[FIELDS.networkMembers.internalNote] = input.internalNote || null;
@@ -9201,6 +9362,8 @@ export type CandidateRecord = {
   notes: CandidateNote[];
   status: CandidateStatus;
   cv: AttachmentRef | null;
+  // HTP42 one-pager deck (PPT/PDF) — kept alongside the original CV.
+  onePager: AttachmentRef | null;
   // Set once the candidate is onboarded: the resulting Network Member record id
   // (link) so the ATS can show "already a member" and avoid double-onboarding.
   onboardedMemberId: string;
@@ -9263,6 +9426,7 @@ function candidateFromRecord(r: AirtableRecord<FieldSet>): CandidateRecord {
     notes: parseCandidateNotes(str(r, FIELDS.candidates.callNotes)),
     status: (str(r, FIELDS.candidates.status) as CandidateStatus) || DEFAULT_CANDIDATE_STATUS,
     cv: firstAttachment(r, FIELDS.candidates.cv),
+    onePager: firstAttachment(r, FIELDS.candidates.onePager),
     onboardedMemberId: firstLinkedId(r, FIELDS.candidates.onboardedMember),
   };
 }
@@ -9322,6 +9486,7 @@ export async function ensureCandidatesSchema(): Promise<boolean> {
         options: { choices: CANDIDATE_STATUSES.map((s) => ({ name: s })) },
       },
       { name: F.cv, type: "multipleAttachments" },
+      { name: F.onePager, type: "multipleAttachments" },
       ...(membersTable
         ? [
             {
@@ -9445,15 +9610,64 @@ export async function deleteCandidate(recordId: string): Promise<void> {
   await base(TABLES.candidates).destroy([recordId]);
 }
 
-// Upload (replace) the candidate's CV / one-slider attachment.
+// Which candidate attachment a request targets: the original CV/one-slider, or
+// the HTP42 one-pager deck.
+export type CandidateAttachmentKind = "cv" | "onePager";
+
+// The Candidates table predates the one-pager field, so add it lazily to the
+// existing table on first use. Idempotent + cached.
+let candidateOnePagerFieldReady = false;
+async function ensureCandidateOnePagerField(): Promise<void> {
+  if (candidateOnePagerFieldReady) return;
+  try {
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${env.airtablePat}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      tables: Array<{ id: string; name: string; fields: Array<{ name: string }> }>;
+    };
+    const table = data.tables.find((t) => t.name === TABLES.candidates);
+    if (!table) return;
+    if (table.fields.some((f) => f.name === FIELDS.candidates.onePager)) {
+      candidateOnePagerFieldReady = true;
+      return;
+    }
+    const create = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${env.airtableBaseId}/tables/${table.id}/fields`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.airtablePat}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: FIELDS.candidates.onePager,
+          type: "multipleAttachments",
+          description: "HTP42 one-pager deck (PPT/PDF), kept alongside the original CV.",
+        }),
+      },
+    );
+    if (create.ok) candidateOnePagerFieldReady = true;
+  } catch (e) {
+    console.error("ensureCandidateOnePagerField failed:", e);
+  }
+}
+
+function candidateAttachmentField(kind: CandidateAttachmentKind): string {
+  return kind === "onePager" ? FIELDS.candidates.onePager : FIELDS.candidates.cv;
+}
+
+// Upload (replace) a candidate attachment — the CV/one-slider or the one-pager.
 export async function uploadCandidateAttachment(
   recordId: string,
   filename: string,
   contentType: string,
   base64: string,
+  kind: CandidateAttachmentKind = "cv",
 ): Promise<CandidateRecord | null> {
   await ensureCandidatesSchema();
-  const fieldName = FIELDS.candidates.cv;
+  if (kind === "onePager") await ensureCandidateOnePagerField();
+  const fieldName = candidateAttachmentField(kind);
   await base(TABLES.candidates).update([
     { id: recordId, fields: { [fieldName]: [] } as FieldSet },
   ]);
@@ -9470,10 +9684,14 @@ export async function uploadCandidateAttachment(
   return getCandidateById(recordId);
 }
 
-export async function clearCandidateAttachment(recordId: string): Promise<CandidateRecord | null> {
+export async function clearCandidateAttachment(
+  recordId: string,
+  kind: CandidateAttachmentKind = "cv",
+): Promise<CandidateRecord | null> {
   await ensureCandidatesSchema();
+  if (kind === "onePager") await ensureCandidateOnePagerField();
   await base(TABLES.candidates).update([
-    { id: recordId, fields: { [FIELDS.candidates.cv]: [] } as FieldSet },
+    { id: recordId, fields: { [candidateAttachmentField(kind)]: [] } as FieldSet },
   ]);
   return getCandidateById(recordId);
 }

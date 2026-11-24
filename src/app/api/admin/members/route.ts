@@ -8,15 +8,20 @@ import {
   MEMBER_ROLES,
   MEMBER_STATUSES,
   NETWORK_LEVELS,
+  AVAILABILITY_STATUSES,
+  ONE_PAGER_SHARE_OPTIONS,
   CURRENCIES,
   type Currency,
   type MemberRole,
   type MemberStatus,
   type NetworkLevel,
+  type AvailabilityStatus,
+  type OnePagerShare,
 } from "@/lib/airtable";
 import { apiError, zodMessage } from "@/lib/errors";
 
 const nullableNumber = z.union([z.number(), z.null()]).optional();
+const isoDateOrEmpty = z.union([z.string().max(40), z.literal("")]).optional();
 
 const schema = z.object({
   memberCode: z.string().trim().min(1).max(60),
@@ -39,6 +44,16 @@ const schema = z.object({
   dailyRate: nullableNumber,
   htp42DailyRate: nullableNumber,
   currency: z.union([z.enum(CURRENCIES as [string, ...string[]]), z.literal("")]).optional(),
+  availability: z.string().max(200).optional(),
+  availabilityStatus: z
+    .union([z.enum(AVAILABILITY_STATUSES as [string, ...string[]]), z.literal("")])
+    .optional(),
+  onePagerShare: z
+    .union([z.enum(ONE_PAGER_SHARE_OPTIONS as [string, ...string[]]), z.literal("")])
+    .optional(),
+  lastAvailabilityCheck: isoDateOrEmpty,
+  nextFollowUp: isoDateOrEmpty,
+  availabilityComment: z.string().max(2000).optional(),
 });
 
 export async function POST(request: Request) {
@@ -90,6 +105,12 @@ export async function POST(request: Request) {
       dailyRate: d.dailyRate,
       htp42DailyRate: d.htp42DailyRate,
       currency: d.currency as Currency | "" | undefined,
+      availability: d.availability,
+      availabilityStatus: d.availabilityStatus as AvailabilityStatus | "" | undefined,
+      onePagerShare: d.onePagerShare as OnePagerShare | "" | undefined,
+      lastAvailabilityCheck: d.lastAvailabilityCheck,
+      nextFollowUp: d.nextFollowUp,
+      availabilityComment: d.availabilityComment,
     });
     return NextResponse.json({ member: created });
   } catch (e) {

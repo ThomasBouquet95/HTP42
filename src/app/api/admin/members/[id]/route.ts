@@ -11,12 +11,19 @@ import {
   MEMBER_ROLES,
   MEMBER_STATUSES,
   NETWORK_LEVELS,
+  AVAILABILITY_STATUSES,
+  ONE_PAGER_SHARE_OPTIONS,
   CURRENCIES,
   type Currency,
   type MemberRole,
   type MemberStatus,
   type NetworkLevel,
+  type AvailabilityStatus,
+  type OnePagerShare,
 } from "@/lib/airtable";
+
+// Accepts "" (clear), an ISO date, or omitted. Kept lax; the store coerces.
+const isoDateOrEmpty = z.union([z.string().max(40), z.literal("")]).optional();
 
 const patchSchema = z.object({
   status: z.enum(MEMBER_STATUSES as [string, ...string[]]),
@@ -72,6 +79,17 @@ const schema = z.object({
   officeLicense: yesNo,
   notionLicense: yesNo,
   claudeLicense: yesNo,
+  // Network availability outreach.
+  availability: z.string().max(200).optional(),
+  availabilityStatus: z
+    .union([z.enum(AVAILABILITY_STATUSES as [string, ...string[]]), z.literal("")])
+    .optional(),
+  onePagerShare: z
+    .union([z.enum(ONE_PAGER_SHARE_OPTIONS as [string, ...string[]]), z.literal("")])
+    .optional(),
+  lastAvailabilityCheck: isoDateOrEmpty,
+  nextFollowUp: isoDateOrEmpty,
+  availabilityComment: z.string().max(2000).optional(),
   // Admin/HR-only note — never surfaced to the member.
   internalNote: z.string().max(5000).optional(),
   // Admin/HR-only rich notes (bold/italic/underline), sanitised server-side.
@@ -138,6 +156,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       role: d.role as MemberRole | undefined,
       status: d.status as MemberStatus | undefined,
       networkLevel: d.networkLevel as NetworkLevel | undefined,
+      availability: d.availability,
+      availabilityStatus: d.availabilityStatus as AvailabilityStatus | "" | undefined,
+      onePagerShare: d.onePagerShare as OnePagerShare | "" | undefined,
+      lastAvailabilityCheck: d.lastAvailabilityCheck,
+      nextFollowUp: d.nextFollowUp,
+      availabilityComment: d.availabilityComment,
       dailyRate: d.dailyRate,
       htp42DailyRate: d.htp42DailyRate,
       currency: d.currency as Currency | "" | undefined,

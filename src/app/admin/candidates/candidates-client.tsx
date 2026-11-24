@@ -111,6 +111,7 @@ export function CandidatesClient({ candidates, statuses }: Props) {
   const [noteBusy, setNoteBusy] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
   const editFileRef = useRef<HTMLInputElement>(null);
+  const editOnePagerRef = useRef<HTMLInputElement>(null);
 
   function flash(kind: "ok" | "error", msg: string) {
     setToast({ kind, msg });
@@ -271,15 +272,19 @@ export function CandidatesClient({ candidates, statuses }: Props) {
   }
 
   // ---- attachments (from the expanded card) -------------------------------
-  async function uploadAttachment(c: CandidateRecord, file: File) {
+  // `kind` selects the field: "cv" (original CV / one-slider) or "onePager"
+  // (the HTP42 one-pager deck). The two live side by side.
+  type AttachmentKind = "cv" | "onePager";
+  const attachLabel = (kind: AttachmentKind) => (kind === "onePager" ? "One-pager" : "CV");
+  async function uploadAttachment(c: CandidateRecord, file: File, kind: AttachmentKind = "cv") {
     setAttachBusyId(c.id);
     try {
       const fd = new FormData();
       fd.set("file", file);
-      const res = await fetch(`/api/admin/candidates/${c.id}/attachment`, { method: "POST", body: fd });
+      const res = await fetch(`/api/admin/candidates/${c.id}/attachment?kind=${kind}`, { method: "POST", body: fd });
       const d = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(d.error ?? "Upload failed.");
-      flash("ok", "Attachment uploaded");
+      flash("ok", `${attachLabel(kind)} uploaded`);
       router.refresh();
     } catch (e) {
       flash("error", e instanceof Error ? e.message : "Upload failed.");
@@ -287,14 +292,15 @@ export function CandidatesClient({ candidates, statuses }: Props) {
       setAttachBusyId(null);
     }
   }
-  async function removeAttachment(c: CandidateRecord) {
+  async function removeAttachment(c: CandidateRecord, kind: AttachmentKind = "cv") {
     setAttachBusyId(c.id);
     try {
-      const res = await fetch(`/api/admin/candidates/${c.id}/attachment`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/candidates/${c.id}/attachment?kind=${kind}`, { method: "DELETE" });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(d.error ?? "Remove failed.");
       }
+      flash("ok", `${attachLabel(kind)} removed`);
       router.refresh();
     } catch (e) {
       flash("error", e instanceof Error ? e.message : "Remove failed.");
@@ -412,8 +418,10 @@ export function CandidatesClient({ candidates, statuses }: Props) {
                       onDelete={() => setDeleteTarget(c)}
                       onMove={(status) => moveStatus(c, status)}
                       onOnboard={() => openOnboard(c)}
-                      onUpload={(f) => uploadAttachment(c, f)}
-                      onRemoveFile={() => removeAttachment(c)}
+                      onUpload={(f) => uploadAttachment(c, f, "cv")}
+                      onRemoveFile={() => removeAttachment(c, "cv")}
+                      onUploadOnePager={(f) => uploadAttachment(c, f, "onePager")}
+                      onRemoveOnePager={() => removeAttachment(c, "onePager")}
                       onViewNote={(note) => setNoteView({ candidate: c, note })}
                       onAddNote={() => openAddNote(c)}
                     />
@@ -505,46 +513,86 @@ export function CandidatesClient({ candidates, statuses }: Props) {
           </div>
         ) : null}
 
-        {/* CV upload, directly from the edit form. */}
+        {/* Documents — CV and the HTP42 one-pager, side by side. */}
         {!creating && editing ? (
           <div className="mt-4 border-t border-slate-100 pt-3">
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              CV / one-slider
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Documents
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <DownloadChip url={editing.cv?.url} title="Open CV / one-slider" emptyTitle="No file yet" />
-              <input
-                ref={editFileRef}
-                type="file"
-                accept=".pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void uploadAttachment(editing, f);
-                  if (editFileRef.current) editFileRef.current.value = "";
-                }}
-              />
-              <Button
-                tone="secondary"
-                size="sm"
-                onClick={() => editFileRef.current?.click()}
-                disabled={attachBusyId === editing.id}
-              >
-                {attachBusyId === editing.id ? "Uploading…" : editing.cv ? "Replace" : "Upload"}
-              </Button>
-              {editing.cv ? (
-                <Button
-                  tone="secondary"
-                  size="sm"
-                  onClick={() => removeAttachment(editing)}
-                  disabled={attachBusyId === editing.id}
-                >
-                  Remove
-                </Button>
-              ) : null}
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="rounded-lg border border-slate-200 p-2.5">
+                <div className="mb-1.5 text-[11px] font-medium text-slate-600">CV / one-slider</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <DownloadChip url={editing.cv?.url} title="Open CV / one-slider" emptyTitle="No file yet" />
+                  <input
+                    ref={editFileRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void uploadAttachment(editing, f, "cv");
+                      if (editFileRef.current) editFileRef.current.value = "";
+                    }}
+                  />
+                  <Button
+                    tone="secondary"
+                    size="sm"
+                    onClick={() => editFileRef.current?.click()}
+                    disabled={attachBusyId === editing.id}
+                  >
+                    {attachBusyId === editing.id ? "Uploading…" : editing.cv ? "Replace" : "Upload"}
+                  </Button>
+                  {editing.cv ? (
+                    <Button
+                      tone="secondary"
+                      size="sm"
+                      onClick={() => removeAttachment(editing, "cv")}
+                      disabled={attachBusyId === editing.id}
+                    >
+                      Remove
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-2.5">
+                <div className="mb-1.5 text-[11px] font-medium text-slate-600">One-pager (HTP42)</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <DownloadChip url={editing.onePager?.url} title="Open one-pager" emptyTitle="No file yet" />
+                  <input
+                    ref={editOnePagerRef}
+                    type="file"
+                    accept=".pdf,.ppt,.pptx,.png,.jpg,.jpeg"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void uploadAttachment(editing, f, "onePager");
+                      if (editOnePagerRef.current) editOnePagerRef.current.value = "";
+                    }}
+                  />
+                  <Button
+                    tone="secondary"
+                    size="sm"
+                    onClick={() => editOnePagerRef.current?.click()}
+                    disabled={attachBusyId === editing.id}
+                  >
+                    {attachBusyId === editing.id ? "Uploading…" : editing.onePager ? "Replace" : "Upload"}
+                  </Button>
+                  {editing.onePager ? (
+                    <Button
+                      tone="secondary"
+                      size="sm"
+                      onClick={() => removeAttachment(editing, "onePager")}
+                      disabled={attachBusyId === editing.id}
+                    >
+                      Remove
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
             </div>
-            <p className="mt-1 text-[11px] text-slate-400">
-              PDF, Word/PowerPoint, or image — up to 5 MB. Notes are managed on the candidate card.
+            <p className="mt-1.5 text-[11px] text-slate-400">
+              PDF / PowerPoint (one-pager) or Word/image (CV) — up to 5 MB each. Notes are managed on the candidate card.
             </p>
           </div>
         ) : null}
@@ -700,6 +748,8 @@ function CandidateCard({
   onOnboard,
   onUpload,
   onRemoveFile,
+  onUploadOnePager,
+  onRemoveOnePager,
   onViewNote,
   onAddNote,
 }: {
@@ -713,10 +763,13 @@ function CandidateCard({
   onOnboard: () => void;
   onUpload: (file: File) => void;
   onRemoveFile: () => void;
+  onUploadOnePager: (file: File) => void;
+  onRemoveOnePager: () => void;
   onViewNote: (note: CandidateNote) => void;
   onAddNote: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const onePagerRef = useRef<HTMLInputElement>(null);
   return (
     <div className="rounded-lg border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow">
       {/* Header: click to expand. */}
@@ -797,38 +850,74 @@ function CandidateCard({
             )}
           </div>
 
-          {/* CV / one-slider */}
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <DownloadChip url={c.cv?.url} title="Open CV / one-slider" emptyTitle="No file yet" />
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) onUpload(f);
-                if (fileRef.current) fileRef.current.value = "";
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              disabled={attachBusy}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-            >
-              {attachBusy ? "Uploading…" : c.cv ? "Replace CV" : "Upload CV"}
-            </button>
-            {c.cv ? (
+          {/* Documents: CV / one-slider + the HTP42 one-pager. */}
+          <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+            <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-slate-50 px-2 py-1.5">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">CV</span>
+              <DownloadChip url={c.cv?.url} title="Open CV / one-slider" emptyTitle="No file yet" />
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) onUpload(f);
+                  if (fileRef.current) fileRef.current.value = "";
+                }}
+              />
               <button
                 type="button"
-                onClick={onRemoveFile}
+                onClick={() => fileRef.current?.click()}
                 disabled={attachBusy}
-                className="text-[11px] text-slate-400 hover:text-rose-600 disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
               >
-                Remove
+                {attachBusy ? "…" : c.cv ? "Replace" : "Upload"}
               </button>
-            ) : null}
+              {c.cv ? (
+                <button
+                  type="button"
+                  onClick={onRemoveFile}
+                  disabled={attachBusy}
+                  className="text-[11px] text-slate-400 hover:text-rose-600 disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-slate-50 px-2 py-1.5">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">One-pager</span>
+              <DownloadChip url={c.onePager?.url} title="Open one-pager" emptyTitle="No file yet" />
+              <input
+                ref={onePagerRef}
+                type="file"
+                accept=".pdf,.ppt,.pptx,.png,.jpg,.jpeg"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) onUploadOnePager(f);
+                  if (onePagerRef.current) onePagerRef.current.value = "";
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => onePagerRef.current?.click()}
+                disabled={attachBusy}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {attachBusy ? "…" : c.onePager ? "Replace" : "Upload"}
+              </button>
+              {c.onePager ? (
+                <button
+                  type="button"
+                  onClick={onRemoveOnePager}
+                  disabled={attachBusy}
+                  className="text-[11px] text-slate-400 hover:text-rose-600 disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
           </div>
 
           {/* Actions */}
