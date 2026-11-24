@@ -65,6 +65,7 @@ export default async function AdminStaffingPage() {
           projects={projects.map((p) => ({
             code: p.projectCode,
             name: p.projectName,
+            currency: p.currency,
             clientName:
               (p.clientRecordIds[0] && clientById.get(p.clientRecordIds[0])?.clientName) ||
               p.clientCodes[0] ||

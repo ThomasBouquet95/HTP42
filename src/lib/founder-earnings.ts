@@ -430,6 +430,17 @@ export async function backfillFounderEarningsFromTimesheets(member: {
   const existingTsIds = new Set(
     earnings.map((e) => timesheetIdOfEarning(e.comment)).filter((x): x is string => !!x),
   );
+  // Project-months the founder ALREADY recorded by hand (manual earnings carry no
+  // [ts:] marker — they're monthly aggregates typed in the modal, not per-week).
+  // The weekly backfill must not add rows on top of those, or a month entered
+  // once by hand would be counted twice. Weekly auto rows (with a [ts:] marker)
+  // don't block their month, so several weeks can still accumulate.
+  const manualCoveredMonths = new Set<string>();
+  for (const e of earnings) {
+    if (timesheetIdOfEarning(e.comment)) continue; // auto row — not a manual entry
+    const month = (e.submittedAt || "").slice(0, 7);
+    if (e.projectCode && month) manualCoveredMonths.add(`${e.projectCode}|${month}`);
+  }
   const memberName = member.fullName || member.email || member.memberCode;
   const result: FounderBackfillResult = { created: 0, skipped: 0, noRate: 0, noHours: 0, considered: 0 };
   // Oldest first, so a partial run still fills the earliest gaps.
@@ -438,6 +449,13 @@ export async function backfillFounderEarningsFromTimesheets(member: {
     if (!EARNABLE_TS_STATUSES.has(t.status)) continue;
     result.considered += 1;
     const st = staffingById.get(t.staffingRecordId);
+    // Skip a week whose project-month was already entered manually (dedup above).
+    const projectCode = t.projectCode || st?.projectCode || "";
+    const tsMonth = (t.endDate || "").slice(0, 7);
+    if (projectCode && tsMonth && manualCoveredMonths.has(`${projectCode}|${tsMonth}`)) {
+      result.skipped += 1;
+      continue;
+    }
     const outcome = await syncFounderEarningFromTimesheet({
       memberRecordId: member.sub,
       memberCode: member.memberCode,

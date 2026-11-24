@@ -20,7 +20,7 @@ import type {
   StaffingStatus,
 } from "@/lib/airtable";
 
-type ProjectOpt = { code: string; name: string; clientName?: string };
+type ProjectOpt = { code: string; name: string; clientName?: string; currency?: string };
 type MemberOpt = {
   id: string;
   code: string;
@@ -344,6 +344,25 @@ export function StaffingsAdminClient({
     return derivedTotal * fx;
   }, [derivedTotal, form.fxToEur]);
 
+  // FX-mismatch risk. Lesson from ECS-2025-01 (Hervé Marion, Nov 2025): when a
+  // consultant's daily rate is denominated in a currency different from the
+  // project's billing currency, HTP42 — not the consultant — carries the
+  // exchange-rate risk between the two. The rate should be pegged to the
+  // project's billing currency so the consultant bears it ("à prendre ou à
+  // laisser"). We flag the mismatch at staffing time.
+  const selectedProject = useMemo(
+    () => projects.find((p) => p.code === form.projectCode) ?? null,
+    [projects, form.projectCode],
+  );
+  const currencyRisk = useMemo(() => {
+    const projCur = (selectedProject?.currency || "").toUpperCase();
+    const rateCur = (form.currency || "").toUpperCase();
+    if (!projCur || !rateCur || projCur === rateCur) return null;
+    return { projCur, rateCur };
+  }, [selectedProject, form.currency]);
+  // Set when the admin tries to save with an un-acknowledged currency mismatch.
+  const [riskConfirm, setRiskConfirm] = useState(false);
+
   async function submit() {
     setError(null);
     const v = validateStaffingForm(form);
@@ -351,6 +370,12 @@ export function StaffingsAdminClient({
       setError(v);
       return;
     }
+    // Make the admin acknowledge an FX-mismatch before it's saved.
+    if (currencyRisk && !riskConfirm) {
+      setRiskConfirm(true);
+      return;
+    }
+    setRiskConfirm(false);
     setSaving(true);
     try {
       const body = {
@@ -779,6 +804,21 @@ export function StaffingsAdminClient({
             ))}
           </FormSelect>
         </div>
+        {currencyRisk ? (
+          <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+            <div className="font-semibold">
+              ⚠ Risk: FX exposure — rate in {currencyRisk.rateCur}, project bills in{" "}
+              {currencyRisk.projCur}
+            </div>
+            <p className="mt-1 leading-relaxed">
+              The consultant&apos;s daily rate is set in <strong>{currencyRisk.rateCur}</strong> but
+              this project is billed to the client in <strong>{currencyRisk.projCur}</strong>. HTP42
+              would carry the exchange-rate risk between the two. Peg the rate to{" "}
+              <strong>{currencyRisk.projCur}</strong> so the consultant bears that risk instead
+              (lesson from ECS-2025-01).
+            </p>
+          </div>
+        ) : null}
         {(derivedTotal != null || derivedTotalEur != null) ? (
           <div className="mt-3 rounded-md bg-slate-50 border border-slate-200 p-2.5 text-xs text-slate-700">
             {derivedTotal != null ? (
@@ -862,6 +902,28 @@ export function StaffingsAdminClient({
         busy={deleting}
         onCancel={() => (deleting ? undefined : setDeleteTarget(null))}
         onConfirm={confirmDelete}
+      />
+
+      <ConfirmDialog
+        open={riskConfirm}
+        title="Currency mismatch — save anyway?"
+        message={
+          currencyRisk ? (
+            <>
+              This consultant&apos;s rate is in{" "}
+              <span className="font-semibold">{currencyRisk.rateCur}</span> while the project bills
+              the client in <span className="font-semibold">{currencyRisk.projCur}</span>. HTP42 will
+              carry the FX risk between the two. Peg the daily rate to{" "}
+              <span className="font-semibold">{currencyRisk.projCur}</span> to put that risk on the
+              consultant. Save this staffing as-is?
+            </>
+          ) : null
+        }
+        confirmLabel="Save anyway"
+        confirmTone="danger"
+        busy={saving}
+        onCancel={() => (saving ? undefined : setRiskConfirm(false))}
+        onConfirm={submit}
       />
 
       {toast ? (
