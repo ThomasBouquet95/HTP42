@@ -6,6 +6,7 @@ import { listAllMembers } from "@/lib/airtable";
 import {
   backfillFounderEarningsFromTimesheets,
   isFounderEarningsUser,
+  purgeInternalFounderEarnings,
   type FounderBackfillResult,
 } from "@/lib/founder-earnings";
 
@@ -47,8 +48,14 @@ async function run() {
         `no-rate ${r.noRate}, no-hours ${r.noHours} (considered ${r.considered})`,
     );
   }
+  // Clear any earnings recorded against internal (non-revenue) projects — these
+  // are no longer created, but older rows (and this run's) are swept here.
+  const internalRemoved = await purgeInternalFounderEarnings();
+  if (internalRemoved) {
+    console.log(`[cron] founder-earnings-sync: removed ${internalRemoved} internal-project earning(s)`);
+  }
   console.log(`[cron] founder-earnings-sync: done — ${founders.length} founder(s)`);
-  return NextResponse.json({ ok: true, founders: founders.length, results });
+  return NextResponse.json({ ok: true, founders: founders.length, internalRemoved, results });
 }
 
 // Daily Vercel cron. Protected by CRON_SECRET (Vercel injects

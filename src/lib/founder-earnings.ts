@@ -50,6 +50,13 @@ export function isFounderEarningsUser(u: {
   return FOUNDER_EMAILS.includes(email) || FOUNDER_NAMES.includes(name);
 }
 
+// Internal cost-centre projects (G&A, internal IT/initiatives — codes like
+// INT-G&A, INT-OSB, INT-IT, INT-2026-01) are not billable client revenue, so
+// they must never count toward the founder's earnings/revenue dashboard.
+export function isInternalProject(code: string | null | undefined): boolean {
+  return /^INT[-_]/i.test((code ?? "").trim());
+}
+
 export type FounderEarning = {
   id: string;
   memberCode: string;
@@ -351,6 +358,8 @@ export async function syncFounderEarningFromTimesheet(opts: {
   fxToEur: number | null;
   existingTsIds?: Set<string>;
 }): Promise<FounderSyncOutcome> {
+  // Internal projects are not client revenue — never record an earning for them.
+  if (isInternalProject(opts.projectCode)) return "skipped";
   if (!opts.totalHours || opts.totalHours <= 0) return "no-hours";
   if (!opts.ratePerDay || opts.ratePerDay <= 0) return "no-rate";
 
@@ -572,6 +581,26 @@ export async function updateFounderEarning(
 export async function deleteFounderEarning(id: string): Promise<void> {
   const res = await fetch(`${dataUrl()}/${id}`, { method: "DELETE", headers: authHeaders() });
   if (!res.ok) throw new Error(`Could not delete earning ${id} (${res.status}).`);
+}
+
+// Remove every founder earning recorded against an internal project (and its
+// linked auto-paid payment). Self-healing: internal weeks are no longer created,
+// and this clears any that were recorded before that rule. Returns the count
+// removed. Best-effort per row.
+export async function purgeInternalFounderEarnings(): Promise<number> {
+  const earnings = await listFounderEarnings();
+  let removed = 0;
+  for (const e of earnings) {
+    if (!isInternalProject(e.projectCode)) continue;
+    try {
+      await deleteFounderPaymentForEarning(e.id);
+      await deleteFounderEarning(e.id);
+      removed += 1;
+    } catch (err) {
+      console.error("purgeInternalFounderEarnings: failed for", e.id, err);
+    }
+  }
+  return removed;
 }
 
 // Delete the auto-created Paid payment(s) linked to an earning (best-effort).
